@@ -15,6 +15,9 @@ export function AccountHeader() {
           <span>
             Signed in as <strong>{state.email}</strong>
           </span>
+          <Link to="/agents" className="underline underline-offset-4">
+            Connected agents
+          </Link>
           <Button
             variant="outline"
             size="sm"

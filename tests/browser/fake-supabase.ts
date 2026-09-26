@@ -39,7 +39,12 @@ type Options = {
   server?: FakeProjectServer
   /** Answer the consent step of an OAuth request with this redirect. */
   consentRedirect?: string
+  /** The agents (OAuth grants) the person has approved; listing fails when this is "error". */
+  grants?: OAuthGrant[] | "error"
 }
+
+/** An approved agent, as Supabase Auth lists it. */
+export type OAuthGrant = { client: { id: string; name: string; uri: string; logo_uri: string }; scopes: string[]; granted_at: string }
 
 export type FakeSupabase = {
   server: FakeProjectServer
@@ -116,6 +121,18 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
         })
       }
       if (path.endsWith("/oauth/authorizations/auth-123/consent") && options.consentRedirect) return json(route, { redirect_url: options.consentRedirect })
+      if (path.endsWith("/user/oauth/grants")) {
+        if (options.grants === "error") return json(route, { code: 500, error_code: "unexpected_failure", msg: "Grants are unavailable" }, 500)
+        const grants = options.grants ?? []
+        if (request.method() === "DELETE") {
+          const clientId = url.searchParams.get("client_id")
+          const index = grants.findIndex((grant) => grant.client.id === clientId)
+          if (index === -1) return json(route, { code: 404, error_code: "oauth_client_not_found", msg: "No grant for that client" }, 404)
+          grants.splice(index, 1)
+          return route.fulfill({ status: 204, headers: CORS })
+        }
+        return json(route, grants)
+      }
       return json(route, { msg: `No fake for ${request.method()} ${path}` }, 404)
     }
 

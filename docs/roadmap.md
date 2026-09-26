@@ -140,7 +140,9 @@ Also done in this phase: the comment anchoring library (see the task below).
   shared projects.
 - **MCP Apps views:** a read-only document with its drawings, a single drawing,
   and draft component previews inside Claude and ChatGPT.
-- **Connected agents page** to see and revoke agent access.
+- **Connected agents page** to see and revoke agent access (done: `/agents`,
+  linked from the account header and menu; it lists grants once the OAuth
+  server is on).
 - **Self-host guide:** from a new free Supabase project to a running copy.
 - **Hosted launch** at https://elaborat.ing on a paid Supabase plan, so the
   project never pauses.

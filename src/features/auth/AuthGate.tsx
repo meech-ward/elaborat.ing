@@ -1,4 +1,5 @@
 import { Menu } from "@base-ui/react/menu"
+import { Link } from "@tanstack/react-router"
 import { CircleUserRound } from "lucide-react"
 import { createContext, useContext, useState, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
@@ -70,6 +71,12 @@ export function AccountMenu() {
         <Menu.Positioner sideOffset={4} className="z-50">
           <Menu.Popup className="min-w-48 rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-md">
             <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{account.email}</p>
+            <Menu.Item
+              className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent"
+              render={<Link to="/agents" />}
+            >
+              Connected agents
+            </Menu.Item>
             <Menu.Item
               className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent"
               onClick={() => {
