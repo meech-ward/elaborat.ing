@@ -18,7 +18,7 @@ Every task is done only when `bun run build`, `bun run typecheck`,
 `bun run lint` and `bun run test` pass, plus the task's own checks.
 
 Status values: **Ready** (take it), **Waiting** (depends on something named in
-the task), **Done** (merged).
+the task), **Taken** (the maintainer is doing it; skip it), **Done** (merged).
 
 ---
 
@@ -106,7 +106,7 @@ each passage's origin.
 
 ## T4: sign-in and OAuth consent pages
 
-**Status:** Ready
+**Status:** Taken (the maintainer is doing it)
 
 People sign in to elaborat.ing, and approve an agent (Claude, ChatGPT) on the
 OAuth consent page, which lives in this app at `/oauth/consent` (see
