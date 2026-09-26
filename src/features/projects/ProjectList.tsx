@@ -11,23 +11,27 @@ import { canEdit } from "@/features/project-storage/model"
 import { libraryFor, useLibraryState, type ProjectAccount } from "./account"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { ImportProject } from "./ImportProject"
+import { MembersDialog } from "./MembersDialog"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /**
- * A project's menu, by role: owners and editors archive and unarchive, the
- * owner deletes permanently, and anyone else can leave.
+ * A project's menu, by role: everyone sees its members, owners and editors
+ * archive and unarchive, the owner deletes permanently, and anyone else can
+ * leave.
  */
-function ProjectMenu({ entry, onArchive, onDelete, onLeave }: {
+function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
   entry: ProjectEntry
+  onMembers: () => void
   /** Archive, or unarchive an archived project. */
   onArchive: () => void
   onDelete: () => void
   onLeave: () => void
 }) {
   const items = [
+    { label: "Members", run: onMembers },
     ...(canEdit(entry.role) ? [{ label: entry.archived ? "Unarchive" : "Archive", run: onArchive }] : []),
     ...(entry.role === "owner" ? [{ label: "Delete permanently", run: onDelete }] : [{ label: "Leave project", run: onLeave }]),
   ]
@@ -61,6 +65,8 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [notice, setNotice] = useState<string | null>(null)
   // The project to delete permanently, with how many of its files have changes not yet synced.
   const [deleting, setDeleting] = useState<{ entry: ProjectEntry; unsynced: number } | null>(null)
+  // The project whose members are shown.
+  const [membersOf, setMembersOf] = useState<ProjectEntry | null>(null)
   const onError = useCallback((text: string) => setError(text), [])
   useBackgroundRefresh(library, onError, { invitations: true })
 
@@ -149,6 +155,11 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         {entry.role !== null ? (
           <ProjectMenu
             entry={entry}
+            onMembers={() => {
+              setError(null)
+              setNotice(null)
+              setMembersOf(entry)
+            }}
             onArchive={() => void setArchived(entry)}
             onDelete={() => void askToDelete(entry)}
             onLeave={() => void leave(entry)}
@@ -207,6 +218,16 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           </h3>
           <ul className="flex flex-col divide-y rounded-lg border">{archived.map(row)}</ul>
         </section>
+      ) : null}
+      {membersOf ? (
+        <MembersDialog
+          library={library}
+          projectId={membersOf.id}
+          title={membersOf.title}
+          owner={membersOf.role === "owner"}
+          you={account.userId}
+          onClose={() => setMembersOf(null)}
+        />
       ) : null}
       {deleting ? (
         <DeleteProjectDialog

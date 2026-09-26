@@ -63,6 +63,7 @@ const errorCode: Record<RemoteError["kind"], string> = { network: "", access: "4
 /** Answer Supabase for `page`, as `person`. */
 export async function fakeSupabase(page: Page, options: Options = {}): Promise<FakeSupabase> {
   const server = options.server ?? new FakeProjectServer()
+  server.emails.set(person.id, person.email)
   const remote = server.remote(person.id)
   const sockets: WebSocketRoute[] = []
   const fake: FakeSupabase = {
@@ -150,6 +151,13 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "archive_project") return answer(route, () => remote.archiveProject(body.project_id))
       if (rpc === "unarchive_project") return answer(route, () => remote.unarchiveProject(body.project_id))
       if (rpc === "delete_project") return answer(route, async () => (await remote.deleteProject(body.project_id), { id: body.project_id, deleted: true }))
+      if (rpc === "list_members") return answer(route, () => remote.listMembers(body.project_id))
+      if (rpc === "share_project") {
+        return answer(route, async () => (
+          await remote.shareProject(body.project_id, body.member_id, body.member_role),
+          { project_id: body.project_id, member_id: body.member_id, role: body.member_role }
+        ))
+      }
     }
 
     // Table reads (everything fits in the first page here)

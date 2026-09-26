@@ -255,6 +255,18 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
   )
 
   server.registerTool(
+    'list_members',
+    {
+      description:
+        'List who a project is shared with: its owner first, then the members, each with user_id, email, role, invited_at and accepted_at. ' +
+        'The owner also sees invitations not yet accepted (accepted_at null). Use a user_id with share_project to change a role.',
+      inputSchema: z.object({ project_id: projectId }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ project_id }) => rpc('list_members', { project_id }, 'members')
+  )
+
+  server.registerTool(
     'list_invitations',
     {
       description:

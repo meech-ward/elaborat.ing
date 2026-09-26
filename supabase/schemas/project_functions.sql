@@ -328,6 +328,75 @@ $$;
 revoke all on function public.list_invitations() from public, anon;
 grant execute on function public.list_invitations() to authenticated;
 
+-- Who a project is shared with: the owner first, then accepted members, then
+-- invitations still waiting, which only the owner sees. Each entry has the
+-- person's id and email, their role, and when they were invited and accepted
+-- (both null for the owner). The owner and accepted members may ask; anyone
+-- else, including a person whose invitation is still pending, is refused as
+-- for a project they cannot see.
+create function private.list_members(project_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  caller_role text;
+begin
+  perform private.require_user();
+  caller_role := private.project_role(list_members.project_id);
+  if caller_role is null then
+    raise exception 'Project unavailable' using errcode = '42501';
+  end if;
+  return (
+    select coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'user_id', x.user_id,
+          'email', x.email,
+          'role', x.role,
+          'invited_at', x.invited_at,
+          'accepted_at', x.accepted_at
+        )
+        order by x.rank, x.invited_at, x.email
+      ),
+      '[]'::jsonb
+    )
+    from (
+      select p.owner_id as user_id, u.email::text as email, 'owner' as role,
+        null::timestamptz as invited_at, null::timestamptz as accepted_at, 0 as rank
+      from public.projects p
+      join auth.users u on u.id = p.owner_id
+      where p.id = list_members.project_id
+      union all
+      select m.user_id, u.email::text, m.role, m.created_at, m.accepted_at,
+        case when m.accepted_at is null then 2 else 1 end
+      from public.project_members m
+      join auth.users u on u.id = m.user_id
+      where m.project_id = list_members.project_id
+        and (m.accepted_at is not null or caller_role = 'owner')
+    ) x
+  );
+end;
+$$;
+
+revoke all on function private.list_members(uuid) from public, anon;
+grant execute on function private.list_members(uuid) to authenticated;
+
+create function public.list_members(project_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select private.list_members(project_id)
+$$;
+
+revoke all on function public.list_members(uuid) from public, anon;
+grant execute on function public.list_members(uuid) to authenticated;
+
 -- Accept an invitation. Only a signed-in person can accept: an agent must not
 -- be able to join its user to a project someone else controls.
 create function private.accept_invitation(project_id uuid)
