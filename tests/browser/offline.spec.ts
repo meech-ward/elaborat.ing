@@ -97,12 +97,16 @@ test("after a project has opened, loading it again with no network brings back t
 
   fake.offline = true
   await context.setOffline(true)
-  // Load the same address again. In Firefox, Playwright's page.reload() fails
-  // offline (NS_ERROR_OFFLINE), while a navigation is answered by the worker.
-  await page.goto(page.url())
-  await expect(page.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible()
-  await expect(unsaved(page, "notes/a.md")).toBeVisible()
-  await expect(editorText(page)).toContainText("saveddraft")
+  // Load the same address again, in a fresh page so nothing survives in
+  // memory. Firefox's offline mode refuses a reload of the current page
+  // (NS_ERROR_OFFLINE) before the worker sees it, but not a new load.
+  const address = page.url()
+  await page.close()
+  const again = await context.newPage()
+  await again.goto(address)
+  await expect(again.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible()
+  await expect(unsaved(again, "notes/a.md")).toBeVisible()
+  await expect(editorText(again)).toContainText("saveddraft")
 })
 
 test("offline, a new tab lists the project from the device and opens it", async ({ page, context }) => {
