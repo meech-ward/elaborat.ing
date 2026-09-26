@@ -165,6 +165,34 @@ function indexById(elements: DrawingElement[]): Map<string, DrawingElement> {
 }
 
 /**
+ * How many elements `after` adds, removes and changes compared with `before`,
+ * as a person would count them: an element deleted on the canvas (kept with
+ * `isDeleted`) counts as removed, and volatile metadata is not a change.
+ */
+export function countElementChanges(
+  before: DrawingScene,
+  after: DrawingScene,
+): { added: number; removed: number; changed: number } {
+  assertSceneShape(before);
+  assertSceneShape(after);
+  const live = (scene: DrawingScene) => indexById(scene.elements.filter((element) => element.isDeleted !== true));
+  const beforeById = live(before);
+  const afterById = live(after);
+  let added = 0;
+  let changed = 0;
+  for (const [id, next] of afterById) {
+    const prev = beforeById.get(id);
+    if (!prev) added++;
+    else if (stableStringify(stripVolatile(prev)) !== stableStringify(stripVolatile(next))) changed++;
+  }
+  let removed = 0;
+  for (const id of beforeById.keys()) {
+    if (!afterById.has(id)) removed++;
+  }
+  return { added, removed, changed };
+}
+
+/**
  * Field-level diff between two scenes. Added/removed element ids, one row
  * per changed field on surviving elements, appState and file changes.
  * Volatile metadata (updated/versionNonce) is excluded.

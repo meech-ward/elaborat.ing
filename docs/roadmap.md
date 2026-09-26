@@ -96,8 +96,10 @@ this repository once the steps before them have landed.
    files without changing them or keeping drafts, and nothing offers to
    create, import, rename, move or delete files.
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
-    with drafts and conflict recovery (keep mine, keep theirs, keep both), and
-    leaving a project or signing out keeps unsaved edits first. Drawings and
+    with drafts and conflict recovery (keep mine, keep theirs, keep both, after
+    comparing the two versions: a diff for text and D2 code, pictures and
+    element counts for drawings), and leaving a project or signing out keeps
+    unsaved edits first. Drawings and
     diagrams got their views in steps 13 and 14, and renaming and moving came
     with step 12. The rendered view keeps its place and focus across a Source
     round trip, a touch scroll never focuses it while a tap does, one undo

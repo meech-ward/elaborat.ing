@@ -1,4 +1,4 @@
-import { FileStoreError, type FileRef, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
+import { FileStoreError, type ConflictCopies, type FileRef, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
 
 /**
  * The storage the workbench edits through: one project's files on this
@@ -13,6 +13,8 @@ export interface WorkspaceStore {
   /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
   listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
   read(path: string): Promise<WorkspaceFile>
+  /** Both versions of a file whose sync conflicts (this device's and the server's), or null when it has none. */
+  readConflict(path: string): Promise<ConflictCopies | null>
   write(path: string, input: { content: string; expectedRevision: string | null }): Promise<{ path: string; revision: string; size: number }>
   createDirectory(path: string): Promise<{ path: string }>
   /** Apply moves and writes on this device as one save that syncs together. */
@@ -62,6 +64,7 @@ export function projectWorkspace(
       }
       return { ...file, revision: revisionOf(file.revision) }
     },
+    readConflict: (path) => store.conflictCopies(path),
     async write(path, { content, expectedRevision }) {
       const saved = await store.write(path, content, expectedRevision)
       afterSave()

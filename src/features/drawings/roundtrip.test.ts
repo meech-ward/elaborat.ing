@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import LZString from 'lz-string';
 import {
+  countElementChanges,
   diffDrawingScenes,
   durableAppState,
   fingerprintScene,
@@ -125,6 +126,24 @@ describe('saveDrawingFile', () => {
     expect(scenesEqual(scene, touched)).toBe(false);
     expect(fingerprintScene(scene)).toBe(fingerprintScene(touched));
     expect(diffDrawingScenes(scene, touched).empty).toBe(true);
+  });
+
+  test('element counts: added, removed (deleted on the canvas included) and changed, ignoring volatile metadata', () => {
+    const scene = demoScene();
+    const [first, second, third, ...rest] = scene.elements;
+    const after: DrawingScene = {
+      ...scene,
+      elements: [
+        { ...first, x: first.x + 10, version: Number(first.version ?? 1) + 1 },
+        { ...second, updated: 999999, versionNonce: 123456789 },
+        { ...third, isDeleted: true },
+        ...rest.slice(1),
+        { ...first, id: 'new-rect' },
+      ],
+    };
+    expect(countElementChanges(scene, after)).toEqual({ added: 1, removed: 2, changed: 1 });
+    expect(countElementChanges(after, scene)).toEqual({ added: 2, removed: 1, changed: 1 });
+    expect(countElementChanges(scene, scene)).toEqual({ added: 0, removed: 0, changed: 0 });
   });
 
   test('durable background changes dirty the scene; scroll never does', () => {
