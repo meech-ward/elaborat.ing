@@ -560,7 +560,7 @@ but has no browser journey.
 
 ## T20: a reloaded project never drops a remembered tab
 
-**Status:** Ready
+**Status:** Done (by the maintainer)
 
 Once, under a full parallel browser run, the journey "closing a tab from the
 keyboard works, and an unsaved one asks first" in
