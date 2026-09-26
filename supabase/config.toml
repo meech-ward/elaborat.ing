@@ -417,6 +417,11 @@ verify_jwt = false
 [functions.embed]
 verify_jwt = false
 
+# Called for a signed-in person, so the gateway verifies their token too.
+# Declared so that deploys which only take declared functions include it.
+[functions.search]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
