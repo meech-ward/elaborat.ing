@@ -88,9 +88,10 @@ function journeys() {
     await page.keyboard.press("ControlOrMeta+z")
     await expect(deep).toHaveText(line(45))
     // Saving now writes the exact original bytes, so the server's copy is unchanged.
+    // The app syncs a second after a save, so wait out that second before reading it.
     await save(page)
     await expect(unsaved(page)).toHaveCount(0)
-    await quiet(fake)
+    await quiet(fake, 1_500)
     expect(fake.server.content(id, PATH)).toBe(NOTE)
   })
 }

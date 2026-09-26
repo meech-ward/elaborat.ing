@@ -494,7 +494,7 @@ elaborat.ing has no test for it yet.
 
 ## T17: a touch scroll over a rendered note does not focus the editor, and a tap does
 
-**Status:** Ready
+**Status:** Done (#17)
 
 On a phone, starting to scroll over rendered text must not focus the prose
 (that would open the keyboard and jump the page). A completed tap should
@@ -516,7 +516,7 @@ fallback after completed taps; this task proves it.
 
 ## T18: Undo in the Source view reverts an edit made in the Rendered view
 
-**Status:** Ready
+**Status:** Done (#18)
 
 Rendered edits change the note's source, and the Source editor records them in
 its own undo history (`src/features/source/renderedHistory.ts`), so there is
@@ -600,5 +600,66 @@ save or a reload; it never compares the text with the saved copy.
   edit in the Rendered view undone with Ctrl+Z there.
 - Drafts already follow the text (a draft equal to the saved copy is
   dropped), so this is about what the person sees and the leave warning.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T22: rename and move a folder
+
+**Status:** Ready
+
+Files can be renamed and moved, with every reference to them rewritten in the
+same save (`src/features/workbench/movePlan.ts`, `useFileMoves.ts`,
+`MoveDialog.tsx`). Folders cannot yet. The database already moves a folder
+atomically: one `save_files` batch with `mkdir` for the new folders, `move` for
+each file, and `rmdir` for the old ones.
+
+- Extend the planner with a folder request (rename in place, or move into
+  another folder or the top level). It plans every file and subfolder under
+  it, rewrites references in the moved files and in files that point into the
+  folder, and returns the same kinds of blockers as a file move: unsaved
+  edits, a sync conflict, a file kind the app does not rename, a target that
+  already exists, and moving a folder into itself or one of its own folders.
+- A folder move is one save. If it needs more changes than one `save_files`
+  call accepts (4096), refuse it with a message that says so, rather than
+  splitting it.
+- The explorer's folder menu gets Rename and Move, using the same dialog as
+  files. Open tabs of moved files follow them, and the folder's expanded state
+  follows too.
+- Unit tests in `movePlan.test.ts` for each blocker and for reference
+  rewriting both into and out of the folder. A browser journey in
+  `tests/browser/moves.spec.ts`: rename a folder holding a note that embeds a
+  drawing in the same folder and is linked from a note outside it; after the
+  save, the server holds the new paths, both references point at them, and
+  one `save_files` request carried the whole move.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T23: accept an invitation, and leave a shared project
+
+**Status:** Ready
+
+The database lets people accept invitations and leave projects shared with
+them (`list_invitations`, `accept_invitation` and `leave_project` in
+`supabase/schemas/project_functions.sql`), but the app has no way to do
+either. Until someone accepts, the project is invisible to them: it is not in
+`list_projects`, and its files and passages cannot be read.
+
+- Add the three calls to the remote port (`src/features/project-storage/remote.ts`)
+  with Zod types that match what the functions return.
+- The in-memory server (`fakeServer.ts`) models invitations the way the
+  database does: an invited person sees the project only after accepting,
+  only they can accept, owners cannot leave, and a person who is not a member
+  gets the same error as the database's `42501`. Unit tests cover each rule.
+- The projects home shows pending invitations above the list, with the
+  project title and role, and an Accept button. Accepting adds the project to
+  the list and opens it.
+- A project shared with you (you are not its owner) has "Leave project" in its
+  menu, with a confirmation. Leaving removes the project and its files from
+  this device. If the device holds changes to it that have not synced, leaving
+  is refused with a message naming the files, so nothing unsaved is lost.
+- Browser journeys: an invitation appears, Accept opens the project; leaving
+  a project with nothing unsynced removes it from the list and from the
+  device after a reload; leaving with an unsynced edit is refused. The fake in
+  `tests/browser/fake-supabase.ts` routes the three RPCs.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
