@@ -80,9 +80,14 @@ this repository once the steps before them have landed.
    (done).** Sign-out runs every registered guard first (the workbench
    registers one that keeps unsaved edits, step 10), and projects stay on the
    device under their account.
-9. **The app opens a user's projects at real URLs, online or offline.**
+9. **The app opens a user's projects at real URLs, online or offline (done).**
+   `/projects/<id>/<file path>`; projects download on first open, sync in the
+   background and on Realtime change signals, and wait on the device while
+   offline. Guarding navigation away from unsaved edits comes with the editor
+   (step 10).
 10. **Notes open in tabs, edit in source and rendered views, and save** with
-    drafts and conflict recovery. This step adds the journeys that need the
+    drafts and conflict recovery, and leaving a project or signing out waits
+    until unsaved edits are kept. This step adds the journeys that need the
     source editor: exact bytes and one undo for rendered edits, and typing,
     undo and redo in the source view.
 11. **Custom MDX components load from project files (open for contributors).**

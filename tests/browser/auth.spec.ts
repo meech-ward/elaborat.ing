@@ -1,62 +1,13 @@
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test, type Page, type Request } from "@playwright/test"
+import { expect, test } from "@playwright/test"
+import { fakeSupabase, person as user } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
-// Sign-in and an agent's consent request, against Supabase Auth's HTTP API
-// answered by the test (the build points at http://127.0.0.1:54321 through
-// `.env.browser-test`).
+// Sign-in and an agent's consent request, against the stand-in Supabase in
+// fake-supabase.ts (the build points at it through `.env.browser-test`).
 
-const AUTH = "http://127.0.0.1:54321/auth/v1"
-const user = {
-  id: "0b6a4a52-6f3e-4c1a-9d59-3b7f1c2a9e01",
-  aud: "authenticated",
-  role: "authenticated",
-  email: "person@example.com",
-  app_metadata: { provider: "email" },
-  user_metadata: {},
-  created_at: "2026-09-26T00:00:00Z",
-}
-const session = () => ({
-  access_token: "header.eyJzdWIiOiIwYjZhNGE1MiJ9.signature",
-  token_type: "bearer",
-  expires_in: 3600,
-  expires_at: Math.floor(Date.now() / 1000) + 3600,
-  refresh_token: "refresh-token",
-  user,
-})
-
-/** Answer Supabase Auth's requests. Returns the requests it saw. */
-async function fakeAuth(page: Page, decision?: { redirect: string }) {
-  const seen: Request[] = []
-  await page.route(`${AUTH}/**`, async (route) => {
-    const request = route.request()
-    const headers = {
-      "access-control-allow-origin": "*",
-      "access-control-allow-headers": "*",
-      "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-    }
-    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers })
-    seen.push(request)
-    const { pathname } = new URL(request.url())
-    const json = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: "application/json", body: JSON.stringify(body) })
-    if (pathname.endsWith("/token")) return json(session())
-    if (pathname.endsWith("/user")) return json(user)
-    if (pathname.endsWith("/otp")) return json({})
-    if (pathname.endsWith("/logout")) return route.fulfill({ status: 204, headers })
-    if (pathname.endsWith("/oauth/authorizations/auth-123")) {
-      return json({
-        authorization_id: "auth-123",
-        redirect_uri: "https://claude.ai/api/mcp/auth_callback",
-        client: { id: "client-1", name: "Claude", uri: "https://claude.ai", logo_uri: "" },
-        user: { id: user.id, email: user.email },
-        scope: "openid email",
-      })
-    }
-    if (pathname.endsWith("/oauth/authorizations/auth-123/consent") && decision) return json({ redirect_url: decision.redirect })
-    return json({ msg: `No fake for ${request.method()} ${pathname}` }, 404)
-  })
-  return seen
-}
+const fakeAuth = async (page: import("@playwright/test").Page, decision?: { redirect: string }) =>
+  (await fakeSupabase(page, { consentRedirect: decision?.redirect })).requests
 
 test("the sign-in page offers a password and an emailed link, with no accessibility problems", async ({ page }) => {
   await fakeAuth(page)
@@ -123,7 +74,7 @@ test("the home page shows who is signed in, and signing out forgets the account 
   expect(JSON.parse((await remembered())!)).toMatchObject({ userId: user.id, email: user.email })
 
   await page.getByRole("button", { name: "Sign out" }).click()
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible()
+  await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible()
   expect(await remembered()).toBeNull()
   expect(seen.some((request) => new URL(request.url()).pathname.endsWith("/logout"))).toBe(true)
 })

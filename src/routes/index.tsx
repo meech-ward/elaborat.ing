@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { AccountHeader } from "@/features/auth"
+import { ProjectsHome } from "@/features/projects"
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -15,6 +16,7 @@ function Home() {
           Documents and diagrams for people who like Markdown, and the agents they work with.
           Open source, and being built in public.
         </p>
+        <ProjectsHome />
       </main>
     </>
   )
