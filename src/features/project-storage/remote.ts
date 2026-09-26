@@ -27,6 +27,23 @@ export const RemoteInvitation = z.object({
 })
 export type RemoteInvitation = z.infer<typeof RemoteInvitation>
 
+/** The roles the owner can give someone else. */
+export type MemberRole = RemoteInvitation["role"]
+
+/**
+ * A person with access to a project, or invited to it, as `list_members`
+ * returns them. The owner has neither time; an invitation not yet accepted
+ * has no `accepted_at`.
+ */
+export const RemoteMember = z.object({
+  user_id: z.uuid(),
+  email: z.string().nullable(),
+  role: Role,
+  invited_at: z.string().nullable(),
+  accepted_at: z.string().nullable(),
+})
+export type RemoteMember = z.infer<typeof RemoteMember>
+
 export const RemoteFile = z.object({
   id: z.uuid(),
   path: ProjectPath,
@@ -124,6 +141,13 @@ export interface ProjectRemote {
   acceptInvitation(projectId: string): Promise<RemoteProject>
   /** Leave a project shared with the caller, or decline an invitation. Owners cannot leave. */
   leaveProject(projectId: string): Promise<void>
+  /**
+   * Who the project is shared with: the owner, then members, then (for the
+   * owner only) invitations not yet accepted. Anyone else is refused (42501).
+   */
+  listMembers(projectId: string): Promise<RemoteMember[]>
+  /** Invite someone, change their role, or remove them or their invitation (role null). Owner only. */
+  shareProject(projectId: string, memberId: string, role: MemberRole | null): Promise<void>
   /** Archive a project, so it refuses changes (55000) until unarchived. Owners and editors, agents included. */
   archiveProject(projectId: string): Promise<RemoteProject>
   unarchiveProject(projectId: string): Promise<RemoteProject>
@@ -181,6 +205,16 @@ export class SupabaseProjectRemote implements ProjectRemote {
 
   async leaveProject(projectId: string) {
     z.object({ project_id: z.uuid(), left: z.literal(true) }).parse(await this.rpc("leave_project", { project_id: projectId }))
+  }
+
+  async listMembers(projectId: string) {
+    return z.array(RemoteMember).parse(await this.rpc("list_members", { project_id: projectId }))
+  }
+
+  async shareProject(projectId: string, memberId: string, role: MemberRole | null) {
+    z.object({ project_id: z.uuid(), member_id: z.uuid() }).parse(
+      await this.rpc("share_project", { project_id: projectId, member_id: memberId, member_role: role }),
+    )
   }
 
   async archiveProject(projectId: string) {

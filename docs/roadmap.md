@@ -168,7 +168,10 @@ Also done in this phase: the comment anchoring library (see the task below).
   invitations are listed on the projects home, and a shared project's menu
   there has "Leave project"; leaving is refused while this device holds
   changes to it that have not synced).
-- Member list, and a warning before sharing as editor.
+- Member list (done: a project's menu on the projects home has "Members",
+  listing its owner and members with their email and role; the owner changes
+  a role or removes a member or an invitation there, and agents can read the
+  list with the `list_members` tool), and a warning before sharing as editor.
 - The commenter role, and comments on documents, sections, text selections and
   drawing elements.
 

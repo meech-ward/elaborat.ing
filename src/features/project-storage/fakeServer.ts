@@ -1,5 +1,15 @@
 import { isValidProjectPath, MAX_ENTRIES, MAX_PROJECT_BYTES, byteLength, type Role, type SaveChange } from "./model"
-import { RemoteError, RemoteProject, SaveResult, type DeletedFile, type ProjectRemote, type RemoteFile, type RemoteInvitation } from "./remote"
+import {
+  RemoteError,
+  RemoteProject,
+  SaveResult,
+  type DeletedFile,
+  type MemberRole,
+  type ProjectRemote,
+  type RemoteFile,
+  type RemoteInvitation,
+  type RemoteMember,
+} from "./remote"
 
 /**
  * An in-memory stand-in for the project service, for tests. It follows the
@@ -20,10 +30,8 @@ type ServerProject = {
   folders: Set<string>
   savedResults: Map<string, { user: string; payload: string; result: SaveResult }>
   /** Everyone the owner shared the project with. An invitation grants nothing until its person accepts it. */
-  members: Map<string, { role: InvitedRole; accepted: boolean; invitedAt: string }>
+  members: Map<string, { role: MemberRole; invitedAt: string; acceptedAt: string | null }>
 }
-
-type InvitedRole = RemoteInvitation["role"]
 
 const ancestors = (path: string) => {
   const parts = path.split("/")
@@ -38,8 +46,10 @@ export class FakeProjectServer {
   /** Apply the next N calls but lose their responses, as a dropped connection would. */
   loseResponses = 0
   maxFiles = MAX_ENTRIES
-  /** Orders invitations, newest last, as their times would. */
-  private invitations = 0
+  /** Each account's email, as `auth.users` holds it; an account without one lists as null. */
+  readonly emails = new Map<string, string>()
+  /** Orders invitations and acceptances, newest last, as their times would. */
+  private ticks = 0
 
   remote(user: string): ProjectRemote {
     const call = async <T>(method: string, args: unknown[], work: () => T): Promise<T> => {
@@ -74,6 +84,9 @@ export class FakeProjectServer {
       listInvitations: () => call("listInvitations", [], () => this.pendingFor(user)),
       acceptInvitation: (projectId) => call("acceptInvitation", [projectId], () => this.accept(user, projectId)),
       leaveProject: (projectId) => call("leaveProject", [projectId], () => this.leave(user, projectId)),
+      listMembers: (projectId) => call("listMembers", [projectId], () => this.members(user, projectId)),
+      shareProject: (projectId, memberId, role) =>
+        call("shareProject", [projectId, memberId, role], () => this.setMember(user, projectId, memberId, role)),
       archiveProject: (projectId) => call("archiveProject", [projectId], () => this.setArchived(user, projectId, true)),
       unarchiveProject: (projectId) => call("unarchiveProject", [projectId], () => this.setArchived(user, projectId, false)),
       deleteProject: (projectId) => call("deleteProject", [projectId], () => this.remove(user, projectId)),
@@ -83,28 +96,31 @@ export class FakeProjectServer {
   role(user: string, project: ServerProject): Role | null {
     if (project.owner === user) return "owner"
     const member = project.members.get(user)
-    return member?.accepted ? member.role : null
+    return member?.acceptedAt ? member.role : null
   }
 
   /** Make `user` a member, as if they had accepted an invitation. */
-  share(projectId: string, user: string, role: InvitedRole) {
+  share(projectId: string, user: string, role: MemberRole) {
     this.invite(projectId, user, role)
-    this.projects.get(projectId)!.members.get(user)!.accepted = true
+    this.projects.get(projectId)!.members.get(user)!.acceptedAt = this.tick()
   }
 
   /** Invite `user`, as `share_project` does: they see nothing of the project until they accept. */
-  invite(projectId: string, user: string, role: InvitedRole) {
+  invite(projectId: string, user: string, role: MemberRole) {
     const project = this.projects.get(projectId)!
-    const invitedAt = new Date(Date.UTC(2026, 0, 1, 0, 0, ++this.invitations)).toISOString()
-    project.members.set(user, { role, accepted: false, invitedAt })
+    project.members.set(user, { role, invitedAt: this.tick(), acceptedAt: null })
     project.revision++
+  }
+
+  private tick(): string {
+    return new Date(Date.UTC(2026, 0, 1, 0, 0, ++this.ticks)).toISOString()
   }
 
   private pendingFor(user: string): RemoteInvitation[] {
     return [...this.projects.values()]
       .flatMap((project) => {
         const member = project.members.get(user)
-        return member && !member.accepted ? [{ project_id: project.id, title: project.title, role: member.role, invited_at: member.invitedAt }] : []
+        return member && !member.acceptedAt ? [{ project_id: project.id, title: project.title, role: member.role, invited_at: member.invitedAt }] : []
       })
       .sort((a, b) => (a.invited_at < b.invited_at ? 1 : -1))
   }
@@ -114,8 +130,8 @@ export class FakeProjectServer {
     const project = this.projects.get(projectId)
     const member = project?.members.get(user)
     if (!project || !member) throw new RemoteError("access", "No invitation for this project")
-    if (!member.accepted) {
-      member.accepted = true
+    if (!member.acceptedAt) {
+      member.acceptedAt = this.tick()
       project.revision++
     }
     return this.summary(project, user)
@@ -126,6 +142,50 @@ export class FakeProjectServer {
     const project = this.projects.get(projectId)
     if (!project || !project.members.delete(user)) throw new RemoteError("access", "You are not a member of this project")
     project.revision++
+  }
+
+  /**
+   * The owner first, then accepted members, then invitations not yet
+   * accepted, which only the owner sees. Anyone else, a person still invited
+   * included, is refused (42501).
+   */
+  private members(user: string, projectId: string): RemoteMember[] {
+    const project = this.projects.get(projectId)
+    const role = project ? this.role(user, project) : null
+    if (!project || !role) throw new RemoteError("access", "Project unavailable")
+    const listed = [...project.members]
+      .filter(([, member]) => member.acceptedAt || role === "owner")
+      .map(([id, member]): RemoteMember => ({
+        user_id: id,
+        email: this.emails.get(id) ?? null,
+        role: member.role,
+        invited_at: member.invitedAt,
+        accepted_at: member.acceptedAt,
+      }))
+      .sort((a, b) => Number(a.accepted_at === null) - Number(b.accepted_at === null) || a.invited_at!.localeCompare(b.invited_at!))
+    const owner: RemoteMember = { user_id: project.owner, email: this.emails.get(project.owner) ?? null, role: "owner", invited_at: null, accepted_at: null }
+    return [owner, ...listed]
+  }
+
+  /**
+   * The owner invites someone, changes their role, or removes them or their
+   * invitation (role null), as `share_project` does. Changing the role of an
+   * invitation keeps it an invitation.
+   */
+  private setMember(user: string, projectId: string, memberId: string, role: MemberRole | null): void {
+    const project = this.projects.get(projectId)
+    if (!project || project.owner !== user) throw new RemoteError("access", "Only the project owner can change sharing")
+    if (memberId === project.owner) throw new RemoteError("invalid", "Invalid member")
+    if (role !== null && !["viewer", "commenter", "editor"].includes(role)) throw new RemoteError("invalid", "Role must be viewer, commenter or editor")
+    const member = project.members.get(memberId)
+    if (role === null) {
+      if (project.members.delete(memberId)) project.revision++
+    } else if (!member) {
+      this.invite(projectId, memberId, role)
+    } else if (member.role !== role) {
+      member.role = role
+      project.revision++
+    }
   }
 
   /** Owners and editors archive and unarchive, whether or not the project is archived already (42501 for anyone else). */

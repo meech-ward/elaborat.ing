@@ -92,6 +92,7 @@ const CASES: [string, Record<string, unknown>, Call[], Record<string, Answer>?][
   ['whoami', {}, []],
   ['list_projects', {}, [{ rpc: 'list_projects' }]],
   ['list_invitations', {}, [{ rpc: 'list_invitations' }]],
+  ['list_members', { project_id: PROJECT }, [{ rpc: 'list_members', args: { project_id: PROJECT } }]],
   [
     'list_files',
     { project_id: PROJECT },
@@ -253,7 +254,7 @@ Deno.test('share_project with role null removes the member', async () => {
   assertEquals(calls, [{ rpc: 'share_project', args: { project_id: PROJECT, member_id: MEMBER, member_role: null } }])
 })
 
-Deno.test('list_projects and list_invitations wrap their arrays', async () => {
+Deno.test('list_projects, list_invitations and list_members wrap their arrays', async () => {
   const projects = [{ id: PROJECT, title: 'Plans', revision: 4, archived_at: null, role: 'owner' }]
   const listed = await callTool('list_projects', {}, { list_projects: { data: projects, error: null } })
   assertEquals(listed.result.structuredContent, { projects })
@@ -261,6 +262,13 @@ Deno.test('list_projects and list_invitations wrap their arrays', async () => {
   const invitations = [{ project_id: PROJECT, title: 'Shared', role: 'viewer' }]
   const invited = await callTool('list_invitations', {}, { list_invitations: { data: invitations, error: null } })
   assertEquals(invited.result.structuredContent, { invitations })
+
+  const members = [
+    { user_id: MEMBER, email: 'ada@example.com', role: 'owner', invited_at: null, accepted_at: null },
+    { user_id: PROJECT, email: 'grace@example.com', role: 'viewer', invited_at: '2026-09-26T00:00:00Z', accepted_at: null },
+  ]
+  const listedMembers = await callTool('list_members', { project_id: PROJECT }, { list_members: { data: members, error: null } })
+  assertEquals(listedMembers.result.structuredContent, { members })
 })
 
 Deno.test('list_files and read_file return what the queries find', async () => {
@@ -299,6 +307,7 @@ Deno.test('Supabase errors come back as readable error results', async () => {
 Deno.test('invalid input is rejected before any Supabase call', async () => {
   const invalid: [string, Record<string, unknown>][] = [
     ['archive_project', { project_id: 'not-a-uuid' }],
+    ['list_members', { project_id: 'not-a-uuid' }],
     ['read_file', { project_id: PROJECT, path: '' }],
     ['write_file', { project_id: PROJECT, path: 'a.md', content: 'x', base_version: 0 }],
     ['save_files', { project_id: PROJECT, changes: [{ op: 'chmod', path: 'a.md' }] }],

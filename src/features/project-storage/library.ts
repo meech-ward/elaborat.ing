@@ -1,6 +1,6 @@
 import type { ProjectDatabase } from "./database"
-import { isDirty, type LocalFile, type LocalProject } from "./model"
-import { RemoteError, type ProjectRemote, type RemoteInvitation, type RemoteProject } from "./remote"
+import { isDirty, type LocalFile, type LocalProject, type Role } from "./model"
+import { RemoteError, type MemberRole, type ProjectRemote, type RemoteInvitation, type RemoteProject } from "./remote"
 import { ProjectSync, type SyncOutcome } from "./sync"
 
 /**
@@ -32,6 +32,16 @@ export type ProjectEntry = {
 
 /** A project someone shared with this account, waiting for it to accept. */
 export type Invitation = { projectId: string; title: string; role: RemoteInvitation["role"] }
+
+/** Someone with access to a project, or invited to it. */
+export type Member = {
+  userId: string
+  /** Null for an account without an email address. */
+  email: string | null
+  role: Role
+  /** Invited and not yet accepted. Only the owner is shown these. */
+  invited: boolean
+}
 
 export type LibraryState = {
   entries: ProjectEntry[]
@@ -206,6 +216,34 @@ export class ProjectLibrary {
     this.catalog = this.catalog.filter((entry) => entry.id !== projectId)
     await this.sync.forget(projectId)
     await this.load()
+  }
+
+  /**
+   * Who a project is shared with: its owner first, then members, then, for
+   * the owner, invitations not yet accepted. Needs a connection.
+   */
+  async members(projectId: string): Promise<Member[]> {
+    const local = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(projectId))
+    if (local?.created === false && !this.catalog.some((entry) => entry.id === projectId)) {
+      throw new Error("This project is only on this device so far, so it is not shared with anyone.")
+    }
+    try {
+      const listed = await this.remote.listMembers(projectId)
+      return listed.map((entry) => ({ userId: entry.user_id, email: entry.email, role: entry.role, invited: entry.role !== "owner" && entry.accepted_at === null }))
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") throw new Error("Seeing who a project is shared with needs a connection. Try again when you are online.")
+      throw error
+    }
+  }
+
+  /** Change a member's role, or remove a member or an invitation (role null). Owner only; needs a connection. */
+  async share(projectId: string, userId: string, role: MemberRole | null): Promise<void> {
+    try {
+      await this.remote.shareProject(projectId, userId, role)
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") throw new Error("Changing who a project is shared with needs a connection. Try again when you are online.")
+      throw error
+    }
   }
 
   /** Archive a project: it stays readable, and refuses changes until it is unarchived. */

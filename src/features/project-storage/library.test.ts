@@ -249,3 +249,43 @@ test("only the owner deletes permanently, it needs a connection, and a project o
   expect(await db.transaction(partition, "readonly", (tx) => tx.getProject(local))).toBeNull()
   expect(server.calls.filter((call) => call.method === "deleteProject").map((call) => call.args)).toEqual([[shared], [mine]])
 })
+
+test("members lists who a project is shared with, and the owner changes a role and removes an invitation", async () => {
+  const server = new FakeProjectServer()
+  const { library: here } = library(server)
+  const id = await here.create("Shared")
+  await here.syncProject(id)
+  const invited = crypto.randomUUID()
+  server.emails.set(OWNER, "owner@example.com")
+  server.emails.set(OTHER, "other@example.com")
+  server.share(id, OTHER, "editor")
+  server.invite(id, invited, "viewer")
+
+  expect(await here.members(id)).toEqual([
+    { userId: OWNER, email: "owner@example.com", role: "owner", invited: false },
+    { userId: OTHER, email: "other@example.com", role: "editor", invited: false },
+    { userId: invited, email: null, role: "viewer", invited: true },
+  ])
+  await here.share(id, OTHER, "viewer")
+  await here.share(id, invited, null)
+  expect((await here.members(id)).map((member) => [member.userId, member.role])).toEqual([
+    [OWNER, "owner"],
+    [OTHER, "viewer"],
+  ])
+  await expect(new ProjectLibrary(new MemoryProjectDatabase(), server.remote(OTHER), partition).share(id, OWNER, null)).rejects.toThrow(
+    "Only the project owner can change sharing",
+  )
+})
+
+test("members and sharing need a connection, and a project only on this device is shared with no one", async () => {
+  const server = new FakeProjectServer()
+  const { library: here } = library(server)
+  const id = await here.create("Notes")
+  await expect(here.members(id)).rejects.toThrow("This project is only on this device so far, so it is not shared with anyone.")
+  expect(server.calls.filter((call) => call.method === "listMembers")).toEqual([])
+
+  await here.syncProject(id)
+  server.offline = true
+  await expect(here.members(id)).rejects.toThrow("Seeing who a project is shared with needs a connection. Try again when you are online.")
+  await expect(here.share(id, OTHER, "viewer")).rejects.toThrow("Changing who a project is shared with needs a connection. Try again when you are online.")
+})

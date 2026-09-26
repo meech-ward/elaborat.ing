@@ -149,7 +149,9 @@ path.
 **Decision: sharing is an invitation.** Sharing a project with someone creates
 an invitation that grants nothing until they accept it, and only a signed-in
 person can accept, never an agent. Members can leave a project (or decline an
-invitation) themselves.
+invitation) themselves. The owner and accepted members can see who a project
+is shared with, each person's email included (`list_members`); only the owner
+sees invitations not yet accepted, and only the owner changes them.
 
 **Decision: project ids are chosen by the client**, so projects can be created
 offline. If `create_project` answers "Project unavailable", the id already

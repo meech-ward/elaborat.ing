@@ -143,7 +143,7 @@ test("an invitation shows on the projects home, and accepting it opens the proje
   await expect(page.getByRole("heading", { level: 1, name: "Their notes" })).toBeVisible()
   await explorer(page)
   await expect(page.getByRole("button", { name: "a.md", exact: true })).toBeVisible()
-  expect(server.projects.get(id)!.members.get(person.id)?.accepted).toBe(true)
+  expect(server.projects.get(id)!.members.get(person.id)?.acceptedAt).not.toBeNull()
 
   await page.getByRole("link", { name: "Your projects" }).click()
   await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
@@ -313,7 +313,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await expect(page.getByText("No projects yet.")).toBeVisible()
 })
 
-test("a project's menu depends on the role: a viewer can only leave", async ({ page }) => {
+test("a project's menu depends on the role: a viewer can only see its members and leave", async ({ page }) => {
   const server = new FakeProjectServer()
   await serverProject(server, "Mine", {})
   await sharedWithMe(server, "Edited", {}, true)
@@ -322,9 +322,9 @@ test("a project's menu depends on the role: a viewer can only leave", async ({ p
   await fakeSupabase(page, { server })
   await signedIn(page)
   await home(page)
-  expect(await menuItems(page, "Mine")).toEqual(["Archive", "Delete permanently"])
-  expect(await menuItems(page, "Edited")).toEqual(["Archive", "Leave project"])
-  expect(await menuItems(page, "Viewed")).toEqual(["Leave project"])
+  expect(await menuItems(page, "Mine")).toEqual(["Members", "Archive", "Delete permanently"])
+  expect(await menuItems(page, "Edited")).toEqual(["Members", "Archive", "Leave project"])
+  expect(await menuItems(page, "Viewed")).toEqual(["Members", "Leave project"])
 })
 
 test("the projects home does not download the editor", async ({ page }) => {

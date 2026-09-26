@@ -143,3 +143,66 @@ test("only the owner deletes a project, and then it is gone for everyone", async
   await refusal(server.remote(OWNER).changedFiles(id, 0, 100))
   await refusal(server.remote(OWNER).deleteProject(id))
 })
+
+// Listing and changing members follow list_members and share_project: the
+// owner and accepted members list them, only the owner sees invitations, and
+// only the owner changes them.
+
+test("the owner lists everyone, invitations last; a member sees no invitations; anyone else is refused", async () => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server)
+  server.emails.set(OWNER, "owner@example.com")
+  server.emails.set(OTHER, "other@example.com")
+  server.invite(id, THIRD, "commenter")
+  server.share(id, OTHER, "editor")
+
+  const listed = await server.remote(OWNER).listMembers(id)
+  expect(listed).toEqual([
+    { user_id: OWNER, email: "owner@example.com", role: "owner", invited_at: null, accepted_at: null },
+    { user_id: OTHER, email: "other@example.com", role: "editor", invited_at: expect.any(String), accepted_at: expect.any(String) },
+    // An account without an email lists as null.
+    { user_id: THIRD, email: null, role: "commenter", invited_at: expect.any(String), accepted_at: null },
+  ])
+  expect((await server.remote(OTHER).listMembers(id)).map((member) => member.user_id)).toEqual([OWNER, OTHER])
+  expect(await refusal(server.remote(THIRD).listMembers(id))).toBe("Project unavailable")
+  expect(await refusal(server.remote(crypto.randomUUID()).listMembers(id))).toBe("Project unavailable")
+  expect(await refusal(server.remote(OWNER).listMembers(crypto.randomUUID()))).toBe("Project unavailable")
+})
+
+test("only the owner changes a role or removes someone, and an invitation stays one when its role changes", async () => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server)
+  server.share(id, OTHER, "editor")
+  server.invite(id, THIRD, "commenter")
+  const owner = server.remote(OWNER)
+  const revision = server.projects.get(id)!.revision
+
+  await owner.shareProject(id, OTHER, "viewer")
+  await owner.shareProject(id, THIRD, "editor")
+  const roles = async () => (await owner.listMembers(id)).map((member) => [member.user_id, member.role, member.accepted_at !== null])
+  expect(await roles()).toEqual([
+    [OWNER, "owner", false],
+    [OTHER, "viewer", true],
+    [THIRD, "editor", false],
+  ])
+  expect((await server.remote(OTHER).listProjects()).map((project) => project.role)).toEqual(["viewer"])
+  expect(await server.remote(THIRD).listProjects()).toEqual([])
+  expect(server.projects.get(id)!.revision).toBe(revision + 2)
+  // The same role again changes nothing.
+  await owner.shareProject(id, OTHER, "viewer")
+  expect(server.projects.get(id)!.revision).toBe(revision + 2)
+
+  expect(await refusal(server.remote(OTHER).shareProject(id, THIRD, null))).toBe("Only the project owner can change sharing")
+  expect(await refusal(owner.shareProject(crypto.randomUUID(), OTHER, null))).toBe("Only the project owner can change sharing")
+  await expect(owner.shareProject(id, OWNER, "viewer")).rejects.toMatchObject({ kind: "invalid", message: "Invalid member" })
+
+  await owner.shareProject(id, OTHER, null)
+  await owner.shareProject(id, THIRD, null)
+  expect(await roles()).toEqual([[OWNER, "owner", false]])
+  expect(await server.remote(OTHER).listProjects()).toEqual([])
+  expect(await server.remote(THIRD).listInvitations()).toEqual([])
+  expect(server.projects.get(id)!.revision).toBe(revision + 4)
+  // Removing someone who is not there changes nothing.
+  await owner.shareProject(id, OTHER, null)
+  expect(server.projects.get(id)!.revision).toBe(revision + 4)
+})
