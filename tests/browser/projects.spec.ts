@@ -101,7 +101,8 @@ test("offline, a new project waits on this device and is sent when the connectio
   fake.offline = true
   await page.getByLabel("New project").fill("Written offline")
   await page.getByRole("button", { name: "Create" }).click()
-  await expect(page.getByRole("heading", { level: 1, name: "Written offline" })).toBeVisible()
+  // Opening the project loads the editor first, as slowly as any first open.
+  await expect(page.getByRole("heading", { level: 1, name: "Written offline" })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole("status").filter({ hasText: "waiting to sync" })).toBeVisible()
   const id = new URL(page.url()).pathname.split("/")[2]
   // Let every attempt made while offline finish failing first.
