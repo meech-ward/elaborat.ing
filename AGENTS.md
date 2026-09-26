@@ -6,6 +6,7 @@ Instructions for any agent or contributor. Read these first:
 2. [Architecture](docs/architecture.md): settled decisions and open questions.
 3. [Roadmap](docs/roadmap.md): what is being built now, in order.
 4. [Platform notes](docs/platform-notes.md): Supabase and Cloudflare facts, with sources.
+5. [Task queue](docs/tasks.md): self-contained tasks for contributors and agents.
 
 Implemented behavior lives in code and tests. The docs above also describe
 planned work: never describe something as working until it is built and tested.

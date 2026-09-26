@@ -1,5 +1,7 @@
 # Roadmap
 
+Tasks ready for contributors and coding agents are in the [task queue](tasks.md).
+
 Four phases, in order. Each phase ends with something that works end to end.
 Tasks marked **(open for contributors)** need only this repository, plus your
 own free Supabase project for anything that touches the database. They need no
