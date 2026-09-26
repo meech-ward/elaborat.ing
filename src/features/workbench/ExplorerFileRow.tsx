@@ -1,10 +1,11 @@
 /**
  * Explorer file row with shadcn/Base UI context-menu actions.
  *
- * Each row exposes Rename, Copy filename, and Copy path through a real
- * Base UI context menu (right-click, keyboard Menu/Shift+F10, long-press)
- * on the whole row, plus an always-visible action-menu button carrying
- * the same three actions for touch and assistive-technology users.
+ * Each row exposes Copy filename, Copy path, Rename, Move to folder and
+ * Delete through a real Base UI context menu (right-click, keyboard
+ * Menu/Shift+F10, long-press) on the whole row, plus an always-visible
+ * action-menu button carrying the same actions for touch and
+ * assistive-technology users.
  * Requesting the menu never opens the file: opening happens only through
  * the row's primary button. Rename runs through a dialog with inline
  * validation; the workbench performs the rename and reports the
@@ -13,7 +14,7 @@
  * and typing cannot create a newly dirty draft under async completion.
  */
 import { useState } from "react";
-import { Copy, Link, Pencil, FolderInput } from "lucide-react";
+import { Copy, Link, Pencil, FolderInput, Trash2 } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -41,6 +42,7 @@ export function ExplorerFileRow({
   onFeedback,
   onRename,
   onMove,
+  onDelete,
 }: {
   path: string;
   /**
@@ -66,6 +68,8 @@ export function ExplorerFileRow({
    */
   onRename?: (newName: string) => Promise<void>;
   onMove?: () => void;
+  /** Opens the delete confirmation; the workbench deletes and reports the result. */
+  onDelete?: () => void;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   // A new dialog for each opening, so it starts from the current name.
@@ -150,6 +154,7 @@ export function ExplorerFileRow({
               </button>
             )}
             {onMove && <button onClick={onMove}><FolderInput size={14} /> Move to folder</button>}
+            {onDelete && <button onClick={onDelete}><Trash2 size={14} /> Delete</button>}
           </ActionMenu>
         </ContextMenuTrigger>
         <ContextMenuContent aria-label={`Actions for ${path}`}>
@@ -165,6 +170,7 @@ export function ExplorerFileRow({
             </ContextMenuItem>
           )}
           {onMove && <ContextMenuItem onClick={onMove}><FolderInput size={14} /> Move to folder</ContextMenuItem>}
+          {onDelete && <ContextMenuItem onClick={onDelete}><Trash2 size={14} /> Delete</ContextMenuItem>}
         </ContextMenuContent>
       </ContextMenu>
       <RenameDialog

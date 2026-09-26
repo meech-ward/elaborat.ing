@@ -12,7 +12,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const planKey = (plan: MovePlan) => JSON.stringify([plan.moves, plan.updates, plan.blockers, plan.changes]);
 
 /** Every file with the contents the planner needs, and every folder (`explicit`: the stored ones), read from this device. */
-async function projectFiles(client: WorkspaceStore): Promise<{ files: MoveSourceFile[]; folders: string[]; explicit: string[] }> {
+export async function projectFiles(client: WorkspaceStore): Promise<{ files: MoveSourceFile[]; folders: string[]; explicit: string[] }> {
   const { files, directories, folders } = await client.listEntries();
   const loaded = await Promise.all(
     files.map(async (ref): Promise<MoveSourceFile> => {

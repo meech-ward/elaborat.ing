@@ -1,13 +1,13 @@
 /**
  * Explorer folder row: a name button that selects the folder as the
  * creation destination, a chevron that expands or collapses it, and, as for
- * files, Rename and Move to folder through a Base UI context menu
+ * files, Rename, Move to folder and Delete through a Base UI context menu
  * (right-click, keyboard Menu/Shift+F10, long-press) plus an always-visible
  * action-menu button. Renaming uses the files' rename dialog; the workbench
- * moves the folder with everything in it and reports the result.
+ * moves or deletes the folder with everything in it and reports the result.
  */
 import { useState } from "react";
-import { ChevronRight, Folder, FolderInput, FolderOpen, Pencil } from "lucide-react";
+import { ChevronRight, Folder, FolderInput, FolderOpen, Pencil, Trash2 } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -28,6 +28,7 @@ export function ExplorerFolderRow({
   onSelect,
   onRename,
   onMove,
+  onDelete,
 }: {
   path: string;
   /** The folder's own name, shown on the row. */
@@ -41,12 +42,14 @@ export function ExplorerFolderRow({
   /** Validated new name; resolves when the rename settles. Without it the row offers no rename. */
   onRename?: (name: string) => Promise<void>;
   onMove?: () => void;
+  /** Opens the delete confirmation for the folder and everything in it. */
+  onDelete?: () => void;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   // A new dialog for each opening, so it starts from the current name.
   const [renameKey, setRenameKey] = useState(0);
   const Icon = open ? FolderOpen : Folder;
-  const hasActions = Boolean(onRename || onMove);
+  const hasActions = Boolean(onRename || onMove || onDelete);
   const requestRename = () => {
     setRenameKey((key) => key + 1);
     setRenameOpen(true);
@@ -75,6 +78,11 @@ export function ExplorerFolderRow({
           {onMove && (
             <button onClick={onMove}>
               <FolderInput size={14} /> Move to folder
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete}>
+              <Trash2 size={14} /> Delete
             </button>
           )}
         </ActionMenu>
@@ -113,6 +121,11 @@ export function ExplorerFolderRow({
           {onMove && (
             <ContextMenuItem onClick={onMove}>
               <FolderInput size={14} /> Move to folder
+            </ContextMenuItem>
+          )}
+          {onDelete && (
+            <ContextMenuItem onClick={onDelete}>
+              <Trash2 size={14} /> Delete
             </ContextMenuItem>
           )}
         </ContextMenuContent>
