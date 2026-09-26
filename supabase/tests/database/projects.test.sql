@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(70);
+select plan(73);
 
 -- Clients get SELECT through RLS and nothing else; anon gets nothing.
 select table_privs_are('public', 'projects', 'authenticated', array['SELECT'], 'Signed-in users can only select projects');
@@ -242,6 +242,27 @@ select throws_ok(
   '22023',
   'Unknown change op: (missing)',
   'A change without an op is refused, never treated as a folder removal'
+);
+
+select is(
+  public.save_files('aaaaaaaa-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000018',
+    '[{"op":"move","path":"done/todo.md","to":"done/first-list.md","content":"first list, moved","base_version":7}]') -> 'changes' -> 0 ->> 'version',
+  '9',
+  'A move can carry new content in the same change'
+);
+
+select is(
+  (select content from public.project_files where path = 'done/first-list.md'),
+  'first list, moved',
+  'The moved file has the new content'
+);
+
+select throws_ok(
+  $$ select public.save_files('aaaaaaaa-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000019',
+       '[{"op":"move","path":"done/first-list.md","to":"done/x.md","content":5,"base_version":9}]') $$,
+  '22023',
+  'move content must be a string: done/first-list.md',
+  'Move content must be a string'
 );
 
 -- Bob, with no access yet.

@@ -1,32 +1,15 @@
--- Save a batch of file changes atomically.
---
--- `changes` is a JSON array of 1 to 4096 changes, each touching a distinct path:
---   {"op": "put",    "path": "notes/a.md", "content": "...", "base_version": 3}
---   {"op": "put",    "path": "notes/new.md", "content": "..."}        -- create: no base_version
---   {"op": "delete", "path": "notes/old.md", "base_version": 2}
---   {"op": "move",   "path": "notes/a.md", "to": "archive/a.md", "base_version": 4}
---   {"op": "move",   "path": "a.md", "to": "b.md", "content": "...", "base_version": 5}  -- move and edit
---   {"op": "mkdir",  "path": "empty/folder"}
---   {"op": "rmdir",  "path": "empty/folder"}
---
--- Every change to an existing file names the version it was based on: the
--- version the client last read. If any of them is stale, nothing is written
--- and the result lists every conflict with the file's current state.
--- Otherwise every change is applied, the project revision goes up by one, and
--- every changed file takes that revision as its new version. The result is
--- stored under `mutation_id`: repeating the same save returns that stored
--- result, and reusing the id for a different save is an error. Conflicts are
--- not stored, so a client resolves them and saves again with a new mutation id.
---
--- Errors: 22023 for a malformed request, 23505 when a path is already used by
--- a file or folder, 42501 without editor access, 55000 when the project is
--- archived, 54000 when the project would exceed its limits.
-create function private.save_files(project_id uuid, mutation_id uuid, changes jsonb)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $$
+SET local check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION private.save_files (
+  project_id  uuid,
+  mutation_id uuid,
+  changes     jsonb
+)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
 declare
   uid uuid := private.require_user();
   p public.projects;
@@ -297,19 +280,4 @@ begin
 
   return result;
 end;
-$$;
-
-revoke all on function private.save_files(uuid, uuid, jsonb) from public, anon;
-grant execute on function private.save_files(uuid, uuid, jsonb) to authenticated;
-
-create function public.save_files(project_id uuid, mutation_id uuid, changes jsonb)
-returns jsonb
-language sql
-security invoker
-set search_path = ''
-as $$
-  select private.save_files(project_id, mutation_id, changes)
-$$;
-
-revoke all on function public.save_files(uuid, uuid, jsonb) from public, anon;
-grant execute on function public.save_files(uuid, uuid, jsonb) to authenticated;
+$function$;
