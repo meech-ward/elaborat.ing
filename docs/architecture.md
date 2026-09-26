@@ -264,9 +264,10 @@ List so each document's subdomain is isolated from every other.
 **Decision:** Cloudflare Workers with static assets, which Cloudflare now
 recommends over Pages for new projects. `wrangler.jsonc` is the config file:
 SPA fallback (`not_found_handling = "single-page-application"`), the
-`elaborat.ing` custom domain, and headers in `public/_headers`. Workers Builds
-deploys from GitHub, with Cloudflare holding its own deploy token. Static asset
-requests are free and unlimited.
+`elaborat.ing` custom domain, and headers in `public/_headers`. The hosted
+instance deploys with `wrangler deploy`, using a Cloudflare API token from the
+"Edit Cloudflare Workers" template, restricted to one account and the
+`elaborat.ing` zone. Static asset requests are free and unlimited.
 
 The build only needs public values (the Supabase URL and publishable key).
 Self-hosters can deploy the same static build to any host.
@@ -278,14 +279,16 @@ in the self-host guide (phase 3), until the platform supports it as code.
 (SMTP and SMS providers are not on this list: they go in `config.toml`, with
 secrets supplied through `env()` from GitHub repository secrets.)
 
-- **JWT signing keys:** switch the project to asymmetric keys.
+- **JWT signing keys:** the project must sign with an asymmetric key. New
+  projects already do (the hosted project publishes an ES256 key); older
+  projects switch in the dashboard.
 - **Passkey and WebAuthn settings:** `config push` doesn't send them yet.
 - **Custom OIDC providers:** dashboard or Auth Admin API only.
-- **Cloudflare Workers Builds:** connect the repository, set the build command
-  to `bun run build`, and add build variables `BUN_VERSION` (matching CI),
-  `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Public values go in
-  build variables rather than a committed file, so forks don't build against
-  the hosted project.
+- **Cloudflare API token:** create one from the "Edit Cloudflare Workers"
+  template, limited to your account and zone. The deploy build needs
+  `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in its environment;
+  they are public, but supplying them at deploy time rather than committing
+  them keeps forks from building against the hosted project.
 
 ## Testing
 
