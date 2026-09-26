@@ -24,7 +24,7 @@ the task), **Done** (merged).
 
 ## T1: find out whether MCP Apps hosts allow runtime-compiled components
 
-**Status:** Ready
+**Status:** Done (#2)
 
 The MCP Apps views (read-only document, drawing, and draft component preview)
 render inside the host's sandboxed iframe. Our MDX renderer compiles component
@@ -43,7 +43,7 @@ MCP server declares the CSP its UI needs. Record the findings with links in
 
 ## T2: ship license notices for bundled third-party code
 
-**Status:** Ready
+**Status:** Done (#3)
 
 The production build is served to every visitor, which counts as
 redistribution. `src/features/comments/anchoring.ts` ports code under the BSD
@@ -143,3 +143,32 @@ It needs Docker, which GitHub's Ubuntu runners have.
 
 **Done when** the job passes on the pull request, and the description shows it
 failing on a throwaway commit that changes a schema file without a migration.
+
+## T6: test the MCP server's tools and check Edge Functions in CI
+
+**Status:** Ready
+
+The MCP server (`supabase/functions/mcp-server/`) runs on Deno in Supabase Edge
+Functions. Its project tools live in `tools/projects.ts` and call the database
+through the user's Supabase client (see
+[architecture: Agents](architecture.md#agents-mcp)). Nothing tests them yet.
+
+- **Unit tests** in `supabase/functions/mcp-server/tools/projects.test.ts`, run
+  with `deno test`. Register the tools on a real `McpServer` with a fake
+  `ToolContext` whose `supabase` records calls and returns canned results.
+  Cover: each tool calls the right database function (or table query) with the
+  right arguments; `write_file` without `base_version` sends a create;
+  `list_projects` and `list_invitations` wrap their arrays; Supabase errors
+  (plain objects with `code`, `message`, `hint`) come back as readable error
+  results; invalid input (a bad uuid, an empty path, an unknown op in
+  `save_files`) is rejected before any call; and there is no tool that
+  permanently deletes a project or accepts an invitation.
+- **CI:** add a job to `.github/workflows/ci.yml` that sets up Deno (the
+  official `denoland/setup-deno` action, Deno 2.x) and runs `deno check` and
+  `deno test` for every function in `supabase/functions/`.
+- Keep the block's own files (`index.ts`, `tools/result.ts`, `tools/types.ts`,
+  `tools/whoami.ts`) unchanged unless a test finds a real bug; say so in the
+  pull request if it does.
+
+**Done when** the new CI job passes, and the pull request shows one test
+failing when a tool is deliberately broken.
