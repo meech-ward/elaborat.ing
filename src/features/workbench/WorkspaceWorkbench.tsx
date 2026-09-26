@@ -126,12 +126,19 @@ export function WorkspaceWorkbench({
   projectId,
   projectHeader,
   onResolveConflict,
+  readOnly = null,
 }: {
   client: WorkspaceStore;
   onLeaveGuard?: (guard: PrepareProjectLeave | null) => void;
   projectId: string;
   projectHeader?: ReactNode;
   onResolveConflict?: (path: string, choice: ConflictChoice) => Promise<void>;
+  /**
+   * Why the project cannot be changed (the person is a viewer, or it is
+   * archived), or null. Files are then shown read-only, and nothing offers to
+   * create, import, rename, move or delete them; the project header says why.
+   */
+  readOnly?: string | null;
 }) {
   const { href, target, navigate } = useFileLocation();
   const locationRef = useRef({ href, target, navigate });
@@ -659,27 +666,31 @@ export function WorkspaceWorkbench({
           onSelectFolder={selectFolder}
           onOpenFile={(path) => void openFromNavigation(path)}
           onFeedback={setNotice}
-          onRenameFile={moves.rename}
-          onMoveFile={moves.open}
-          onRenameFolder={moves.renameFolder}
-          onMoveFolder={moves.openFolder}
-          onDeleteFile={deletes.deleteFile}
-          onDeleteFolder={deletes.deleteFolder}
+          onRenameFile={readOnly ? undefined : moves.rename}
+          onMoveFile={readOnly ? undefined : moves.open}
+          onRenameFolder={readOnly ? undefined : moves.renameFolder}
+          onMoveFolder={readOnly ? undefined : moves.openFolder}
+          onDeleteFile={readOnly ? undefined : deletes.deleteFile}
+          onDeleteFolder={readOnly ? undefined : deletes.deleteFolder}
         />
       )}
       {listed && !listError && treeIsEmpty && (
-        <p>No files yet. Create a note to start.</p>
+        <p>{readOnly ? "No files yet." : "No files yet. Create a note to start."}</p>
       )}
     </>
   );
   const commands = [
     { name: "Toggle explorer", run: () => setSidebar((v) => !v) },
     { name: "Toggle bottom panel", run: () => setPanel((v) => !v) },
-    { name: "New note", run: () => void createFile("note") },
-    { name: "New MDX note", run: () => void createFile("mdx") },
-    { name: "New drawing", run: () => void createFile("drawing") },
-    { name: "New diagram", run: () => void createFile("diagram") },
-    { name: "New folder", run: openFolderDialog },
+    ...(readOnly
+      ? []
+      : [
+          { name: "New note", run: () => void createFile("note") },
+          { name: "New MDX note", run: () => void createFile("mdx") },
+          { name: "New drawing", run: () => void createFile("drawing") },
+          { name: "New diagram", run: () => void createFile("diagram") },
+          { name: "New folder", run: openFolderDialog },
+        ]),
     ...files.map((file) => ({
       name: `Open ${file.path}`,
       run: () => void openFromNavigation(file.path),
@@ -731,18 +742,24 @@ export function WorkspaceWorkbench({
           </button>
         </div>
         <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton}>
-          <button onClick={() => void createFile("note")}>
-            <FilePlus size={14} /> New
-          </button>
-          <button onClick={() => void createFile("mdx")}><FilePlus size={14} /> New MDX note</button>
-          <button onClick={() => void createFile("drawing")}><PenTool size={14} /> New drawing</button>
-          <button onClick={() => void createFile("diagram")}><Network size={14} /> New diagram</button>
-          <button onClick={() => fileInput.current?.click()}>
-            <FileUp size={14} /> Import
-          </button>
-          <button onClick={openFolderDialog}>
-            <FolderPlus size={14} /> New folder
-          </button>
+          {!readOnly && (
+            <button onClick={() => void createFile("note")}>
+              <FilePlus size={14} /> New
+            </button>
+          )}
+          {!readOnly && <button onClick={() => void createFile("mdx")}><FilePlus size={14} /> New MDX note</button>}
+          {!readOnly && <button onClick={() => void createFile("drawing")}><PenTool size={14} /> New drawing</button>}
+          {!readOnly && <button onClick={() => void createFile("diagram")}><Network size={14} /> New diagram</button>}
+          {!readOnly && (
+            <button onClick={() => fileInput.current?.click()}>
+              <FileUp size={14} /> Import
+            </button>
+          )}
+          {!readOnly && (
+            <button onClick={openFolderDialog}>
+              <FolderPlus size={14} /> New folder
+            </button>
+          )}
           <button onClick={() => void refreshList()}>
             <FolderSync size={14} /> Refresh file list
           </button>
@@ -829,14 +846,16 @@ export function WorkspaceWorkbench({
                 <SidebarHeader className="wb-explorer-title">
                   Explorer
                   <span className="wb-explorer-actions">
-                    <button
-                      className="wb-icon"
-                      aria-label="New folder"
-                      title="New folder"
-                      onClick={openFolderDialog}
-                    >
-                      <FolderPlus size={15} />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        className="wb-icon"
+                        aria-label="New folder"
+                        title="New folder"
+                        onClick={openFolderDialog}
+                      >
+                        <FolderPlus size={15} />
+                      </button>
+                    )}
                     <button
                       className="wb-icon"
                       aria-label="Close explorer"
@@ -975,6 +994,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            readOnly={readOnly}
                           />
                         ) : kindForPath(tab.path) === "drawing" ? (
                           <DrawingView
@@ -987,6 +1007,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            readOnly={readOnly}
                           />
                         ) : (
                           <WorkspaceSession
@@ -1002,6 +1023,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            readOnly={readOnly}
                           />
                         )}
                       </TabsContent>
@@ -1010,14 +1032,16 @@ export function WorkspaceWorkbench({
                       <div className="wb-empty">
                         <Diamond size={32} />
                         <h1>A place for connected ideas.</h1>
-                        <p>Open a file or create a note to begin.</p>
+                        <p>{readOnly ? "Open a file to read it." : "Open a file or create a note to begin."}</p>
                         <button onClick={() => setSidebar(true)}>
                           Open explorer
                         </button>
-                        <button onClick={() => void createFile("note")}>
-                          New note
-                        </button>
-                        <button onClick={() => void createFile("mdx")}>New MDX note</button>
+                        {!readOnly && (
+                          <button onClick={() => void createFile("note")}>
+                            New note
+                          </button>
+                        )}
+                        {!readOnly && <button onClick={() => void createFile("mdx")}>New MDX note</button>}
                       </div>
                     )}
                   </div>
@@ -1093,7 +1117,7 @@ export function WorkspaceWorkbench({
                 {!state.tabs.length && <p>No open files.</p>}
               </section>
               <nav className="wb-explorer" aria-label="Workspace files">
-                <div className="wb-explorer-title">Files <button className="wb-icon" aria-label="New folder" onClick={openFolderDialog}><FolderPlus size={18} /></button></div>
+                <div className="wb-explorer-title">Files {!readOnly && <button className="wb-icon" aria-label="New folder" onClick={openFolderDialog}><FolderPlus size={18} /></button>}</div>
                 {renderExplorerBody()}
               </nav>
               <section className="wb-navigation-tools" aria-label="Workbench controls">

@@ -10,6 +10,7 @@ import { COMPONENT_CATALOG } from "../features/document/componentCatalog";
 import type { RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft } from './sourceDrafts';
+import { isReadOnly } from './readOnly';
 
 let context: {
   session: string;
@@ -145,7 +146,7 @@ export function SourceLeaf(props: {
 /** Compiler-only component: source ownership is revalidated in the parent. */
 export function SourceCode(props: { from: number; to: number; expected: string; value: string; language: string }): ReactNode {
   const { session, revision } = useSyncExternalStore(subscribe, getAuthoringContext);
-  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props}
+  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={isReadOnly()}
     draft={getSourceDraft(props)} onEditorInput={captureSourceDraft} onEditorMount={restoreSourceDraft} onCommit={value => {
     if (value === props.value) return;
     queueRangeEdit({ kind: 'prose-edit', session, revision, from: props.from, to: props.to, expected: props.expected, value });
@@ -211,6 +212,8 @@ function EditableText(props: {
       else post({ kind: action === 'enter' ? 'prose-enter' : 'prose-edit', ...message });
     }
   };
+  if (isReadOnly())
+    return <span data-source-text={`${props.from}:${props.leaf?.to ?? props.from + props.value.length}`}>{props.value}</span>;
   return (
     <span
       ref={ref}
@@ -336,6 +339,7 @@ export function BlockPicker(): ReactNode {
   )
     ? boundary
     : (metadata?.boundaries.at(-1)?.id ?? "start");
+  if (isReadOnly()) return null;
   const resource = element === "Drawing" || element === "Diagram";
   const choices = paths.filter((entry) =>
     element === "Drawing"

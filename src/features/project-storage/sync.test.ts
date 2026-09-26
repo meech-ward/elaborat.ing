@@ -255,6 +255,23 @@ test("an archived project stops sync until it is unarchived", async () => {
   expect(server.content(id, "a.md")).toBe("edited")
 })
 
+test("a sync takes in the project's role and archived state, so a new role shows without a refresh", async () => {
+  const server = new FakeProjectServer()
+  const owner = device(server, OWNER)
+  const other = device(server, OTHER)
+  const project = await owner.sync.createProject("Shared")
+  await put(owner.files(project.id), "a.md", "a")
+  await owner.sync.sync(project.id)
+  server.share(project.id, OTHER, "viewer")
+  await other.sync.download((await other.sync.refresh())[0])
+  expect(await other.project(project.id)).toMatchObject({ role: "viewer", archivedAt: null })
+
+  server.share(project.id, OTHER, "editor")
+  await server.remote(OWNER).archiveProject(project.id)
+  expect((await other.sync.sync(project.id)).status).toBe("synced")
+  expect(await other.project(project.id)).toMatchObject({ role: "editor", archivedAt: expect.any(String) })
+})
+
 test("two files swapping paths on the server are pulled", async () => {
   const server = new FakeProjectServer()
   const [a, b] = [device(server), device(server)]

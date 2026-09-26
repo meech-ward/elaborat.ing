@@ -151,7 +151,13 @@ export class ProjectSync {
 
   /** Update a project on this device from the server's details (none: access is gone), and pull what it lacks. */
   private async takeDetails(local: LocalProject, entry: RemoteProject | null): Promise<void> {
-    await this.updateProject(local.id, (current) => {
+    await this.updateDetails(local.id, entry)
+    if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
+  }
+
+  /** A project's title, role and archived state as the server lists them (none: access is gone). */
+  private async updateDetails(projectId: string, entry: RemoteProject | null): Promise<void> {
+    await this.updateProject(projectId, (current) => {
       if (!entry) return { ...current, syncError: "access-lost" }
       return {
         ...current,
@@ -165,8 +171,7 @@ export class ProjectSync {
             : current.syncError,
       }
     })
-    this.emit({ type: "changed", projectId: local.id })
-    if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
+    this.emit({ type: "changed", projectId })
   }
 
   /** Bring a project from the server onto this device. */
@@ -203,7 +208,11 @@ export class ProjectSync {
       if (outcome.status !== "synced") return outcome
       try {
         const entry = (await this.remote.listProjects()).find((candidate) => candidate.id === outcome.projectId)
-        if (entry) await this.pull(outcome.projectId, entry.revision)
+        if (entry) {
+          // The role and archived state follow too, so a new role or an unarchive shows without waiting for a refresh.
+          await this.updateDetails(outcome.projectId, entry)
+          await this.pull(outcome.projectId, entry.revision)
+        }
       } catch (error) {
         if (error instanceof RemoteError && error.kind === "network") return { status: "offline", projectId: outcome.projectId, message: error.message }
         throw error

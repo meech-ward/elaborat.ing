@@ -90,7 +90,11 @@ this repository once the steps before them have landed.
    (step 10). On the projects home, owners and editors archive and unarchive
    a project, and archived projects are listed in their own section and refuse
    changes. The owner can delete a project permanently after typing its title,
-   which removes it from the server and from the device.
+   which removes it from the server and from the device. A viewer or
+   commenter, and everyone in an archived project, sees it read-only: the page
+   says why (with Unarchive for owners and editors), every editor shows its
+   files without changing them or keeping drafts, and nothing offers to
+   create, import, rename, move or delete files.
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both), and
     leaving a project or signing out keeps unsaved edits first. Drawings and

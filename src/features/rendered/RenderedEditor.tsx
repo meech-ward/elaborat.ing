@@ -108,6 +108,8 @@ export type RenderedEditorProps = {
   /** Listing metadata for insertion, not authority to open/edit a resource. */
   availableResourcePaths?: readonly string[];
   onEditResource?: (path: string) => void;
+  /** Show the note without editing in the frame; `onPatch` should refuse edits too. */
+  readOnly?: boolean;
 };
 
 /** Session token binding one mounted editor to its frame. Never the source. */
@@ -153,6 +155,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     allowedResourcePaths,
     availableResourcePaths,
     onEditResource,
+    readOnly = false,
   } = props;
   const pendingOwners = useRef({ fluid: false, draft: false });
   const onPendingChange = useCallback((pending: boolean) => {
@@ -347,6 +350,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         selection: exposed.selection,
         islands: exposed.islands.map(({ id, from }) => ({ id, from })),
       },
+      readOnly: readOnly || undefined,
       slots: exposed.slots.map((slot) => ({
         index: slot.index,
         element: slot.element,
@@ -375,7 +379,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       },
     };
     frame.postMessage(message, "*");
-  }, [exposed, readyTick, session]);
+  }, [exposed, readOnly, readyTick, session]);
 
   useEffect(() => {
     if (exposed)

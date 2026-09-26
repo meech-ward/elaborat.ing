@@ -31,6 +31,7 @@ import { captureDraftsBeforeRender, setSourceDraftContext, finishSourceDraftRend
 import { FluidEditor } from "./fluidEditor";
 import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, ExampleCard, Tabs, Tab, type SideBySideProps } from '../features/rendered/documentBlocks';
 import { InlineLiteral } from './InlineLiteral';
+import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { DOCUMENT_CHART_COMPONENTS } from '../features/rendered/documentCharts';
 import {
@@ -77,6 +78,7 @@ type PendingRender = {
   modules?: RenderMessage['modules'];
   authoring?: RenderMessage["authoring"];
   fluid?: RenderMessage["fluid"];
+  readOnly?: boolean;
 };
 
 let activeSession: string | null = null;
@@ -103,7 +105,9 @@ function postToParent(message: unknown): void {
   window.parent.postMessage(message, "*");
 }
 
+/** A component's editable properties, or none while the document is read-only. */
 function slotByIndex(index: number): SlotInfo | undefined {
+  if (isReadOnly()) return undefined;
   return slotTable.find((slot) => slot.index === index);
 }
 
@@ -232,7 +236,7 @@ function CounterWithControls(props: {
       style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}
     >
       <Counter initial={props.initial} step={props.step} />
-      {typeof props.__slot === "number" && !editable ? (
+      {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
         <small title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
@@ -277,7 +281,7 @@ function CalloutWithControls(props: {
       <Callout tone={props.tone} title={props.title}>
         {props.children}
       </Callout>
-      {typeof props.__slot === "number" && !editable ? (
+      {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
         <small title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
@@ -551,6 +555,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   activeSession = pending.session;
   activeRevision = pending.revision;
   slotTable = pending.slots;
+  setReadOnly(pending.readOnly === true);
   try {
     if (pending.fluid) {
       if (!fluidEditor)
@@ -726,6 +731,7 @@ window.addEventListener("message", (event: MessageEvent) => {
     slots: render.slots,
     authoring: render.authoring,
     fluid: render.fluid,
+    readOnly: render.readOnly,
   });
 });
 

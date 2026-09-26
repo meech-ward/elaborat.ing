@@ -67,6 +67,7 @@ export function DiagramView({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  readOnly = null,
 }: {
   client: WorkspaceStore;
   initial: TabFile;
@@ -80,6 +81,8 @@ export function DiagramView({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Why the project cannot be changed, or null. The code and canvas are then shown, never edited or kept as drafts. */
+  readOnly?: string | null;
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
@@ -119,9 +122,10 @@ export function DiagramView({
   const [conflict, setConflict] = useState<{ path: string; revision: string; content: string | null } | null>(null);
   const [changedElsewhere, setChangedElsewhere] = useState<string | null>(null);
   const frozen = useRef(false);
+  const locked = blocked || Boolean(readOnly);
   useLayoutEffect(() => {
-    frozen.current = blocked;
-  }, [blocked]);
+    frozen.current = locked;
+  }, [locked]);
   const sourceApi = useRef<SourceEditorApi | null>(null);
   // The latest code and canvas, ahead of React's render: edits write it at
   // once, and a layout effect (which runs as a render commits, before any
@@ -198,7 +202,7 @@ export function DiagramView({
 
   // Unsaved edits to any of the three files are kept on the device.
   const persistDraft = useCallback(async () => {
-    if (!booted || !scene) return;
+    if (!booted || !scene || readOnly) return;
     await client.persistDrafts([
       { path, content: source, baseRevision },
       ...(dirty || savedNativeBytes !== null
@@ -208,7 +212,7 @@ export function DiagramView({
         ? []
         : [{ path: sidecarPath, content: (dirty ? sidecarText : savedSidecarBytes)!, baseRevision: sidecarRevision }]),
     ]);
-  }, [booted, scene, client, path, source, baseRevision, dirty, savedNativeBytes, nativePath, nativeRevision, sidecarText, savedSidecarBytes, sidecarPath, sidecarRevision]);
+  }, [booted, scene, readOnly, client, path, source, baseRevision, dirty, savedNativeBytes, nativePath, nativeRevision, sidecarText, savedSidecarBytes, sidecarPath, sidecarRevision]);
   useEffect(() => {
     void persistDraft().catch((error: unknown) => setNotice(`Could not keep unsaved edits on this device: ${message(error)}`));
   }, [persistDraft]);
@@ -233,12 +237,12 @@ export function DiagramView({
         frozen.current = true;
       },
       release: () => {
-        frozen.current = blocked;
+        frozen.current = locked;
       },
       persistDraft,
     });
     return () => onOperationSession?.(path, null);
-  }, [onOperationSession, path, persistDraft, blocked]);
+  }, [onOperationSession, path, persistDraft, locked]);
 
   // Load: read the generated files, compile the source, and merge.
   useEffect(() => {
@@ -538,15 +542,21 @@ export function DiagramView({
           onSelect={setView}
         />
         <ActionMenu>
-          <button type="button" disabled={regenerating} onClick={() => void regenerate()} className={toolbarButton}>
-            <WandSparkles className="size-4" aria-hidden /> {regenerating ? "Regenerating…" : "Regenerate"}
-          </button>
-          <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
-            <Save className="size-4" aria-hidden /> Save
-          </button>
-          <button type="button" onClick={() => void resetLayout()} className={toolbarButton}>
-            <RotateCcw className="size-4" aria-hidden /> Reset layout
-          </button>
+          {!readOnly && (
+            <button type="button" disabled={regenerating} onClick={() => void regenerate()} className={toolbarButton}>
+              <WandSparkles className="size-4" aria-hidden /> {regenerating ? "Regenerating…" : "Regenerate"}
+            </button>
+          )}
+          {!readOnly && (
+            <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
+              <Save className="size-4" aria-hidden /> Save
+            </button>
+          )}
+          {!readOnly && (
+            <button type="button" onClick={() => void resetLayout()} className={toolbarButton}>
+              <RotateCcw className="size-4" aria-hidden /> Reset layout
+            </button>
+          )}
           <button type="button" onClick={() => void exportSvg()} className={toolbarButton}>
             <Download className="size-4" aria-hidden /> SVG
           </button>
@@ -649,12 +659,13 @@ export function DiagramView({
           renderError={errors[0]?.message ?? null}
           onChange={changeSource}
           onCursor={() => {}}
-          onSave={() => void save()}
+          onSave={() => (readOnly ? setNotice(readOnly) : void save())}
           apiRef={sourceApi}
+          readOnly={readOnly}
         />
       </div>
       <div hidden={view !== "canvas"} className="wb-native-stage">
-        <DrawingCanvas scene={scene} onChange={changeCanvas} theme={theme} active={active && view === "canvas"} />
+        <DrawingCanvas scene={scene} onChange={changeCanvas} theme={theme} active={active && view === "canvas"} viewOnly={Boolean(readOnly)} />
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
         Renaming a node on the canvas updates the code. Code changes reach the canvas on Regenerate, which keeps freehand additions and
