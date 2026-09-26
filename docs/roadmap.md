@@ -47,9 +47,9 @@ The full editor from the original prototype, working on per-file storage.
 - **Port the editor.** Notes with source and rendered editing, custom MDX
   components in the sandboxed frame, Excalidraw drawings, D2 diagrams with
   their native canvases, offline drafts and conflict recovery.
-- **Comment anchoring library (open for contributors now).** A pure TypeScript
-  module implementing W3C Web Annotation text-quote and text-position selectors
-  and approximate re-anchoring the way Hypothesis does it. See the task below.
+- **Comment anchoring library (done).** A pure TypeScript module implementing
+  W3C Web Annotation text-quote and text-position selectors and approximate
+  re-anchoring the way Hypothesis does it. See the task below.
 - **Import tool** for projects exported from the prototype.
 
 ## Phase 3: public v1
@@ -76,7 +76,8 @@ The full editor from the original prototype, working on per-file storage.
 
 ## Task: comment anchoring library
 
-Open for contributors now. Needs nothing but this repository.
+Done: `src/features/comments/anchoring.ts`, tested in
+`src/features/comments/anchoring.test.ts`.
 
 **Goal.** A pure module at `src/features/comments/anchoring.ts` (no React, no
 Supabase) that describes a range of text with selectors and finds that range
@@ -141,8 +142,10 @@ surrogate pair, shorten that context by one unit so it never does.
    after the candidate, the same way Hypothesis's `textMatchScore` does; an
    empty stored context scores 1.
 3. Return the highest-scoring candidate. Break exact ties by the smaller
-   distance to `position.start`, then the smaller start. Return `null` when
-   there are no candidates.
+   distance to `position.start`, then the smaller start, then the larger end.
+   (Approximate matches that share a start tie at the end of the document,
+   where there is no suffix to compare; the longest is the edited quote.)
+   Return `null` when there are no candidates.
 
 **Tests** in `src/features/comments/anchoring.test.ts` (Bun; import the
 functions by name, and note `describeRange` avoids clashing with `bun:test`'s
