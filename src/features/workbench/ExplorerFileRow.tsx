@@ -63,8 +63,8 @@ export function ExplorerFileRow({
    * when the rename (and tab reopen) settles; the dialog stays pending
    * until then and closes on completion.
    */
-  onRename: (newName: string) => Promise<void>;
-  onMove: () => void;
+  onRename?: (newName: string) => Promise<void>;
+  onMove?: () => void;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
@@ -143,7 +143,7 @@ export function ExplorerFileRow({
       setRenaming(false);
       setRenameOpen(false);
     };
-    void onRename(renameDraft).then(done, done);
+    void onRename?.(renameDraft).then(done, done);
   };
 
   return (
@@ -195,10 +195,12 @@ export function ExplorerFileRow({
             <button onClick={() => void copyPath()}>
               <Link size={14} /> Copy path
             </button>
-            <button onClick={requestRename}>
-              <Pencil size={14} /> Rename
-            </button>
-            <button onClick={onMove}><FolderInput size={14} /> Move to folder</button>
+            {onRename && (
+              <button onClick={requestRename}>
+                <Pencil size={14} /> Rename
+              </button>
+            )}
+            {onMove && <button onClick={onMove}><FolderInput size={14} /> Move to folder</button>}
           </ActionMenu>
         </ContextMenuTrigger>
         <ContextMenuContent aria-label={`Actions for ${path}`}>
@@ -208,10 +210,12 @@ export function ExplorerFileRow({
           <ContextMenuItem onClick={() => void copyPath()}>
             <Link size={14} /> Copy path
           </ContextMenuItem>
-          <ContextMenuItem onClick={requestRename}>
-            <Pencil size={14} /> Rename
-          </ContextMenuItem>
-          <ContextMenuItem onClick={onMove}><FolderInput size={14} /> Move to folder</ContextMenuItem>
+          {onRename && (
+            <ContextMenuItem onClick={requestRename}>
+              <Pencil size={14} /> Rename
+            </ContextMenuItem>
+          )}
+          {onMove && <ContextMenuItem onClick={onMove}><FolderInput size={14} /> Move to folder</ContextMenuItem>}
         </ContextMenuContent>
       </ContextMenu>
       <Dialog.Root

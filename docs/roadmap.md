@@ -85,11 +85,13 @@ this repository once the steps before them have landed.
    background and on Realtime change signals, and wait on the device while
    offline. Guarding navigation away from unsaved edits comes with the editor
    (step 10).
-10. **Notes open in tabs, edit in source and rendered views, and save** with
-    drafts and conflict recovery, and leaving a project or signing out waits
-    until unsaved edits are kept. This step adds the journeys that need the
-    source editor: exact bytes and one undo for rendered edits, and typing,
-    undo and redo in the source view.
+10. **Notes open in tabs, edit in source and rendered views, and save (done)**
+    with drafts and conflict recovery (keep mine, keep theirs, keep both), and
+    leaving a project or signing out keeps unsaved edits first. Drawings and
+    diagrams open as text until steps 13 and 14; renaming and moving arrive
+    with step 12. Not yet carried over from the prototype: its reading-position
+    and touch-focus journeys, and undo through the source editor after a
+    rendered edit.
 11. **Custom MDX components load from project files (open for contributors).**
 12. **Files and folders can be created, renamed and moved**, with references
     rewritten in the same save.

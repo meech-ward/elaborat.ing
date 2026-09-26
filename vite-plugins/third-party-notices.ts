@@ -23,6 +23,12 @@ export function thirdPartyNotices(): Plugin {
 
         let text =
           typeof notices.source === "string" ? notices.source : new TextDecoder().decode(notices.source)
+
+        // Packages Vite listed without a license text, because they ship none.
+        text = text.replace(/^## ((?:@[^/\s]+\/)?[^\s]+) - [^\n]+\n(?!\n?[^\n#])/gm, (heading, name: string) => {
+          const license = supplementalLicense(name)
+          return license ? `${heading}\n${license}\n\n` : heading
+        })
         const srcDir = path.join(root, "src")
         const files = fs.readdirSync(srcDir, { recursive: true, encoding: "utf8" }).sort()
 
@@ -67,8 +73,20 @@ function stylesheetPackages(srcDir: string, files: string[]): string[] {
   return [...names].sort()
 }
 
-/** The text of a package's LICENSE, LICENCE or COPYING file, found the way Vite finds it. */
+/**
+ * The text of a package's LICENSE, LICENCE or COPYING file, found the way Vite
+ * finds it; for a package that ships none, the copy in vite-plugins/licenses/.
+ */
 export function licenseFileText(packageDir: string): string | undefined {
   const file = fs.readdirSync(packageDir).find((name) => /^(licen[cs]e|copying)/i.test(name))
-  return file === undefined ? undefined : fs.readFileSync(path.join(packageDir, file), "utf8").trim()
+  if (file !== undefined) return fs.readFileSync(path.join(packageDir, file), "utf8").trim()
+  return supplementalLicense(JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8")).name)
+}
+
+const SUPPLEMENTS = path.join(import.meta.dirname, "licenses")
+
+/** A checked-in license text for a package that ships without one. */
+function supplementalLicense(name: string): string | undefined {
+  const file = path.join(SUPPLEMENTS, `${name.replace("/", "__")}.txt`)
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : undefined
 }

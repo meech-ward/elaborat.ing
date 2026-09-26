@@ -22,6 +22,8 @@ test("the build's notices cover every bundled package and the adapted code", asy
   for (const file of output) {
     if (file.type !== "chunk") continue
     for (const id of file.moduleIds) {
+      // Virtual modules (ids starting with a null byte) are not package files.
+      if (id.startsWith("\0")) continue
       const match = /^(.*\/node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(id)
       if (match) packageDirs.add(match[1])
     }
