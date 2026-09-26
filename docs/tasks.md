@@ -916,3 +916,32 @@ silently, but every other stale kind reaches `onError` and the banner.
   what was typed.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T33: a new file asks for its name, and an unsaved new note can be renamed
+
+**Status:** Ready
+
+"New note" opens a tab named `untitled.md` (`newUntitledNote` in
+`src/features/workbench/session.ts`) that is not a file until it is saved, so
+the explorer offers it no Rename, and people who try to rename it can't.
+Drawings and diagrams are saved at once, as `untitled.excalidraw` and
+`untitled.d2`, and then need a separate rename.
+
+- As in a code editor's explorer: New note, drawing, diagram or folder puts
+  an inline name field in the explorer at the folder it goes in (the selected
+  folder, or the top level), with the name selected up to the extension.
+  Enter creates the file with that name, saved at once, and opens it; Escape
+  cancels and creates nothing. A name that is taken or invalid shows why
+  under the field and keeps it open.
+- Creating from the command palette or the workbench menu opens the same
+  field. On a phone, where the explorer is in the navigation drawer, a small
+  dialog asks for the name instead.
+- An unsaved new note that already exists (from a draft kept across a
+  reload) can be renamed: the rename just changes the name it will be saved
+  under.
+- Unit tests for the name checks. Browser journeys: New note, type
+  `ideas`, Enter, and `ideas.md` exists on the server and is open; Escape
+  creates nothing; a taken name is refused in place; the same for a drawing
+  and a diagram. The existing creation journeys keep passing.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
