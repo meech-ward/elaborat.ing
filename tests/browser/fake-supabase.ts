@@ -144,6 +144,9 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "create_project") return answer(route, () => remote.createProject(body.project_id, body.title))
       if (rpc === "rename_project") return answer(route, () => remote.renameProject(body.project_id, body.title))
       if (rpc === "save_files") return answer(route, () => remote.saveFiles(body.project_id, body.mutation_id, body.changes))
+      if (rpc === "list_invitations") return answer(route, () => remote.listInvitations())
+      if (rpc === "accept_invitation") return answer(route, () => remote.acceptInvitation(body.project_id))
+      if (rpc === "leave_project") return answer(route, async () => (await remote.leaveProject(body.project_id), { project_id: body.project_id, left: true }))
     }
 
     // Table reads (everything fits in the first page here)

@@ -83,6 +83,12 @@ export class ProjectSync {
     return this.db.listProjects(this.partition)
   }
 
+  /** Remove a project and all of its files and folders from this device, waiting for any sync of it to finish. */
+  async forget(projectId: string): Promise<void> {
+    await this.locked(projectId, () => this.db.transaction(this.partition, "readwrite", (tx) => tx.deleteProject(projectId)))
+    this.emit({ type: "changed", projectId })
+  }
+
   /** A new project on this device. The server gets it on the next sync. */
   async createProject(title: string): Promise<LocalProject> {
     const project: LocalProject = {

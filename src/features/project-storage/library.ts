@@ -1,6 +1,6 @@
 import type { ProjectDatabase } from "./database"
 import { isDirty, type LocalProject } from "./model"
-import { RemoteError, type ProjectRemote, type RemoteProject } from "./remote"
+import { RemoteError, type ProjectRemote, type RemoteInvitation, type RemoteProject } from "./remote"
 import { ProjectSync, type SyncOutcome } from "./sync"
 
 /**
@@ -30,8 +30,13 @@ export type ProjectEntry = {
   archived: boolean
 }
 
+/** A project someone shared with this account, waiting for it to accept. */
+export type Invitation = { projectId: string; title: string; role: RemoteInvitation["role"] }
+
 export type LibraryState = {
   entries: ProjectEntry[]
+  /** Invitations waiting for this account, as the server last listed them. */
+  invitations: Invitation[]
   /** The server could not be reached on the last refresh. */
   offline: boolean
   loaded: boolean
@@ -46,13 +51,13 @@ export const offlineRemote: ProjectRemote = new Proxy({} as ProjectRemote, {
 
 export class ProjectLibrary {
   readonly sync: ProjectSync
-  private state: LibraryState = { entries: [], offline: false, loaded: false }
+  private state: LibraryState = { entries: [], invitations: [], offline: false, loaded: false }
   private catalog: RemoteProject[] = []
   private readonly listeners = new Set<() => void>()
 
   constructor(
     private readonly db: ProjectDatabase,
-    remote: ProjectRemote,
+    private readonly remote: ProjectRemote,
     readonly partition: string,
   ) {
     this.sync = new ProjectSync(db, remote, partition)
@@ -144,6 +149,60 @@ export class ProjectLibrary {
     await this.sync.download(entry)
     await this.load()
     return true
+  }
+
+  /** Ask the server for the invitations waiting for this account. Offline, the last ones stay. */
+  async refreshInvitations(): Promise<void> {
+    try {
+      const listed = await this.remote.listInvitations()
+      this.set({ invitations: listed.map((entry) => ({ projectId: entry.project_id, title: entry.title, role: entry.role })), offline: false })
+    } catch (error) {
+      if (!(error instanceof RemoteError) || error.kind !== "network") throw error
+      this.set({ offline: true })
+    }
+  }
+
+  /** Accept an invitation: the project joins the list and is downloaded to this device. */
+  async accept(projectId: string): Promise<void> {
+    const project = await this.remote.acceptInvitation(projectId)
+    this.catalog = [...this.catalog.filter((entry) => entry.id !== project.id), project]
+    this.set({ invitations: this.state.invitations.filter((entry) => entry.projectId !== project.id) })
+    await this.sync.download(project)
+    await this.load()
+  }
+
+  /**
+   * Why leaving a project now would lose work on this device, or null: files
+   * with changes the server does not have (saved but not synced, unsaved
+   * edits, or a conflict), named, or a new title still to send.
+   */
+  async leaveProblem(projectId: string): Promise<string | null> {
+    const [project, files] = await this.db.transaction(this.partition, "readonly", async (tx) => [await tx.getProject(projectId), await tx.listFiles(projectId)] as const)
+    if (!project) return null
+    const waiting = files.filter((file) => isDirty(file) || file.draft !== null || file.conflict !== null).map((file) => file.path)
+    if (waiting.length === 0 && project.pendingTitle === null) return null
+    const title = project.pendingTitle ?? project.title
+    const what = waiting.length > 0 ? waiting.join(", ") : "its new title"
+    return `Not left: ${title} has changes on this device that have not synced (${what}). Sync them first, so nothing is lost.`
+  }
+
+  /**
+   * Leave a project shared with this account: the server removes the
+   * membership, then the project and its files leave this device. Refused
+   * while this device holds changes to it that have not synced.
+   */
+  async leave(projectId: string): Promise<void> {
+    const problem = await this.leaveProblem(projectId)
+    if (problem) throw new Error(problem)
+    try {
+      await this.remote.leaveProject(projectId)
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") throw new Error("Leaving a project needs a connection. Try again when you are online.")
+      throw error
+    }
+    this.catalog = this.catalog.filter((entry) => entry.id !== projectId)
+    await this.sync.forget(projectId)
+    await this.load()
   }
 
   /** Send and receive one project's changes. */
