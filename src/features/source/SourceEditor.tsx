@@ -205,9 +205,8 @@ export function SourceEditor(props: SourceEditorProps) {
     };
     syncTheme();
 
-    // Global language registration must be torn down on unmount; editor
-    // commands/actions die with editor.dispose() and are not tracked here
-    // (this monaco version types them as string|null, not IDisposable).
+    // Global language registration must be torn down on unmount, and so
+    // must the keybindings of the editor's actions below.
     const disposables: monaco.IDisposable[] = ["mdx", "d2"].map((language) =>
       monaco.languages.registerCompletionItemProvider(language, {
         triggerCharacters: ["<", " ", '"', "'", ":", ".", ">"],
@@ -261,29 +260,42 @@ export function SourceEditor(props: SourceEditorProps) {
       }),
     );
 
-    // Editor-scoped bindings: these die with editor.dispose() below.
+    // Keys bound as actions run only in the editor that has focus. (Monaco's
+    // addCommand binds a key for every editor on the page, and the last
+    // editor created would take it.)
     // Explicit format (Shift+Alt+F), undoable, Prettier.
-    editor.addAction({
-      id: "elaborating.format-source",
-      label: "Format Source (Prettier)",
-      keybindings: [
-        monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF,
-      ],
-      run() {
-        void live.current.apiRef.current?.formatSource().catch(() => undefined);
-      },
-    });
-    // All occurrences of the selection (Shift+Cmd/Ctrl+L), guaranteed bound.
-    editor.addCommand(
-      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL,
-      () => {
-        void editor.getAction("editor.action.selectHighlights")?.run();
-      },
+    disposables.push(
+      editor.addAction({
+        id: "elaborating.format-source",
+        label: "Format Source (Prettier)",
+        keybindings: [
+          monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF,
+        ],
+        run() {
+          void live.current.apiRef.current?.formatSource().catch(() => undefined);
+        },
+      }),
+      // All occurrences of the selection (Shift+Cmd/Ctrl+L), guaranteed bound.
+      editor.addAction({
+        id: "elaborating.select-all-occurrences",
+        label: "Select All Occurrences",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL,
+        ],
+        run() {
+          void editor.getAction("editor.action.selectHighlights")?.run();
+        },
+      }),
+      // Save from inside the editor (Ctrl/Cmd+S).
+      editor.addAction({
+        id: "elaborating.save",
+        label: "Save",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+        run() {
+          live.current.onSave();
+        },
+      }),
     );
-    // Save from inside the editor (Ctrl/Cmd+S).
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      live.current.onSave();
-    });
     disposables.push(
       editor.onDidChangeModelContent(() => {
         if (!applyingRendered) renderedGroup = undefined;
