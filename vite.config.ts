@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
+import { monacoLanguageServices } from "./vite-plugins/monaco-language-services.ts"
 import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
 import { previewFrame } from "./vite-plugins/preview-frame.ts"
 import { thirdPartyNotices } from "./vite-plugins/third-party-notices.ts"
@@ -21,6 +22,8 @@ export default defineConfig({
   plugins: [
     nativeFontAssets(),
     excalidrawSubsetWorker(),
+    // The editors never start these services' workers (src/features/source/SourceEditor.tsx).
+    monacoLanguageServices({ exclude: ["typescript", "css", "html"] }),
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
@@ -29,7 +32,9 @@ export default defineConfig({
     previewFrame(),
     // The generated service worker ships these Workbox modules in its own
     // workbox-*.js file, outside the bundle (checked by offline.spec.ts).
-    thirdPartyNotices({ packages: ["workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"] }),
+    thirdPartyNotices({
+      packages: ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"],
+    }),
     VitePWA({
       // A new version waits until the person chooses "Update ready"
       // (src/features/updates). The component registers the worker.
@@ -45,13 +50,15 @@ export default defineConfig({
         theme_color: "#11141a",
       },
       workbox: {
-        // Everything the build ships, so the app can start with no network:
-        // every chunk including lazy ones, styles, workers, fonts, the
-        // preview frame (inlined in a chunk), wasm and the license texts.
-        // `_headers` is Cloudflare's configuration, not a file it serves, and
-        // the plugin lists the web manifest itself.
+        // What the app can need with no network: every chunk including lazy
+        // ones, styles, workers, the fonts of the app's own interface, the
+        // preview frame (inlined in a chunk), the D2 compiler, wasm and the
+        // license texts. Not Excalidraw's drawing fonts (about 13 MB, most
+        // of it CJK subsets): they are cached when a drawing first shows
+        // them, below. `_headers` is Cloudflare's configuration, not a file
+        // it serves, and the plugin lists the web manifest itself.
         globPatterns: ["**/*"],
-        globIgnores: ["_headers", "manifest.webmanifest"],
+        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/**"],
         // Workbox skips files over 2 MiB by default, and the largest chunks
         // are bigger. tests/browser/offline.spec.ts checks nothing is skipped.
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
@@ -61,8 +68,16 @@ export default defineConfig({
         // wait: skipWaiting stays off until the person chooses the update.
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        // No runtimeCaching: requests to Supabase, and to every other origin,
-        // never pass through a cache.
+        // Font files from this site that are not precached are kept the first
+        // time they load. Only same-origin requests: Supabase, and every other
+        // origin, never pass through a cache.
+        runtimeCaching: [
+          {
+            urlPattern: ({ sameOrigin, url }) => sameOrigin && /\.(?:woff2?|ttf|otf)$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: { cacheName: "fonts", cacheableResponse: { statuses: [200] } },
+          },
+        ],
       },
     }),
   ],

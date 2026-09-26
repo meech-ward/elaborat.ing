@@ -444,15 +444,27 @@ no network**: a reload, a new tab or a browser restart. A service worker from
 [vite-plugin-pwa](https://vite-pwa-org.netlify.app/), using Workbox's
 generated worker (`generateSW`), configured in `vite.config.ts`:
 
-- **It precaches every file the build writes** except Cloudflare's `_headers`:
-  every chunk including lazy ones, styles, workers, fonts (Excalidraw's too),
-  the preview frame (inlined in a chunk), `.wasm` files and the license texts.
-  That is about 30 MB. The largest chunks are over Workbox's 2 MiB default, so
+- **It precaches every file the build writes** except Cloudflare's `_headers`
+  and Excalidraw's drawing fonts: every chunk including lazy ones, styles,
+  workers, the fonts of the app's own interface, the preview frame (inlined in
+  a chunk), the D2 compiler, `.wasm` files and the license texts. That is about
+  29 MB. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
-  fails if any shipped file is missing from the precache list. Navigations fall
-  back to the cached `index.html`.
-- **No runtime caching.** Requests to Supabase, or to any other origin, never
-  pass through a cache, so no credentialed response is stored.
+  fails if any other shipped file is missing from the precache list.
+  Navigations fall back to the cached `index.html`.
+- **Excalidraw's drawing fonts are cached when first used.** They are about
+  13 MB, most of it CJK subsets that few drawings need. A cache-first route
+  keeps each same-origin font file the first time it loads, so a drawing works
+  offline in the fonts this device has already shown; text in a script it has
+  never shown falls back to a system font until the next visit online.
+- **No other runtime caching.** Requests to Supabase, or to any other origin,
+  never pass through a cache, so no credentialed response is stored.
+- **Monaco's TypeScript, CSS and HTML language services are left out of the
+  build** (`vite-plugins/monaco-language-services.ts`). Monaco's entry
+  registers them, and their workers (about 8 MB) are built even though the
+  editors, which use Markdown, MDX, JSON, plain text and D2, never start them.
+  The plugin removes their imports from the entry, as the `features` option of
+  Monaco's webpack plugin does, and stops the build if the entry changes shape.
 - **Updates wait for the person** (`registerType: "prompt"`). A new version
   installs in the background and `src/features/updates/UpdateReady.tsx` shows
   "Update ready". The tab where it is chosen reloads into the new version;

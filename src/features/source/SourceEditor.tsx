@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
-import CssWorker from "monaco-editor/language/css/css.worker?worker";
-import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
-import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 // First-class MDX highlighting (markdown for .md files). Editor CSS arrives
 // through the ESM modules themselves, so no CSS import is needed.
 import "monaco-editor/languages/definitions/mdx/register.js";
@@ -83,16 +80,16 @@ export interface SourceEditorProps {
   apiRef: React.RefObject<SourceEditorApi | null>;
 }
 
+/**
+ * The editors use Markdown, MDX, JSON, plain text and D2 (see
+ * `EditorLanguage`), so only the editor and JSON workers ever start. Monaco's
+ * TypeScript, CSS and HTML workers are left out of the build; code embedded
+ * in notes is only highlighted, which needs no worker.
+ */
 function setupLocalWorkers(): void {
   self.MonacoEnvironment = {
     getWorker(_workerId: unknown, label: string) {
       if (label === "json") return new JsonWorker();
-      if (label === "css" || label === "scss" || label === "less")
-        return new CssWorker();
-      if (label === "html" || label === "handlebars" || label === "razor")
-        return new HtmlWorker();
-      if (label === "typescript" || label === "javascript")
-        return new TsWorker();
       return new EditorWorker();
     },
   };

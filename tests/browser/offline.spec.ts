@@ -67,11 +67,18 @@ const cachedUrls = (page: Page) =>
     return urls
   })
 
-test("the service worker caches every file the build ships", () => {
+/** Excalidraw's drawing fonts, cached the first time a drawing shows them instead of precached. */
+const onFirstUse = (file: string) => file.startsWith("excalidraw-assets/fonts/")
+
+test("the service worker caches every file the build ships, except drawing fonts until they are used", () => {
   const list = precached(DIST)
   const files = shipped(DIST).filter((file) => file !== "_headers" && file !== "sw.js" && !/^workbox-[\w-]+\.js$/.test(file))
   expect(files.length).toBeGreaterThan(100)
-  expect(files.filter((file) => !list.has(file))).toEqual([])
+  expect(files.filter((file) => !onFirstUse(file) && !list.has(file))).toEqual([])
+  expect(files.filter(onFirstUse).length).toBeGreaterThan(100)
+  expect([...list].filter(onFirstUse)).toEqual([])
+  // Only the editor and JSON workers of Monaco are built; the app never starts the others.
+  expect(files.filter((file) => /(?:ts|css|html)\.worker/.test(file))).toEqual([])
 })
 
 test("the license notices cover the Workbox code the service worker ships", () => {
@@ -122,6 +129,83 @@ test("offline, a new tab lists the project from the device and opens it", async 
   await other.getByRole("link", { name: "Notes" }).click()
   await expect(other.getByRole("tab", { name: "notes/a.md" })).toBeVisible()
   await expect(editorText(other)).toContainText("On this device.")
+})
+
+/** The load status of each face of one font family on the page, such as "loaded" or "error". */
+const fontFaces = (page: Page, family: string) =>
+  page.evaluate((family) => [...document.fonts].filter((face) => face.family.replace(/["']/g, "") === family).map((face) => face.status), family)
+
+const cjkDrawing = JSON.stringify({
+  type: "excalidraw",
+  version: 2,
+  source: "https://excalidraw.com",
+  elements: [
+    {
+      id: "greeting",
+      type: "text",
+      x: 100,
+      y: 100,
+      width: 160,
+      height: 35,
+      angle: 0,
+      strokeColor: "#1e1e1e",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeWidth: 2,
+      strokeStyle: "solid",
+      roughness: 1,
+      opacity: 100,
+      groupIds: [],
+      frameId: null,
+      index: "a0",
+      roundness: null,
+      seed: 1,
+      version: 1,
+      versionNonce: 1,
+      isDeleted: false,
+      boundElements: null,
+      updated: 1,
+      link: null,
+      locked: false,
+      text: "你好，世界",
+      fontSize: 28,
+      fontFamily: 5,
+      textAlign: "left",
+      verticalAlign: "top",
+      containerId: null,
+      originalText: "你好，世界",
+      autoResize: true,
+      lineHeight: 1.25,
+    },
+  ],
+  appState: { viewBackgroundColor: "#ffffff" },
+  files: {},
+})
+
+test("a drawing's fonts are kept the first time it shows them, so its text keeps its font offline", async ({ page, context }) => {
+  const { fake, id } = await openProject(page, { "a.md": "text\n", "sketch.excalidraw": cjkDrawing }, "a.md")
+  await offlineReady(page)
+  // Online, the drawing's Chinese text loads Excalidraw's Xiaolai font, which is not precached.
+  await page.goto(projectUrl(id, "sketch.excalidraw"))
+  await expect(page.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 20_000 })
+  await expect.poll(() => fontFaces(page, "Xiaolai")).toContain("loaded")
+  expect((await cachedUrls(page)).filter((url) => url.includes("/excalidraw-assets/fonts/Xiaolai/")).length).toBeGreaterThan(0)
+
+  fake.offline = true
+  await context.setOffline(true)
+  // Load the drawing again in a fresh page (see the first offline journey).
+  const address = page.url()
+  await page.close()
+  const again = await context.newPage()
+  const failed: string[] = []
+  again.on("requestfailed", (request) => {
+    if (/\.(?:woff2?|ttf|otf)$/.test(new URL(request.url()).pathname)) failed.push(request.url())
+  })
+  await again.goto(address)
+  await expect(again.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 20_000 })
+  await expect.poll(() => fontFaces(again, "Xiaolai")).toContain("loaded")
+  expect(await fontFaces(again, "Xiaolai")).not.toContain("error")
+  expect(failed).toEqual([])
 })
 
 test("nothing from Supabase, or from any other origin, is kept in Cache Storage", async ({ page }) => {
