@@ -34,6 +34,7 @@ export type { LibraryMergeResult, LibrarySnapshot } from './merge.ts';
 export { mergeLibraryUpdate, snapshotLibraryState } from './merge.ts';
 export { parseDrawingFile } from './parse.ts';
 export {
+  countElementChanges,
   diffDrawingScenes,
   durableAppState,
   fingerprintScene,

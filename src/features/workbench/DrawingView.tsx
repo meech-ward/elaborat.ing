@@ -18,6 +18,7 @@ import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
 import { CompactFileIdentity } from "./compactWorkbench";
+import { ConflictBanner } from "./ConflictBanner";
 import { downloadBlob, downloadText } from "./download";
 import { buildNativeDownload } from "./nativeDownload";
 import type { OperationSession } from "./operationSession";
@@ -267,21 +268,6 @@ export function DrawingView({
       });
   }, [savedRevision, baseRevision, saving, changedElsewhere, client, path, dirty, adopt]);
 
-  const [resolving, setResolving] = useState(false);
-  const resolve = useCallback(async (choice: ConflictChoice) => {
-    if (!onResolveConflict) return;
-    if (dirty && choice !== "mine" && !window.confirm("Your unsaved edits to this drawing will be replaced. Continue?")) return;
-    setResolving(true);
-    try {
-      await onResolveConflict(choice);
-      setNotice(choice === "mine" ? "Keeping your version." : choice === "theirs" ? "Took the other version." : "Kept both: your version is saved as a copy.");
-    } catch (error) {
-      setNotice(`Could not resolve: ${message(error)}`);
-    } finally {
-      setResolving(false);
-    }
-  }, [onResolveConflict, dirty]);
-
   const baseName = path.split("/").pop()?.replace(/\.md$/, "") ?? "drawing";
   const exportSvg = useCallback(async () => {
     if (!scene) return;
@@ -368,14 +354,16 @@ export function DrawingView({
       )}
 
       {conflicted && onResolveConflict && (
-        <div role="alert" className={banner}>
-          <p>{path} was changed on another device too, so its sync stopped. Choose which version to keep.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" disabled={resolving} onClick={() => void resolve("mine")} className={bannerButton}>Keep mine</button>
-            <button type="button" disabled={resolving} onClick={() => void resolve("theirs")} className={bannerButton}>Keep theirs</button>
-            <button type="button" disabled={resolving} onClick={() => void resolve("both")} className={bannerButton}>Keep both</button>
-          </div>
-        </div>
+        <ConflictBanner
+          name={path}
+          path={path}
+          client={client}
+          compareAs={{ kind: "drawing" }}
+          noun="drawing"
+          hasUnsavedEdits={() => dirty}
+          onResolveConflict={onResolveConflict}
+          onNotice={setNotice}
+        />
       )}
 
       {conflict && (

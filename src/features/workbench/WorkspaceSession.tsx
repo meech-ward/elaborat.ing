@@ -10,6 +10,7 @@ import { RenderedEditor } from "@/features/rendered";
 import type { RenderedPatchOptions } from "../source/renderedHistory";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
+import { ConflictBanner } from "./ConflictBanner";
 import type { WorkspaceStore } from "./workspaceStore";
 import { createDocumentStore, type StoreState } from "@/lib/documentStore";
 import { formatForFilename, saveSourceText } from "@/lib/fileAdapter";
@@ -537,25 +538,6 @@ export function WorkspaceSession({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, doWrite, openFile]);
 
-  const [resolving, setResolving] = useState(false);
-  const resolve = useCallback(
-    async (choice: ConflictChoice) => {
-      if (!onResolveConflict) return;
-      if (store.snapshot().dirty && choice !== "mine" && !window.confirm("Your unsaved edits to this file will be replaced. Continue?")) return;
-      setResolving(true);
-      setNotice(null);
-      try {
-        await onResolveConflict(choice);
-        setNotice(choice === "mine" ? "Keeping your version." : choice === "theirs" ? "Took the other version." : "Kept both: your version is saved as a copy.");
-      } catch (error) {
-        setNotice(`Could not resolve: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        setResolving(false);
-      }
-    },
-    [onResolveConflict, store],
-  );
-
   const inSource = mode === "source" || !isNote;
   const conflict = openFile.save.stage === "conflict" ? openFile.save : null;
 
@@ -744,26 +726,16 @@ export function WorkspaceSession({
       )}
 
       {conflicted && onResolveConflict && (
-        <div
-          role="alert"
-          className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
-        >
-          <p>
-            {displayName} was changed on another device too, so its sync
-            stopped. Choose which version to keep.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" disabled={resolving} onClick={() => void resolve("mine")} className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900">
-              Keep mine
-            </button>
-            <button type="button" disabled={resolving} onClick={() => void resolve("theirs")} className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900">
-              Keep theirs
-            </button>
-            <button type="button" disabled={resolving} onClick={() => void resolve("both")} className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900">
-              Keep both
-            </button>
-          </div>
-        </div>
+        <ConflictBanner
+          name={displayName}
+          path={openFile.path ?? initial.path}
+          client={client}
+          compareAs={{ kind: "text", language: editorLanguageForPath(openFile.path ?? initial.path) }}
+          noun="file"
+          hasUnsavedEdits={() => store.snapshot().dirty}
+          onResolveConflict={onResolveConflict}
+          onNotice={setNotice}
+        />
       )}
 
         <div className="wb-editor-stage">

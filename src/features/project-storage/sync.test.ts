@@ -65,6 +65,34 @@ test("one stale file conflicts without holding back the others", async () => {
   expect(server.content(id, "a.md")).toBe("from B")
 })
 
+test("a conflicted file offers both copies to compare, until it is resolved", async () => {
+  const server = new FakeProjectServer()
+  const [a, b] = [device(server), device(server)]
+  const id = await shared(server, a, b, { "a.md": "base", "b.md": "base" })
+  await put(a.files(id), "a.md", "from A")
+  await a.sync.sync(id)
+  await put(b.files(id), "a.md", "from B")
+  await b.sync.sync(id)
+
+  expect(await b.files(id).conflictCopies("a.md")).toEqual({ mine: "from B", theirs: "from A" })
+  expect(await b.files(id).conflictCopies("b.md")).toBeNull()
+  await b.sync.resolve(id, "a.md", "theirs")
+  expect(await b.files(id).conflictCopies("a.md")).toBeNull()
+})
+
+test("a file deleted on the server compares as missing there", async () => {
+  const server = new FakeProjectServer()
+  const [a, b] = [device(server), device(server)]
+  const id = await shared(server, a, b, { "a.md": "base" })
+  const store = a.files(id)
+  await store.delete("a.md", (await store.read("a.md")).revision)
+  await a.sync.sync(id)
+  await put(b.files(id), "a.md", "from B")
+  await b.sync.sync(id)
+
+  expect(await b.files(id).conflictCopies("a.md")).toEqual({ mine: "from B", theirs: null })
+})
+
 test("taking theirs drops this device's change; keeping both saves it beside theirs", async () => {
   const server = new FakeProjectServer()
   const [a, b] = [device(server), device(server)]

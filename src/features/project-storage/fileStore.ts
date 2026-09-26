@@ -37,6 +37,14 @@ export type StoredFile = FileRef & {
   savedContent: string | null
 }
 
+/** A file's two versions while its sync conflict waits for a choice. */
+export type ConflictCopies = {
+  /** The copy saved on this device, or null when it was deleted here. */
+  mine: string | null
+  /** The server's copy, or null when the server no longer has the file. */
+  theirs: string | null
+}
+
 /** One change in a local save. All changes in one save share a batch and sync together. */
 export type LocalChange =
   | { kind: "write"; path: string; content: string; expectedRevision: string | null }
@@ -179,6 +187,17 @@ export class ProjectFileStore {
     const stored = file ? await this.ref(file) : null
     if (!stored) throw new FileStoreError(`${path} is not in this project.`)
     return stored
+  }
+
+  /** Both versions of a file whose sync conflicts, or null when it has no conflict. */
+  async conflictCopies(path: string): Promise<ConflictCopies | null> {
+    checkPath(path)
+    const file = await this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      return tx.getFile(this.projectId, path)
+    })
+    if (!file?.conflict) return null
+    return { mine: file.content, theirs: file.conflict.current?.content ?? null }
   }
 
   /** Save one file on this device. */
