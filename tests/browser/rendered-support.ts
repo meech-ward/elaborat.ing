@@ -106,28 +106,13 @@ export async function point(page: Page, text: string, offset: number) {
   return { x: frame!.x + local.x, y: frame!.y + local.y }
 }
 
-/**
- * Wait for the frame's next animation frame. Keys and clicks sent faster
- * than a person can press them can be lost in Chromium (task T10), so the
- * helpers below pause this long after each one.
- */
-export async function nextFrame(page: Page) {
-  await frameOf(page)
-    .locator("body")
-    .evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))))
-}
-
 export async function clickAt(page: Page, text: string, offset: number) {
   const at = await point(page, text, offset)
   await page.mouse.click(at.x, at.y)
-  await nextFrame(page)
 }
 
 export async function press(page: Page, key: string, count = 1) {
-  for (let i = 0; i < count; i++) {
-    await page.keyboard.press(key)
-    await nextFrame(page)
-  }
+  for (let i = 0; i < count; i++) await page.keyboard.press(key)
 }
 
 /** The frame's selection: its text and where each end is, as paragraph text and offset. */

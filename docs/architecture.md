@@ -363,6 +363,23 @@ and a notice on shared projects that they run custom code.
 **Open:** the sandbox domain name, and whether to add it to the Public Suffix
 List so each document's subdomain is isolated from every other.
 
+## Rendered editing
+
+**Decision: the rendered view's editor takes the browser's caret before it acts
+on a key.** The frame edits prose with ProseMirror. In Chromium, a caret moved
+by a native key (an arrow, Home, End) reaches ProseMirror through a
+`selectionchange` event that can arrive after the next key. So a key command,
+such as Enter's split, could act where the caret was before. And ProseMirror's
+check 20 ms after the editor gains focus could put that old caret back.
+`src/preview/fluidEditor.ts` reads the DOM caret into ProseMirror on every
+keydown, through its public `handleKeyDown` and `posAtDOM`. It also does this
+at the start of that focus check, by wrapping the one timer the check sets.
+The wrapper is unusual, but ProseMirror has no option for the check, and a
+separate timer of our own can run too late, after key events that slip in
+between. If ProseMirror fixes this upstream, both can go; the browser test
+"Enter straight after arrow keys splits at the caret, every time" shows
+whether they are still needed.
+
 ## Frontend hosting
 
 **Decision:** Cloudflare Workers with static assets, which Cloudflare now

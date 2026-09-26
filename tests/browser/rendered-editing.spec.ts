@@ -137,10 +137,6 @@ test.describe("prose", () => {
     await clickAt(page, "Alphabeta.", 0)
     await press(page, "Home")
     await press(page, "ArrowRight", 5)
-    // Let the caret settle first: in Chromium, Enter within milliseconds of
-    // arrow keys can split at the previous caret position (task T10).
-    await expect.poll(async () => (await selection(page)).focus?.offset).toBe(5)
-    await frameOf(page).locator("body").evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))))
     await press(page, "Enter")
     await accepted(page, mark)
     await paragraph(page, /^beta\.$/).waitFor()
@@ -152,6 +148,24 @@ test.describe("prose", () => {
     await press(page, "Home")
     await press(page, "Backspace")
     await commit(page, mark, original.replace(`${first}\n\n${second}`, `${first}${second}`))
+  })
+
+  test("Enter straight after arrow keys splits at the caret, every time", async ({ page }) => {
+    // Chromium can tell the editor about an arrow key's caret move only after
+    // the next key, which once made Enter split where the caret had been
+    // (task T10). It happened in about one run in four, so repeat.
+    test.slow()
+    for (let run = 1; run <= 20; run++) {
+      const tail = `Untouched tail, run ${run}.`
+      const before = original.replace(second, "Alphabeta.").replace("Untouched tail.", tail)
+      const mark = await load(page, before, "mdx", tail)
+      await clickAt(page, "Alphabeta.", 0)
+      await press(page, "Home")
+      await press(page, "ArrowRight", 5)
+      await press(page, "Enter")
+      await accepted(page, mark)
+      await expect.poll(() => source(page), { message: `run ${run}` }).toBe(before.replace("Alphabeta.", "Alpha\n\nbeta."))
+    }
   })
 
   test("a selection across a component is refused and the source kept", async ({ page }) => {
