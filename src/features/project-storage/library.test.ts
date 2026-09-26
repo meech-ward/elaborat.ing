@@ -156,3 +156,96 @@ test("leaving needs a connection", async () => {
   await expect(here.leave(id)).rejects.toThrow("Leaving a project needs a connection. Try again when you are online.")
   expect(here.getState().entries.map((entry) => entry.id)).toEqual([id])
 })
+
+test("an archived project refuses changes on this device until it is unarchived", async () => {
+  const server = new FakeProjectServer()
+  const { db, library: here } = library(server)
+  const id = await here.create("Notes")
+  await here.syncProject(id)
+
+  await here.archive(id)
+  expect(here.getState().entries.map(({ archived, status }) => ({ archived, status }))).toEqual([{ archived: true, status: "synced" }])
+  const store = new ProjectFileStore(db, partition, id)
+  await expect(put(store, "a.md", "a")).rejects.toThrow("This project is archived. Unarchive it to make changes.")
+
+  await here.unarchive(id)
+  expect(here.getState().entries.map(({ archived }) => archived)).toEqual([false])
+  await put(store, "a.md", "a")
+  expect((await here.syncProject(id)).status).toBe("synced")
+  expect(server.content(id, "a.md")).toBe("a")
+})
+
+test("changes the server refused while the project was archived sync once it is unarchived here", async () => {
+  const server = new FakeProjectServer()
+  const { db, library: here } = library(server)
+  const id = await here.create("Notes")
+  await here.syncProject(id)
+  await put(new ProjectFileStore(db, partition, id), "a.md", "saved here")
+  // Archived elsewhere before this device synced.
+  await server.remote(OWNER).archiveProject(id)
+  expect((await here.syncProject(id)).status).toBe("stopped")
+  expect(here.getState().entries[0]).toMatchObject({ archived: true, status: "stopped", stopped: "archived" })
+
+  await here.unarchive(id)
+  expect(here.getState().entries[0]).toMatchObject({ archived: false, status: "unsynced" })
+  expect((await here.syncProject(id)).status).toBe("synced")
+  expect(server.content(id, "a.md")).toBe("saved here")
+})
+
+test("an editor archives a shared project; archiving needs a connection", async () => {
+  const server = new FakeProjectServer()
+  const id = await othersProject(server, "Their notes")
+  server.share(id, OWNER, "editor")
+  const { library: here } = library(server)
+  await here.refresh()
+  await here.open(id)
+  await here.archive(id)
+  expect(here.getState().entries.map(({ id, archived }) => ({ id, archived }))).toEqual([{ id, archived: true }])
+  expect(server.projects.get(id)?.archivedAt).not.toBeNull()
+
+  server.offline = true
+  await expect(here.unarchive(id)).rejects.toThrow("Unarchiving a project needs a connection. Try again when you are online.")
+  expect(here.getState().entries.map(({ archived }) => archived)).toEqual([true])
+})
+
+test("deleting a project permanently removes it from the server and from this device, unsynced changes included", async () => {
+  const server = new FakeProjectServer()
+  const { db, library: here } = library(server)
+  const id = await here.create("Notes")
+  await here.syncProject(id)
+  const store = new ProjectFileStore(db, partition, id)
+  await put(store, "a.md", "not synced yet")
+  await store.persistDrafts([{ path: "b.md", content: "unsaved", baseRevision: null }])
+  expect(await here.unsyncedFiles(id)).toBe(2)
+
+  await here.deletePermanently(id)
+  expect(here.getState().entries).toEqual([])
+  expect(await db.listProjects(partition)).toEqual([])
+  expect(await db.transaction(partition, "readonly", (tx) => tx.listFiles(id))).toEqual([])
+  expect(server.projects.has(id)).toBe(false)
+  await here.refresh()
+  expect(here.getState().entries).toEqual([])
+})
+
+test("only the owner deletes permanently, it needs a connection, and a project only on this device goes without one", async () => {
+  const server = new FakeProjectServer()
+  const shared = await othersProject(server, "Their notes")
+  server.share(shared, OWNER, "editor")
+  const { db, library: here } = library(server)
+  await here.refresh()
+  await here.open(shared)
+  await expect(here.deletePermanently(shared)).rejects.toThrow("Only the project owner can permanently delete it")
+  expect(here.getState().entries.map((entry) => entry.id)).toEqual([shared])
+
+  const mine = await here.create("Mine")
+  await here.syncProject(mine)
+  server.offline = true
+  await expect(here.deletePermanently(mine)).rejects.toThrow("Deleting a project needs a connection. Try again when you are online.")
+  expect(server.projects.has(mine)).toBe(true)
+
+  // Never sent to the server, so there is nothing to delete there.
+  const local = await here.create("Only here")
+  await here.deletePermanently(local)
+  expect(await db.transaction(partition, "readonly", (tx) => tx.getProject(local))).toBeNull()
+  expect(server.calls.filter((call) => call.method === "deleteProject").map((call) => call.args)).toEqual([[shared], [mine]])
+})

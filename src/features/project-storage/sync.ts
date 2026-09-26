@@ -137,25 +137,35 @@ export class ProjectSync {
     const byId = new Map(remote.map((entry) => [entry.id, entry]))
     for (const local of await this.db.listProjects(this.partition)) {
       if (!local.created) continue
-      const entry = byId.get(local.id)
-      await this.updateProject(local.id, (current) => {
-        if (!entry) return { ...current, syncError: "access-lost" }
-        return {
-          ...current,
-          title: entry.title,
-          pendingTitle: current.pendingTitle === entry.title ? null : current.pendingTitle,
-          role: entry.role,
-          archivedAt: entry.archived_at,
-          syncError:
-            (current.syncError === "archived" && !entry.archived_at) || (current.syncError === "access-lost" && canEdit(entry.role))
-              ? null
-              : current.syncError,
-        }
-      })
-      this.emit({ type: "changed", projectId: local.id })
-      if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
+      await this.takeDetails(local, byId.get(local.id) ?? null)
     }
     return remote
+  }
+
+  /** Take in one project's details as the server just returned them (after archiving it, say), if it is on this device. */
+  async adopt(entry: RemoteProject): Promise<void> {
+    const local = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(entry.id))
+    if (local?.created) await this.takeDetails(local, entry)
+  }
+
+  /** Update a project on this device from the server's details (none: access is gone), and pull what it lacks. */
+  private async takeDetails(local: LocalProject, entry: RemoteProject | null): Promise<void> {
+    await this.updateProject(local.id, (current) => {
+      if (!entry) return { ...current, syncError: "access-lost" }
+      return {
+        ...current,
+        title: entry.title,
+        pendingTitle: current.pendingTitle === entry.title ? null : current.pendingTitle,
+        role: entry.role,
+        archivedAt: entry.archived_at,
+        syncError:
+          (current.syncError === "archived" && !entry.archived_at) || (current.syncError === "access-lost" && canEdit(entry.role))
+            ? null
+            : current.syncError,
+      }
+    })
+    this.emit({ type: "changed", projectId: local.id })
+    if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
   }
 
   /** Bring a project from the server onto this device. */

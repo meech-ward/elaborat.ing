@@ -7,26 +7,43 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
+import { canEdit } from "@/features/project-storage/model"
 import { libraryFor, useLibraryState, type ProjectAccount } from "./account"
+import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { ImportProject } from "./ImportProject"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/** A shared project's menu: leaving it, for now. */
-function ProjectMenu({ title, onLeave }: { title: string; onLeave: () => void }) {
+/**
+ * A project's menu, by role: owners and editors archive and unarchive, the
+ * owner deletes permanently, and anyone else can leave.
+ */
+function ProjectMenu({ entry, onArchive, onDelete, onLeave }: {
+  entry: ProjectEntry
+  /** Archive, or unarchive an archived project. */
+  onArchive: () => void
+  onDelete: () => void
+  onLeave: () => void
+}) {
+  const items = [
+    ...(canEdit(entry.role) ? [{ label: entry.archived ? "Unarchive" : "Archive", run: onArchive }] : []),
+    ...(entry.role === "owner" ? [{ label: "Delete permanently", run: onDelete }] : [{ label: "Leave project", run: onLeave }]),
+  ]
   return (
     <Menu.Root>
-      <Menu.Trigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${title}`} title={`Actions for ${title}`} />}>
+      <Menu.Trigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${entry.title}`} title={`Actions for ${entry.title}`} />}>
         <Ellipsis aria-hidden="true" />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner sideOffset={4} align="end" className="z-50">
           <Menu.Popup className="min-w-40 rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-md">
-            <Menu.Item className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent" onClick={onLeave}>
-              Leave project
-            </Menu.Item>
+            {items.map((item) => (
+              <Menu.Item key={item.label} className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent" onClick={item.run}>
+                {item.label}
+              </Menu.Item>
+            ))}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
@@ -42,6 +59,8 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [title, setTitle] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // The project to delete permanently, with how many of its files have changes not yet synced.
+  const [deleting, setDeleting] = useState<{ entry: ProjectEntry; unsynced: number } | null>(null)
   const onError = useCallback((text: string) => setError(text), [])
   useBackgroundRefresh(library, onError, { invitations: true })
 
@@ -54,6 +73,37 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
     } catch (cause) {
       setError(`Not accepted: ${message(cause)}`)
     }
+  }
+
+  const setArchived = async (entry: ProjectEntry) => {
+    setError(null)
+    setNotice(null)
+    try {
+      if (entry.archived) {
+        await library.unarchive(entry.id)
+        setNotice(`Unarchived ${entry.title}.`)
+      } else {
+        await library.archive(entry.id)
+        setNotice(`Archived ${entry.title}. It refuses changes until it is unarchived.`)
+      }
+    } catch (cause) {
+      setError(`${entry.archived ? "Not unarchived" : "Not archived"}: ${message(cause)}`)
+    }
+  }
+
+  const askToDelete = async (entry: ProjectEntry) => {
+    setError(null)
+    setNotice(null)
+    try {
+      setDeleting({ entry, unsynced: await library.unsyncedFiles(entry.id) })
+    } catch (cause) {
+      setError(message(cause))
+    }
+  }
+  const deletePermanently = async (entry: ProjectEntry) => {
+    await library.deletePermanently(entry.id)
+    setDeleting(null)
+    setNotice(`Deleted ${entry.title} permanently.`)
   }
 
   const leave = async (entry: ProjectEntry) => {
@@ -86,6 +136,27 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+
+  const active = state.entries.filter((entry) => !entry.archived)
+  const archived = state.entries.filter((entry) => entry.archived)
+  const row = (entry: ProjectEntry) => (
+    <li key={entry.id} className="flex items-center justify-between gap-4 px-4 py-3">
+      <Link to={projectHref(entry.id)} className="font-medium underline-offset-4 hover:underline">
+        {entry.title}
+      </Link>
+      <span className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">{statusLabel(entry)}</span>
+        {entry.role !== null ? (
+          <ProjectMenu
+            entry={entry}
+            onArchive={() => void setArchived(entry)}
+            onDelete={() => void askToDelete(entry)}
+            onLeave={() => void leave(entry)}
+          />
+        ) : null}
+      </span>
+    </li>
+  )
 
   return (
     <section aria-labelledby="projects-heading" className="flex flex-col gap-4">
@@ -128,19 +199,23 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         </section>
       ) : null}
       {state.loaded && state.entries.length === 0 ? <p className="text-sm">No projects yet.</p> : null}
-      <ul className="flex flex-col divide-y rounded-lg border">
-        {state.entries.map((entry) => (
-          <li key={entry.id} className="flex items-center justify-between gap-4 px-4 py-3">
-            <Link to={projectHref(entry.id)} className="font-medium underline-offset-4 hover:underline">
-              {entry.title}
-            </Link>
-            <span className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">{statusLabel(entry)}</span>
-              {entry.role !== null && entry.role !== "owner" ? <ProjectMenu title={entry.title} onLeave={() => void leave(entry)} /> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {active.length > 0 ? <ul className="flex flex-col divide-y rounded-lg border">{active.map(row)}</ul> : null}
+      {archived.length > 0 ? (
+        <section aria-labelledby="archived-heading" className="flex flex-col gap-2">
+          <h3 id="archived-heading" className="font-medium">
+            Archived
+          </h3>
+          <ul className="flex flex-col divide-y rounded-lg border">{archived.map(row)}</ul>
+        </section>
+      ) : null}
+      {deleting ? (
+        <DeleteProjectDialog
+          title={deleting.entry.title}
+          unsynced={deleting.unsynced}
+          onDelete={() => deletePermanently(deleting.entry)}
+          onClose={() => setDeleting(null)}
+        />
+      ) : null}
       <form onSubmit={create} className="flex items-end gap-2">
         <div className="grid flex-1 gap-2">
           <Label htmlFor="new-project-title">New project</Label>
