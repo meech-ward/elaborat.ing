@@ -70,6 +70,22 @@ const ancestors = (path: string): string[] => {
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"))
 }
 
+/**
+ * A file cannot sit where a folder is, and no ancestor of a path can be a
+ * file. `folders` holds the local folders' paths; `live` maps each saved
+ * file's path to its local id.
+ */
+function checkFree(folders: ReadonlySet<string>, live: ReadonlyMap<string, string>, path: string, self: LocalFile | null): void {
+  if (folders.has(path)) throw new FileStoreError(`${path} is a folder.`)
+  for (const ancestor of ancestors(path)) {
+    const owner = live.get(ancestor)
+    if (owner !== undefined && owner !== self?.localId) throw new FileStoreError(`${ancestor} is a file, so it cannot contain ${path}.`)
+  }
+  for (const [other, owner] of live) {
+    if (owner !== self?.localId && other.startsWith(`${path}/`)) throw new FileStoreError(`${path} already contains other files.`)
+  }
+}
+
 export class ProjectFileStore {
   private listeners = new Set<() => void>()
   private draftQueue: Promise<void> = Promise.resolve()
@@ -209,13 +225,17 @@ export class ProjectFileStore {
     await this.db.transaction(this.partition, "readwrite", async (tx) => {
       const project = await this.editableProject(tx)
       const inFlight = new Set(project.pending?.files.map((entry) => entry.localId) ?? [])
+      // Where the project's folders and files are, read once and kept current
+      // as the changes apply, so a large save does not reread them per file.
+      const folders = new Set((await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path))
+      const live = new Map((await tx.listFiles(this.projectId)).filter((file) => file.content !== null).map((file) => [file.path, file.localId]))
       for (const [index, change] of changes.entries()) {
         const source = await tx.getFile(this.projectId, sourcePaths[index])
         if ((source?.content ?? null) !== (before[index]?.content ?? null)) {
           throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
         }
         if (change.kind === "write") {
-          await this.checkFree(tx, change.path, source)
+          checkFree(folders, live, change.path, source)
           const file: LocalFile = source ?? {
             partition: this.partition,
             projectId: this.projectId,
@@ -235,6 +255,7 @@ export class ProjectFileStore {
             draft:
               file.draft && (file.draft.content === change.content || file.draft.token === change.expectedRevision) ? null : file.draft,
           })
+          live.set(change.path, file.localId)
         } else if (change.kind === "move") {
           if (!source || source.content === null) throw new FileStoreError(`${change.from} is not in this project.`)
           if (source.draft) throw new FileStoreError(`Save or discard the unsaved edits in ${change.from} before moving it.`)
@@ -247,7 +268,7 @@ export class ProjectFileStore {
                 : `${change.to} was just deleted and is still syncing. Try again once it has synced.`,
             )
           }
-          await this.checkFree(tx, change.to, null)
+          checkFree(folders, live, change.to, null)
           await tx.deleteFile(this.projectId, source.path)
           await tx.putFile({
             ...source,
@@ -258,6 +279,8 @@ export class ProjectFileStore {
             // Moving is how a file whose path was taken on the server gets a free one.
             conflict: source.conflict?.pathTaken ? null : source.conflict,
           })
+          live.delete(source.path)
+          live.set(change.to, source.localId)
         } else {
           if (!source || source.content === null) throw new FileStoreError(`${change.path} is not in this project.`)
           if (source.base === null && !inFlight.has(source.localId)) {
@@ -266,6 +289,7 @@ export class ProjectFileStore {
           } else {
             await tx.putFile({ ...source, content: null, batch: batch ?? source.batch, draft: null })
           }
+          live.delete(source.path)
         }
       }
     })
@@ -281,33 +305,29 @@ export class ProjectFileStore {
     return results
   }
 
-  /** A file cannot sit where a folder is, and no ancestor of a path can be a file. */
-  private async checkFree(tx: StorageTransaction, path: string, self: LocalFile | null): Promise<void> {
-    const folders = await tx.listFolders(this.projectId)
-    const files = await tx.listFiles(this.projectId)
-    const live = files.filter((file) => file.content !== null && file.localId !== self?.localId)
-    if (folders.some((folder) => folder.local && folder.path === path)) throw new FileStoreError(`${path} is a folder.`)
-    for (const ancestor of ancestors(path)) {
-      if (live.some((file) => file.path === ancestor)) throw new FileStoreError(`${ancestor} is a file, so it cannot contain ${path}.`)
-    }
-    if (live.some((file) => file.path.startsWith(`${path}/`))) throw new FileStoreError(`${path} already contains other files.`)
+  async createDirectory(path: string): Promise<void> {
+    await this.createDirectories([path])
   }
 
-  async createDirectory(path: string): Promise<void> {
-    checkPath(path)
+  /** Create several folders on this device at once; if one cannot be created, none is. */
+  async createDirectories(paths: string[]): Promise<void> {
+    if (paths.length === 0) return
+    for (const path of paths) checkPath(path)
+    if (new Set(paths).size !== paths.length) throw new FileStoreError("Each folder can be created only once.")
     await this.db.transaction(this.partition, "readwrite", async (tx) => {
       await this.editableProject(tx)
-      const existing = await tx.getFile(this.projectId, path)
-      if (existing && existing.content !== null) throw new FileStoreError(`${path} is a file.`)
-      const files = await tx.listFiles(this.projectId)
-      for (const ancestor of ancestors(path)) {
-        if (files.some((file) => file.content !== null && file.path === ancestor)) {
-          throw new FileStoreError(`${ancestor} is a file, so it cannot contain ${path}.`)
+      const files = new Set((await tx.listFiles(this.projectId)).filter((file) => file.content !== null).map((file) => file.path))
+      const folders = new Map((await tx.listFolders(this.projectId)).map((folder) => [folder.path, folder]))
+      for (const path of paths) {
+        if (files.has(path)) throw new FileStoreError(`${path} is a file.`)
+        for (const ancestor of ancestors(path)) {
+          if (files.has(ancestor)) throw new FileStoreError(`${ancestor} is a file, so it cannot contain ${path}.`)
         }
+        if (folders.get(path)?.local) throw new FileStoreError(`${path} already exists.`)
       }
-      const folder = (await tx.listFolders(this.projectId)).find((candidate) => candidate.path === path)
-      if (folder?.local) throw new FileStoreError(`${path} already exists.`)
-      await tx.putFolder({ partition: this.partition, projectId: this.projectId, path, base: folder?.base ?? false, local: true })
+      for (const path of paths) {
+        await tx.putFolder({ partition: this.partition, projectId: this.projectId, path, base: folders.get(path)?.base ?? false, local: true })
+      }
     })
     this.emit()
   }

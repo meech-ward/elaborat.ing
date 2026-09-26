@@ -32,11 +32,21 @@ export const byteLength = (text: string): number => encoder.encode(text).length
  * database.
  */
 export function isValidProjectPath(path: unknown): path is string {
-  if (typeof path !== "string") return false
+  return typeof path === "string" && projectPathProblem(path) === null
+}
+
+/** Why a path breaks the rule above, in words a person can act on; null when it is valid. */
+export function projectPathProblem(path: string): string | null {
   const bytes = byteLength(path)
-  if (bytes < 1 || bytes > 1024) return false
-  if (path.normalize("NFC") !== path) return false
-  return !/(^\/|\/$|\/\/|(^|\/)\.|[\\:\u0000-\u001f\u007f-\u009f])/.test(path)
+  if (bytes < 1) return "The path is empty."
+  if (bytes > 1024) return "The path is longer than 1024 bytes."
+  if (path.normalize("NFC") !== path) return "The path is not in Unicode normal form C (NFC)."
+  if (path.startsWith("/") || path.endsWith("/")) return "The path starts or ends with a slash."
+  if (path.includes("//")) return "The path has an empty folder name (two slashes in a row)."
+  if (/(^|\/)\./.test(path)) return "A name in the path starts with a dot."
+  if (/[\\:]/.test(path)) return "The path has a backslash or a colon."
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(path)) return "The path has a control character."
+  return null
 }
 
 export const ProjectPath = z.string().refine(isValidProjectPath, "Invalid project path")

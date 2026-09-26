@@ -110,8 +110,10 @@ this repository once the steps before them have landed.
     embed in notes.**
 15. **The app restarts offline (open for contributors)**, using
     vite-plugin-pwa.
-16. **Projects exported from the prototype import into elaborat.ing (open for
-    contributors).**
+16. **Projects exported from the prototype import into elaborat.ing (done).**
+    "Import a project" on the projects home reads the prototype's one-file
+    JSON export, creates the project on this device in saves of at most 500
+    files and 8 MiB, and lists any path this app cannot store with the reason.
 
 Also done in this phase: the comment anchoring library (see the task below).
 
