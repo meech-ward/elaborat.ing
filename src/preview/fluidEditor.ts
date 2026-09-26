@@ -40,6 +40,74 @@ const selectionOf = (state: EditorState): Selection => ({
   anchor: state.selection.anchor,
   head: state.selection.head,
 });
+/** A DOM node in the editable document, outside any object island. */
+function inProse(view: EditorView, node: Node): boolean {
+  const element =
+    node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  return (
+    !!element &&
+    view.dom.contains(element) &&
+    !element.closest("[data-fluid-object]")
+  );
+}
+
+/**
+ * Chromium reports a caret moved by a native key (an arrow, Home, End) with a
+ * `selectionchange` event that can arrive after the next keydown, and
+ * ProseMirror updates its selection only from that event. A key command run
+ * in between, such as Enter's split, would act where the caret was before.
+ * So take the browser's caret first. Node selections, and carets in object
+ * islands, stay as ProseMirror has them.
+ */
+function adoptDOMCaret(view: EditorView) {
+  const current = view.state.selection;
+  const dom = view.dom.ownerDocument.getSelection();
+  if (!(current instanceof TextSelection) || !view.hasFocus() || !dom) return;
+  const { anchorNode, focusNode } = dom;
+  if (!anchorNode || !focusNode) return;
+  if (!inProse(view, anchorNode) || !inProse(view, focusNode)) return;
+  const anchor = view.posAtDOM(anchorNode, dom.anchorOffset);
+  const head = view.posAtDOM(focusNode, dom.focusOffset);
+  if (anchor === current.anchor && head === current.head) return;
+  const { doc } = view.state;
+  view.dispatch(
+    view.state.tr.setSelection(
+      TextSelection.between(doc.resolve(anchor), doc.resolve(head)),
+    ),
+  );
+}
+
+/**
+ * ProseMirror's own focus handler runs straight after `handleDOMEvents.focus`
+ * and sets a 20 ms timer that writes ProseMirror's selection back to the DOM
+ * if the DOM caret moved without ProseMirror seeing it. A key pressed in those
+ * 20 ms has moved the caret without ProseMirror seeing it yet (see
+ * `adoptDOMCaret`), so the timer would undo the move. ProseMirror has no
+ * option for this, so wrap the next timer set during this focus event and run
+ * `first` at the start of its callback, in the same task: key events can run
+ * between two separate timers.
+ */
+function beforeFocusCheck(first: () => void) {
+  const setTimer = window.setTimeout;
+  const restore = () => {
+    window.setTimeout = setTimer;
+  };
+  window.setTimeout = ((handler: TimerHandler, timeout?: number, ...rest: unknown[]) => {
+    restore();
+    if (typeof handler !== "function") return setTimer(handler, timeout, ...rest);
+    return setTimer(
+      (...args: unknown[]) => {
+        first();
+        handler(...args);
+      },
+      timeout,
+      ...rest,
+    );
+  }) as typeof window.setTimeout;
+  // Also restore if this focus event sets no timer.
+  queueMicrotask(restore);
+}
+
 function objects(doc: PMNode): string {
   const ids: string[] = [];
   doc.descendants((node) => {
@@ -62,6 +130,7 @@ export class FluidEditor {
   private group = 0;
   private lastInput = 0;
   private historyPending: "undo" | "redo" | null = null;
+  private keysSinceFocus = false;
   private notifyIslands: () => void;
 
   constructor(mount: HTMLElement, notifyIslands: () => void) {
@@ -135,7 +204,20 @@ export class FluidEditor {
         object: (node) => this.objectView(node, false),
         inline_object: (node) => this.objectView(node, true),
       },
+      // Runs before the keymap, so every key command sees the real caret.
+      handleKeyDown: (view) => {
+        this.keysSinceFocus = true;
+        adoptDOMCaret(view);
+        return false;
+      },
       handleDOMEvents: {
+        focus: (view) => {
+          this.keysSinceFocus = false;
+          beforeFocusCheck(() => {
+            if (this.keysSinceFocus) adoptDOMCaret(view);
+          });
+          return false;
+        },
         pointerdown: (view, event) => {
           // A touch scroll start must not force focus. Completed taps get
           // the fallback below, after the browser places the DOM caret.
