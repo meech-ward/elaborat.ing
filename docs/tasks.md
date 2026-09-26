@@ -696,7 +696,7 @@ folder entries, all in one atomic batch.
 
 ## T25: archive, unarchive and permanently delete a project
 
-**Status:** Ready
+**Status:** Done (#25)
 
 The database archives and unarchives projects for any editor, agents included,
 and permanently deletes them for the owner only, and only in a person's own
@@ -763,3 +763,63 @@ today, so the store is the last guard, as it is for moves.
   draft are still there.
 
 **Done when** the tests pass, and CI passes.
+
+## T28: viewers and archived projects open read-only
+
+**Status:** Ready
+
+The file store refuses changes from a viewer or commenter, and to an archived
+project (`editableProject` in `src/features/project-storage/fileStore.ts`:
+"You can view this project but not change it." and "This project is archived.
+Unarchive it to make changes."). The editor doesn't know: people can type,
+draw and rename, and only find out when the save fails.
+
+- The project page says why it can't be changed, near the project's title: an
+  archived project says so, with an Unarchive button for owners and editors
+  (`library.unarchive`); a viewer or commenter is told they can view it.
+- While the project can't be changed, every editor is read-only: the source
+  editor (Monaco's `readOnly`), the rendered view (no editing in the frame),
+  drawings (Excalidraw's view mode) and diagrams (code and canvas). Creating,
+  renaming, moving, deleting and importing files are hidden or disabled with
+  the reason. Nothing writes drafts.
+- Unarchiving, or being made an editor, lifts it without a reload.
+- Browser journeys: a viewer opens a note, typing changes nothing and leaves
+  no draft, and the explorer offers no Rename, Move or Delete; an archived
+  project shows its notice, is read-only, and after Unarchive it can be edited
+  and saved. The existing journeys keep passing.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T29: sign in with a one-time code, GitHub or Google
+
+**Status:** Ready
+
+The sign-in page offers a password and an emailed link
+(`src/features/auth/MagicLinkForm.tsx`). The roadmap's phase 3 adds a one-time
+code and GitHub and Google. Turning providers on for the hosted project needs
+the maintainer's OAuth apps, so this task builds the app side and the config,
+with the providers left off.
+
+- **One-time code.** The emailed-link message also carries the code:
+  `supabase/templates/magic_link.html`, set in `config.toml` under
+  `[auth.email.template.magic_link]`, shows the link and `{{ .Token }}`. After
+  sending, the form asks for the code and signs in with
+  `auth.verifyOtp({ email, token, type: "email" })`, then goes to `next` as the
+  link does. A wrong or expired code shows the error and lets the person try
+  again or send a new one.
+- **GitHub and Google.** `[auth.external.github]` and `[auth.external.google]`
+  in `config.toml` with `enabled = false`, `client_id` and `secret` read with
+  `env(...)`, and a comment saying what to set. The sign-in page reads Auth's
+  public settings (`GET /auth/v1/settings`, its `external` map) and shows a
+  "Continue with GitHub" or "Continue with Google" button only for providers
+  that are on. A button calls `auth.signInWithOAuth` with `redirectTo` back to
+  the sign-in page with `next`, like the emailed link.
+- The browser fake answers `/auth/v1/settings`, `/auth/v1/verify` and the
+  OAuth authorize redirect.
+- Browser journeys: the code signs in and lands on `next`; a wrong code shows
+  the error; with GitHub on, its button leads to Auth's authorize URL for
+  `provider=github` with the right `redirect_to`; with both off, no provider
+  buttons show. Axe finds nothing on the sign-in page at desktop and phone
+  widths.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
