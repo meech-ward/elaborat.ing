@@ -232,3 +232,21 @@ used.
 **Done when** the pgTAP tests pass (the maintainer runs them on the hosted
 project before merging), the migration check in CI passes, and the client
 class has its unit test.
+
+## T9: run the drawing fidelity checks on the synthetic Obsidian drawing
+
+**Status:** Waiting (on T7)
+
+`tests/browser/fidelity.spec.ts` checks that the drawing canvas changes only
+what it is asked to (byte-exact no-op open, delete and undo, editing a text by
+its id, image pixels, PNG and SVG export). It runs on the plain demo scene. The
+compressed Obsidian drawing from T7 is the realistic case.
+
+- Let the harness (`tests/browser/harness/main.tsx`) open either drawing,
+  chosen by a URL query parameter, and run every fidelity test on both.
+- For the Obsidian drawing, the text-edit test must edit the text element with
+  the stable id T7 gives it, and a no-op open must return the file's exact
+  bytes, compressed fence included.
+
+**Done when** every fidelity test passes on both drawings in Chromium and
+Firefox, and CI passes.
