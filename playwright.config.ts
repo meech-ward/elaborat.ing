@@ -2,13 +2,17 @@ import { defineConfig, devices } from "@playwright/test"
 import { APP_URL, HARNESS_URL } from "./tests/browser/urls.ts"
 
 // Browser tests run against production builds: the app built against a
-// stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test)
-// and the test harness (`bun run build:harness`). Build both first.
+// stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test),
+// the test harness (`bun run build:harness`), and the app's next version for
+// the update journey (`bun run build:next-version`). Build all three first.
 export default defineConfig({
   testDir: "tests/browser",
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
-  use: { trace: "retain-on-failure" },
+  // Service workers are blocked except in offline.spec.ts, which allows them:
+  // `page.route` does not see requests a worker answers, and each test would
+  // otherwise download the whole app into its cache.
+  use: { trace: "retain-on-failure", serviceWorkers: "block" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },

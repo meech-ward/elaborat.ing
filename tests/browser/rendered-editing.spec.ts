@@ -24,6 +24,11 @@ import {
 // (Undo through the source editor is checked once the source editor is
 // mounted, roadmap phase 2 step 10.)
 
+// Playwright's service worker blocking (playwright.config.ts) runs a script in
+// every frame, which throws inside the sandboxed preview frame. The harness
+// registers no worker, so these tests leave workers allowed.
+test.use({ serviceWorkers: "allow" })
+
 const prefix = "export const untouched = 7;\n\n{/* preserve  this comment */}\n\n"
 const first = "Start **bold** and *emphasis* plus `code` and [link](https://example.com) end."
 const plain = "Start bold and emphasis plus code and link end."

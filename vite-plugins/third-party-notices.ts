@@ -6,9 +6,11 @@ import type { Plugin } from "vite"
 // JavaScript bundle. This plugin appends what that misses:
 // - packages that stylesheets pull in with @import or @plugin, such as
 //   tailwindcss, whose CSS is compiled into the stylesheet;
+// - `packages` the build ships outside the bundle, such as the Workbox
+//   modules in the generated service worker;
 // - code adapted from other projects, from its /*! ... */ license comment.
 // It reads every stylesheet and source file under src/, bundled or not.
-export function thirdPartyNotices(): Plugin {
+export function thirdPartyNotices({ packages = [] }: { packages?: string[] } = {}): Plugin {
   return {
     name: "third-party-notices",
     apply: "build",
@@ -32,7 +34,7 @@ export function thirdPartyNotices(): Plugin {
         const srcDir = path.join(root, "src")
         const files = fs.readdirSync(srcDir, { recursive: true, encoding: "utf8" }).sort()
 
-        for (const name of stylesheetPackages(srcDir, files)) {
+        for (const name of [...stylesheetPackages(srcDir, files), ...packages]) {
           const dir = path.join(root, "node_modules", name)
           const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
           const heading = `## ${pkg.name} - ${pkg.version}`

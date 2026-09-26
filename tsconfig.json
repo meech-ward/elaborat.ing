@@ -13,7 +13,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "types": ["bun-types", "node", "vite/client"],
+    "types": ["bun-types", "node", "vite/client", "vite-plugin-pwa/react"],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "vite-plugins", "tests", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]

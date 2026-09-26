@@ -281,7 +281,7 @@ Firefox, and CI passes.
 
 ## T11: rendered notes use components from project files, and follow their changes
 
-**Status:** Ready
+**Status:** Done (#11)
 
 An MDX note can define components with `export const` and import them from
 other project files with `import { Name } from "workspace:<path>"`.
@@ -332,7 +332,7 @@ the pull request instead of building it.
 
 ## T12: the app restarts offline
 
-**Status:** Ready
+**Status:** Done (#12)
 
 Once a project has opened on a device, the app should start again with no
 network: reload, a new tab, or a browser restart. Use
@@ -417,3 +417,49 @@ and 4096 directories, no duplicate paths, no file used as a directory, at most
   At 390 px wide, the control and the skip report cause no sideways scrolling.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T14: Ctrl+S saves the file whose editor has focus
+
+**Status:** Ready
+
+`src/features/source/SourceEditor.tsx` binds Ctrl+S (and Ctrl+Shift+L) with
+Monaco's `editor.addCommand`. In standalone Monaco those keybindings are
+global, so with two source editors mounted (two open notes, or a note and a
+drawing or diagram in its Source or Code view) the most recently created
+editor's handler runs. To reproduce: open `a.md`, then open `b.md`, go back
+to `a.md`, type, and press Ctrl+S. `a.md` stays unsaved.
+
+- Bind these keys per editor, for example with `editor.addAction` and its
+  `keybindings`, as the existing format action does, so each runs only in
+  the editor that has focus.
+- Add a browser journey that fails before the fix: two notes open, edit the
+  first, Ctrl+S, and the first is saved on the device and reaches the fake
+  server; then the same with a note and a diagram's Code view.
+
+**Done when** the journey passes in Chromium and Firefox, and CI passes.
+
+## T15: the first visit downloads less for offline use
+
+**Status:** Ready
+
+Since T12 the service worker precaches every file the build ships, about
+50 MB, on a device's first visit. Two large parts are rarely needed:
+
+- **Excalidraw's fonts (about 14 MB, mostly CJK subsets).** Precache the fonts
+  the app shows in its own interface, and cache the rest on first use with a
+  runtime route for same-origin font files (cache first). A drawing that uses
+  a script this device has never shown falls back to a system font offline.
+- **Monaco workers the app never starts.** The app edits Markdown, MDX, JSON
+  and D2, but the build also ships Monaco's TypeScript (6.7 MB), CSS and HTML
+  workers. Find out which workers the app actually starts (check
+  `src/features/source/`), and leave the others out of the build, not only
+  out of the precache.
+
+Keep the D2 compiler (8 MB) precached, so diagrams work offline after one
+visit. Update the precache check in `tests/browser/offline.spec.ts` for the
+files now cached on first use, and add a journey: online, open a drawing with
+CJK text, go offline, reload, and the text still renders in its font.
+
+**Done when** the precache is at most about 30 MB (say the measured size in
+the pull request), the offline spec and the whole browser suite pass, and CI
+passes.

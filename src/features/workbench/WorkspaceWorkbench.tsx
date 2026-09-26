@@ -60,6 +60,7 @@ import {
   FolderSync,
   FilePlus,
   PenTool,
+  Network,
   FileUp,
   Terminal,
 } from "lucide-react";
@@ -95,6 +96,8 @@ import {
 import { type TabFile } from "./tabs";
 import { MoveDialog } from "./MoveDialog";
 import { DrawingView } from "./DrawingView";
+import { DiagramView } from "./DiagramView";
+import { FLOW_D2_EXAMPLE } from "@/features/structured/examples";
 import { useFileMoves } from "./useFileMoves";
 import { emptyNavigationTabs, navigationTabTransition } from "./navigationTabs";
 import { useFileLocation } from "../navigation/useFileLocation";
@@ -431,7 +434,7 @@ export function WorkspaceWorkbench({
     if (restoreDone.current) setPersistReady(true);
   }, [narrow]);
   const createFile = useCallback(
-    async (kind: "note" | "mdx" | "drawing") => {
+    async (kind: "note" | "mdx" | "drawing" | "diagram") => {
       const existing = [
         ...files.map((file) => file.path),
         ...state.tabs.map((tab) => tab.path),
@@ -439,11 +442,13 @@ export function WorkspaceWorkbench({
       // The selected folder ("", the explicit root, included) is where new
       // files go. Collision checks cover saved files and open tabs.
       const dir = folderPrefs.selectedFolder ?? "";
-      const path = suggestUntitledName(existing, kind === "mdx" ? ".mdx" : kind === "drawing" ? ".excalidraw" : ".md", dir);
+      const suffix = kind === "mdx" ? ".mdx" : kind === "drawing" ? ".excalidraw" : kind === "diagram" ? ".d2" : ".md";
+      const path = suggestUntitledName(existing, suffix, dir);
       try {
-        if (kind === "drawing") {
-          // A drawing starts saved: an empty scene is already a valid file.
-          const content = '{"type":"excalidraw","version":2,"elements":[]}';
+        if (kind === "drawing" || kind === "diagram") {
+          // A drawing or diagram starts saved: an empty scene, or a small
+          // example diagram whose generated files appear on its first save.
+          const content = kind === "drawing" ? '{"type":"excalidraw","version":2,"elements":[]}' : FLOW_D2_EXAMPLE;
           const saved = await client.write(path, { content, expectedRevision: null });
           await refreshList();
           addDraft({ path, content, revision: saved.revision });
@@ -650,6 +655,7 @@ export function WorkspaceWorkbench({
     { name: "New note", run: () => void createFile("note") },
     { name: "New MDX note", run: () => void createFile("mdx") },
     { name: "New drawing", run: () => void createFile("drawing") },
+    { name: "New diagram", run: () => void createFile("diagram") },
     { name: "New folder", run: openFolderDialog },
     ...files.map((file) => ({
       name: `Open ${file.path}`,
@@ -707,6 +713,7 @@ export function WorkspaceWorkbench({
           </button>
           <button onClick={() => void createFile("mdx")}><FilePlus size={14} /> New MDX note</button>
           <button onClick={() => void createFile("drawing")}><PenTool size={14} /> New drawing</button>
+          <button onClick={() => void createFile("diagram")}><Network size={14} /> New diagram</button>
           <button onClick={() => fileInput.current?.click()}>
             <FileUp size={14} /> Import
           </button>
@@ -934,7 +941,19 @@ export function WorkspaceWorkbench({
                         aria-label={tab.path}
                         className="wb-session-host"
                       >
-                        {kindForPath(tab.path) === "drawing" ? (
+                        {kindForPath(tab.path) === "diagram" ? (
+                          <DiagramView
+                            navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
+                            client={client}
+                            initial={tab}
+                            active={!hideSessions && state.active === tab.path}
+                            onState={onState}
+                            onOperationSession={registerSession}
+                            savedRevision={files.find((file) => file.path === tab.path)?.revision}
+                            conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
+                            onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                          />
+                        ) : kindForPath(tab.path) === "drawing" ? (
                           <DrawingView
                             navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
                             client={client}

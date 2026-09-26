@@ -6,6 +6,7 @@ src/routeTree.gen.ts
 
 # Browser tests
 tests/browser/harness/dist/
+dist-next/
 test-results/
 playwright-report/
 

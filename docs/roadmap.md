@@ -88,12 +88,16 @@ this repository once the steps before them have landed.
    (step 10).
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both), and
-    leaving a project or signing out keeps unsaved edits first. Drawings got
-    their canvas in step 13, and diagrams open as text until step 14. Renaming
-    and moving came with step 12. Not yet carried over from the prototype: its
-    reading-position and touch-focus journeys, and undo through the source
-    editor after a rendered edit.
-11. **Custom MDX components load from project files (open for contributors).**
+    leaving a project or signing out keeps unsaved edits first. Drawings and
+    diagrams got their views in steps 13 and 14, and renaming and moving came
+    with step 12. Not yet carried over from the prototype: its reading-position
+    and touch-focus journeys, and undo through the source editor after a
+    rendered edit.
+11. **Custom MDX components load from project files (done).** A note imports
+    named components from other MDX files with `workspace:` specifiers.
+    Modules load from their saved copies and run only in the frame, and a
+    module saved in another tab or brought in by sync updates the open notes
+    that use it. Browser journeys in `tests/browser/components.spec.ts`.
 12. **Files can be renamed and moved, with references rewritten in the same
     save, and folders created (done).** A D2 diagram's generated files move
     with it, open tabs follow their files, and unsaved edits or a sync conflict
@@ -107,9 +111,16 @@ this repository once the steps before them have landed.
     A file that does not parse opens as text with the error. New drawings come
     from the workbench menu. Drawings embedded in notes arrive with step 14.
 14. **D2 diagrams compile in the browser, save as one three-file batch, and
-    embed in notes.**
-15. **The app restarts offline (open for contributors)**, using
-    vite-plugin-pwa.
+    embed in notes (done).** The diagram view has code and a generated canvas;
+    Regenerate keeps freehand additions and moved shapes, a syntax error keeps
+    the last valid canvas, and renaming a node on the canvas updates the code.
+    Notes show pictures of the drawings and diagrams they embed, with a zoomable
+    viewer. New diagrams come from the workbench menu. Canvas label renames are
+    covered by unit tests, not yet by a browser journey.
+15. **The app restarts offline (done)**, using vite-plugin-pwa. Once a
+    project has opened on a device, the app, its projects and unsaved edits
+    come back with no network, and a new version waits until the person
+    chooses "Update ready".
 16. **Projects exported from the prototype import into elaborat.ing (done).**
     "Import a project" on the projects home reads the prototype's one-file
     JSON export, creates the project on this device in saves of at most 500

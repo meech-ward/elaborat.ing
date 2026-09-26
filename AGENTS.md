@@ -22,6 +22,7 @@ planned work: never describe something as working until it is built and tested.
 | Validation | Zod v4 at real external boundaries (API responses, stored browser data, URL input, config) |
 | Backend | Supabase: Postgres with RLS, Auth, Realtime, Edge Functions. Supabase CLI 2.118.0 (`bunx supabase@2.118.0`). |
 | Frontend hosting | Cloudflare Workers static assets, configured in `wrangler.jsonc` |
+| Offline | vite-plugin-pwa with Workbox's generated service worker |
 | Checks | ESLint, `tsc`, Bun tests; Playwright with axe in Chromium and Firefox against production builds |
 
 ## Commands
@@ -34,8 +35,8 @@ bun run typecheck   # run after a build
 bun run lint
 bun run test
 
-# Browser tests (Playwright runs on Node): build both, install browsers once
-bun run build:browser-test && bun run build:harness
+# Browser tests (Playwright runs on Node): build all three, install browsers once
+bun run build:browser-test && bun run build:harness && bun run build:next-version
 npx playwright install --with-deps chromium firefox
 npx playwright test
 ```
