@@ -96,10 +96,12 @@ import {
 } from "./folderPreferences";
 import { type TabFile } from "./tabs";
 import { MoveDialog } from "./MoveDialog";
+import { DeleteDialog } from "./DeleteDialog";
 import { DrawingView } from "./DrawingView";
 import { DiagramView } from "./DiagramView";
 import { FLOW_D2_EXAMPLE } from "@/features/structured/examples";
 import { useFileMoves } from "./useFileMoves";
+import { useFileDeletes } from "./useFileDeletes";
 import { emptyNavigationTabs, navigationTabTransition } from "./navigationTabs";
 import { useFileLocation } from "../navigation/useFileLocation";
 import {
@@ -289,6 +291,18 @@ export function WorkspaceWorkbench({
     setFolderPrefs((prev) => followFolderMove(prev, from, to));
   }, []);
   const moves = useFileMoves({ client, tabs: tabsRef, sessions: leaveSessions, dispatch, notify: setNotice, onFolderMove: followFolder });
+  // Tabs of deleted files close, as a close does; their edits were settled before the delete.
+  const closeDeleted = useCallback((paths: string[]) => {
+    const gone = new Set(paths);
+    for (const path of paths) closedDuringRestore.current.add(path);
+    const open = stateRef.current.tabs.filter((tab) => gone.has(tab.path));
+    if (open.length === 0) return;
+    interacted.current = true;
+    if (stateRef.current.active !== null && gone.has(stateRef.current.active)) dispatch({ type: "request", sequence: ++sequence.current });
+    for (const tab of open) dispatch({ type: "close", path: tab.path, discard: true });
+    if (restoreDone.current) setPersistReady(true);
+  }, []);
+  const deletes = useFileDeletes({ client, tabs: tabsRef, sessions: leaveSessions, notify: setNotice, onDeleted: closeDeleted });
   const registerSession = useCallback((path: string, session: OperationSession | null) => {
     if (session) leaveSessions.current.set(path, session); else leaveSessions.current.delete(path);
     if (session?.state().reconciled) {
@@ -649,6 +663,8 @@ export function WorkspaceWorkbench({
           onMoveFile={moves.open}
           onRenameFolder={moves.renameFolder}
           onMoveFolder={moves.openFolder}
+          onDeleteFile={deletes.deleteFile}
+          onDeleteFolder={deletes.deleteFolder}
         />
       )}
       {listed && !listError && treeIsEmpty && (
@@ -1164,6 +1180,8 @@ export function WorkspaceWorkbench({
         plan={moves.plan} pending={moves.pending} error={moves.error} stale={moves.stale}
         onFolder={moves.changeFolder} onPreview={() => void moves.preview()}
         onCommit={() => void moves.commit()} onClose={moves.close} />}
+      {deletes.request && <DeleteDialog request={deletes.request} plan={deletes.plan} pending={deletes.pending} deleting={deletes.deleting}
+        error={deletes.error} stale={deletes.stale} onCommit={deletes.commit} onClose={deletes.close} />}
       <ReadingSettings
         open={readingSettings}
         onOpenChange={setReadingSettings}

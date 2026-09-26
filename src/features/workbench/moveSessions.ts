@@ -20,7 +20,19 @@ export function moveSessionProblem(
   for (const move of plan.moves) {
     if (tabs.some(tab => tab.path === move.to)) return `${move.to} is already open. Close that tab first.`;
   }
-  const affected = new Set(affectedMovePaths(plan));
+  return openFilesProblem(affectedMovePaths(plan), tabs, sessions);
+}
+
+/**
+ * Why the open editors of `paths` stop a change to those files right now, or
+ * null: each must match its saved copy, with no edit or save in flight.
+ */
+export function openFilesProblem(
+  paths: readonly string[],
+  tabs: readonly OpenTab[],
+  sessions: ReadonlyMap<string, OperationSession>,
+): string | null {
+  const affected = new Set(paths);
   for (const tab of tabs) {
     if (!affected.has(tab.path)) continue;
     const state = sessions.get(tab.path)?.state();

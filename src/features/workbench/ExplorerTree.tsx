@@ -5,8 +5,8 @@
  * tree, whose complete keyboard contract is out of scope. Each folder row
  * (ExplorerFolderRow) carries ordinary buttons: a chevron that
  * expands/collapses, a name button that selects the creation destination
- * without touching the active editor, and Rename and Move to folder. The
- * explicit Workspace root row selects the root. Files reuse
+ * without touching the active editor, and Rename, Move to folder and
+ * Delete. The explicit Workspace root row selects the root. Files reuse
  * ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
  * basename labels; full paths stay in titles and accessible names.
  */
@@ -36,6 +36,9 @@ export interface ExplorerTreeProps {
   /** A folder moves with everything in it; without these its row offers neither. */
   onRenameFolder?: (path: string, newName: string) => Promise<void>;
   onMoveFolder?: (path: string) => void;
+  /** Open the delete confirmation. Unsaved drafts that are not files yet offer no delete. */
+  onDeleteFile?: (path: string) => void;
+  onDeleteFolder?: (path: string) => void;
 }
 
 export function ExplorerTree({
@@ -53,6 +56,8 @@ export function ExplorerTree({
   onMoveFile,
   onRenameFolder,
   onMoveFolder,
+  onDeleteFile,
+  onDeleteFolder,
 }: ExplorerTreeProps) {
   const open = new Set(expanded);
   const rootSelected = selectedFolder === "";
@@ -69,6 +74,7 @@ export function ExplorerTree({
         onFeedback={onFeedback}
         onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
         onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
+        onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
       />
     </li>
   );
@@ -85,6 +91,7 @@ export function ExplorerTree({
           onSelect={() => onSelectFolder(node.path)}
           onRename={onRenameFolder ? (newName) => onRenameFolder(node.path, newName) : undefined}
           onMove={onMoveFolder ? () => onMoveFolder(node.path) : undefined}
+          onDelete={onDeleteFolder ? () => onDeleteFolder(node.path) : undefined}
         />
         {isOpen && (
           <ul className="wb-tree-nested">

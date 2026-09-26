@@ -579,7 +579,17 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
       }
       content = content.slice(0, patch.from) + patch.insert + content.slice(patch.to);
     }
-    if (content !== source) result.updates.push({ path: file.path, content, references });
+    if (content !== source || references.length > 0) result.updates.push({ path: file.path, content, references });
   }
   return result;
+}
+
+/**
+ * Every reference in `files` to one of `targets`, found as a move of them
+ * would find it, without rewriting anything (a delete leaves references as
+ * they are). References the move planner cannot handle are not listed.
+ */
+export function findReferences(files: MoveReferenceFile[], targets: string[]): { path: string; references: { to: string; line: number }[] }[] {
+  const plan = planMoveReferences(files, targets.map((path) => ({ from: path, to: path })));
+  return plan.updates.map(({ path, references }) => ({ path, references: references.map(({ from, line }) => ({ to: from, line })) }));
 }

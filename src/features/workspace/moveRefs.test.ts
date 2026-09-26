@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { planMoveReferences, referencesWorkspaceModule } from "./moveRefs";
+import { findReferences, planMoveReferences, referencesWorkspaceModule } from "./moveRefs";
 
 test("rename import guard compares parsed literal values, including escaped prefixes", () => {
   const escaped = String.raw`import { X } from 'work\u0073pace:components/card.mdx';`;
@@ -226,4 +226,23 @@ test("refuses unsupported workspace import forms referencing a moved module", ()
     expect(one(source, "notes/n.mdx", "components/cards.mdx", "shared/cards.mdx").blockers, source).toEqual([]);
   }
   expect(one("import { X from 'workspace:components/cards.mdx';\n", "notes/n.mdx", "components/cards.mdx", "shared/cards.mdx").blockers[0]?.reason).toContain("parse");
+});
+
+test("finds references to files without rewriting anything, for a delete", () => {
+  const note = [
+    "import { Card } from 'workspace:components/card.mdx';", "",
+    "# Note", "",
+    '<Drawing src="art/a.excalidraw" />', "",
+    "See [the plan](plan.md) and [another](other.md).", "",
+  ].join("\n");
+  const files = [{ path: "notes/n.mdx", content: note }, { path: "other.md", content: "Nothing here.\n" }];
+  expect(findReferences(files, ["components/card.mdx", "art/a.excalidraw", "plan.md"])).toEqual([{
+    path: "notes/n.mdx",
+    references: [
+      { to: "components/card.mdx", line: 1 },
+      { to: "art/a.excalidraw", line: 5 },
+      { to: "plan.md", line: 7 },
+    ],
+  }]);
+  expect(findReferences(files, ["gone.md"])).toEqual([]);
 });
