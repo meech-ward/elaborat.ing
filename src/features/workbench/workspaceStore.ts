@@ -20,6 +20,8 @@ export interface WorkspaceStore {
   persistDrafts(entries: Array<{ path: string; content: string; baseRevision: string | null }>): Promise<void>
   flushLocalDrafts(): Promise<void>
   discardLocalDraft(path: string): Promise<void>
+  /** Rename a new file that was never saved: only the name it will be saved under changes. */
+  renameDraft(from: string, to: string): Promise<void>
   /** Called after any change on this device, including changes sync brings in. */
   subscribe(listener: () => void): () => void
 }
@@ -80,6 +82,7 @@ export function projectWorkspace(
     persistDrafts: (entries) => store.persistDrafts(entries),
     flushLocalDrafts: () => store.flushDrafts(),
     discardLocalDraft: (path) => store.discardDraft(path),
+    renameDraft: (from, to) => store.renameDraft(from, to),
     subscribe(listener) {
       const local = store.subscribe(listener)
       const synced = subscribeSync(listener)

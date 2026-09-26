@@ -418,6 +418,29 @@ export class ProjectFileStore {
     if (this.draftFailure) throw this.draftFailure
   }
 
+  /**
+   * Give a new file that exists only as a draft (it was never saved) another
+   * name: the draft moves to `to`, which must be free. Nothing reaches the
+   * server until the file is saved.
+   */
+  async renameDraft(from: string, to: string): Promise<void> {
+    await this.draftQueue.catch(() => {})
+    checkPath(from)
+    checkPath(to)
+    await this.db.transaction(this.partition, "readwrite", async (tx) => {
+      await this.editableProject(tx)
+      const file = await tx.getFile(this.projectId, from)
+      if (!file?.draft || file.content !== null || file.base !== null) throw new FileStoreError(`${from} is not a new file that was never saved.`)
+      if (await tx.getFile(this.projectId, to)) throw new FileStoreError(`${to} already exists.`)
+      const folders = new Set((await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path))
+      const live = new Map((await tx.listFiles(this.projectId)).filter((other) => other.content !== null).map((other) => [other.path, other.localId]))
+      checkFree(folders, live, to, file)
+      await tx.deleteFile(this.projectId, from)
+      await tx.putFile({ ...file, path: to })
+    })
+    this.emit()
+  }
+
   async discardDraft(path: string): Promise<void> {
     await this.draftQueue.catch(() => {})
     checkPath(path)

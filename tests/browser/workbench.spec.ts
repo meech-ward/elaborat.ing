@@ -205,6 +205,9 @@ test("a new note from the menu is saved under a new name", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "a\n" })
   await page.getByRole("button", { name: "Workbench menu" }).click()
   await page.getByRole("button", { name: "New", exact: true }).or(page.getByRole("menuitem", { name: "New", exact: true })).first().click()
+  // It asks for a name first; Enter takes the one proposed.
+  await expect(page.getByRole("textbox", { name: /^Name of the new note in / })).toHaveValue(/^untitled/)
+  await page.keyboard.press("Enter")
   const tab = page.getByRole("tab", { name: /^untitled/ })
   await expect(tab).toBeVisible()
   const path = (await tab.getAttribute("aria-label"))!

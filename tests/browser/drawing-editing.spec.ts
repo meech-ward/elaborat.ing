@@ -138,6 +138,9 @@ test("a new drawing from the menu is saved empty and opens on the canvas", async
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
   await page.getByRole("button", { name: "Workbench menu" }).click()
   await page.getByRole("menuitem", { name: "New drawing" }).click()
+  // It asks for a name first; Enter takes the one proposed.
+  await expect(page.getByRole("textbox", { name: /^Name of the new drawing in / })).toHaveValue("untitled.excalidraw")
+  await page.keyboard.press("Enter")
   await expect(page.getByRole("tab", { name: "untitled.excalidraw" })).toHaveAttribute("aria-selected", "true")
   await expect(canvas(page)).toBeVisible()
   await expect.poll(() => fake.server.content(id, "untitled.excalidraw")).toBe('{"type":"excalidraw","version":2,"elements":[]}')

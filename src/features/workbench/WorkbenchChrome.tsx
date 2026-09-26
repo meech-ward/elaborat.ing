@@ -14,19 +14,29 @@ export function ActionMenu({
   children,
   label = "File actions",
   triggerRef,
+  finalFocus,
+  onClosed,
 }: {
   children: ReactNode;
   label?: string;
   triggerRef?: Ref<HTMLButtonElement>;
+  /** Where focus goes when the menu closes; by default, back to its button. */
+  finalFocus?: () => boolean;
+  /** Runs once the menu has finished closing. */
+  onClosed?: () => void;
 }) {
   return (
-    <Menu.Root>
+    <Menu.Root
+      onOpenChangeComplete={(open) => {
+        if (!open) onClosed?.();
+      }}
+    >
       <Menu.Trigger ref={triggerRef} className="wb-icon" aria-label={label} title={label}>
         <MoreHorizontal size={18} />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner sideOffset={5} align="end" style={{ zIndex: 10000 }}>
-          <Menu.Popup className="wb-menu">
+          <Menu.Popup className="wb-menu" finalFocus={finalFocus}>
             {Children.toArray(children).map((child, index) =>
               isValidElement<ButtonHTMLAttributes<HTMLButtonElement>>(child) ? (
                 <Menu.Item

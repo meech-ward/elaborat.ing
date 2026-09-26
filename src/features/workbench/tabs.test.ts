@@ -130,4 +130,17 @@ describe("independent file tabs", () => {
     ).toBe(state);
     expect(state.active).toBe("notes/b.md");
   });
+
+  test("a new file that was never saved follows its rename with its text, still unsaved; saved or colliding tabs don't", () => {
+    let state = tabTransition(emptyTabs, { type: "opened", sequence: 0, file: { path: "notes/untitled.md", content: "old text", revision: null } });
+    state = tabTransition(state, { type: "dirty", path: "notes/untitled.md", dirty: true });
+    const renamed = tabTransition(state, { type: "draft-renamed", from: "notes/untitled.md", to: "notes/ideas.md", content: "latest text" });
+    expect(renamed.active).toBe("notes/ideas.md");
+    expect(renamed.tabs).toEqual([{ path: "notes/ideas.md", content: "latest text", revision: null, dirty: true, generation: 1 }]);
+
+    const saved = tabTransition(emptyTabs, { type: "opened", sequence: 0, file: { path: "a.md", content: "a", revision: "r" } });
+    expect(tabTransition(saved, { type: "draft-renamed", from: "a.md", to: "b.md", content: "a" })).toBe(saved);
+    const both = tabTransition(state, { type: "opened", sequence: 0, file: { path: "notes/ideas.md", content: "x", revision: "r" } });
+    expect(tabTransition(both, { type: "draft-renamed", from: "notes/untitled.md", to: "notes/ideas.md", content: "y" })).toBe(both);
+  });
 });

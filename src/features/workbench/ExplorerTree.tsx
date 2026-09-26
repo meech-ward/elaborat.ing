@@ -10,6 +10,7 @@
  * ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
  * basename labels; full paths stay in titles and accessible names.
  */
+import type { ReactNode } from "react";
 import { FolderOpen } from "lucide-react";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
@@ -26,6 +27,8 @@ export interface ExplorerTreeProps {
   activeFile: string | null;
   isDirty: (path: string) => boolean;
   isUnsavedDraft: (path: string) => boolean;
+  /** The file has no saved copy: renaming it only changes the name it will be saved under. */
+  isNeverSaved?: (path: string) => boolean;
   onToggleFolder: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onOpenFile: (path: string) => void;
@@ -39,6 +42,8 @@ export interface ExplorerTreeProps {
   /** Open the delete confirmation. Unsaved drafts that are not files yet offer no delete. */
   onDeleteFile?: (path: string) => void;
   onDeleteFolder?: (path: string) => void;
+  /** A new file or folder's name field, shown first in the folder it goes in ("" is the root). */
+  newEntry?: { dir: string; field: ReactNode } | null;
 }
 
 export function ExplorerTree({
@@ -48,6 +53,7 @@ export function ExplorerTree({
   activeFile,
   isDirty,
   isUnsavedDraft,
+  isNeverSaved = () => false,
   onToggleFolder,
   onSelectFolder,
   onOpenFile,
@@ -58,8 +64,10 @@ export function ExplorerTree({
   onMoveFolder,
   onDeleteFile,
   onDeleteFolder,
+  newEntry = null,
 }: ExplorerTreeProps) {
   const open = new Set(expanded);
+  const fieldIn = (dir: string) => (newEntry?.dir === dir ? <li key="new-entry" className="wb-tree-new">{newEntry.field}</li> : null);
   const rootSelected = selectedFolder === "";
   const renderFile = (file: TreeFile) => (
     <li key={file.path} className="wb-tree-file">
@@ -69,6 +77,7 @@ export function ExplorerTree({
         active={file.path === activeFile}
         dirty={isDirty(file.path)}
         unsavedDraft={isUnsavedDraft(file.path)}
+        neverSaved={isNeverSaved(file.path)}
         draft={file.draft}
         onOpen={() => onOpenFile(file.path)}
         onFeedback={onFeedback}
@@ -95,6 +104,7 @@ export function ExplorerTree({
         />
         {isOpen && (
           <ul className="wb-tree-nested">
+            {fieldIn(node.path)}
             {node.folders.map(renderFolder)}
             {node.files.map(renderFile)}
           </ul>
@@ -115,6 +125,7 @@ export function ExplorerTree({
         <span className="wb-tree-name">Workspace root</span>
       </button>
       <ul className="wb-tree-list">
+        {fieldIn("")}
         {tree.folders.map(renderFolder)}
         {tree.rootFiles.map(renderFile)}
       </ul>

@@ -23,7 +23,8 @@ export type TabAction =
   | { type: "dirty"; path: string; dirty: boolean }
   | { type: "close"; path: string; discard: boolean }
   | { type: "move-reconciled"; files: Array<TabFile & { from: string }> }
-  | { type: "renamed"; from: string; to: string; content: string; revision: string };
+  | { type: "renamed"; from: string; to: string; content: string; revision: string }
+  | { type: "draft-renamed"; from: string; to: string; content: string };
 export function tabTransition(state: TabState, action: TabAction): TabState {
   switch (action.type) {
     case "reorder": {
@@ -125,6 +126,23 @@ export function tabTransition(state: TabState, action: TabAction): TabState {
                 revision: action.revision,
                 dirty: false,
               }
+            : t,
+        ),
+        active: state.active === action.from ? action.to : state.active,
+      };
+    }
+    case "draft-renamed": {
+      // A new file that was never saved took a new name: its tab follows,
+      // still unsaved, with the text its draft holds now. The session
+      // remounts on the path key and saves under the new name.
+      const tab = state.tabs.find((t) => t.path === action.from);
+      if (!tab || tab.revision !== null) return state;
+      if (state.tabs.some((t) => t.path === action.to)) return state;
+      return {
+        ...state,
+        tabs: state.tabs.map((t) =>
+          t.path === action.from
+            ? { path: action.to, content: action.content, revision: null, dirty: t.dirty, generation: (t.generation ?? 0) + 1 }
             : t,
         ),
         active: state.active === action.from ? action.to : state.active,

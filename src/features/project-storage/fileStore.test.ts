@@ -278,3 +278,19 @@ test("a later save supersedes an older draft, and undoing to the saved bytes dro
   await store.persistDrafts([{ path: "a.md", content: "v1 and some more", baseRevision: current.revision }])
   expect((await store.read("a.md")).draft).toBe(false)
 })
+
+test("a new file that was never saved can be renamed, and nothing else can", async () => {
+  const { store } = await setup()
+  await store.persistDrafts([{ path: "notes/untitled.md", content: "An idea.", baseRevision: null }])
+  await store.renameDraft("notes/untitled.md", "notes/ideas.md")
+  const { files } = await store.listEntries()
+  expect(files.map((file) => [file.path, file.draft, file.revision])).toEqual([["notes/ideas.md", true, ""]])
+  expect((await store.read("notes/ideas.md")).content).toBe("An idea.")
+  await expect(store.read("notes/untitled.md")).rejects.toBeInstanceOf(FileStoreError)
+
+  await store.write("a.md", "saved", null)
+  await expect(store.renameDraft("a.md", "b.md")).rejects.toThrow("a.md is not a new file that was never saved.")
+  await expect(store.renameDraft("notes/ideas.md", "a.md")).rejects.toThrow("a.md already exists.")
+  await expect(store.renameDraft("notes/ideas.md", "a.md/inside.md")).rejects.toThrow("a.md is a file, so it cannot contain a.md/inside.md.")
+  expect((await store.read("notes/ideas.md")).content).toBe("An idea.")
+})

@@ -4,8 +4,9 @@
  * rename and reports the result. The dialog stays open (pending,
  * non-dismissable) until the rename settles, so the renamed files are inert
  * while the request runs and typing cannot create a newly dirty draft under
- * async completion. Mount it with a new `key` for each opening, so it starts
- * from `initial`.
+ * async completion; a refusal `onRename` throws shows in the dialog, which
+ * stays open. On a phone it also names a new file or folder. Mount it with a
+ * new `key` for each opening, so it starts from `initial`.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
@@ -20,6 +21,8 @@ export function RenameDialog({
   validate,
   onRename,
   onOpenChange,
+  submitLabel = "Rename",
+  pendingLabel = "Renaming…",
 }: {
   open: boolean;
   title: string;
@@ -33,9 +36,12 @@ export function RenameDialog({
   selectLength: number;
   /** A user-facing reason `name` cannot be used, or null. */
   validate: (name: string) => string | null;
-  /** Runs the rename; the dialog closes once it settles. */
+  /** Runs the rename; the dialog closes once it succeeds. */
   onRename: (name: string) => Promise<void>;
   onOpenChange: (open: boolean) => void;
+  /** The submit button, such as "Create" when naming something new. */
+  submitLabel?: string;
+  pendingLabel?: string;
 }) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +49,8 @@ export function RenameDialog({
   const inputId = useId();
   const errorId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  // The dialog may focus the field itself after it opens; the first focus preselects the name.
+  const preselected = useRef(false);
 
   // Preselect the editable part of the name when the dialog opens.
   useEffect(() => {
@@ -69,11 +77,16 @@ export function RenameDialog({
     // runs, which async completion could then discard or mis-relabel.
     setRenaming(true);
     setError(null);
-    const done = () => {
-      setRenaming(false);
-      onOpenChange(false);
-    };
-    void onRename(draft).then(done, done);
+    void onRename(draft).then(
+      () => {
+        setRenaming(false);
+        onOpenChange(false);
+      },
+      (cause: unknown) => {
+        setRenaming(false);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      },
+    );
   };
 
   return (
@@ -102,6 +115,11 @@ export function RenameDialog({
             aria-describedby={error ? errorId : undefined}
             autoComplete="off"
             spellCheck={false}
+            onFocus={(event) => {
+              if (preselected.current) return;
+              preselected.current = true;
+              event.currentTarget.setSelectionRange(0, selectLength);
+            }}
             onChange={(event) => {
               const next = event.target.value;
               setDraft(next);
@@ -121,7 +139,7 @@ export function RenameDialog({
           )}
           {renaming && (
             <p role="status" className="wb-rename-pending">
-              Renaming…
+              {pendingLabel}
             </p>
           )}
           <div className="wb-rename-actions">
@@ -133,7 +151,7 @@ export function RenameDialog({
               <Dialog.Close className="wb-rename-cancel">Cancel</Dialog.Close>
             )}
             <button onClick={submit} disabled={renaming}>
-              {renaming ? "Renaming…" : "Rename"}
+              {renaming ? pendingLabel : submitLabel}
             </button>
           </div>
         </Dialog.Popup>

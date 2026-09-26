@@ -250,9 +250,8 @@ test("a new folder reaches the server, is still there after a reload, and takes 
   await page.getByRole("button", { name: "Toggle explorer" }).click()
   const files = page.getByRole("navigation", { name: "Workspace files" })
   await files.getByRole("button", { name: "New folder" }).click()
-  const dialog = page.getByRole("dialog", { name: /^New folder in/ })
-  await dialog.getByLabel("Folder name").fill("plans")
-  await dialog.getByRole("button", { name: "Create folder" }).click()
+  await files.getByRole("textbox", { name: "Name of the new folder in the workspace root" }).fill("plans")
+  await page.keyboard.press("Enter")
   await expect(page.getByText("Created folder plans.")).toBeVisible()
   await expect.poll(() => fake.server.remote(person.id).folders(id)).toEqual(["plans"])
 

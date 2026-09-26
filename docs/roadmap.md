@@ -118,7 +118,9 @@ this repository once the steps before them have landed.
     delete until they are settled. Files of kinds the app does not edit (for
     example, ones an agent wrote) are listed and open as text, and can be
     deleted, but are not renamed or moved, and a folder holding one does not
-    move.
+    move. New notes, drawings, diagrams and folders ask for their name first,
+    in the explorer where they will appear (a dialog on a phone), and are
+    saved at once; a new note that was never saved can be renamed.
 13. **Drawings edit, save and export on per-file storage (done).** Excalidraw
     and Obsidian `.excalidraw.md` drawings open on the canvas without being
     rewritten, save on the device, keep unsaved edits across reloads, take a
