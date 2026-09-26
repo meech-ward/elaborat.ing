@@ -831,7 +831,7 @@ with the providers left off.
 
 ## T30: see who a project is shared with, and change or remove their access
 
-**Status:** Ready
+**Status:** Done (#30)
 
 The owner can share a project with a person's user id, change their role, or
 remove them (`share_project` in `supabase/schemas/project_functions.sql`;
@@ -870,7 +870,7 @@ written, and CI passes (the maintainer runs pgTAP).
 
 ## T31: a sync conflict shows what differs before you choose
 
-**Status:** Ready
+**Status:** Done (#31)
 
 When a file changed on this device and elsewhere, the editor offers Keep mine,
 Keep theirs and Keep both (`WorkspaceSession.tsx`, and the drawing and diagram
