@@ -13,6 +13,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(here, 'fixtures');
 const demoSource = readFileSync(join(fixtureDir, 'demo.scene.json'), 'utf8');
+const syntheticSource = readFileSync(join(fixtureDir, 'synthetic.excalidraw.md'), 'utf8');
 
 function demoScene(): DrawingScene {
   return parseDrawingFile(demoSource, 'demo.scene.json').scene;
@@ -65,7 +66,49 @@ describe('summarizeDrawing', () => {
     expect(summary.looseArrows).toEqual(['demo-loose-arrow']);
   });
 
-  test.todo('a compressed Obsidian scene summarizes its active elements and texts (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('a compressed Obsidian scene summarizes its active elements and texts', () => {
+    const summary = summarizeDrawing(
+      parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md').scene,
+    );
+    expect(summary.elementCount).toBe(40);
+    expect(summary.activeCount).toBe(40);
+    expect(summary.deletedCount).toBe(0);
+    expect(summary.byType).toEqual({
+      text: 17,
+      ellipse: 1,
+      rectangle: 10,
+      diamond: 1,
+      arrow: 10,
+      line: 1,
+    });
+    expect(summary.texts[0]).toEqual({ id: 'synthetic-title', text: 'Example system' });
+    expect(summary.texts.map((text) => text.text)).toEqual([
+      'Example system',
+      'User',
+      'Browser',
+      'CDN',
+      'Web app',
+      'Cache',
+      'API',
+      'Auth',
+      'Database',
+      'Queue',
+      'Worker',
+      'Storage',
+      'Healthy?',
+      'HTTPS',
+      'jobs',
+      'Arrows point the way requests travel.',
+      'Every name here is made up.',
+    ]);
+    expect(summary.bounds).toEqual({ x: 40, y: 20, width: 1220, height: 605 });
+    expect(summary.arrows).toHaveLength(10);
+    expect(summary.arrows.filter((arrow) => arrow.bound !== 'both' || arrow.dangling)).toEqual([]);
+    expect(summary.looseArrows).toEqual([]);
+    expect(summary.danglingArrows).toEqual([]);
+    expect(summary.backgroundColors).toEqual(['#a5d8ff', '#b2f2bb', '#ffec99', 'transparent']);
+    expect(summary.hasImages).toBe(false);
+  });
 
   test('empty scene summarizes safely', () => {
     const summary = summarizeDrawing({ type: 'excalidraw', version: 2, elements: [] });

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import LZString from 'lz-string';
 import {
   diffDrawingScenes,
   durableAppState,
@@ -17,6 +18,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(here, 'fixtures');
 const demoSource = readFileSync(join(fixtureDir, 'demo.scene.json'), 'utf8');
 const obsidianJsonSource = readFileSync(join(fixtureDir, 'obsidian-json.excalidraw.md'), 'utf8');
+const syntheticSource = readFileSync(join(fixtureDir, 'synthetic.excalidraw.md'), 'utf8');
+const FENCE_OPEN = '```compressed-json\n';
+const FENCE_CLOSE = '\n```\n%%';
 
 function demoScene(): DrawingScene {
   return parseDrawingFile(demoSource, 'demo.scene.json').scene;
@@ -44,7 +48,22 @@ describe('serializeDrawing', () => {
     expect(reparsed.files?.['demo-file-1']?.['dataURL']).toContain('data:image/png;base64,');
   });
 
-  test.todo('a compressed Obsidian scene survives serialize with all ids and native shape (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('a compressed Obsidian scene survives serialize with all ids and native shape', () => {
+    const parsed = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md');
+    const json = serializeDrawing(parsed.scene);
+    const native = JSON.parse(json) as Record<string, unknown>;
+    expect(Object.keys(native)).toEqual(['type', 'version', 'source', 'elements', 'appState', 'files']);
+    expect(native).toMatchObject({ type: 'excalidraw', version: 2, files: {} });
+
+    const reparsed = parseDrawingFile(json, 'synthetic.excalidraw');
+    expect(reparsed.sourceKind).toBe('excalidraw-json');
+    expect(reparsed.scene.elements.map((element) => element.id)).toEqual(
+      parsed.scene.elements.map((element) => element.id),
+    );
+    expect(scenesEqual(reparsed.scene, parsed.scene)).toBe(true);
+    // The fixture's fence is this JSON through lz-string, so it regenerates byte for byte.
+    expect(syntheticSource).toContain(`${FENCE_OPEN}${LZString.compressToBase64(json)}${FENCE_CLOSE}`);
+  });
 
   test('unknown top-level fields ride along in extra', () => {
     const parsed = parseDrawingFile('{"elements": [], "mystery": {"a": 1}}');
@@ -58,7 +77,20 @@ describe('serializeDrawing', () => {
 });
 
 describe('saveDrawingFile', () => {
-  test.todo('no-op reopen of a compressed Obsidian drawing returns the original source byte-identically (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('no-op reopen of a compressed Obsidian drawing returns the original source byte-identically', () => {
+    const parsed = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md');
+    // Reopening parses the file again, and the canvas reports scroll and zoom,
+    // which are never saved.
+    const reopened = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md').scene;
+    const viewed: DrawingScene = {
+      ...reopened,
+      appState: { ...(reopened.appState ?? {}), scrollX: 120, scrollY: -40, zoom: { value: 1.5 } },
+    };
+    const saved = saveDrawingFile(viewed, parsed);
+    expect(saved.noop).toBe(true);
+    expect(saved.diff).toBeNull();
+    expect(saved.text).toBe(syntheticSource);
+  });
 
   test('an edit returns canonical JSON plus a field-level diff', () => {
     const parsed = parseDrawingFile(demoSource, 'demo.scene.json');
@@ -116,7 +148,39 @@ describe('saveDrawingFile', () => {
     expect(saveDrawingFile(scrolled, parseDrawingFile(demoSource)).noop).toBe(true);
   });
 
-  test.todo('an edited compressed Obsidian wrapper keeps its markdown and parses back to the edit (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('an edited compressed Obsidian wrapper keeps its markdown and parses back to the edit', () => {
+    const parsed = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md');
+    const next: DrawingScene = {
+      ...parsed.scene,
+      elements: parsed.scene.elements.map((element) =>
+        element.id === 'synthetic-title'
+          ? { ...element, text: 'Example system, v2', originalText: 'Example system, v2' }
+          : element,
+      ),
+    };
+    const saved = saveDrawingFile(next, parsed);
+    expect(saved.noop).toBe(false);
+    expect(saved.diff?.changedElements).toEqual([
+      { id: 'synthetic-title', field: 'text', before: 'Example system', after: 'Example system, v2' },
+      {
+        id: 'synthetic-title',
+        field: 'originalText',
+        before: 'Example system',
+        after: 'Example system, v2',
+      },
+    ]);
+
+    // Only the fence payload changes; every markdown byte around it is kept.
+    const payloadStart = syntheticSource.indexOf(FENCE_OPEN) + FENCE_OPEN.length;
+    expect(saved.text).toBe(
+      syntheticSource.slice(0, payloadStart) +
+        LZString.compressToBase64(serializeDrawing(next)) +
+        syntheticSource.slice(syntheticSource.indexOf(FENCE_CLOSE)),
+    );
+    const reparsed = parseDrawingFile(saved.text, 'synthetic.excalidraw.md');
+    expect(reparsed.sourceKind).toBe('obsidian-compressed');
+    expect(scenesEqual(reparsed.scene, next)).toBe(true);
+  });
 
   test('an edited plain-JSON fence keeps its wrapper and parses back', () => {
     const parsed = parseDrawingFile(obsidianJsonSource, 'plain.excalidraw.md');

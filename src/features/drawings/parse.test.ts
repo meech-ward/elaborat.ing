@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDrawingFile } from './index.ts';
+import { parseDrawingFile, serializeDrawing } from './index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(here, 'fixtures');
@@ -10,11 +10,40 @@ const obsidianJsonSource = readFileSync(
   join(fixtureDir, 'obsidian-json.excalidraw.md'),
   'utf8',
 );
+const syntheticSource = readFileSync(join(fixtureDir, 'synthetic.excalidraw.md'), 'utf8');
 
 describe('parseDrawingFile', () => {
-  test.todo('a compressed Obsidian drawing parses with all elements active (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('a compressed Obsidian drawing parses with all elements active', () => {
+    const parsed = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md');
+    expect(parsed.sourceKind).toBe('obsidian-compressed');
+    expect(parsed.originalSource).toBe(syntheticSource);
+    expect(parsed.scene.elements).toHaveLength(40);
+    expect(parsed.scene.elements.filter((element) => element.isDeleted !== false)).toEqual([]);
+    expect(parsed.scene.elements.find((element) => element.id === 'synthetic-title')).toMatchObject({
+      type: 'text',
+      text: 'Example system',
+      containerId: null,
+    });
+    expect(parsed.scene.source).toBe('https://github.com/zsviczian/obsidian-excalidraw-plugin');
+  });
 
-  test.todo('a large scene parses as ordinary JSON (held back until the synthetic Obsidian drawing lands: roadmap phase 2 step 2)', () => {});
+  test('a large scene parses as ordinary JSON', () => {
+    const { scene } = parseDrawingFile(syntheticSource, 'synthetic.excalidraw.md');
+    // Fifty side-by-side copies of the synthetic drawing: 2,000 elements.
+    const elements = Array.from({ length: 50 }, (_, copy) =>
+      scene.elements.map((element) => ({
+        ...element,
+        id: `${element.id}-${copy}`,
+        x: element.x + copy * 1300,
+      })),
+    ).flat();
+    const parsed = parseDrawingFile(serializeDrawing({ ...scene, elements }), 'large.excalidraw');
+    expect(parsed.sourceKind).toBe('excalidraw-json');
+    expect(parsed.scene.elements).toHaveLength(2000);
+    expect(parsed.scene.elements[0]?.id).toBe('synthetic-title-0');
+    expect(parsed.scene.elements[1999]?.id).toBe(`${scene.elements[39]?.id}-49`);
+    expect(parsed.scene.elements[1999]?.x).toBe((scene.elements[39]?.x ?? 0) + 49 * 1300);
+  });
 
   test('plain-JSON Obsidian fence parses', () => {
     const parsed = parseDrawingFile(obsidianJsonSource, 'plain.excalidraw.md');
