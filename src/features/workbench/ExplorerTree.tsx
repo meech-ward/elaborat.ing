@@ -13,6 +13,7 @@ import { ChevronRight, Folder, FolderOpen } from "lucide-react";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
 import type { FolderNode, FolderTree, TreeFile } from "./folderTree";
+import { canMove } from "./movePlan";
 
 export interface ExplorerTreeProps {
   tree: FolderTree;
@@ -59,8 +60,8 @@ export function ExplorerTree({
         draft={file.draft}
         onOpen={() => onOpenFile(file.path)}
         onFeedback={onFeedback}
-        onRename={onRenameFile ? (newName) => onRenameFile(file.path, newName) : undefined}
-        onMove={onMoveFile ? () => onMoveFile(file.path) : undefined}
+        onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
+        onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
       />
     </li>
   );

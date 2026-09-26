@@ -174,6 +174,19 @@ cannot sync (the server takes each path once per save), and a pulled file can
 briefly sit under a local file of the same name until the push marks the path
 as taken.
 
+**Decision: a rename or move is one save on the device.** The workbench plans
+it from the files on the device: the file moves (a D2 source takes its
+generated canvas and sidecar along), and every note, drawing and diagram that
+refers to it is rewritten. The moves and rewrites are saved together, so sync
+sends them as one `save_files` call and no one ever sees a moved file with
+stale references to it. A file with unsaved edits or a sync conflict that the
+move would touch stops it until that is settled, and so does a reference the
+planner cannot rewrite safely (a document-relative link, or a computed embed).
+The move is planned again just before saving, and if anything changed since
+the preview the person sees the new preview first. There is no move journal on
+the server: the device's save is atomic, and the mutation id covers a lost
+answer. The planner is `src/features/workbench/movePlan.ts`.
+
 (The prototype stored a full snapshot of the whole project as each revision.
 That was simple for one person, but it duplicates everything on every save and
 makes edits to different files conflict. It is not carried forward.)

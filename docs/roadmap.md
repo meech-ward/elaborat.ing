@@ -94,8 +94,12 @@ this repository once the steps before them have landed.
     and touch-focus journeys, and undo through the source editor after a
     rendered edit.
 11. **Custom MDX components load from project files (open for contributors).**
-12. **Files and folders can be created, renamed and moved**, with references
-    rewritten in the same save.
+12. **Files can be renamed and moved, with references rewritten in the same
+    save, and folders created (done).** A D2 diagram's generated files move
+    with it, open tabs follow their files, and unsaved edits or a sync conflict
+    stop a move until they are settled. Files of kinds the app does not edit
+    (for example, ones an agent wrote) are listed and open as text, but are not
+    renamed or moved. Not yet: renaming or moving a folder.
 13. **Drawings edit, save and export on per-file storage.**
 14. **D2 diagrams compile in the browser, save as one three-file batch, and
     embed in notes.**

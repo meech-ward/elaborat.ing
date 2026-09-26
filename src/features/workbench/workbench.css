@@ -942,7 +942,7 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   overflow-y: auto;
   overflow-wrap: anywhere;
 }
-.wb-move select, .wb-move button, .wb-move-recovery button {
+.wb-move select, .wb-move button {
   min-height: 40px;
 }
 .wb-move select {
@@ -955,9 +955,8 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   padding: 8px;
 }
 .wb-move-preview { min-width: 0; }
-.wb-move-preview ul, .wb-move-recovery ul { padding-left: 1.2rem; }
-.wb-move-preview li, .wb-move-recovery li { overflow-wrap: anywhere; }
-.wb-move-recovery { max-height: 12rem; overflow: auto; flex-shrink: 0; }
+.wb-move-preview ul { padding-left: 1.2rem; }
+.wb-move-preview li { overflow-wrap: anywhere; }
 
 /* One query owner sets data-compact on the shell and its navigation portal. */
 .wb-app[data-compact="true"] {

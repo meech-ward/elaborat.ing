@@ -1,4 +1,4 @@
-import { FileStoreError, type FileRef, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
+import { FileStoreError, type FileRef, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
 
 /**
  * The storage the workbench edits through: one project's files on this
@@ -14,6 +14,8 @@ export interface WorkspaceStore {
   read(path: string): Promise<WorkspaceFile>
   write(path: string, input: { content: string; expectedRevision: string | null }): Promise<{ path: string; revision: string; size: number }>
   createDirectory(path: string): Promise<{ path: string }>
+  /** Apply moves and writes on this device as one save that syncs together. */
+  save(changes: LocalChange[]): Promise<Array<{ path: string; revision: string; size: number }>>
   persistDrafts(entries: Array<{ path: string; content: string; baseRevision: string | null }>): Promise<void>
   flushLocalDrafts(): Promise<void>
   discardLocalDraft(path: string): Promise<void>
@@ -61,6 +63,11 @@ export function projectWorkspace(
     },
     async write(path, { content, expectedRevision }) {
       const saved = await store.write(path, content, expectedRevision)
+      afterSave()
+      return saved
+    },
+    async save(changes) {
+      const saved = await store.save(changes)
       afterSave()
       return saved
     },

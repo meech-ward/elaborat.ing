@@ -92,6 +92,8 @@ import {
   type FolderPreferences,
 } from "./folderPreferences";
 import { type TabFile } from "./tabs";
+import { MoveDialog } from "./MoveDialog";
+import { useFileMoves } from "./useFileMoves";
 import { emptyNavigationTabs, navigationTabTransition } from "./navigationTabs";
 import { useFileLocation } from "../navigation/useFileLocation";
 import {
@@ -276,6 +278,7 @@ export function WorkspaceWorkbench({
     );
   }, []);
   const refreshFiles = useCallback(async () => { await refreshList(); }, [refreshList]);
+  const moves = useFileMoves({ client, tabs: tabsRef, sessions: leaveSessions, dispatch, notify: setNotice });
   const registerSession = useCallback((path: string, session: OperationSession | null) => {
     if (session) leaveSessions.current.set(path, session); else leaveSessions.current.delete(path);
     if (session?.state().reconciled) {
@@ -622,6 +625,8 @@ export function WorkspaceWorkbench({
           onSelectFolder={selectFolder}
           onOpenFile={(path) => void openFromNavigation(path)}
           onFeedback={setNotice}
+          onRenameFile={moves.rename}
+          onMoveFile={moves.open}
         />
       )}
       {listed && !listError && treeIsEmpty && (
@@ -1103,6 +1108,10 @@ export function WorkspaceWorkbench({
           setFolderDialog(next);
         }}
       />
+      {moves.target && <MoveDialog path={moves.target} folders={directories} folder={moves.folder}
+        plan={moves.plan} pending={moves.pending} error={moves.error} stale={moves.stale}
+        onFolder={moves.changeFolder} onPreview={() => void moves.preview()}
+        onCommit={() => void moves.commit()} onClose={moves.close} />}
       <ReadingSettings
         open={readingSettings}
         onOpenChange={setReadingSettings}
