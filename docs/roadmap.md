@@ -31,9 +31,9 @@ user's files through MCP, on the hosted Supabase project.
    `config.toml`, asymmetric signing keys, and the app's sign-in and consent
    pages using Supabase's React consent block. The app deploys to
    https://elaborat.ing.
-4. **MCP server.** The `mcp` Edge Function from Supabase's MCP server block, with
-   tools that wrap the core database functions. Sharing and archiving are
-   marked destructive.
+4. **MCP server (deployed).** The `mcp-server` Edge Function from Supabase's
+   MCP Server block, with tools that wrap the core database functions, tested
+   live with a signed-in session. Connecting real clients waits for step 3.
 5. **Prove it with real clients.** Connect Claude and ChatGPT, run a
    read-edit-read loop, and record the answers to the open questions: whether
    dynamic client registration is needed, and whether the clients' MCP Apps

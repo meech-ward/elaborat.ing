@@ -243,21 +243,29 @@ Numbers are set when accounts ship.
 
 ## Agents (MCP)
 
-**Decision:** an `mcp` Edge Function built from Supabase's MCP server block,
-protected by Supabase Auth's OAuth 2.1 server (`[auth.oauth_server]` in
-`config.toml`). The consent page uses Supabase's React OAuth consent block.
-Each tool gets a Supabase client scoped to the user, so RLS applies.
+**Decision:** the `mcp-server` Edge Function is Supabase's MCP Server block
+(`supabase/functions/mcp-server/`), protected by Supabase Auth's OAuth 2.1
+server (`[auth.oauth_server]` in `config.toml`). The consent page uses
+Supabase's React OAuth consent block. Each tool gets a Supabase client scoped
+to the user, so RLS applies, and calls the same database functions the app
+uses. Tools live in `tools/projects.ts`; the server's name and description
+come from the `MCP_SERVER_NAME` and `MCP_SERVER_DESCRIPTION` function
+secrets.
 
-- **Tools mirror the app's operations:** list and search projects, read files,
-  write with the expected version, batch-write, create projects and folders,
-  archive and unarchive, share. Sharing and archiving carry the MCP destructive
-  annotation.
+- **Tools mirror the app's operations:** list projects and invitations, list
+  and read files, write one file or a batch with the expected versions, move,
+  delete (history keeps the content), create projects and folders, rename,
+  archive and unarchive, share, and leave. Share, archive, leave, delete and
+  batch saves carry the MCP destructive annotation. There is no tool to
+  permanently delete a project or accept an invitation; the database refuses
+  both for agents anyway. Search is added with hybrid search.
 - **MCP Apps:** read-only views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app.
-- **Pin versions.** Use the stable nested `withSupabase` form (composing it as a
-  pipeline entry is the alpha part), pin exact versions, and keep the MCP layer
-  a thin wrapper around the database functions.
+- **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
+  of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
+  keep the MCP layer a thin wrapper around the database functions. Local
+  changes to block files stay minimal and are commented.
 - **Requirements from the platform:** asymmetric JWT signing keys (the MCP
   function's `withSupabase` rejects legacy HS256 tokens, and OIDC ID tokens
   need them too), `verify_jwt = false` on the `mcp` function (it verifies

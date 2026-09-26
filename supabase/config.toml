@@ -367,11 +367,18 @@ enabled = false
 # OAuth server configuration
 [auth.oauth_server]
 # Enable OAuth server functionality
-enabled = false
+# elaborat.ing: agents (Claude, ChatGPT, other MCP clients) connect through this.
+enabled = true
 # Path for OAuth consent flow UI
 authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
-allow_dynamic_registration = false
+# elaborat.ing: required by MCP clients, per Supabase's MCP Server block.
+allow_dynamic_registration = true
+
+# The MCP server verifies user access tokens itself (withSupabase), and MCP
+# clients must reach its OAuth discovery metadata without a token.
+[functions.mcp-server]
+verify_jwt = false
 
 [edge_runtime]
 enabled = true
