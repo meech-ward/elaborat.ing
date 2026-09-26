@@ -192,9 +192,10 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   expect(serverContent(fake, id, "flow.excalidraw")).toBeUndefined()
 
   await page.getByRole("tab", { name: "flow.d2" }).click()
-  await typeAtEnd(page, "y -> z\n")
+  // No Enter after a name: the suggestions it opens could take the key.
+  await typeAtEnd(page, "y -> z")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect.poll(() => serverContent(fake, id, "flow.d2")).toBe("x -> y\ny -> z\n")
+  await expect.poll(() => serverContent(fake, id, "flow.d2")).toBe("x -> y\ny -> z")
   expect(serverContent(fake, id, "a.md")).toBe("a\nnote")
 })
 
