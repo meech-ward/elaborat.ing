@@ -21,6 +21,8 @@ import {
   parseExpressionLiteral,
   PREVIEW_CHILD_CSP,
   PREVIEW_SANDBOX,
+  staleChildMessage,
+  type ChildMessage,
   type SlotRange,
 } from './protocol';
 
@@ -140,6 +142,32 @@ describe('checkChildMessage', () => {
       revision: 7,
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('staleChildMessage', () => {
+  test('a message about an older revision is status, dropped, a refusal or a lost edit, never a render error', () => {
+    const outcomes: Record<ChildMessage['kind'], ReturnType<typeof staleChildMessage>> = {
+      'source-draft-pending': 'status',
+      'fluid-pending': 'status',
+      ready: 'drop',
+      rendered: 'drop',
+      'render-error': 'drop',
+      'edit-resource': 'drop',
+      'view-resource': 'drop',
+      'edit-rejected': 'refusal',
+      'fluid-transaction': 'lost-edit',
+      'fluid-history': 'lost-edit',
+      'prose-enter': 'lost-edit',
+      'block-edit': 'lost-edit',
+      'insert-block': 'lost-edit',
+      'prose-edit': 'lost-edit',
+      'prop-edit': 'lost-edit',
+      'component-value-edit': 'lost-edit',
+    };
+    for (const [kind, outcome] of Object.entries(outcomes)) {
+      expect([kind, staleChildMessage(kind as ChildMessage['kind'])]).toEqual([kind, outcome]);
+    }
   });
 });
 
