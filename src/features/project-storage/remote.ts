@@ -18,6 +18,15 @@ export const RemoteProject = z.object({
 })
 export type RemoteProject = z.infer<typeof RemoteProject>
 
+/** An invitation waiting for the caller to accept, as `list_invitations` returns it. */
+export const RemoteInvitation = z.object({
+  project_id: z.uuid(),
+  title: z.string(),
+  role: z.enum(["viewer", "commenter", "editor"]),
+  invited_at: z.string(),
+})
+export type RemoteInvitation = z.infer<typeof RemoteInvitation>
+
 export const RemoteFile = z.object({
   id: z.uuid(),
   path: ProjectPath,
@@ -109,6 +118,12 @@ export interface ProjectRemote {
   deletedFiles(projectId: string, since: number, until: number): Promise<DeletedFile[]>
   /** The project's explicit folders. */
   folders(projectId: string): Promise<string[]>
+  /** Invitations waiting for the caller to accept, newest first. */
+  listInvitations(): Promise<RemoteInvitation[]>
+  /** Accept an invitation; returns the project as the caller now sees it. */
+  acceptInvitation(projectId: string): Promise<RemoteProject>
+  /** Leave a project shared with the caller, or decline an invitation. Owners cannot leave. */
+  leaveProject(projectId: string): Promise<void>
 }
 
 type Page = PromiseLike<{ data: unknown[] | null; error: PostgrestLikeError | null }>
@@ -149,6 +164,18 @@ export class SupabaseProjectRemote implements ProjectRemote {
 
   async saveFiles(projectId: string, mutationId: string, changes: SaveChange[]) {
     return SaveResult.parse(await this.rpc("save_files", { project_id: projectId, mutation_id: mutationId, changes }))
+  }
+
+  async listInvitations() {
+    return z.array(RemoteInvitation).parse(await this.rpc("list_invitations", {}))
+  }
+
+  async acceptInvitation(projectId: string) {
+    return RemoteProject.parse(await this.rpc("accept_invitation", { project_id: projectId }))
+  }
+
+  async leaveProject(projectId: string) {
+    z.object({ project_id: z.uuid(), left: z.literal(true) }).parse(await this.rpc("leave_project", { project_id: projectId }))
   }
 
   /**
