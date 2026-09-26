@@ -253,7 +253,7 @@ Firefox, and CI passes.
 
 ## T10: Enter right after arrow keys splits at the old caret position in Chromium
 
-**Status:** Ready
+**Status:** Done (#10)
 
 In the rendered view, in Chromium only, pressing Enter within a few
 milliseconds of arrow keys sometimes splits the paragraph where the caret was
@@ -278,3 +278,142 @@ too once this is fixed.
 
 **Done when** the new test and the journey pass without waits in Chromium and
 Firefox, and CI passes.
+
+## T11: rendered notes use components from project files, and follow their changes
+
+**Status:** Ready
+
+An MDX note can define components with `export const` and import them from
+other project files with `import { Name } from "workspace:<path>"`.
+`src/features/document/componentModules.ts` loads imported modules from their
+saved copies (never a draft), and `src/features/workbench/WorkspaceSession.tsx`
+wires it into the editor. Two parts:
+
+1. **A changed module reaches an open note.** Today the component environment
+   is rebuilt only when the note's own source changes or reloads
+   (`componentGeneration`). A module saved in another tab, or brought in by
+   sync, leaves the rendered note stale until it is reopened. Key the
+   environment on the saved revisions of the modules it imported, so that a
+   changed module rebuilds it and nothing else does. The workspace store's
+   `subscribe` reports every change on the device, including sync's.
+2. **Browser journeys** in a new `tests/browser/components.spec.ts`, against
+   the app with `tests/browser/fake-supabase.ts` (`workbench.spec.ts` shows how
+   to seed files and open them):
+   - A note with a local component, and a component imported under an alias
+     from a module whose file name has spaces and `%`, `#` and `?`, renders
+     both.
+   - In the Source view, typing `<Rel` offers the imported `ReleaseCard`, and
+     accepting it inserts `<ReleaseCard title="Review" count={3} ready={true} />`
+     from the module's `componentMeta` defaults.
+   - In the Rendered view, the prop controls (text, number, checkbox) change
+     the output, and the saved source changes only those literal props. Every
+     other byte stays, including an escaped `&amp;` in prose.
+   - "Insert block" lists both components and inserts one.
+   - Inside the preview frame, reading `window.parent.document`, writing
+     `localStorage`, and `fetch` to another origin all fail.
+   - A module with a syntax error shows an alert and hides the frame, so no
+     stale controls stay on screen. So does a module that throws when it runs.
+     Fixing the module brings the output back, and the note's saved bytes never
+     change.
+   - A module changed on the server reaches the open note through sync, with no
+     reopen (part 1).
+   - React state: a local component and an imported one each keep their own
+     `useState` (an aliased hook import works too), clicks never change the
+     note's source, and replacing or removing a component runs its effect
+     cleanup.
+   - Run the first journey at 1280 px in light mode and at 390 px in dark mode,
+     with an axe check of the prop controls and no sideways scrolling in the
+     page or the frame.
+
+If a behavior listed here is missing from the app rather than broken, say so in
+the pull request instead of building it.
+
+**Done when** the journeys pass in Chromium and Firefox, and CI passes.
+
+## T12: the app restarts offline
+
+**Status:** Ready
+
+Once a project has opened on a device, the app should start again with no
+network: reload, a new tab, or a browser restart. Use
+[vite-plugin-pwa](https://vite-pwa-org.netlify.app/) with Workbox's generated
+worker, and record the decision in `docs/architecture.md`.
+
+- **Precache what the app can need:** every JavaScript chunk including lazy
+  ones, CSS, workers, fonts, the preview frame, and `.wasm` files (the D2
+  compiler lands later as a wasm chunk, so the same pattern covers it). Fall
+  back to `index.html` for navigations. Workbox skips files over 2 MiB by
+  default, so raise `maximumFileSizeToCacheInBytes` and check the build's
+  precache list against `dist`.
+- **Never cache Supabase or any credentialed response.** Add no runtime
+  caching routes for other origins.
+- **Updates wait for the person.** Register with `registerType: "prompt"`.
+  When a new version is waiting, show a small "Update ready" control that
+  reloads into it. The old version keeps working until then, its cache is
+  removed only after the new worker activates, and the app never reloads by
+  itself.
+- `public/_headers`: `Cache-Control: no-cache` for `/sw.js` and the web
+  manifest.
+- **Browser tests** in `tests/browser/offline.spec.ts`, against the production
+  build:
+  - Open a project online (fake Supabase), type an unsaved edit in a note, go
+    offline with `context.setOffline(true)` and reload. The app, the project
+    and the draft come back.
+  - Offline, a new page in the same context lists the project from the device
+    and opens it.
+  - Build a second version with a visible change. The waiting worker shows the
+    update control, the old version keeps working until it is chosen, and the
+    new version runs after it is.
+  - No response from the fake Supabase origin is in Cache Storage.
+- Playwright's `page.route` does not see requests that a service worker
+  handles, and the fake Supabase uses `page.route`. Keep Supabase off the
+  worker's routes, and make sure the rest of the browser suite still passes
+  (for example with `serviceWorkers: "block"` outside the offline spec).
+  If Firefox cannot run the worker under Playwright, run the offline spec in
+  Chromium only and say so.
+
+**Done when** the offline spec and the whole browser suite pass, and CI passes.
+
+## T13: projects exported from the prototype import into elaborat.ing
+
+**Status:** Ready
+
+The prototype that elaborat.ing grew from exports a project as one JSON file:
+
+```json
+{
+  "format": "diagramming-project",
+  "version": 1,
+  "title": "Notes",
+  "files": [{ "path": "notes/intro.mdx", "content": "# Intro\n" }],
+  "directories": ["notes", "empty-folder"]
+}
+```
+
+Keep the `format` value exactly as it is: it is the prototype's name. Its
+limits are a title of 1 to 160 characters with some text, at most 4096 files
+and 4096 directories, no duplicate paths, no file used as a directory, at most
+2 MiB per file, and at most 64 MiB in total.
+
+- On the projects home, an "Import a project" control takes a `.json` file,
+  checks it with a strict zod schema, and shows a readable error for a file
+  that fails, creating nothing.
+- The prototype's path rule is looser than `isValidProjectPath` in
+  `src/features/project-storage/model.ts` (for example, it allows paths that
+  are not NFC). Import every path that passes, skip each one that fails, and
+  after the import list the skipped paths with the reason for each.
+- Create the project with `ProjectLibrary.create(title)`, then write the files
+  through its file store in several local saves of at most 500 files and
+  8 MiB each, so each sync is a small `save_files` call. Keep a D2 source and
+  its companion files in the same save. Create the directories too. File bytes
+  stay exactly as they were, including `workspace:` import specifiers.
+- Offline, the project is created on the device and syncs later; the library
+  already does this.
+- **Tests:** unit tests for the parser (a valid file, the wrong format or
+  version, a duplicate path, a file used as a directory, too large, invalid
+  paths skipped with reasons), and a browser journey that imports a fixture
+  with a note, a drawing, a D2 source with its companions, and an empty
+  folder, then opens the note. The fake server ends up with identical bytes.
+  At 390 px wide, the control and the skip report cause no sideways scrolling.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
