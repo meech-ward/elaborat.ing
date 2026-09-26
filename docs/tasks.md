@@ -175,7 +175,7 @@ failing when a tool is deliberately broken.
 
 ## T7: restore the drawing tests with a synthetic Obsidian drawing
 
-**Status:** Ready
+**Status:** Done (#7)
 
 Six drawing tests in `src/features/drawings/` (`parse.test.ts`,
 `roundtrip.test.ts`, `summary.test.ts`) and one tab test are `test.todo`
@@ -235,7 +235,7 @@ class has its unit test.
 
 ## T9: run the drawing fidelity checks on the synthetic Obsidian drawing
 
-**Status:** Waiting (on T7)
+**Status:** Ready
 
 `tests/browser/fidelity.spec.ts` checks that the drawing canvas changes only
 what it is asked to (byte-exact no-op open, delete and undo, editing a text by
