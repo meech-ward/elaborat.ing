@@ -892,3 +892,27 @@ conflict already holds the server's copy (`FileConflict` in
   desktop and phone widths.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T32: a stale message from the rendered frame never shows as a render error
+
+**Status:** Ready
+
+Open a note in Rendered, switch to Source, and type: a red banner can appear
+reading "Render error: Rejected stale frame message (revision 24, current
+28). Source is unchanged and remains editable." The frame sent a message about
+an older revision of the note, which is routine while the source changes under
+it. `RenderedEditor.tsx` already drops a stale `rendered` acknowledgement
+silently, but every other stale kind reaches `onError` and the banner.
+
+- Find which message kinds arrive stale in this journey (log them in a
+  scratch run), and drop stale informational messages silently, as the
+  `rendered` acknowledgement is.
+- A stale edit from the frame (`fluid-transaction`) still resets the frame
+  as it does now. If an edit made in the rendered view is lost that way, say
+  so in plain words in the editor's notice, not as a render error.
+- A browser journey that fails before the change: type in Rendered, switch
+  to Source, type quickly, switch back and forth a few times, and no
+  "Render error" appears, while the text on the server after Save is exactly
+  what was typed.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
