@@ -44,7 +44,7 @@ test("the build's notices cover every bundled package and the adapted code", asy
   expect(withoutNotice).toEqual([])
 
   // The Workbox modules the generated service worker ships outside the bundle.
-  for (const name of ["workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"]) {
+  for (const name of ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"]) {
     expect(text).toContain(`\n## ${name} - `)
   }
   expect(text).toContain("\n## src/features/comments/anchoring.ts (adapted code)\n")
