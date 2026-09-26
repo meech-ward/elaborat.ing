@@ -38,8 +38,9 @@ bun run test
 Edge Functions run on Deno 2. In a function's folder, such as
 `supabase/functions/mcp-server/`, run `deno check .` and `deno test`.
 
-CI runs build, typecheck, lint and test on every pull request, and checks and
-tests every Edge Function.
+CI runs build, typecheck, lint and test on every pull request, checks and
+tests every Edge Function, and fails if regenerating migrations from
+`supabase/schemas/` would change `supabase/migrations/`.
 
 ## Rules
 

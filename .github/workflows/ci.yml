@@ -20,6 +20,28 @@ jobs:
       - run: bun run lint
       - run: bun run test
 
+  # Migrations are generated from supabase/schemas/ and committed. Regenerate
+  # them and fail if that writes anything, so the two never drift apart.
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.118.0
+      # Builds shadow databases in Docker, which the runner provides.
+      - run: supabase db schema declarative sync --no-apply --strict-coverage --agent no
+      - name: Check that supabase/migrations/ is up to date
+        run: |
+          changes="$(git status --porcelain -- supabase/migrations)"
+          if [ -n "$changes" ]; then
+            echo "::error::supabase/migrations/ is out of date with supabase/schemas/. Run 'bunx supabase@2.118.0 db schema declarative sync' and commit the migration it writes."
+            echo "$changes"
+            git diff -- supabase/migrations
+            git ls-files --others --exclude-standard -- supabase/migrations | xargs -r cat
+            exit 1
+          fi
+
   # Edge Functions run on Deno. Each has its own deno.json and deno.lock, and
   # --frozen fails rather than update a lockfile that is out of date.
   functions:
