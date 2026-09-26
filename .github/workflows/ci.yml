@@ -41,3 +41,20 @@ jobs:
             git ls-files --others --exclude-standard -- supabase/migrations | xargs -r cat
             exit 1
           fi
+
+  # Edge Functions run on Deno. Each has its own deno.json and deno.lock, and
+  # --frozen fails rather than update a lockfile that is out of date.
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check and test every function
+        run: |
+          for function in supabase/functions/*/; do
+            echo "::group::$function"
+            (cd "$function" && deno check --frozen . && deno test --frozen --permit-no-files)
+            echo "::endgroup::"
+          done
