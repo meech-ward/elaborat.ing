@@ -133,7 +133,9 @@ content. History stores only the files that changed. A save is one database
 call (`save_files`) carrying a list of changes, each with the version it was
 based on, so multi-file changes (a D2 source plus its generated canvas and
 sidecar) stay atomic. Edits to different files never conflict; two edits to the
-same file get conflict recovery. Every save carries an idempotency key, so a
+same file get conflict recovery. A move can carry new content, so moving a file
+and rewriting its own references is one change. Every save carries an
+idempotency key, so a
 retried save returns its original result instead of saving twice, even if the
 project was archived in between.
 
