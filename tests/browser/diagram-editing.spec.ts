@@ -120,6 +120,93 @@ test("a code change reaches the canvas on Regenerate, and a syntax error keeps t
   expect(await elementCount(page)).toBe(second)
 })
 
+type SceneElement = { id: string; x: number; y: number; width: number; height: number; isDeleted?: boolean; points?: [number, number][] }
+
+/**
+ * Where an element's middle is on screen, from the scene in the saved
+ * `flow.excalidraw`. The canvas opens at zoom 1 with the middle of the
+ * drawing's bounds in the middle of the canvas (Excalidraw's scroll to
+ * content), and nothing here scrolls or zooms it.
+ */
+async function onScreen(page: Page, elements: SceneElement[], id: string) {
+  const extent = (element: SceneElement) => {
+    const xs = element.points ? element.points.map(([x]) => element.x + x) : [element.x, element.x + element.width]
+    const ys = element.points ? element.points.map(([, y]) => element.y + y) : [element.y, element.y + element.height]
+    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) }
+  }
+  const all = elements.filter((element) => !element.isDeleted).map(extent)
+  const middle = { x: (Math.min(...all.map((e) => e.x1)) + Math.max(...all.map((e) => e.x2))) / 2, y: (Math.min(...all.map((e) => e.y1)) + Math.max(...all.map((e) => e.y2))) / 2 }
+  const target = extent(elements.find((element) => element.id === id)!)
+  const canvas = (await page.locator(".excalidraw.excalidraw-container").boundingBox())!
+  return {
+    x: canvas.x + canvas.width / 2 + (target.x1 + target.x2) / 2 - middle.x,
+    y: canvas.y + canvas.height / 2 + (target.y1 + target.y2) / 2 - middle.y,
+  }
+}
+
+/** Open a diagram, save it once so its generated canvas exists, and return that canvas's elements. */
+async function savedDiagram(page: Page, source: string) {
+  const { fake, id } = await openProject(page, { "flow.d2": source }, "flow.d2")
+  await compiled(page)
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
+  await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
+  const elements = (JSON.parse(fake.server.content(id, "flow.excalidraw")!) as { elements: SceneElement[] }).elements
+  return { fake, id, elements }
+}
+
+/** Replace the text Excalidraw opened for editing (it selects the old text) and finish with Escape. */
+async function replaceText(page: Page, from: string, to: string) {
+  const editor = page.locator("textarea.excalidraw-wysiwyg")
+  await expect(editor).toHaveValue(from)
+  await page.keyboard.type(to)
+  await page.keyboard.press("Escape")
+  await expect(editor).toHaveCount(0)
+}
+
+test("renaming a node's text on the canvas writes its label into the code, and Save stores it", async ({ page }) => {
+  const source = "# Two steps\na -> b\n"
+  const { fake, id, elements } = await savedDiagram(page, source)
+
+  const node = await onScreen(page, elements, "d2:a:label")
+  await page.mouse.dblclick(node.x, node.y)
+  await replaceText(page, "a", "Alpha")
+  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Code" }).click()
+  const code = page.locator(".monaco-editor:visible .view-lines").first()
+  // The label sync's own form: a quoted scalar marked as the canvas's, after the untouched source.
+  const expected = `${source}a.label: "Alpha" # canvas-label\n`
+  await expect(code).toContainText('a.label: "Alpha" # canvas-label')
+  await expect(code).toContainText("# Two steps")
+
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
+  await expect.poll(() => fake.server.content(id, "flow.d2")).toBe(expected)
+})
+
+test("renaming a connection's label on the canvas stays a canvas-only change, with a notice", async ({ page }) => {
+  const source = "a -> b: hello\n"
+  const { fake, id, elements } = await savedDiagram(page, source)
+
+  // D2 connections are elbow arrows, and their label sits on the segment's
+  // middle, where a double-click resets the segment. Select the arrow by its
+  // label and press Enter, Excalidraw's key for editing a label.
+  const label = await onScreen(page, elements, "d2:(a -> b)[0]:label")
+  await page.mouse.click(label.x, label.y)
+  await page.keyboard.press("Enter")
+  await replaceText(page, "hello", "goodbye")
+  await expect(status(page)).toContainText("This generated text stays a canvas-only change. Only node labels update the D2 code.")
+  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Code" }).click()
+  const code = page.locator(".monaco-editor:visible .view-lines").first()
+  await expect(code).toContainText("a -> b: hello")
+  await expect(code).not.toContainText("label")
+
+  // Saving keeps the renamed text on the canvas and the code as it was.
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
+  await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toContain('"goodbye"')
+  expect(fake.server.content(id, "flow.d2")).toBe(source)
+})
+
 test("a new diagram from the menu is saved with an example and compiles", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
   await page.getByRole("button", { name: "Workbench menu" }).click()
