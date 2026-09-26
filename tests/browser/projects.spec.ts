@@ -115,6 +115,20 @@ test("offline, a new project waits on this device and is sent when the connectio
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
 })
 
+test("the projects home does not download the editor", async ({ page }) => {
+  // The editor (Monaco, Excalidraw, the note frame) loads only for a project.
+  await fakeSupabase(page)
+  await signedIn(page)
+  const scripts: string[] = []
+  page.on("request", (request) => {
+    if (request.resourceType() === "script") scripts.push(new URL(request.url()).pathname)
+  })
+  await home(page)
+  await page.waitForLoadState("networkidle")
+  expect(scripts.length).toBeGreaterThan(0)
+  expect(scripts.filter((script) => /\/(WorkspaceWorkbench|editor\.api)-[\w-]+\.js$/.test(script))).toEqual([])
+})
+
 test("links to projects that do not exist, or are not project links, say so", async ({ page }) => {
   await fakeSupabase(page)
   await signedIn(page)

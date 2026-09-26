@@ -1,16 +1,19 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
-import { WorkspaceWorkbench } from "@/features/workbench/WorkspaceWorkbench"
 import { projectWorkspace } from "@/features/workbench/workspaceStore"
+import { loadWorkbench } from "@/features/workbench/load"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, useLibraryState, type ProjectAccount } from "./account"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 import { useDepartureGuard } from "./useDepartureGuard"
+
+// The editor loads in its own chunk (see features/workbench/load.ts).
+const WorkspaceWorkbench = lazy(() => loadWorkbench().then((module) => ({ default: module.WorkspaceWorkbench })))
 
 /** Wait this long after a save before syncing, so a burst of saves is sent together. */
 const SYNC_DELAY_MS = 1_000
@@ -149,7 +152,17 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     </div>
   )
 
-  return <WorkspaceWorkbench client={workspace} projectId={projectId} projectHeader={header} onLeaveGuard={registerLeaveGuard} onResolveConflict={resolveConflict} />
+  return (
+    <Suspense
+      fallback={
+        <p role="status" className="p-6 text-sm text-muted-foreground">
+          Loading the editor...
+        </p>
+      }
+    >
+      <WorkspaceWorkbench client={workspace} projectId={projectId} projectHeader={header} onLeaveGuard={registerLeaveGuard} onResolveConflict={resolveConflict} />
+    </Suspense>
+  )
 }
 
 /** Runs the latest scheduled work once, `ms` after the last request. */
