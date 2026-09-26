@@ -37,10 +37,12 @@ user's files through MCP, on the hosted Supabase project.
 5. **Prove it with real clients.** Connect Claude and ChatGPT, run a
    read-edit-read loop, and confirm with a real OAuth token that it carries
    `client_id` and that Auth refuses account changes made with it.
-6. **Hybrid search (open for contributors once step 1 lands).** Passage chunks
-   per heading, the documented `hybrid_search` function, automatic embeddings
-   with the built-in `gte-small` model, a `search` function for query
-   embeddings, and an MCP search tool.
+6. **Hybrid search (built).** Passages per heading, the documented
+   `hybrid_search` function, automatic embeddings with the built-in `gte-small`
+   model, a `search` function for query embeddings, and an MCP search tool.
+   pgTAP tests prove results come only from the caller's projects. It runs on
+   the hosted project once its Vault holds the embed key and the functions are
+   deployed (see "Search" in architecture.md).
 
 ## Phase 2: the editor moves in
 

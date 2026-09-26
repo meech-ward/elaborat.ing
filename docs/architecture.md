@@ -224,33 +224,46 @@ access every time.
 
 ## Search
 
-**Decision:** hybrid search, following Supabase's documented pattern.
+**Decision:** hybrid search, following Supabase's documented pattern. The
+schema is `supabase/schemas/search.sql`.
 
-- **Chunks, not whole files.** Each Markdown/MDX/D2 file is split into passages
-  by heading. The built-in embedding model (`gte-small`) reads English only and
-  truncates at 512 tokens, so long sections are split further.
-- **Keyword half:** a generated `tsvector` column with a GIN index.
+- **Passages, not whole files.** Each note is split into passages by heading,
+  and each D2 diagram into blocks, by `supabase/functions/_shared/passages.ts`.
+  The built-in embedding model (`gte-small`) reads English only and truncates at
+  512 tokens, so passages stop at 1,500 characters. They live in
+  `public.file_passages` with their headings and their offsets in the file.
+- **Keyword half:** a generated `tsvector` column (English) over the headings
+  and text, with a GIN index.
 - **Semantic half:** a `vector(384)` column (gte-small, normalized, inner
-  product) with an HNSW index.
+  product) with an HNSW index. `hybrid_search` turns on pgvector's iterative
+  index scans, so when RLS filters out the nearest passages (other people's),
+  the scan keeps going instead of coming back short.
 - **Fusion:** the documented `hybrid_search` SQL function, Reciprocal Rank
-  Fusion over both result lists, returning passages grouped back to files.
-  It runs as the caller, so RLS limits results to projects the user can read:
-  their own and those shared with them.
-- **Automatic embeddings:** Supabase's documented pattern. A trigger queues
-  changed chunks in a pgmq queue, a pg_cron job sends batches to the `embed`
-  Edge Function, which writes embeddings and deletes the jobs. Failed jobs
-  retry automatically.
+  Fusion over both result lists, up to 30 passages with their file paths. It
+  runs as the caller, so RLS limits results to projects the user can read:
+  their own and those shared with them. The join to the file for its path is a
+  second RLS check.
+- **Automatic embeddings:** Supabase's documented pattern. A trigger on
+  `project_files` queues a note or diagram in the `file_passages` pgmq queue
+  when it is saved or renamed. A pg_cron job every 10 seconds sends batches to
+  the `embed` Edge Function, which reads each file through a direct database
+  connection, embeds its passages, and in one transaction replaces the file's
+  passages and deletes the job. If the file changed after it was read, it writes
+  nothing, because a newer job is already queued. Jobs that fail come back when
+  their visibility timeout ends, so they retry.
 - **Embedding model:** Supabase's built-in `gte-small`, run inside Edge
   Functions with no API key and no extra cost, on any Supabase Cloud project.
 - **Function auth:** `embed` is called by the database, not a user, so it sets
-  `verify_jwt = false` and checks a secret key itself (the documented pattern
-  for cron-called functions). The key and the project URL live in Vault,
-  declared in `config.toml`.
-- **Query embedding:** a `search` Edge Function embeds the query with the same
-  model and calls `hybrid_search` as the user.
-
-**Open:** check that RLS filtering doesn't hurt HNSW recall for small per-user
-result sets; pgvector's iterative index scans are the documented fix.
+  `verify_jwt = false` and accepts only a secret API key on `apikey`
+  (`withSupabase({ auth: 'secret' })`, the documented pattern for cron-called
+  functions). The cron job reads the key and the project URL from Vault.
+- **Query embedding:** the `search` Edge Function (and the MCP `search` tool)
+  embeds the query with the same model and calls `hybrid_search` as the user.
+- **Turning it on for a project:** store the project's API URL as
+  `project_url` and a secret API key as `embed_secret_key` in Vault (for
+  example `select vault.create_secret('<value>', 'embed_secret_key');` in the
+  SQL editor), and deploy `embed` and `search`. Until then, saved files wait in
+  the queue and nothing is sent.
 
 ## Comments
 

@@ -383,6 +383,11 @@ allow_dynamic_registration = true
 [functions.mcp-server]
 verify_jwt = false
 
+# Called by pg_cron (private.process_file_passages) with a secret key on
+# `apikey`, which the function checks itself.
+[functions.embed]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

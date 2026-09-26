@@ -1,8 +1,8 @@
-import remarkFrontmatter from "remark-frontmatter"
-import remarkGfm from "remark-gfm"
-import remarkMdx from "remark-mdx"
-import remarkParse from "remark-parse"
-import { unified } from "unified"
+import remarkFrontmatter from "npm:remark-frontmatter@5.0.0"
+import remarkGfm from "npm:remark-gfm@4.0.1"
+import remarkMdx from "npm:remark-mdx@3.1.1"
+import remarkParse from "npm:remark-parse@11.0.0"
+import { unified } from "npm:unified@11.0.5"
 
 // Turns one file into passages for hybrid search: a passage per heading
 // section of a note, or blank-line-separated blocks of a D2 diagram, each short

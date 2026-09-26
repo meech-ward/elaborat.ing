@@ -1,6 +1,7 @@
 import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 
 import { registerProjectTools } from './projects.ts'
+import { registerSearchTool } from './search.ts'
 import type { ToolContext } from './types.ts'
 import { registerWhoamiTool } from './whoami.ts'
 
@@ -11,4 +12,5 @@ export type { ToolContext } from './types.ts'
 export function registerTools(server: McpServer, context: ToolContext): void {
   registerWhoamiTool(server, context)
   registerProjectTools(server, context)
+  registerSearchTool(server, context)
 }

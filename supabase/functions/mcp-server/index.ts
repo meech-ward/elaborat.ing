@@ -60,6 +60,15 @@ function createServer(context: ToolContext): McpServer {
   return server
 }
 
+// The Edge Runtime's built-in models, for the search tool. Its type file
+// declares this global, but `deno check` does not apply global declarations
+// from a remote module, so the one call used here is declared locally.
+declare const Supabase: {
+  ai: { Session: new (model: string) => { run(input: string, options: { mean_pool: boolean; normalize: boolean }): Promise<unknown> } }
+}
+const model = new Supabase.ai.Session('gte-small')
+const embed = async (text: string) => (await model.run(text, { mean_pool: true, normalize: true })) as number[]
+
 async function handleMcp(request: Request, ctx: SupabaseContext): Promise<Response> {
   // The server and its tools are bound to this caller for exactly one request.
   const handler = createMcpHandler(
@@ -69,6 +78,7 @@ async function handleMcp(request: Request, ctx: SupabaseContext): Promise<Respon
         // auth: 'user' guarantees both claim shapes before this handler runs.
         userClaims: ctx.userClaims!,
         jwtClaims: ctx.jwtClaims!,
+        embed,
       }),
     { onerror: (error) => console.error('MCP request failed', error) }
   )

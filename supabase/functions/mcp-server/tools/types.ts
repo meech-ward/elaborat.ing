@@ -7,4 +7,6 @@ export type ToolContext = {
   supabase: SupabaseClient
   userClaims: NonNullable<SupabaseContext['userClaims']>
   jwtClaims: NonNullable<SupabaseContext['jwtClaims']>
+  /** Embeds text with the model that embedded the passages (gte-small). */
+  embed: (text: string) => Promise<number[]>
 }

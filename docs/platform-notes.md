@@ -28,9 +28,11 @@ before relying on it for something new, and update this page when it moves.
 - **The schema directory is the full desired state.** Undeclared objects,
   including extensions, are planned as removals.
 - **DML is never part of the schema.** It is an error inside a declarative
-  file. pgmq queues and pg_cron jobs are handled by pg-delta as "extension
-  intent" in recent versions, but the public guide only documents pgmq; test the
-  round-trip on the pinned CLI before relying on it for cron.
+  file. The exception is extension intent: `select pgmq.create(...)` and
+  `select cron.schedule(...)` belong in the schema file. Checked on CLI
+  2.118.0: pg-delta generates them (the cron job as
+  `cron.schedule_in_database`), a second sync finds no changes, and a queue or
+  job created only in a migration is planned for removal.
 - **Branch deploys run each migration in one transaction** and ignore pg-delta's
   `transaction=false` marker, so `create index concurrently` fails there.
   [Branching with GitHub](https://supabase.com/docs/guides/deployment/branching/github-integration)

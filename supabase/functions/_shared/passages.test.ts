@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test"
-import { extractPassages, type Passage } from "./passages"
+import { expect } from "jsr:@std/expect@1.0.17"
+import { describe, it as test } from "jsr:@std/testing@1.0.16/bdd"
+import { extractPassages, type Passage } from "./passages.ts"
 
 /** The span of the first occurrence of `text` in `source`, running to `until` if given. */
 function span(source: string, text: string, until = text): { start: number; end: number } {

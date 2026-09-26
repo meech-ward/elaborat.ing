@@ -65,6 +65,9 @@ says where to find them.
 
 **Status:** Done (#4)
 
+The module has since moved to `supabase/functions/_shared/passages.ts`, where
+the `embed` Edge Function uses it.
+
 Hybrid search embeds passages with a model that reads at most 512 tokens of
 English (see [architecture: Search](architecture.md#search)). Build a pure
 module `src/features/search/passages.ts` (no React, no Supabase) that turns one
