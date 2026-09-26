@@ -259,6 +259,12 @@ otp_expiry = 3600
 subject = "Your elaborat.ing sign-in link"
 content_path = "./supabase/templates/magic_link.html"
 
+# A new account gets the confirmation email instead of the sign-in link, so it
+# carries the code too; the sign-in page verifies both the same way.
+[auth.email.template.confirmation]
+subject = "Confirm your elaborat.ing account"
+content_path = "./supabase/templates/confirmation.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
