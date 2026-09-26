@@ -666,7 +666,7 @@ either. Until someone accepts, the project is invisible to them: it is not in
 
 ## T24: delete a file or a folder
 
-**Status:** Ready
+**Status:** Done (#24)
 
 The app can create, rename and move files and folders, but not delete them.
 The storage port already deletes (`ProjectFileStore` in
@@ -723,3 +723,43 @@ are archived (`archived` in `src/features/project-storage/library.ts`).
   none of the three.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T26: closing the last tab keeps the project page mounted
+
+**Status:** Ready
+
+A project has two routes, `/projects/<id>/` (`src/routes/projects.$projectId.index.tsx`)
+and `/projects/<id>/<file path>` (`src/routes/projects.$projectId.$.tsx`), and
+each renders its own `ProjectPage`. Closing the last open tab moves the URL
+from the file route to the index route, which mounts a new page: the
+workbench's notice is lost (after deleting the only open file, "Deleted ..."
+never shows), and the desktop explorer closes.
+
+- Render the project page once, from a parent route for `/projects/$projectId`
+  (TanStack Router's layout route), with the index and file routes as its
+  children, so moving between them keeps the page, its workbench and its state
+  mounted. Keep the loader that preloads the workbench.
+- A browser journey: open a project with the explorer open and one file,
+  delete that file (or close its tab), and the explorer is still open and the
+  notice still shows. Check it fails before the change.
+- The existing project, offline and workbench journeys keep passing.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T27: the file store refuses to delete a file with unsaved edits
+
+**Status:** Ready
+
+`ProjectFileStore.save` refuses to move a file with a draft ("Save or discard
+the unsaved edits in ... before moving it."), but a `delete` change drops the
+draft. The delete planner and the open-editor check stop this before any save
+today, so the store is the last guard, as it is for moves.
+
+- In `src/features/project-storage/fileStore.ts`, refuse a `delete` of a file
+  with a draft with a `FileStoreError`, worded like the move's, and leave
+  nothing changed.
+- A unit test in `fileStore.test.ts` that fails before the change: a draft,
+  then a save with a `delete` of that file, is refused, and the file and its
+  draft are still there.
+
+**Done when** the tests pass, and CI passes.
