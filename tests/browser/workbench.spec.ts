@@ -27,6 +27,25 @@ async function openProject(page: Page, files: Record<string, string>, path?: str
 }
 
 const serverContent = (fake: FakeSupabase, id: string, path: string) => fake.server.content(id, path)
+/**
+ * Wait until the workbench has remembered `path` among its open tabs. It saves
+ * them only after its first file list arrives, so a navigation straight after
+ * opening a file could otherwise land before `path` was remembered.
+ */
+async function remembered(page: Page, path: string) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (path) =>
+          Object.keys(localStorage).some(
+            (key) => key.endsWith("elaborating.tabs.v1") && (JSON.parse(localStorage.getItem(key) ?? "{}").openPaths ?? []).includes(path),
+          ),
+        path,
+      ),
+    )
+    .toBe(true)
+}
+
 const editorText = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
 
 /** Put the caret at the end of the visible source editor and type. */
@@ -126,18 +145,24 @@ test("a new note from the menu is saved under a new name", async ({ page }) => {
 
 test("open tabs come back after a reload, with the same one active", async ({ page }) => {
   const { id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await remembered(page, "a.md")
+  // Each navigation loads the editor again, as slowly as the first open.
   await page.goto(projectUrl(id, "b.md"))
-  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+  await remembered(page, "b.md")
   await page.reload()
-  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
   await expect(page).toHaveURL(projectUrl(id, "b.md"))
 })
 
 test("closing a tab from the keyboard works, and an unsaved one asks first", async ({ page }) => {
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await remembered(page, "a.md")
   await page.goto(page.url().replace(/a\.md$/, "b.md"))
-  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
+  // The navigation loads the editor again, as slowly as the first open.
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
   await page.getByRole("tab", { name: "b.md" }).focus()
   await page.keyboard.press("Delete")
   await expect(page.getByRole("tab", { name: "b.md" })).toHaveCount(0)
