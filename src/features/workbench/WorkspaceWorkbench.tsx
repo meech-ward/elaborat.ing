@@ -59,6 +59,7 @@ import {
   FolderPlus,
   FolderSync,
   FilePlus,
+  PenTool,
   FileUp,
   Terminal,
 } from "lucide-react";
@@ -93,6 +94,7 @@ import {
 } from "./folderPreferences";
 import { type TabFile } from "./tabs";
 import { MoveDialog } from "./MoveDialog";
+import { DrawingView } from "./DrawingView";
 import { useFileMoves } from "./useFileMoves";
 import { emptyNavigationTabs, navigationTabTransition } from "./navigationTabs";
 import { useFileLocation } from "../navigation/useFileLocation";
@@ -429,7 +431,7 @@ export function WorkspaceWorkbench({
     if (restoreDone.current) setPersistReady(true);
   }, [narrow]);
   const createFile = useCallback(
-    async (kind: "note" | "mdx") => {
+    async (kind: "note" | "mdx" | "drawing") => {
       const existing = [
         ...files.map((file) => file.path),
         ...state.tabs.map((tab) => tab.path),
@@ -437,13 +439,21 @@ export function WorkspaceWorkbench({
       // The selected folder ("", the explicit root, included) is where new
       // files go. Collision checks cover saved files and open tabs.
       const dir = folderPrefs.selectedFolder ?? "";
-      const path = suggestUntitledName(existing, kind === "mdx" ? ".mdx" : ".md", dir);
+      const path = suggestUntitledName(existing, kind === "mdx" ? ".mdx" : kind === "drawing" ? ".excalidraw" : ".md", dir);
       try {
+        if (kind === "drawing") {
+          // A drawing starts saved: an empty scene is already a valid file.
+          const content = '{"type":"excalidraw","version":2,"elements":[]}';
+          const saved = await client.write(path, { content, expectedRevision: null });
+          await refreshList();
+          addDraft({ path, content, revision: saved.revision });
+          return;
+        }
         await client.persistDrafts([{ path, content: "", baseRevision: null }]);
         addDraft({ path, content: "", revision: null });
-      } catch (error) { setNotice(`Create failed: ${String(error)}`); }
+      } catch (error) { setNotice(`Create failed: ${error instanceof Error ? error.message : String(error)}`); }
     },
-    [addDraft, client, files, folderPrefs.selectedFolder, state.tabs],
+    [addDraft, client, files, folderPrefs.selectedFolder, refreshList, state.tabs],
   );
   const openFolderDialog = useCallback(() => {
     setFolderError(null);
@@ -639,6 +649,7 @@ export function WorkspaceWorkbench({
     { name: "Toggle bottom panel", run: () => setPanel((v) => !v) },
     { name: "New note", run: () => void createFile("note") },
     { name: "New MDX note", run: () => void createFile("mdx") },
+    { name: "New drawing", run: () => void createFile("drawing") },
     { name: "New folder", run: openFolderDialog },
     ...files.map((file) => ({
       name: `Open ${file.path}`,
@@ -695,6 +706,7 @@ export function WorkspaceWorkbench({
             <FilePlus size={14} /> New
           </button>
           <button onClick={() => void createFile("mdx")}><FilePlus size={14} /> New MDX note</button>
+          <button onClick={() => void createFile("drawing")}><PenTool size={14} /> New drawing</button>
           <button onClick={() => fileInput.current?.click()}>
             <FileUp size={14} /> Import
           </button>
@@ -922,20 +934,34 @@ export function WorkspaceWorkbench({
                         aria-label={tab.path}
                         className="wb-session-host"
                       >
-                        <WorkspaceSession
-                          navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
-                          client={client}
-                          initial={tab}
-                          workspacePaths={files.map((file) => file.path)}
-                          active={!hideSessions && state.active === tab.path}
-                          onOpen={openPath}
-                          refreshList={refreshFiles}
-                          onState={onState}
-                          onOperationSession={registerSession}
-                          savedRevision={files.find((file) => file.path === tab.path)?.revision}
-                          conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
-                          onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
-                        />
+                        {kindForPath(tab.path) === "drawing" ? (
+                          <DrawingView
+                            navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
+                            client={client}
+                            initial={tab}
+                            active={!hideSessions && state.active === tab.path}
+                            onState={onState}
+                            onOperationSession={registerSession}
+                            savedRevision={files.find((file) => file.path === tab.path)?.revision}
+                            conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
+                            onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                          />
+                        ) : (
+                          <WorkspaceSession
+                            navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
+                            client={client}
+                            initial={tab}
+                            workspacePaths={files.map((file) => file.path)}
+                            active={!hideSessions && state.active === tab.path}
+                            onOpen={openPath}
+                            refreshList={refreshFiles}
+                            onState={onState}
+                            onOperationSession={registerSession}
+                            savedRevision={files.find((file) => file.path === tab.path)?.revision}
+                            conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
+                            onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                          />
+                        )}
                       </TabsContent>
                     ))}
                     {!state.tabs.length && !hideSessions && (
