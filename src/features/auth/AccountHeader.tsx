@@ -1,22 +1,35 @@
 import { Link } from "@tanstack/react-router"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { createClient } from "@/lib/supabase/client"
-import { useSession } from "./useSession"
+import { signOut, useAuth } from "./useAuth"
 
 /** Who is signed in, with a way out; or a way in. Nothing when the build has no Supabase project. */
 export function AccountHeader() {
-  const session = useSession()
-  if (session.status === "unconfigured" || session.status === "loading") return null
+  const state = useAuth()
+  const [error, setError] = useState<string | null>(null)
+  if (state.status === "unconfigured" || state.status === "loading") return null
   return (
     <header className="flex items-center justify-end gap-3 px-6 py-3 text-sm">
-      {session.status === "signed-in" ? (
+      {state.status === "ready" ? (
         <>
           <span>
-            Signed in as <strong>{session.session.user.email}</strong>
+            Signed in as <strong>{state.email}</strong>
           </span>
-          <Button variant="outline" size="sm" onClick={() => void createClient().auth.signOut()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setError(null)
+              void signOut().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+            }}
+          >
             Sign out
           </Button>
+          {error ? (
+            <span role="alert" className="text-destructive">
+              Not signed out: {error}
+            </span>
+          ) : null}
         </>
       ) : (
         <Link to="/sign-in" className="underline underline-offset-4">

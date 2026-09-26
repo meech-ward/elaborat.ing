@@ -270,6 +270,14 @@ a small form for emailed sign-in links. A page that needs a signed-in person
 sends them to `/sign-in?next=<path>` and they come back to it, including from
 an emailed link, which is why Auth's redirect list allows any path on the site.
 
+**Decision: signing out keeps work on the device.** Projects on the device
+belong to one backend and account, so signing out hides them without deleting
+anything, and signing back in finds them. Before signing out, every registered
+guard runs (such as keeping unsaved edits), and any guard can refuse. The
+device remembers the last account signed in, so its projects can open offline;
+this marker selects local data only and is never a credential. Someone signed
+in stays signed in while the Auth server cannot be reached.
+
 **Decision:** hosted limits are generous and exist only to stop abuse.
 Numbers are set when accounts ship.
 

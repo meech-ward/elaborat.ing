@@ -42,6 +42,7 @@ async function fakeAuth(page: Page, decision?: { redirect: string }) {
     if (pathname.endsWith("/token")) return json(session())
     if (pathname.endsWith("/user")) return json(user)
     if (pathname.endsWith("/otp")) return json({})
+    if (pathname.endsWith("/logout")) return route.fulfill({ status: 204, headers })
     if (pathname.endsWith("/oauth/authorizations/auth-123")) {
       return json({
         authorization_id: "auth-123",
@@ -107,4 +108,22 @@ test("a consent page without a request says so", async ({ page }) => {
   await fakeAuth(page)
   await page.goto(new URL("oauth/consent", APP_URL).href)
   await expect(page.getByRole("alert")).toContainText("authorization_id")
+})
+
+test("the home page shows who is signed in, and signing out forgets the account on this device", async ({ page }) => {
+  const seen = await fakeAuth(page)
+  await page.goto(new URL("sign-in", APP_URL).href)
+  await page.getByLabel("Email", { exact: true }).first().fill(user.email)
+  await page.getByLabel("Password", { exact: true }).fill("a password")
+  await page.getByRole("button", { name: "Sign in" }).click()
+
+  await expect(page).toHaveURL(APP_URL)
+  await expect(page.getByText(`Signed in as ${user.email}`)).toBeVisible()
+  const remembered = () => page.evaluate(() => localStorage.getItem("elaborating.offline-account.v1"))
+  expect(JSON.parse((await remembered())!)).toMatchObject({ userId: user.id, email: user.email })
+
+  await page.getByRole("button", { name: "Sign out" }).click()
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible()
+  expect(await remembered()).toBeNull()
+  expect(seen.some((request) => new URL(request.url()).pathname.endsWith("/logout"))).toBe(true)
 })
