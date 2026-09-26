@@ -1,8 +1,8 @@
 import type { LocalChange } from "@/features/project-storage/fileStore"
-import { isValidProjectPath } from "@/features/project-storage/model"
+import { isValidProjectPath, MAX_ENTRIES } from "@/features/project-storage/model"
 import { basenameForPath, diagramPartnerPaths, renameDestinationPath, validateWorkspacePath } from "@/features/workspace"
 import { planMoveReferences, type MoveReferenceFile } from "@/features/workspace/moveRefs"
-import { ancestorsOf } from "./folderTree"
+import { ancestorsOf, isCanonicalDirectoryPath, joinFolder, parentDirOf } from "./folderTree"
 
 /** A file in the project, as the move planner sees it. */
 export type MoveSourceFile = {
@@ -20,6 +20,9 @@ export type MoveSourceFile = {
 /** Move a file into a folder ("" is the project's top level), or rename it where it is. */
 export type MoveRequest = { path: string; folder: string } | { path: string; name: string }
 
+/** Move a folder into another folder ("" is the project's top level), or rename it where it is. */
+export type FolderMoveRequest = { folder: string; into: string } | { folder: string; name: string }
+
 export type MoveReference = { from: string; to: string; line: number }
 
 export type MovePlan = {
@@ -30,6 +33,8 @@ export type MovePlan = {
   blockers: Array<{ path: string; reason: string }>
   /** The moves and rewritten files, as one save on this device. */
   changes: LocalChange[]
+  /** Set for a folder move: the folder, and where it goes with everything in it. */
+  folder?: { from: string; to: string }
 }
 
 /** The request itself cannot work (a missing file, a bad name, a taken destination). */
@@ -104,16 +109,86 @@ export function planMove(files: readonly MoveSourceFile[], folders: readonly str
     if (blocking) throw new MoveRefusedError(`${blocking} is a file, so it cannot hold ${move.to}.`)
   }
 
+  return planMoves(files, moves, "moving it")
+}
+
+/**
+ * Plan a rename or move of a folder with everything in it, as one save:
+ * every file under it moves (a D2 diagram with its generated files, since
+ * they share its folder), references to those files are rewritten in the
+ * moved files and in files that point into the folder, and the explicit
+ * folders under it (empty ones included) are made at the new place and
+ * removed at the old. `folders` lists every folder, and `explicit` the ones
+ * stored as folders rather than implied by the files in them. A file the
+ * app does not move, or one that is not settled, becomes a blocker.
+ */
+export function planFolderMove(
+  files: readonly MoveSourceFile[],
+  folders: readonly string[],
+  explicit: readonly string[],
+  request: FolderMoveRequest,
+): MovePlan {
+  const from = request.folder
+  if (!folders.includes(from)) throw new MoveRefusedError(`There is no folder ${from}.`)
+  let to: string
+  if ("name" in request) {
+    to = joinFolder(parentDirOf(from), request.name)
+    if (request.name.includes("/") || !isCanonicalDirectoryPath(to)) {
+      throw new MoveRefusedError(`"${request.name}" is not a valid folder name. Use one name without separators, leading dots, or control characters.`)
+    }
+  } else {
+    if (request.into !== "" && !folders.includes(request.into)) throw new MoveRefusedError(`There is no folder ${request.into}.`)
+    if (request.into === from || request.into.startsWith(`${from}/`)) {
+      throw new MoveRefusedError(`${from} cannot move into itself or one of its own folders.`)
+    }
+    to = joinFolder(request.into, basenameForPath(from))
+  }
+  if (to === from) throw new MoveRefusedError(`${from} is already there.`)
+  if (folders.includes(to) || files.some((file) => file.path === to)) throw new MoveRefusedError(`${to} already exists.`)
+
+  const under = (path: string) => path.startsWith(`${from}/`)
+  const destination = (path: string) => `${to}${path.slice(from.length)}`
+  const inside = files.filter((file) => under(file.path))
+  const moves = inside.filter((file) => canMove(file.path)).map((file) => ({ from: file.path, to: destination(file.path) }))
+  for (const move of moves) if (!isValidProjectPath(move.to)) throw new MoveRefusedError(`${move.to} is not a valid path.`)
+
+  const plan = planMoves(files, moves, "moving its folder")
+  for (const file of inside) {
+    if (!canMove(file.path)) {
+      plan.blockers.push({ path: file.path, reason: "It is a kind of file that cannot be renamed or moved here, so its folder cannot move either." })
+    }
+  }
+  // Explicit folders keep being explicit: made at the new place (parents first) and removed at the old (children first).
+  const stored = explicit.filter((path) => path === from || under(path)).sort()
+  plan.changes.push(...stored.map((path): LocalChange => ({ kind: "mkdir", path: destination(path) })))
+  plan.changes.push(...[...stored].reverse().map((path): LocalChange => ({ kind: "rmdir", path })))
+  if (plan.changes.length > MAX_ENTRIES) {
+    throw new MoveRefusedError(
+      `Moving ${from} takes ${plan.changes.length} changes, more than the ${MAX_ENTRIES} one save can hold. Move some of what is in it first.`,
+    )
+  }
+  return { ...plan, folder: { from, to } }
+}
+
+/**
+ * The blockers, reference rewrites and changes for a set of file moves:
+ * every moved file must be settled (saved, no draft, no conflict), and so
+ * must every file whose references change. `what` names the action in the
+ * moved files' blocker messages.
+ */
+function planMoves(files: readonly MoveSourceFile[], moves: Array<{ from: string; to: string }>, what: string): MovePlan {
+  const byPath = new Map(files.map((file) => [file.path, file]))
+  const leaving = new Set(moves.map((move) => move.from))
   const blockers: MovePlan["blockers"] = []
   const block = (path: string, reason: string) => {
     if (!blockers.some((entry) => entry.path === path && entry.reason === reason)) blockers.push({ path, reason })
   }
-  const unsettled = (file: MoveSourceFile, what: string) => {
-    if (file.draft !== null) block(file.path, `It has unsaved edits. Save or discard them before ${what}.`)
-    if (file.conflict) block(file.path, `It has a sync conflict. Resolve it before ${what}.`)
-    if (!file.revision) block(file.path, `It has never been saved. Save it before ${what}.`)
+  const unsettled = (file: MoveSourceFile, action: string) => {
+    if (file.draft !== null) block(file.path, `It has unsaved edits. Save or discard them before ${action}.`)
+    if (file.conflict) block(file.path, `It has a sync conflict. Resolve it before ${action}.`)
+    if (!file.revision) block(file.path, `It has never been saved. Save it before ${action}.`)
   }
-  for (const move of moves) unsettled(byPath.get(move.from)!, "moving it")
+  for (const move of moves) unsettled(byPath.get(move.from)!, what)
 
   const referring = (pick: (file: MoveSourceFile) => string | null): MoveReferenceFile[] =>
     files.flatMap((file) => {

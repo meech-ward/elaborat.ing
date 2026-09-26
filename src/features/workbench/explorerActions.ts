@@ -6,6 +6,7 @@
  * The stored rename stays authoritative; these messages mirror its
  * refusals so the rename dialog validates inline before any save.
  */
+import type { KeyboardEvent } from "react";
 import {
   basenameForPath,
   renameDestinationPath,
@@ -99,4 +100,23 @@ export function renameStemLength(path: string): number {
   const suffix = workspacePathSuffix(path);
   if (!suffix || base.length <= suffix.length) return base.length;
   return base.length - suffix.length;
+}
+
+/**
+ * Menu or Shift+F10 on a row's button opens the row's context menu. Base UI
+ * handles contextmenu and touch, but Firefox does not consistently
+ * synthesize contextmenu from keyboard input, so the real key is routed
+ * through the same primitive, anchored on the button.
+ */
+export function openRowMenuFromKeyboard(event: KeyboardEvent<HTMLElement>): void {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+  event.preventDefault();
+  const bounds = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: bounds.left + Math.min(24, bounds.width / 2),
+    clientY: bounds.top + Math.min(24, bounds.height / 2),
+    button: 2,
+  }));
 }

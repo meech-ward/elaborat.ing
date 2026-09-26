@@ -12,8 +12,7 @@
  * rename settles, so the renamed session is inert while the request runs
  * and typing cannot create a newly dirty draft under async completion.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { useState } from "react";
 import { Copy, Link, Pencil, FolderInput } from "lucide-react";
 import {
   ContextMenu,
@@ -25,9 +24,11 @@ import { ActionMenu } from "./WorkbenchChrome";
 import {
   copyPayloadForPath,
   copyTextToClipboard,
+  openRowMenuFromKeyboard,
   renameNameError,
   renameStemLength,
 } from "./explorerActions";
+import { RenameDialog } from "./RenameDialog";
 
 export function ExplorerFileRow({
   path,
@@ -67,12 +68,8 @@ export function ExplorerFileRow({
   onMove?: () => void;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const inputId = useId();
-  const errorId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
+  // A new dialog for each opening, so it starts from the current name.
+  const [renameKey, setRenameKey] = useState(0);
 
   const copyFilename = async () => {
     const { filename } = copyPayloadForPath(path);
@@ -96,7 +93,6 @@ export function ExplorerFileRow({
     }
   };
   const requestRename = () => {
-    if (renaming) return;
     if (dirty) {
       onFeedback(
         `Rename refused: ${path} has unsaved changes. Save or discard them first, then rename again.`,
@@ -109,41 +105,8 @@ export function ExplorerFileRow({
       );
       return;
     }
-    setRenameDraft(copyPayloadForPath(path).filename);
-    setError(null);
+    setRenameKey((key) => key + 1);
     setRenameOpen(true);
-  };
-
-  // Preselect the editable stem (basename minus extension) when the dialog opens.
-  useEffect(() => {
-    if (!renameOpen) return;
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    try {
-      input.setSelectionRange(0, renameStemLength(path));
-    } catch {
-      input.select();
-    }
-  }, [renameOpen, path]);
-
-  const submitRename = () => {
-    if (renaming) return;
-    const problem = renameNameError(path, renameDraft);
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    // Keep the modal dialog open until the workbench settles: dismissing
-    // here would let the user type a newly dirty draft while the request
-    // runs, which async completion could then discard or mis-relabel.
-    setRenaming(true);
-    setError(null);
-    const done = () => {
-      setRenaming(false);
-      setRenameOpen(false);
-    };
-    void onRename?.(renameDraft).then(done, done);
   };
 
   return (
@@ -162,21 +125,7 @@ export function ExplorerFileRow({
             }
             title={path}
             onClick={onOpen}
-            onKeyDown={(event) => {
-              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-              event.preventDefault();
-              // Base UI handles contextmenu/touch, but Firefox does not
-              // consistently synthesize contextmenu from keyboard input.
-              // Route this real key through the same primitive and anchor.
-              const bounds = event.currentTarget.getBoundingClientRect();
-              event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", {
-                bubbles: true,
-                cancelable: true,
-                clientX: bounds.left + Math.min(24, bounds.width / 2),
-                clientY: bounds.top + Math.min(24, bounds.height / 2),
-                button: 2,
-              }));
-            }}
+            onKeyDown={openRowMenuFromKeyboard}
           >
             {label ?? path}
             {draft && (
@@ -218,72 +167,18 @@ export function ExplorerFileRow({
           {onMove && <ContextMenuItem onClick={onMove}><FolderInput size={14} /> Move to folder</ContextMenuItem>}
         </ContextMenuContent>
       </ContextMenu>
-      <Dialog.Root
+      <RenameDialog
+        key={renameKey}
         open={renameOpen}
-        onOpenChange={(next) => {
-          // While the rename is in flight the dialog is not dismissable
-          // (Escape, backdrop): closing it would re-enable typing in the
-          // renamed session mid-request. Cancellation stays available
-          // before submit via Cancel.
-          if (!renaming) setRenameOpen(next);
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Backdrop className="wb-backdrop" />
-          <Dialog.Popup className="wb-palette wb-rename" aria-busy={renaming}>
-            <Dialog.Title className="wb-rename-title">
-              Rename in {dirOf(path)}
-            </Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Choose a new file name in the same folder. The extension stays the same.
-            </Dialog.Description>
-            <label htmlFor={inputId}>New file name</label>
-            <input
-              id={inputId}
-              ref={inputRef}
-              value={renameDraft}
-              disabled={renaming}
-              aria-invalid={error !== null}
-              aria-describedby={error ? errorId : undefined}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                const next = event.target.value;
-                setRenameDraft(next);
-                if (error && !renameNameError(path, next)) setError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  submitRename();
-                }
-              }}
-            />
-            {error && (
-              <p id={errorId} role="alert" className="wb-rename-error">
-                {error}
-              </p>
-            )}
-            {renaming && (
-              <p role="status" className="wb-rename-pending">
-                Renaming…
-              </p>
-            )}
-            <div className="wb-rename-actions">
-              {renaming ? (
-                <button className="wb-rename-cancel" disabled>
-                  Cancel
-                </button>
-              ) : (
-                <Dialog.Close className="wb-rename-cancel">Cancel</Dialog.Close>
-              )}
-              <button onClick={submitRename} disabled={renaming}>
-                {renaming ? "Renaming…" : "Rename"}
-              </button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+        title={`Rename in ${dirOf(path)}`}
+        description="Choose a new file name in the same folder. The extension stays the same."
+        label="New file name"
+        initial={copyPayloadForPath(path).filename}
+        selectLength={renameStemLength(path)}
+        validate={(name) => renameNameError(path, name)}
+        onRename={(name) => onRename?.(name) ?? Promise.resolve()}
+        onOpenChange={setRenameOpen}
+      />
     </div>
   );
 }

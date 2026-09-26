@@ -10,7 +10,8 @@ import { FileStoreError, type FileRef, type LocalChange, type ProjectFileStore, 
 export interface WorkspaceStore {
   /** Scopes the workbench's browser preferences (tabs, views, folders) to this project. */
   readonly persistenceKey: string
-  listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[] }>
+  /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
+  listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
   read(path: string): Promise<WorkspaceFile>
   write(path: string, input: { content: string; expectedRevision: string | null }): Promise<{ path: string; revision: string; size: number }>
   createDirectory(path: string): Promise<{ path: string }>
@@ -48,8 +49,8 @@ export function projectWorkspace(
   return {
     persistenceKey: JSON.stringify([store.partition, store.projectId]),
     async listEntries() {
-      const { files, directories } = await store.listEntries()
-      return { files: files.map((file) => ({ ...file, revision: revisionOf(file.revision) })), directories }
+      const { files, directories, folders } = await store.listEntries()
+      return { files: files.map((file) => ({ ...file, revision: revisionOf(file.revision) })), directories, folders }
     },
     async read(path) {
       let file: StoredFile

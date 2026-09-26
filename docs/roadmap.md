@@ -100,12 +100,14 @@ this repository once the steps before them have landed.
     Modules load from their saved copies and run only in the frame, and a
     module saved in another tab or brought in by sync updates the open notes
     that use it. Browser journeys in `tests/browser/components.spec.ts`.
-12. **Files can be renamed and moved, with references rewritten in the same
-    save, and folders created (done).** A D2 diagram's generated files move
-    with it, open tabs follow their files, and unsaved edits or a sync conflict
-    stop a move until they are settled. Files of kinds the app does not edit
-    (for example, ones an agent wrote) are listed and open as text, but are not
-    renamed or moved. Not yet: renaming or moving a folder.
+12. **Files and folders can be renamed and moved, with references rewritten
+    in the same save, and folders created (done).** A D2 diagram's generated
+    files move with it, and a folder moves with everything in it, its empty
+    folders included, as one save. Open tabs follow their files, and unsaved
+    edits or a sync conflict stop a move until they are settled. Files of kinds
+    the app does not edit (for example, ones an agent wrote) are listed and
+    open as text, but are not renamed or moved, and a folder holding one does
+    not move.
 13. **Drawings edit, save and export on per-file storage (done).** Excalidraw
     and Obsidian `.excalidraw.md` drawings open on the canvas without being
     rewritten, save on the device, keep unsaved edits across reloads, take a

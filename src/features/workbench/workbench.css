@@ -242,6 +242,13 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 .wb-tree-row[data-selected="true"] {
   background: var(--selection);
 }
+/* A folder's always-visible action menu, sized like a file's. */
+.wb-tree-row > .wb-icon {
+  width: 28px;
+  height: 28px;
+  align-self: center;
+  flex-shrink: 0;
+}
 .wb-tree-toggle {
   width: 36px;
   min-height: 36px;

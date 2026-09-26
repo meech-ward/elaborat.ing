@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { MoveRefusedError, planMove, type MoveSourceFile } from "./movePlan"
+import { MoveRefusedError, planFolderMove, planMove, type MoveSourceFile } from "./movePlan"
 
 const file = (path: string, saved: string, extra: Partial<MoveSourceFile> = {}): MoveSourceFile => ({
   path,
@@ -174,5 +174,117 @@ describe("unsaved edits and conflicts block the files they touch", () => {
       folder: "archive",
     })
     expect(plan.blockers).toEqual([{ path: "notes/index.md", reason: "Unsupported document-relative link or image would be affected by this move" }])
+  })
+})
+
+describe("renaming and moving a folder", () => {
+  const scene = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}\n'
+  const files = [
+    file("docs/plan.mdx", '# Plan\n\n<Drawing src="docs/art/sketch.excalidraw" />\n\nSee [other](other.md).\n'),
+    file("docs/art/sketch.excalidraw", scene),
+    file("docs/flow.d2", "a -> b\n"),
+    file("docs/flow.excalidraw", scene),
+    file("docs/flow.d2.json", '{"layout":"elk"}\n'),
+    file("index.md", "[The plan](docs/plan.mdx)\n"),
+    file("other.md", "Unrelated.\n"),
+    file("docs-old/kept.md", "Not in the folder.\n"),
+  ]
+  const folders = ["archive", "docs", "docs-old", "docs/art", "docs/empty"]
+  const explicit = ["archive", "docs", "docs/empty"]
+
+  test("a rename moves everything in the folder and rewrites references into it and within it", () => {
+    const plan = planFolderMove(files, folders, explicit, { folder: "docs", name: "notes" })
+    expect(plan.folder).toEqual({ from: "docs", to: "notes" })
+    expect(plan.moves).toEqual([
+      { from: "docs/plan.mdx", to: "notes/plan.mdx" },
+      { from: "docs/art/sketch.excalidraw", to: "notes/art/sketch.excalidraw" },
+      { from: "docs/flow.d2", to: "notes/flow.d2" },
+      { from: "docs/flow.excalidraw", to: "notes/flow.excalidraw" },
+      { from: "docs/flow.d2.json", to: "notes/flow.d2.json" },
+    ])
+    expect(plan.blockers).toEqual([])
+    // Into the folder from outside, and within it; a link out of it to other.md is unchanged.
+    expect(plan.changes).toContainEqual({
+      kind: "move",
+      from: "docs/plan.mdx",
+      to: "notes/plan.mdx",
+      expectedRevision: "rev:docs/plan.mdx",
+      content: '# Plan\n\n<Drawing src="notes/art/sketch.excalidraw" />\n\nSee [other](other.md).\n',
+    })
+    expect(plan.changes).toContainEqual({ kind: "write", path: "index.md", content: "[The plan](notes/plan.mdx)\n", expectedRevision: "rev:index.md" })
+    // Explicit folders stay explicit (the empty one too); docs/art was only implied by its file.
+    expect(plan.changes.filter((change) => change.kind === "mkdir" || change.kind === "rmdir")).toEqual([
+      { kind: "mkdir", path: "notes" },
+      { kind: "mkdir", path: "notes/empty" },
+      { kind: "rmdir", path: "docs/empty" },
+      { kind: "rmdir", path: "docs" },
+    ])
+    // A folder whose name only starts the same stays put.
+    expect(plan.changes.some((change) => JSON.stringify(change).includes("docs-old"))).toBe(false)
+  })
+
+  test("a move into another folder, or to the top level, keeps the folder's name", () => {
+    const into = planFolderMove(files, folders, explicit, { folder: "docs", into: "archive" })
+    expect(into.folder).toEqual({ from: "docs", to: "archive/docs" })
+    expect(into.moves[0]).toEqual({ from: "docs/plan.mdx", to: "archive/docs/plan.mdx" })
+    const nested = [file("archive/docs/a.md", "a\n"), file("index.md", "[a](archive/docs/a.md)\n")]
+    const out = planFolderMove(nested, ["archive", "archive/docs"], [], { folder: "archive/docs", into: "" })
+    expect(out.moves).toEqual([{ from: "archive/docs/a.md", to: "docs/a.md" }])
+    expect(out.changes).toContainEqual({ kind: "write", path: "index.md", content: "[a](docs/a.md)\n", expectedRevision: "rev:index.md" })
+  })
+
+  test("an empty explicit folder moves as folders alone", () => {
+    const plan = planFolderMove(files, folders, explicit, { folder: "docs/empty", into: "archive" })
+    expect(plan.moves).toEqual([])
+    expect(plan.changes).toEqual([
+      { kind: "mkdir", path: "archive/empty" },
+      { kind: "rmdir", path: "docs/empty" },
+    ])
+  })
+
+  test("unsaved edits, sync conflicts, never-saved files and file kinds the app does not move are blockers", () => {
+    const with_ = (path: string, extra: Partial<MoveSourceFile>) => files.map((entry) => (entry.path === path ? { ...entry, ...extra } : entry))
+    const rename = (list: MoveSourceFile[]) => planFolderMove(list, folders, explicit, { folder: "docs", name: "notes" }).blockers
+    expect(rename(with_("docs/flow.d2", { draft: "a -> c\n" }))).toEqual([
+      { path: "docs/flow.d2", reason: "It has unsaved edits. Save or discard them before moving its folder." },
+    ])
+    expect(rename(with_("docs/art/sketch.excalidraw", { conflict: true }))).toEqual([
+      { path: "docs/art/sketch.excalidraw", reason: "It has a sync conflict. Resolve it before moving its folder." },
+    ])
+    expect(rename([...files, file("docs/new.md", "", { revision: "", saved: null, draft: "draft" })])).toContainEqual({
+      path: "docs/new.md",
+      reason: "It has never been saved. Save it before moving its folder.",
+    })
+    expect(rename([...files, file("docs/output.txt", "from an agent\n")])).toEqual([
+      { path: "docs/output.txt", reason: "It is a kind of file that cannot be renamed or moved here, so its folder cannot move either." },
+    ])
+    // A file outside whose references would change must be settled too.
+    expect(rename(with_("index.md", { draft: "[The plan](docs/plan.mdx), edited\n" }))).toEqual([
+      { path: "index.md", reason: "It has unsaved edits. Save or discard them before its references are updated." },
+    ])
+  })
+
+  test("a taken target, a move into itself, a bad name or a missing folder is refused", () => {
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", name: "docs-old" }))).toBe("docs-old already exists.")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", name: "other.md" }))).toBe("other.md already exists.")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", into: "docs" }))).toBe(
+      "docs cannot move into itself or one of its own folders.",
+    )
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", into: "docs/art" }))).toBe(
+      "docs cannot move into itself or one of its own folders.",
+    )
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", name: "a/b" }))).toContain("is not a valid folder name")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", name: ".hidden" }))).toContain("is not a valid folder name")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", name: "docs" }))).toBe("docs is already there.")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs/art", into: "docs" }))).toBe("docs/art is already there.")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "missing", name: "x" }))).toBe("There is no folder missing.")
+    expect(refusal(() => planFolderMove(files, folders, explicit, { folder: "docs", into: "missing" }))).toBe("There is no folder missing.")
+  })
+
+  test("a move that needs more changes than one save holds is refused, not split", () => {
+    const many = Array.from({ length: 4096 }, (_, index) => file(`big/n${index}.md`, "x\n"))
+    expect(refusal(() => planFolderMove(many, ["big"], ["big"], { folder: "big", name: "large" }))).toBe(
+      "Moving big takes 4098 changes, more than the 4096 one save can hold. Move some of what is in it first.",
+    )
   })
 })

@@ -127,6 +127,41 @@ class CountingDatabase extends MemoryProjectDatabase {
   }
 }
 
+test("a save that moves files also makes and removes folders, all or nothing", async () => {
+  const { a, id, store } = await setup()
+  await store.createDirectories(["docs", "docs/empty"])
+  const note = await store.write("docs/a.md", "a", null)
+  const folders = () => a.db.transaction(a.partition, "readonly", (tx) => tx.listFolders(id))
+
+  // A file in the way of a new folder refuses the whole save.
+  await put(store, "taken", "a file")
+  await expect(
+    store.save([
+      { kind: "move", from: "docs/a.md", to: "notes/a.md", expectedRevision: note.revision },
+      { kind: "mkdir", path: "taken" },
+    ]),
+  ).rejects.toThrow("taken is a file.")
+  expect(await a.paths(id)).toEqual(["docs/a.md", "taken"])
+  expect((await folders()).map((folder) => folder.path)).toEqual(["docs", "docs/empty"])
+
+  await store.save([
+    { kind: "move", from: "docs/a.md", to: "notes/a.md", expectedRevision: note.revision },
+    { kind: "mkdir", path: "notes" },
+    { kind: "mkdir", path: "notes/empty" },
+    { kind: "rmdir", path: "docs/empty" },
+    { kind: "rmdir", path: "docs" },
+  ])
+  expect((await store.listEntries()).directories).toEqual(["notes", "notes/empty"])
+  // The folders share the file's batch, so sync sends them together.
+  const batch = (await a.record(id, "notes/a.md"))!.batch
+  expect(batch).not.toBeNull()
+  expect((await folders()).map((folder) => [folder.path, folder.local, folder.batch])).toEqual([
+    ["notes", true, batch],
+    ["notes/empty", true, batch],
+  ])
+  await expect(store.save([{ kind: "rmdir", path: "docs" }])).rejects.toThrow("There is no folder docs.")
+})
+
 test("drafts made faster than they are written coalesce, and the latest text is kept", async () => {
   const db = new CountingDatabase()
   const a = device(new FakeProjectServer(), undefined, db)
