@@ -88,6 +88,7 @@ import {
 import {
   MAX_EXPANDED_FOLDERS,
   defaultFolderPreferences,
+  followFolderMove,
   pruneFolderPreferences,
   readFolderPreferences,
   writeFolderPreferences,
@@ -283,7 +284,11 @@ export function WorkspaceWorkbench({
     );
   }, []);
   const refreshFiles = useCallback(async () => { await refreshList(); }, [refreshList]);
-  const moves = useFileMoves({ client, tabs: tabsRef, sessions: leaveSessions, dispatch, notify: setNotice });
+  // The folder's expanded state goes with it (see followFolderMove).
+  const followFolder = useCallback((from: string, to: string) => {
+    setFolderPrefs((prev) => followFolderMove(prev, from, to));
+  }, []);
+  const moves = useFileMoves({ client, tabs: tabsRef, sessions: leaveSessions, dispatch, notify: setNotice, onFolderMove: followFolder });
   const registerSession = useCallback((path: string, session: OperationSession | null) => {
     if (session) leaveSessions.current.set(path, session); else leaveSessions.current.delete(path);
     if (session?.state().reconciled) {
@@ -642,6 +647,8 @@ export function WorkspaceWorkbench({
           onFeedback={setNotice}
           onRenameFile={moves.rename}
           onMoveFile={moves.open}
+          onRenameFolder={moves.renameFolder}
+          onMoveFolder={moves.openFolder}
         />
       )}
       {listed && !listError && treeIsEmpty && (
@@ -1153,7 +1160,7 @@ export function WorkspaceWorkbench({
           setFolderDialog(next);
         }}
       />
-      {moves.target && <MoveDialog path={moves.target} folders={directories} folder={moves.folder}
+      {moves.target && <MoveDialog path={moves.target} kind={moves.kind} folders={directories} folder={moves.folder}
         plan={moves.plan} pending={moves.pending} error={moves.error} stale={moves.stale}
         onFolder={moves.changeFolder} onPreview={() => void moves.preview()}
         onCommit={() => void moves.commit()} onClose={moves.close} />}

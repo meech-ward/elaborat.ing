@@ -99,6 +99,20 @@ export function writeFolderPreferences(
 }
 
 /**
+ * A folder is moving from `from` to `to`: its expanded folders are also
+ * expanded at their new paths, and a selection inside it goes with it. The
+ * old paths stay until a list shows them gone, so a list refreshed during
+ * the move keeps the folder expanded wherever it is.
+ */
+export function followFolderMove(prefs: FolderPreferences, from: string, to: string): FolderPreferences {
+  const moved = (path: string) => (path === from || path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : null);
+  const added = prefs.expanded.flatMap((path) => moved(path) ?? []);
+  const selectedFolder = prefs.selectedFolder === null ? null : (moved(prefs.selectedFolder) ?? prefs.selectedFolder);
+  if (added.length === 0 && selectedFolder === prefs.selectedFolder) return prefs;
+  return { expanded: sanitizeExpanded([...added, ...prefs.expanded]), selectedFolder };
+}
+
+/**
  * Drop expanded/selected paths that no longer exist. Call only after a
  * SUCCESSFUL authoritative list: `keep` is the union of stored folder
  * paths, implied ancestors of listed files, and implied ancestors of open

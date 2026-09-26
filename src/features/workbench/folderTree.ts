@@ -200,6 +200,23 @@ export function folderNameError(
 }
 
 /**
+ * Inline folder rename validation: null when `name` is a usable new name for
+ * the folder at `path` in its current parent, else a user-facing reason. A
+ * name that is already taken is refused when the move is planned.
+ */
+export function folderRenameError(path: string, name: string): string | null {
+  if (name.trim() === "") return "Enter a folder name.";
+  if (name !== name.trim()) return "Folder names cannot start or end with a space.";
+  if (validateWorkspaceBasename(name) === null) {
+    return "Use one folder name without separators, leading dots, or control characters.";
+  }
+  const candidate = joinFolder(parentDirOf(path), name);
+  if (candidate === path) return "That is the current name; nothing to rename.";
+  if (!isCanonicalDirectoryPath(candidate)) return "That name cannot be a workspace folder here.";
+  return null;
+}
+
+/**
  * Expand the ancestor chain of `filePath` (reveal on open/restore).
  * Returns the merged expanded list, bounded and deduplicated; callers
  * decide when to apply it so a user-collapsed folder is not reopened.
