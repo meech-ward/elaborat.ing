@@ -35,7 +35,11 @@ bun run lint
 bun run test
 ```
 
-CI runs build, typecheck, lint and test on every pull request.
+Edge Functions run on Deno 2. In a function's folder, such as
+`supabase/functions/mcp-server/`, run `deno check .` and `deno test`.
+
+CI runs build, typecheck, lint and test on every pull request, and checks and
+tests every Edge Function.
 
 ## Rules
 

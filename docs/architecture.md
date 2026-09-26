@@ -343,7 +343,9 @@ secrets supplied through `env()` from GitHub repository secrets.)
 ## Testing
 
 **Decision:** unit tests cover pure logic (the editor, anchoring, sync) and
-run with `bun run test`.
+run with `bun run test`. Edge Function tests run on Deno with `deno test` in
+each function's folder, against a fake Supabase client; the MCP server's tools
+are called through a real MCP client, so input validation is tested too.
 
 **Decision:** database tests use pgTAP, Supabase's documented approach, in
 `supabase/tests/`. They set the role and JWT claims to act as different users,
