@@ -155,6 +155,8 @@ test("a new note from the menu is saved under a new name", async ({ page }) => {
 })
 
 test("open tabs come back after a reload, with the same one active", async ({ page }) => {
+  // Three editor loads, each allowed 15 seconds, can outlast the default test time on a busy machine.
+  test.slow()
   const { id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await remembered(page, "a.md")
   // Each navigation loads the editor again, as slowly as the first open.
@@ -168,6 +170,8 @@ test("open tabs come back after a reload, with the same one active", async ({ pa
 })
 
 test("closing a tab from the keyboard works, and an unsaved one asks first", async ({ page }) => {
+  // Two editor loads and a dialog; see the journey above.
+  test.slow()
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await remembered(page, "a.md")
   await page.goto(page.url().replace(/a\.md$/, "b.md"))
