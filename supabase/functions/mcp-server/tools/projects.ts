@@ -224,7 +224,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       inputSchema: z.object({ project_id: projectId }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
-    ({ project_id }) => rpc('archive_project', { project_id })
+    ({ project_id }) => rpc('delete_project', { project_id })
   )
 
   server.registerTool(
