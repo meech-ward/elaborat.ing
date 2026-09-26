@@ -478,6 +478,34 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
 
 export type ChildMessage = z.infer<typeof childMessageSchema>;
 
+/**
+ * What the parent does with a frame message about an older revision of the
+ * note. That is routine while the source changes under the frame, so it is
+ * never a render error:
+ * - `status`: a pending flag, informational, applied as it is;
+ * - `drop`: an acknowledgement or render error, which the newer render
+ *   replaces, or a request to open or view a file, which can be made again;
+ * - `refusal`: the frame refused a command, and its message still says why;
+ * - `lost-edit`: an edit made against the older revision, which is lost.
+ */
+export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop" | "refusal" | "lost-edit" {
+  switch (kind) {
+    case "source-draft-pending":
+    case "fluid-pending":
+      return "status";
+    case "ready":
+    case "rendered":
+    case "render-error":
+    case "edit-resource":
+    case "view-resource":
+      return "drop";
+    case "edit-rejected":
+      return "refusal";
+    default:
+      return "lost-edit";
+  }
+}
+
 export type CheckResult =
   { ok: true; message: ChildMessage } | { ok: false; error: string };
 

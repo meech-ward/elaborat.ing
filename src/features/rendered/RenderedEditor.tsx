@@ -62,6 +62,7 @@ import {
   checkProseEdit,
   checkViewResource,
   PREVIEW_SANDBOX,
+  staleChildMessage,
   type RenderMessage,
   type ResourcesMessage,
 } from "./protocol";
@@ -111,6 +112,9 @@ export type RenderedEditorProps = {
   /** Show the note without editing in the frame; `onPatch` should refuse edits too. */
   readOnly?: boolean;
 };
+
+/** Shown after "Edit not applied:" when an edit in the frame was made against an older revision of the note. */
+const LOST_EDIT = "the note changed at the same time. Make the edit again.";
 
 /** Session token binding one mounted editor to its frame. Never the source. */
 function newSessionToken(): string {
@@ -463,6 +467,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       });
       if (!checked.ok) {
         const parsed = childMessageSchema.safeParse(event.data);
+        const stale = checked.error.startsWith("Rejected stale frame message");
+        // A rejected rendered transaction resets the frame to the current document.
+        const resetFrame = () => {
+          const current = authority.current;
+          if (!current) return;
+          const reset = { ...current, epoch: ++epoch.current, operation: 0, reset: true };
+          authority.current = reset;
+          setExposed(reset);
+          onPendingChange?.(false);
+        };
         // Queue status is informational, not write authority. Old-revision
         // settlement can clear it before the next compiled render arrives.
         if (parsed.success && parsed.data.session === session && parsed.data.kind === 'source-draft-pending') {
@@ -472,25 +486,24 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         }
         if (parsed.success && parsed.data.session === session && 'draftId' in parsed.data) {
           settle(parsed.data.draftId, 'rejected', checked.error);
-          setEditNotice(checked.error);
+          setEditNotice(stale ? LOST_EDIT : checked.error);
           return;
         }
-        // A superseded render ack landing after a newer render posted is
-        // routine, not fatal: drop it silently and keep the last good render.
-        const kind = (event.data as { kind?: unknown } | null)?.kind;
-        if (
-          checked.error.startsWith("Rejected stale frame message") &&
-          kind === "rendered"
-        )
+        // The frame spoke about an older revision of the note, which is
+        // routine while the source changes under it: never a render error.
+        if (parsed.success && parsed.data.session === session && stale) {
+          const message = parsed.data;
+          const outcome = staleChildMessage(message.kind);
+          if (outcome === "status" && message.kind === "fluid-pending") onPendingChange?.(message.pending);
+          if (outcome === "refusal" && message.kind === "edit-rejected") setEditNotice(message.message);
+          if (outcome === "lost-edit") {
+            setEditNotice(LOST_EDIT);
+            if (message.kind === "fluid-transaction") resetFrame();
+          }
           return;
+        }
         onError?.(checked.error);
-        const current = authority.current;
-        if (kind === "fluid-transaction" && current) {
-          const reset = { ...current, epoch: ++epoch.current, operation: 0, reset: true };
-          authority.current = reset;
-          setExposed(reset);
-          onPendingChange?.(false);
-        }
+        if ((event.data as { kind?: unknown } | null)?.kind === "fluid-transaction") resetFrame();
         return;
       }
       const message = checked.message;
