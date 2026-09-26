@@ -2,8 +2,8 @@ import { expect, test } from "bun:test"
 import { companionPaths, fileState, isValidProjectPath, partitionKey, type LocalFile } from "./model"
 
 test("paths follow the database rule", () => {
-  for (const path of ["a.md", "notes/a.md", "Ünïcode/名前.md", "a b/c-d_e.md", "x".repeat(1024)]) expect(isValidProjectPath(path)).toBe(true)
-  for (const path of ["", "/a.md", "a/", "a//b", ".hidden", "a/.b", "a\\b", "a:b", "a\u0000b", "a\u0085b", "x".repeat(1025), "é.md"]) {
+  for (const path of ["a.md", "notes/a.md", "Ünïcode/名前.md", "a b/c-d_e.md", "x".repeat(2 ** 10)]) expect(isValidProjectPath(path)).toBe(true)
+  for (const path of ["", "/a.md", "a/", "a//b", ".hidden", "a/.b", "a\\b", "a:b", "a\u0000b", "a\u0085b", "x".repeat(2 ** 10 + 1), "é.md"]) {
     expect(isValidProjectPath(path)).toBe(false)
   }
 })

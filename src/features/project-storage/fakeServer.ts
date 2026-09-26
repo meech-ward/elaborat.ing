@@ -18,7 +18,7 @@ type ServerProject = {
   files: Map<string, ServerFile>
   history: Array<{ fileId: string; version: number; deleted: boolean }>
   folders: Set<string>
-  receipts: Map<string, { user: string; payload: string; result: SaveResult }>
+  savedResults: Map<string, { user: string; payload: string; result: SaveResult }>
   members: Map<string, Role>
 }
 
@@ -117,7 +117,7 @@ export class FakeProjectServer {
         files: new Map(),
         history: [],
         folders: new Set(),
-        receipts: new Map(),
+        savedResults: new Map(),
         members: new Map(),
       }
       this.projects.set(id, project)
@@ -137,10 +137,10 @@ export class FakeProjectServer {
   private save(user: string, projectId: string, mutationId: string, changes: SaveChange[]): SaveResult {
     const project = this.editable(user, projectId)
     const payload = JSON.stringify(changes)
-    const receipt = project.receipts.get(mutationId)
-    if (receipt) {
-      if (receipt.user !== user || receipt.payload !== payload) throw new RemoteError("invalid", "This mutation id was already used for a different save")
-      return receipt.result
+    const earlier = project.savedResults.get(mutationId)
+    if (earlier) {
+      if (earlier.user !== user || earlier.payload !== payload) throw new RemoteError("invalid", "This mutation id was already used for a different save")
+      return earlier.result
     }
     if (project.archivedAt) throw new RemoteError("archived", "Project is archived")
     if (changes.length < 1 || changes.length > 4096) throw new RemoteError("invalid", "Changes must be a list of 1 to 4096 items")
@@ -225,7 +225,7 @@ export class FakeProjectServer {
     project.history.push(...history)
     project.revision = revision
     const result: SaveResult = { status: "saved", project: { id: project.id, revision }, changes: applied }
-    project.receipts.set(mutationId, { user, payload, result })
+    project.savedResults.set(mutationId, { user, payload, result })
     return result
   }
 

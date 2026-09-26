@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { FileStoreError, LocalConflictError } from "./fileStore"
+import { MemoryProjectDatabase, type ProjectDatabase } from "./database"
+import { FileStoreError, LocalConflictError, ProjectFileStore } from "./fileStore"
 import { contentToken } from "./model"
 import { device, FakeProjectServer, put } from "./testing"
 
@@ -119,4 +120,46 @@ test("viewers and archived projects cannot change files", async () => {
     await tx.putProject({ ...project, role: "owner", archivedAt: new Date().toISOString() })
   })
   await expect(put(a.files(id), "b.md", "x")).rejects.toThrow("archived")
+})
+
+test("a save that fails to store keeps the old bytes and reports no save", async () => {
+  const inner = new MemoryProjectDatabase()
+  let failWrites = false
+  const db: ProjectDatabase = {
+    listProjects: (partition) => inner.listProjects(partition),
+    transaction: (partition, mode, work) =>
+      inner.transaction(partition, mode, (tx) =>
+        work({
+          ...tx,
+          putFile: async (file) => {
+            if (failWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError")
+            return tx.putFile(file)
+          },
+        }),
+      ),
+  }
+  const a = device(new FakeProjectServer(), undefined, db)
+  const { id } = await a.sync.createProject("Notes")
+  const store = new ProjectFileStore(db, a.partition, id)
+  const saved = await store.write("a.md", "old", null)
+  let notices = 0
+  store.subscribe(() => notices++)
+  failWrites = true
+  await expect(store.write("a.md", "new", saved.revision)).rejects.toThrow("quota")
+  failWrites = false
+  expect(notices).toBe(0)
+  expect(await store.read("a.md")).toMatchObject({ content: "old", revision: saved.revision })
+})
+
+test("a later save supersedes an older draft, and undoing to the saved bytes drops the draft", async () => {
+  const { store } = await setup()
+  const saved = await store.write("a.md", "v1", null)
+  await store.persistDrafts([{ path: "a.md", content: "v1 and some", baseRevision: saved.revision }])
+  await store.write("a.md", "v1 and some more", saved.revision)
+  expect((await store.read("a.md")).draft).toBe(false)
+
+  const current = await store.read("a.md")
+  await store.persistDrafts([{ path: "a.md", content: "changed", baseRevision: current.revision }])
+  await store.persistDrafts([{ path: "a.md", content: "v1 and some more", baseRevision: current.revision }])
+  expect((await store.read("a.md")).draft).toBe(false)
 })

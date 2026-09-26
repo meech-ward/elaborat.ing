@@ -231,7 +231,9 @@ export class ProjectFileStore {
             ...file,
             content: change.content,
             batch: batch ?? file.batch,
-            draft: file.draft?.content === change.content ? null : file.draft,
+            // This save supersedes a draft made on the same saved copy (or one it matches).
+            draft:
+              file.draft && (file.draft.content === change.content || file.draft.token === change.expectedRevision) ? null : file.draft,
           })
         } else if (change.kind === "move") {
           if (!source || source.content === null) throw new FileStoreError(`${change.from} is not in this project.`)

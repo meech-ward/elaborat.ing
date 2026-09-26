@@ -324,3 +324,70 @@ test("nothing is pulled while a save is in flight", async () => {
   expect((await b.record(id, "a.md"))?.conflict).toBeNull()
   expect((await b.project(id))?.revision).toBe(server.projects.get(id)!.revision)
 })
+
+test("a pull while someone types keeps their draft on top of the new saved copy", async () => {
+  const server = new FakeProjectServer()
+  const [a, b] = [device(server), device(server)]
+  const id = await shared(server, a, b, { "a.md": "base" })
+  const opened = await b.files(id).read("a.md")
+  await b.files(id).persistDrafts([{ path: "a.md", content: "base, typing", baseRevision: opened.revision }])
+  await put(a.files(id), "a.md", "from A")
+  await a.sync.sync(id)
+  await b.sync.refresh()
+  const now = await b.files(id).read("a.md")
+  expect([now.content, now.savedContent, now.draft]).toEqual(["base, typing", "from A", true])
+  expect(now.revision).not.toBe(opened.revision)
+  // Saving on the old revision is refused locally, so the editor can show both.
+  await expect(b.files(id).write("a.md", "base, typing", opened.revision)).rejects.toThrow("changed on this device")
+})
+
+test("moving a D2 diagram moves its three files in one save", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Diagrams")
+  const store = a.files(id)
+  const written = await store.writeBatch([
+    { path: "flow.d2", content: "a -> b", expectedRevision: null },
+    { path: "flow.excalidraw", content: "{}", expectedRevision: null },
+    { path: "flow.d2.json", content: "{}", expectedRevision: null },
+  ])
+  await a.sync.sync(id)
+  const revision = server.projects.get(id)!.revision
+  await store.save(
+    written.map((file) => ({ kind: "move" as const, from: file.path, to: `d/${file.path}`, expectedRevision: file.revision })),
+  )
+  await a.sync.sync(id)
+  expect(server.paths(id)).toEqual(["d/flow.d2", "d/flow.d2.json", "d/flow.excalidraw"])
+  expect(server.projects.get(id)!.revision).toBe(revision + 1)
+})
+
+test("losing access keeps the local work readable", async () => {
+  const server = new FakeProjectServer()
+  const owner = device(server, OWNER)
+  const editor = device(server, OTHER)
+  const project = await owner.sync.createProject("Shared")
+  await owner.sync.sync(project.id)
+  server.share(project.id, OTHER, "editor")
+  await editor.sync.download((await editor.sync.refresh())[0])
+  await put(editor.files(project.id), "mine.md", "local work")
+  server.projects.get(project.id)!.members.delete(OTHER)
+  await editor.sync.refresh()
+  expect(await editor.project(project.id)).toMatchObject({ syncError: "access-lost" })
+  expect((await editor.files(project.id).read("mine.md")).content).toBe("local work")
+})
+
+test("an interrupted download finishes on the next refresh", async () => {
+  const server = new FakeProjectServer()
+  const [a, b] = [device(server), device(server)]
+  const { id } = await a.sync.createProject("Notes")
+  await put(a.files(id), "a.md", "a")
+  await put(a.files(id), "b.md", "b")
+  await a.sync.sync(id)
+  const entry = (await b.sync.refresh())[0]
+  server.offline = true
+  await expect(b.sync.download(entry)).rejects.toThrow()
+  server.offline = false
+  expect(await b.paths(id)).toEqual([])
+  await b.sync.refresh()
+  expect(await b.paths(id)).toEqual(["a.md", "b.md"])
+})
