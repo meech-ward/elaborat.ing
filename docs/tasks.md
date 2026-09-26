@@ -895,7 +895,7 @@ conflict already holds the server's copy (`FileConflict` in
 
 ## T32: a stale message from the rendered frame never shows as a render error
 
-**Status:** Waiting (take T33 first, then this one)
+**Status:** Done (branch claude/t32-stale-frame)
 
 Open a note in Rendered, switch to Source, and type: a red banner can appear
 reading "Render error: Rejected stale frame message (revision 24, current
