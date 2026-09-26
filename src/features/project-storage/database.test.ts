@@ -57,7 +57,7 @@ for (const [name, open] of databases) {
         await tx.putProject(p)
         await tx.putFile(file("one", p.id, "local.md", null))
         await tx.putFile(file("one", p.id, "synced.md", baseId))
-        await tx.putFolder({ partition: "one", projectId: p.id, path: "empty", base: false, local: true })
+        await tx.putFolder({ partition: "one", projectId: p.id, path: "empty", base: false, local: true, batch: null })
       })
       expect((await db.transaction("one", "readonly", (tx) => tx.findFileByBaseId(p.id, baseId)))?.path).toBe("synced.md")
       expect(await db.listProjects("two")).toEqual([])

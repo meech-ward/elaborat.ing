@@ -7,6 +7,7 @@ import {
   MAX_ENTRIES,
   type FileConflict,
   type LocalFile,
+  type LocalFolder,
   type LocalProject,
   type PendingSave,
   type SaveChange,
@@ -346,7 +347,7 @@ export class ProjectSync {
           const folder = folders.find((candidate) => candidate.path === sent.path)
           if (!folder) continue
           if (!sent.local && !folder.local) await tx.deleteFolder(projectId, folder.path)
-          else await tx.putFolder({ ...folder, base: sent.local })
+          else await tx.putFolder({ ...folder, base: sent.local, batch: folder.local === sent.local ? null : folder.batch })
         }
         await tx.putProject({
           ...project,
@@ -500,29 +501,36 @@ function stopMessage(reason: NonNullable<LocalProject["syncError"]>, detail?: st
 /** The next group of changes to send, or null when everything is synced. */
 async function nextBatch(tx: StorageTransaction, project: LocalProject): Promise<PendingSave | null> {
   const files = await tx.listFiles(project.id)
+  const folders = (await tx.listFolders(project.id)).filter((folder) => folder.local !== folder.base)
+  const folderChange = (folder: LocalFolder): SaveChange => ({ op: folder.local ? "mkdir" : "rmdir", path: folder.path })
   for (const group of groupFiles(files)) {
     if (group.some((file) => file.conflict !== null)) continue
     const members = group.filter(isDirty)
     if (members.length === 0) continue
-    if (members.length > MAX_ENTRIES) throw new Error("Too many files were changed together to sync at once.")
+    // Folders made or removed in the same local save (a folder move) go in the same change.
+    const batches = new Set(group.flatMap((file) => (file.batch === null ? [] : [file.batch])))
+    const withFiles = folders.filter((folder) => folder.batch !== null && batches.has(folder.batch))
+    if (members.length + withFiles.length > MAX_ENTRIES) throw new Error("Too many files were changed together to sync at once.")
     return {
       mutationId: crypto.randomUUID(),
-      changes: members.map(changeFor),
+      changes: [...members.map(changeFor), ...withFiles.map(folderChange)],
       files: members.map((file) => ({
         localId: file.localId,
         sentPath: file.content === null ? null : file.path,
         sentContent: file.content,
       })),
-      folders: [],
+      folders: withFiles.map((folder) => ({ path: folder.path, local: folder.local })),
     }
   }
-  const folders = (await tx.listFolders(project.id)).filter((folder) => folder.local !== folder.base).slice(0, MAX_ENTRIES)
-  if (folders.length === 0) return null
+  // A folder saved with files waits for them, so the server never has one without the other.
+  const waiting = new Set(files.flatMap((file) => (file.batch !== null && (isDirty(file) || file.conflict !== null) ? [file.batch] : [])))
+  const alone = folders.filter((folder) => folder.batch === null || !waiting.has(folder.batch)).slice(0, MAX_ENTRIES)
+  if (alone.length === 0) return null
   return {
     mutationId: crypto.randomUUID(),
-    changes: folders.map((folder): SaveChange => ({ op: folder.local ? "mkdir" : "rmdir", path: folder.path })),
+    changes: alone.map(folderChange),
     files: [],
-    folders: folders.map((folder) => ({ path: folder.path, local: folder.local })),
+    folders: alone.map((folder) => ({ path: folder.path, local: folder.local })),
   }
 }
 
@@ -687,7 +695,7 @@ async function applyRemoteFolders(tx: StorageTransaction, partition: string, pro
     else await tx.putFolder(next)
   }
   const known = new Set(local.map((folder) => folder.path))
-  for (const path of server) if (!known.has(path)) await tx.putFolder({ partition, projectId, path, base: true, local: true })
+  for (const path of server) if (!known.has(path)) await tx.putFolder({ partition, projectId, path, base: true, local: true, batch: null })
 }
 
 /** Drop this device's changes to a conflicted file and take the server's copy (or its absence). */

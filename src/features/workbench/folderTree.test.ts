@@ -3,6 +3,7 @@ import {
   ancestorsOf,
   buildFolderTree,
   folderNameError,
+  folderRenameError,
   isCanonicalDirectoryPath,
   joinFolder,
   parentDirOf,
@@ -161,5 +162,21 @@ describe("revealAncestors", () => {
       ).toBe(true);
     }
     expect(expanded).toEqual(snapshot);
+  });
+});
+
+describe("folderRenameError", () => {
+  test("a new name in the same parent is accepted", () => {
+    expect(folderRenameError("docs", "notes")).toBeNull();
+    expect(folderRenameError("archive/docs", "old docs")).toBeNull();
+  });
+
+  test("empty, padded, unchanged and unsafe names are refused", () => {
+    expect(folderRenameError("docs", "")).toBe("Enter a folder name.");
+    expect(folderRenameError("docs", " notes")).toBe("Folder names cannot start or end with a space.");
+    expect(folderRenameError("archive/docs", "docs")).toBe("That is the current name; nothing to rename.");
+    for (const name of ["a/b", ".hidden", ".."]) {
+      expect(folderRenameError("docs", name)).toBe("Use one folder name without separators, leading dots, or control characters.");
+    }
   });
 });

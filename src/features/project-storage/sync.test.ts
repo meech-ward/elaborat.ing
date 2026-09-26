@@ -361,6 +361,57 @@ test("moving a D2 diagram moves its three files in one save", async () => {
   expect(server.projects.get(id)!.revision).toBe(revision + 1)
 })
 
+test("a folder move sends its files and explicit folders in one save", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  const store = a.files(id)
+  await store.createDirectories(["docs", "docs/empty"])
+  const written = [await put(store, "docs/a.md", "a"), await put(store, "docs/b.md", "b")]
+  await a.sync.sync(id)
+  expect([...server.projects.get(id)!.folders].sort()).toEqual(["docs", "docs/empty"])
+
+  const saves = server.saves()
+  await store.save([
+    ...written.map((file) => ({ kind: "move" as const, from: file.path, to: file.path.replace("docs/", "notes/"), expectedRevision: file.revision })),
+    { kind: "mkdir", path: "notes" },
+    { kind: "mkdir", path: "notes/empty" },
+    { kind: "rmdir", path: "docs/empty" },
+    { kind: "rmdir", path: "docs" },
+  ])
+  expect((await a.sync.sync(id)).status).toBe("synced")
+  expect(server.saves()).toBe(saves + 1)
+  expect(server.paths(id)).toEqual(["notes/a.md", "notes/b.md"])
+  expect([...server.projects.get(id)!.folders].sort()).toEqual(["notes", "notes/empty"])
+  const folders = await a.db.transaction(a.partition, "readonly", (tx) => tx.listFolders(id))
+  expect(folders.map((folder) => [folder.path, folder.base, folder.local, folder.batch])).toEqual([
+    ["notes", true, true, null],
+    ["notes/empty", true, true, null],
+  ])
+})
+
+test("folders saved with files wait while those files are in conflict", async () => {
+  const server = new FakeProjectServer()
+  const [a, b] = [device(server), device(server)]
+  const id = await shared(server, a, b, { "docs/a.md": "a" })
+  await a.files(id).createDirectory("docs")
+  await a.sync.sync(id)
+  await put(b.files(id), "docs/a.md", "changed elsewhere")
+  await b.sync.sync(id)
+
+  const note = await a.files(id).read("docs/a.md")
+  await a.files(id).save([
+    { kind: "move", from: "docs/a.md", to: "notes/a.md", expectedRevision: note.revision },
+    { kind: "mkdir", path: "notes" },
+    { kind: "rmdir", path: "docs" },
+  ])
+  await a.sync.sync(id)
+  expect((await a.record(id, "notes/a.md"))?.conflict).not.toBeNull()
+  // Neither half of the folder move reached the server.
+  expect(server.paths(id)).toEqual(["docs/a.md"])
+  expect([...server.projects.get(id)!.folders]).toEqual(["docs"])
+})
+
 test("losing access keeps the local work readable", async () => {
   const server = new FakeProjectServer()
   const owner = device(server, OWNER)

@@ -111,6 +111,12 @@ export const LocalFolder = z.object({
   base: z.boolean(),
   /** This device has this explicit folder. */
   local: z.boolean(),
+  /**
+   * A folder made or removed in a local save with files shares the files'
+   * batch id, so sync sends it in the same change. Absent in folders stored
+   * before batches existed.
+   */
+  batch: z.string().nullable().default(null),
 }).strict()
 export type LocalFolder = z.infer<typeof LocalFolder>
 

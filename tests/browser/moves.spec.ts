@@ -3,10 +3,10 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
-// Folders and files in the explorer: new folders, and renames and moves whose
-// references are rewritten in the same save. A D2 diagram's generated files go
-// with it, open tabs follow their files, and unsaved edits stop a move until
-// they are saved.
+// Folders and files in the explorer: new folders, and renames and moves of
+// files and folders whose references are rewritten in the same save. A D2
+// diagram's generated files go with it, open tabs follow their files, and
+// unsaved edits stop a move until they are saved.
 
 const projectUrl = (id: string, path?: string) => new URL(`projects/${id}${path ? `/${path}` : ""}`, APP_URL).href
 
@@ -50,6 +50,92 @@ async function fileAction(page: Page, path: string, action: "Rename" | "Move to 
   await files.getByRole("button", { name: `Actions for ${path}`, exact: true }).click()
   await page.getByRole("menuitem", { name: action }).click()
 }
+
+/** Show the explorer (hidden at first on a desktop) and return it. */
+async function explorer(page: Page) {
+  const toggle = page.getByRole("button", { name: "Toggle explorer" })
+  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  return page.getByRole("navigation", { name: "Workspace files" }).first()
+}
+
+/** Open a folder's action menu in the explorer and pick an action. */
+async function folderAction(page: Page, path: string, action: "Rename" | "Move to folder") {
+  await (await explorer(page)).getByRole("button", { name: `Actions for folder ${path}`, exact: true }).click()
+  await page.getByRole("menuitem", { name: action }).click()
+}
+
+test("renaming a folder moves everything in it and rewrites references to it, in one save", async ({ page }) => {
+  const plan = '# Plan\n\n<Drawing src="docs/sketch.excalidraw" />\n'
+  const { fake, id } = await openProject(
+    page,
+    { "docs/plan.mdx": plan, "docs/sketch.excalidraw": SCENE, "index.mdx": "See [the plan](docs/plan.mdx).\n" },
+    ["docs"],
+    "docs/plan.mdx",
+  )
+  // The note in the folder stays open in a tab; the one outside it is in front, with the folder expanded.
+  const files = await explorer(page)
+  await files.getByRole("button", { name: "index.mdx", exact: true }).click()
+  await expect(page.getByRole("tab", { name: "index.mdx" })).toHaveAttribute("aria-selected", "true")
+  await expect(files.getByRole("button", { name: "Collapse docs", exact: true })).toBeVisible()
+  const before = saves(fake).length
+
+  await folderAction(page, "docs", "Rename")
+  const dialog = page.getByRole("dialog", { name: "Rename folder docs" })
+  await dialog.getByLabel("New folder name").fill("notes")
+  await dialog.getByLabel("New folder name").press("Enter")
+  await expect(page.getByText("Renamed docs to notes with the 2 files in it. Updated references in 1 file.")).toBeVisible()
+
+  // The open notes follow: the link in the front one is rewritten, and the other's tab moved with its file.
+  await expect(editorText(page)).toContainText("notes/plan.mdx")
+  await expect(page.getByRole("tab", { name: "notes/plan.mdx" })).toBeVisible()
+  await expect(page.getByRole("tab", { name: "docs/plan.mdx" })).toHaveCount(0)
+  // The folder is still expanded, under its new name.
+  await expect(files.getByRole("button", { name: "Collapse notes", exact: true })).toBeVisible()
+
+  await expect.poll(() => fake.server.paths(id)).toEqual(["index.mdx", "notes/plan.mdx", "notes/sketch.excalidraw"])
+  const moved = '# Plan\n\n<Drawing src="notes/sketch.excalidraw" />\n'
+  expect(fake.server.content(id, "notes/plan.mdx")).toBe(moved)
+  expect(fake.server.content(id, "notes/sketch.excalidraw")).toBe(SCENE)
+  expect(fake.server.content(id, "index.mdx")).toBe("See [the plan](notes/plan.mdx).\n")
+  expect(await fake.server.remote(person.id).folders(id)).toEqual(["notes"])
+  // One save carried the whole move: both files, the rewritten link, and the folder itself.
+  const sent = saves(fake).slice(before)
+  expect(sent).toHaveLength(1)
+  expect(sent[0]).toHaveLength(5)
+  expect(sent[0]).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ op: "move", path: "docs/plan.mdx", to: "notes/plan.mdx", content: moved }),
+      expect.objectContaining({ op: "move", path: "docs/sketch.excalidraw", to: "notes/sketch.excalidraw" }),
+      expect.objectContaining({ op: "put", path: "index.mdx", content: "See [the plan](notes/plan.mdx).\n" }),
+      { op: "mkdir", path: "notes" },
+      { op: "rmdir", path: "docs" },
+    ]),
+  )
+})
+
+test("moving a folder into another one previews the folder and its files, and cannot pick itself", async ({ page }) => {
+  const { fake, id } = await openProject(
+    page,
+    { "docs/a.md": "# A\n", "docs/deep/b.md": "# B\n", "index.md": "[A](docs/a.md)\n" },
+    ["archive"],
+    "index.md",
+  )
+  await folderAction(page, "docs", "Move to folder")
+  const dialog = page.getByRole("dialog", { name: "Move folder" })
+  const destination = dialog.getByLabel("Destination folder")
+  await expect(destination.locator("option")).toHaveText(["Top level", "archive"])
+  await destination.selectOption("archive")
+  await dialog.getByRole("button", { name: "Preview move" }).click()
+  const preview = dialog.getByRole("region", { name: "Affected files" })
+  await expect(preview.getByText("docs → archive/docs", { exact: true })).toBeVisible()
+  await expect(preview.getByText("docs/deep/b.md → archive/docs/deep/b.md", { exact: true })).toBeVisible()
+  await expect(preview.getByText("Line 1: docs/a.md → archive/docs/a.md", { exact: true })).toBeVisible()
+  await dialog.getByRole("button", { name: "Move", exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText("Moved docs to archive/docs with the 2 files in it. Updated references in 1 file.")).toBeVisible()
+  await expect.poll(() => fake.server.paths(id)).toEqual(["archive/docs/a.md", "archive/docs/deep/b.md", "index.md"])
+  expect(fake.server.content(id, "index.md")).toBe("[A](archive/docs/a.md)\n")
+})
 
 test("renaming a note rewrites the links to it, in one save that reaches the server", async ({ page }) => {
   const { fake, id } = await openProject(

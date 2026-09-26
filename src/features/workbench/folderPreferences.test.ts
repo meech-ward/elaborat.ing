@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   FOLDER_STORAGE_KEY,
   MAX_EXPANDED_FOLDERS,
+  followFolderMove,
   parseFolderPreferences,
   pruneFolderPreferences,
   readFolderPreferences,
@@ -137,5 +138,22 @@ describe("pruneFolderPreferences", () => {
     expect(
       pruneFolderPreferences({ expanded: [], selectedFolder: "" }, []),
     ).toEqual({ expanded: [], selectedFolder: "" });
+  });
+});
+
+describe("followFolderMove", () => {
+  test("a moved folder's expanded folders and selection go with it, and the old paths wait for a list to prune them", () => {
+    const prefs: FolderPreferences = { expanded: ["docs", "docs/art", "docs-old", "other"], selectedFolder: "docs/art" };
+    const next = followFolderMove(prefs, "docs", "notes");
+    expect(next).toEqual({ expanded: ["notes", "notes/art", "docs", "docs/art", "docs-old", "other"], selectedFolder: "notes/art" });
+    expect(pruneFolderPreferences(next, ["notes", "notes/art", "docs-old", "other"])).toEqual({
+      expanded: ["notes", "notes/art", "docs-old", "other"],
+      selectedFolder: "notes/art",
+    });
+  });
+
+  test("preferences outside the folder are returned as they are", () => {
+    const prefs: FolderPreferences = { expanded: ["docs-old"], selectedFolder: "" };
+    expect(followFolderMove(prefs, "docs", "archive/docs")).toBe(prefs);
   });
 });

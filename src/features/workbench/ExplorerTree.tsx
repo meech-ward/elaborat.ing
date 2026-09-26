@@ -3,15 +3,17 @@
  *
  * Semantic nested lists with disclosure buttons — deliberately not an ARIA
  * tree, whose complete keyboard contract is out of scope. Each folder row
- * carries two ordinary buttons: a chevron that expands/collapses and a
- * name button that selects the creation destination without touching the
- * active editor. The explicit Workspace root row selects the root. Files
- * reuse ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
+ * (ExplorerFolderRow) carries ordinary buttons: a chevron that
+ * expands/collapses, a name button that selects the creation destination
+ * without touching the active editor, and Rename and Move to folder. The
+ * explicit Workspace root row selects the root. Files reuse
+ * ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
  * basename labels; full paths stay in titles and accessible names.
  */
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
+import { ExplorerFolderRow } from "./ExplorerFolderRow";
 import type { FolderNode, FolderTree, TreeFile } from "./folderTree";
 import { canMove } from "./movePlan";
 
@@ -31,6 +33,9 @@ export interface ExplorerTreeProps {
   /** Rename and move arrive with roadmap phase 2 step 12; without them the row offers neither. */
   onRenameFile?: (path: string, newName: string) => Promise<void>;
   onMoveFile?: (path: string) => void;
+  /** A folder moves with everything in it; without these its row offers neither. */
+  onRenameFolder?: (path: string, newName: string) => Promise<void>;
+  onMoveFolder?: (path: string) => void;
 }
 
 export function ExplorerTree({
@@ -46,6 +51,8 @@ export function ExplorerTree({
   onFeedback,
   onRenameFile,
   onMoveFile,
+  onRenameFolder,
+  onMoveFolder,
 }: ExplorerTreeProps) {
   const open = new Set(expanded);
   const rootSelected = selectedFolder === "";
@@ -67,31 +74,18 @@ export function ExplorerTree({
   );
   const renderFolder = (node: FolderNode) => {
     const isOpen = open.has(node.path);
-    const selected = selectedFolder === node.path;
-    const Icon = isOpen ? FolderOpen : Folder;
     return (
       <li key={node.path} className="wb-tree-folder">
-        <div className="wb-tree-row" data-selected={selected}>
-          <button
-            className="wb-tree-select"
-            aria-pressed={selected}
-            aria-label={`Select folder ${node.path} for creation`}
-            title={node.path}
-            onClick={() => onSelectFolder(node.path)}
-          >
-            <Icon size={15} aria-hidden="true" />
-            <span className="wb-tree-name">{node.name}</span>
-          </button>
-          <button
-            className="wb-tree-toggle"
-            aria-expanded={isOpen}
-            aria-label={`${isOpen ? "Collapse" : "Expand"} ${node.path}`}
-            title={`${isOpen ? "Collapse" : "Expand"} ${node.path}`}
-            onClick={() => onToggleFolder(node.path)}
-          >
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
-        </div>
+        <ExplorerFolderRow
+          path={node.path}
+          name={node.name}
+          open={isOpen}
+          selected={selectedFolder === node.path}
+          onToggle={() => onToggleFolder(node.path)}
+          onSelect={() => onSelectFolder(node.path)}
+          onRename={onRenameFolder ? (newName) => onRenameFolder(node.path, newName) : undefined}
+          onMove={onMoveFolder ? () => onMoveFolder(node.path) : undefined}
+        />
         {isOpen && (
           <ul className="wb-tree-nested">
             {node.folders.map(renderFolder)}

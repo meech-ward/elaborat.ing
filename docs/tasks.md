@@ -605,7 +605,7 @@ save or a reload; it never compares the text with the saved copy.
 
 ## T22: rename and move a folder
 
-**Status:** Ready
+**Status:** Done (#22)
 
 Files can be renamed and moved, with every reference to them rewritten in the
 same save (`src/features/workbench/movePlan.ts`, `useFileMoves.ts`,
@@ -636,7 +636,7 @@ each file, and `rmdir` for the old ones.
 
 ## T23: accept an invitation, and leave a shared project
 
-**Status:** Ready
+**Status:** Done (#23)
 
 The database lets people accept invitations and leave projects shared with
 them (`list_invitations`, `accept_invitation` and `leave_project` in

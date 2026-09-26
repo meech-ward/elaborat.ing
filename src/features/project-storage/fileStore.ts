@@ -42,6 +42,12 @@ export type LocalChange =
   | { kind: "write"; path: string; content: string; expectedRevision: string | null }
   | { kind: "move"; from: string; to: string; expectedRevision: string; content?: string }
   | { kind: "delete"; path: string; expectedRevision: string }
+  /** Explicit folders, made or removed in the same save as files (a folder move). */
+  | { kind: "mkdir"; path: string }
+  | { kind: "rmdir"; path: string }
+
+type FileChange = Extract<LocalChange, { kind: "write" | "move" | "delete" }>
+const isFileChange = (change: LocalChange): change is FileChange => change.kind !== "mkdir" && change.kind !== "rmdir"
 
 export class LocalConflictError extends Error {
   constructor(readonly path: string, readonly currentRevision: string, readonly currentContent: string | null) {
@@ -140,7 +146,11 @@ export class ProjectFileStore {
     }
   }
 
-  async listEntries(): Promise<{ files: FileRef[]; directories: string[] }> {
+  /**
+   * The files, and every folder: `directories` holds the explicit folders and
+   * those implied by file paths; `folders` holds only the explicit ones.
+   */
+  async listEntries(): Promise<{ files: FileRef[]; directories: string[]; folders: string[] }> {
     const { files, folders } = await this.db.transaction(this.partition, "readonly", async (tx) => {
       await this.project(tx)
       return { files: await tx.listFiles(this.projectId), folders: await tx.listFolders(this.projectId) }
@@ -154,10 +164,10 @@ export class ProjectFileStore {
       void _saved
       refs.push(ref)
     }
-    const directories = new Set<string>()
-    for (const folder of folders) if (folder.local) directories.add(folder.path)
+    const explicit = folders.filter((folder) => folder.local).map((folder) => folder.path)
+    const directories = new Set(explicit)
     for (const ref of refs) for (const ancestor of ancestors(ref.path)) directories.add(ancestor)
-    return { files: refs, directories: [...directories].sort() }
+    return { files: refs, directories: [...directories].sort(), folders: explicit.sort() }
   }
 
   async read(path: string): Promise<StoredFile> {
@@ -198,7 +208,7 @@ export class ProjectFileStore {
    */
   async save(changes: LocalChange[]): Promise<Array<{ path: string; revision: string; size: number }>> {
     if (changes.length === 0) return []
-    if (changes.length > MAX_ENTRIES) throw new FileStoreError("A save can change at most 4096 files.")
+    if (changes.length > MAX_ENTRIES) throw new FileStoreError("A save can make at most 4096 changes.")
     const touched = new Set<string>()
     for (const change of changes) {
       const paths = change.kind === "move" ? [change.from, change.to] : [change.path]
@@ -212,12 +222,13 @@ export class ProjectFileStore {
     }
 
     // Hash outside the write transaction, then make sure nothing changed in between.
-    const sourcePaths = changes.map((change) => (change.kind === "move" ? change.from : change.path))
+    const fileChanges = changes.filter(isFileChange)
+    const sourcePaths = fileChanges.map((change) => (change.kind === "move" ? change.from : change.path))
     const before = await this.db.transaction(this.partition, "readonly", async (tx) => {
       await this.editableProject(tx)
       return Promise.all(sourcePaths.map((path) => tx.getFile(this.projectId, path)))
     })
-    for (const [index, change] of changes.entries()) {
+    for (const [index, change] of fileChanges.entries()) {
       const file = before[index]
       const saved = file?.content ?? null
       const current = saved === null ? "" : await contentToken(saved)
@@ -231,9 +242,30 @@ export class ProjectFileStore {
       const inFlight = new Set(project.pending?.files.map((entry) => entry.localId) ?? [])
       // Where the project's folders and files are, read once and kept current
       // as the changes apply, so a large save does not reread them per file.
-      const folders = new Set((await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path))
+      const folderRecords = new Map((await tx.listFolders(this.projectId)).map((folder) => [folder.path, folder]))
+      const folders = new Set([...folderRecords.values()].filter((folder) => folder.local).map((folder) => folder.path))
       const live = new Map((await tx.listFiles(this.projectId)).filter((file) => file.content !== null).map((file) => [file.path, file.localId]))
-      for (const [index, change] of changes.entries()) {
+      let fileIndex = 0
+      for (const change of changes) {
+        if (change.kind === "mkdir") {
+          if (live.has(change.path)) throw new FileStoreError(`${change.path} is a file.`)
+          const blocking = ancestors(change.path).find((ancestor) => live.has(ancestor))
+          if (blocking) throw new FileStoreError(`${blocking} is a file, so it cannot contain ${change.path}.`)
+          if (folders.has(change.path)) throw new FileStoreError(`${change.path} already exists.`)
+          const known = folderRecords.get(change.path)
+          await tx.putFolder({ partition: this.partition, projectId: this.projectId, path: change.path, base: known?.base ?? false, local: true, batch })
+          folders.add(change.path)
+          continue
+        }
+        if (change.kind === "rmdir") {
+          const folder = folderRecords.get(change.path)
+          if (!folder || !folders.has(change.path)) throw new FileStoreError(`There is no folder ${change.path}.`)
+          if (folder.base) await tx.putFolder({ ...folder, local: false, batch })
+          else await tx.deleteFolder(this.projectId, change.path)
+          folders.delete(change.path)
+          continue
+        }
+        const index = fileIndex++
         const source = await tx.getFile(this.projectId, sourcePaths[index])
         if ((source?.content ?? null) !== (before[index]?.content ?? null)) {
           throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
@@ -300,10 +332,10 @@ export class ProjectFileStore {
     this.emit()
 
     const results = []
-    for (const change of changes) {
+    for (const [index, change] of fileChanges.entries()) {
       if (change.kind === "delete") continue
       const path = change.kind === "move" ? change.to : change.path
-      const content = change.kind === "move" ? (change.content ?? before[changes.indexOf(change)]?.content ?? "") : change.content
+      const content = change.kind === "move" ? (change.content ?? before[index]?.content ?? "") : change.content
       results.push({ path, revision: await contentToken(content), size: byteLength(content) })
     }
     return results
@@ -330,7 +362,7 @@ export class ProjectFileStore {
         if (folders.get(path)?.local) throw new FileStoreError(`${path} already exists.`)
       }
       for (const path of paths) {
-        await tx.putFolder({ partition: this.partition, projectId: this.projectId, path, base: folders.get(path)?.base ?? false, local: true })
+        await tx.putFolder({ partition: this.partition, projectId: this.projectId, path, base: folders.get(path)?.base ?? false, local: true, batch: null })
       }
     })
     this.emit()
@@ -343,7 +375,7 @@ export class ProjectFileStore {
       await this.editableProject(tx)
       const folder = (await tx.listFolders(this.projectId)).find((candidate) => candidate.path === path)
       if (!folder?.local) return
-      if (folder.base) await tx.putFolder({ ...folder, local: false })
+      if (folder.base) await tx.putFolder({ ...folder, local: false, batch: null })
       else await tx.deleteFolder(this.projectId, path)
     })
     this.emit()
