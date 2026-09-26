@@ -8,6 +8,7 @@ create table public.projects (
   revision bigint not null default 0,
   content_bytes bigint not null default 0,
   archived_at timestamptz,
+  pinned boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- Not `between 1 and 160`: next to another `and`, Postgres stores that nested,
