@@ -281,7 +281,7 @@ Firefox, and CI passes.
 
 ## T11: rendered notes use components from project files, and follow their changes
 
-**Status:** Ready
+**Status:** Done (#11)
 
 An MDX note can define components with `export const` and import them from
 other project files with `import { Name } from "workspace:<path>"`.
@@ -417,3 +417,23 @@ and 4096 directories, no duplicate paths, no file used as a directory, at most
   At 390 px wide, the control and the skip report cause no sideways scrolling.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T14: Ctrl+S saves the file whose editor has focus
+
+**Status:** Ready
+
+`src/features/source/SourceEditor.tsx` binds Ctrl+S (and Ctrl+Shift+L) with
+Monaco's `editor.addCommand`. In standalone Monaco those keybindings are
+global, so with two source editors mounted (two open notes, or a note and a
+drawing or diagram in its Source or Code view) the most recently created
+editor's handler runs. To reproduce: open `a.md`, then open `b.md`, go back
+to `a.md`, type, and press Ctrl+S. `a.md` stays unsaved.
+
+- Bind these keys per editor, for example with `editor.addAction` and its
+  `keybindings`, as the existing format action does, so each runs only in
+  the editor that has focus.
+- Add a browser journey that fails before the fix: two notes open, edit the
+  first, Ctrl+S, and the first is saved on the device and reaches the fake
+  server; then the same with a note and a diagram's Code view.
+
+**Done when** the journey passes in Chromium and Firefox, and CI passes.
