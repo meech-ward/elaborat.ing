@@ -200,3 +200,35 @@ compressed scene, which the port could not publish (roadmap phase 2 step 2).
 
 **Done when** the six drawing todos are real passing tests and CI passes.
 
+
+## T8: tell open projects about remote changes over Realtime Broadcast
+
+**Status:** Ready
+
+Roadmap phase 2 step 7. Devices learn about other people's saves only when
+they refresh. The architecture decision "change signals use Realtime Broadcast
+from the database" says how to fix that: a private Broadcast channel per
+project, authorized by RLS on `realtime.messages`. Postgres Changes is not
+used.
+
+- **Database:** in `supabase/schemas/`, a trigger that runs when a project's
+  `revision` changes and calls `realtime.send` with event `changed`, topic
+  `project:<id>`, private, and a payload of only `{ "revision": <n> }` (no file
+  names or content). Add a policy on `realtime.messages` letting authenticated
+  users receive on `project:<id>` topics for projects in
+  `private.readable_project_ids()`, and nothing else (no sending from
+  clients). Generate the migration as `AGENTS.md` describes and commit both.
+- **Tests:** pgTAP in `supabase/tests/database/` showing that a save, a rename
+  and an archive each queue one message on the right topic, that a member can
+  read it, and that a non-member and an anonymous caller cannot.
+- **Client:** `src/features/project-storage/changes.ts`, a small class that
+  joins the private channel for one project with the app's Supabase client
+  and calls a callback with the revision when a newer one arrives, plus a
+  unit test with a fake channel. Wire nothing into the UI yet. Sync already
+  handles the rest: `ProjectSync.refresh()` pulls anything newer.
+- Follow Supabase's current Realtime Authorization and Broadcast-from-database
+  documentation; link the pages you used in the pull request.
+
+**Done when** the pgTAP tests pass (the maintainer runs them on the hosted
+project before merging), the migration check in CI passes, and the client
+class has its unit test.
