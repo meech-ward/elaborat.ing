@@ -172,3 +172,31 @@ through the user's Supabase client (see
 
 **Done when** the new CI job passes, and the pull request shows one test
 failing when a tool is deliberately broken.
+
+## T7: restore the drawing tests with a synthetic Obsidian drawing
+
+**Status:** Ready
+
+Six drawing tests in `src/features/drawings/` (`parse.test.ts`,
+`roundtrip.test.ts`, `summary.test.ts`) and one tab test are `test.todo`
+placeholders. The drawing tests need an Obsidian-format drawing with a
+compressed scene, which the port could not publish (roadmap phase 2 step 2).
+
+- Create `src/features/drawings/fixtures/synthetic.excalidraw.md`: an
+  Obsidian Excalidraw file (frontmatter with `excalidraw-plugin: parsed`, a
+  `## Text Elements` section, and a `## Drawing` section with a
+  ```` ```compressed-json ```` fence) holding about 40 active elements,
+  including rectangles, arrows with bindings, free text, text bound to a
+  container, and one text element with a stable id. Generate the compressed
+  fence with the repo's own `serializeDrawing` and `lz-string`, so the file
+  round-trips byte for byte. Content must be generic (for example a small
+  system diagram), never real notes.
+- Replace each drawing `test.todo` in those three files with a real test
+  against the new fixture, keeping the behaviour its title describes (a large
+  plain-JSON scene can be generated in the test or added as a second fixture).
+  Use exact counts from the fixture.
+- Leave the tab-persistence todo in `tabs.test.ts` alone; it belongs to a
+  later step.
+
+**Done when** the six drawing todos are real passing tests and CI passes.
+
