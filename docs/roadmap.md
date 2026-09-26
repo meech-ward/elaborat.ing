@@ -88,11 +88,11 @@ this repository once the steps before them have landed.
    (step 10).
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both), and
-    leaving a project or signing out keeps unsaved edits first. Drawings and
-    diagrams open as text until steps 13 and 14; renaming and moving arrive
-    with step 12. Not yet carried over from the prototype: its reading-position
-    and touch-focus journeys, and undo through the source editor after a
-    rendered edit.
+    leaving a project or signing out keeps unsaved edits first. Drawings got
+    their canvas in step 13, and diagrams open as text until step 14. Renaming
+    and moving came with step 12. Not yet carried over from the prototype: its
+    reading-position and touch-focus journeys, and undo through the source
+    editor after a rendered edit.
 11. **Custom MDX components load from project files (open for contributors).**
 12. **Files can be renamed and moved, with references rewritten in the same
     save, and folders created (done).** A D2 diagram's generated files move
@@ -100,7 +100,12 @@ this repository once the steps before them have landed.
     stop a move until they are settled. Files of kinds the app does not edit
     (for example, ones an agent wrote) are listed and open as text, but are not
     renamed or moved. Not yet: renaming or moving a folder.
-13. **Drawings edit, save and export on per-file storage.**
+13. **Drawings edit, save and export on per-file storage (done).** Excalidraw
+    and Obsidian `.excalidraw.md` drawings open on the canvas without being
+    rewritten, save on the device, keep unsaved edits across reloads, take a
+    newer saved copy when untouched, and export SVG, PNG and Excalidraw files.
+    A file that does not parse opens as text with the error. New drawings come
+    from the workbench menu. Drawings embedded in notes arrive with step 14.
 14. **D2 diagrams compile in the browser, save as one three-file batch, and
     embed in notes.**
 15. **The app restarts offline (open for contributors)**, using

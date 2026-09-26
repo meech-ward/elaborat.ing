@@ -38,8 +38,8 @@ type Mode = "source" | "rendered";
 
 /**
  * One open file: its document, undo history and the revision its edits are
- * based on. Drawings and diagrams are edited as text here until their canvas
- * views arrive (roadmap phase 2 steps 13 and 14).
+ * based on. Drawings open in `DrawingView` instead; diagrams are edited as
+ * text here until their view arrives (roadmap phase 2 step 14).
  */
 export function WorkspaceSession({
   client,
