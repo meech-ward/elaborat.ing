@@ -35,8 +35,13 @@ const CORS = {
   "access-control-expose-headers": "*",
 }
 
+/** The one-time code the stand-in Auth accepts for `person`. */
+export const otpCode = "123456"
+
 type Options = {
   server?: FakeProjectServer
+  /** Sign-in providers Auth reports on in its public settings. */
+  providers?: { github?: boolean; google?: boolean }
   /** Answer the consent step of an OAuth request with this redirect. */
   consentRedirect?: string
   /** The agents (OAuth grants) the person has approved; listing fails when this is "error". */
@@ -110,6 +115,16 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (path.endsWith("/token")) return json(route, session())
       if (path.endsWith("/user")) return json(route, person)
       if (path.endsWith("/otp")) return json(route, {})
+      if (path.endsWith("/settings")) {
+        return json(route, { external: { email: true, github: options.providers?.github ?? false, google: options.providers?.google ?? false }, disable_signup: false })
+      }
+      if (path.endsWith("/verify")) {
+        const body = request.postDataJSON() ?? {}
+        if (body.email === person.email && body.token === otpCode) return json(route, session())
+        return json(route, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" }, 403)
+      }
+      // A provider sign-in starts with the browser going to Auth's authorize URL.
+      if (path.endsWith("/authorize")) return route.fulfill({ status: 200, contentType: "text/html", body: "<title>Provider sign-in</title>" })
       if (path.endsWith("/logout")) return route.fulfill({ status: 204, headers: CORS })
       if (path.endsWith("/oauth/authorizations/auth-123")) {
         return json(route, {

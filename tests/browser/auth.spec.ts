@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
-import { fakeSupabase, person as user } from "./fake-supabase.ts"
+import { fakeSupabase, otpCode, person as user, SUPABASE } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // Sign-in and an agent's consent request, against the stand-in Supabase in
@@ -54,6 +54,87 @@ test("an emailed sign-in link is asked for, returning to the page that needed it
   expect(otp?.postDataJSON()).toMatchObject({ email: user.email })
   expect(new URL(otp!.url()).searchParams.get("redirect_to")).toBe(new URL("sign-in?next=%2Foauth%2Fconsent%3Fauthorization_id%3Dauth-123", APP_URL).href)
 })
+
+const consentNext = "sign-in?next=%2Foauth%2Fconsent%3Fauthorization_id%3Dauth-123"
+
+/** Ask for the emailed link and code, on the sign-in page that `next` leads back from. */
+async function emailMe(page: import("@playwright/test").Page) {
+  await page.getByLabel("Email", { exact: true }).last().fill(user.email)
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click()
+  await expect(page.getByRole("status")).toContainText(`Check ${user.email}`)
+}
+
+test("the emailed code signs in and continues to the page that needed it", async ({ page }) => {
+  const seen = await fakeAuth(page)
+  await page.goto(new URL(consentNext, APP_URL).href)
+  await emailMe(page)
+  await page.getByLabel("Code from the email").fill(otpCode)
+  await page.getByRole("button", { name: "Sign in with the code" }).click()
+
+  await expect(page).toHaveURL(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
+  await expect(page.getByText("Authorize Claude")).toBeVisible()
+  const verify = seen.find((request) => new URL(request.url()).pathname.endsWith("/verify"))
+  expect(verify?.postDataJSON()).toMatchObject({ email: user.email, token: otpCode, type: "email" })
+})
+
+test("a wrong code says so, and the person can send a new one or try again", async ({ page }) => {
+  const seen = await fakeAuth(page)
+  await page.goto(new URL(consentNext, APP_URL).href)
+  await emailMe(page)
+  await page.getByLabel("Code from the email").fill("000000")
+  await page.getByRole("button", { name: "Sign in with the code" }).click()
+  await expect(page.getByRole("alert")).toHaveText(
+    "That code did not work (Token has expired or is invalid). Check it and try again, or send a new one.",
+  )
+  await expect(page).toHaveURL(new URL(consentNext, APP_URL).href)
+
+  await page.getByRole("button", { name: "Send a new link and code" }).click()
+  await expect(page.getByRole("status")).toHaveText(`Sent a new link and code to ${user.email}.`)
+  expect(seen.filter((request) => new URL(request.url()).pathname.endsWith("/otp"))).toHaveLength(2)
+
+  await page.getByLabel("Code from the email").fill(otpCode)
+  await page.getByRole("button", { name: "Sign in with the code" }).click()
+  await expect(page).toHaveURL(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
+})
+
+test("a provider Auth has on gets a button that starts its sign-in, returning to the page that needed it", async ({ page }) => {
+  await fakeSupabase(page, { providers: { github: true } })
+  await page.goto(new URL(consentNext, APP_URL).href)
+  await page.getByRole("button", { name: "Continue with GitHub" }).click()
+  await expect(page).toHaveTitle("Provider sign-in")
+  const authorize = new URL(page.url())
+  expect(`${authorize.origin}${authorize.pathname}`).toBe(`${SUPABASE}/auth/v1/authorize`)
+  expect(authorize.searchParams.get("provider")).toBe("github")
+  expect(authorize.searchParams.get("redirect_to")).toBe(new URL(consentNext, APP_URL).href)
+})
+
+test("with GitHub and Google off, no provider buttons show", async ({ page }) => {
+  await fakeAuth(page)
+  const settings = page.waitForResponse((response) => response.url().endsWith("/auth/v1/settings"))
+  await page.goto(new URL("sign-in", APP_URL).href)
+  await settings
+  await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible()
+  await expect(page.getByRole("button", { name: /^Continue with/ })).toHaveCount(0)
+})
+
+for (const width of [1280, 390]) {
+  test(`at ${width}px, the sign-in page with providers and the code step has no accessibility problems`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    await fakeSupabase(page, { providers: { github: true, google: true } })
+    await page.goto(new URL("sign-in", APP_URL).href)
+    await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible()
+    const check = async () => {
+      const results = await new AxeBuilder({ page }).analyze()
+      expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+    }
+    await check()
+    await emailMe(page)
+    await expect(page.getByLabel("Code from the email")).toBeVisible()
+    await check()
+  })
+}
 
 test("a consent page without a request says so", async ({ page }) => {
   await fakeAuth(page)

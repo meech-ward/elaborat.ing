@@ -253,6 +253,12 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# elaborat.ing: the emailed sign-in link also carries the one-time code
+# ({{ .Token }}), which the sign-in page accepts too.
+[auth.email.template.magic_link]
+subject = "Your elaborat.ing sign-in link"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
@@ -338,6 +344,23 @@ url = ""
 skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
+
+# elaborat.ing: GitHub and Google sign-in, off until the maintainer's OAuth apps
+# exist. To turn one on, set `enabled = true` and supply its client id and
+# secret through these environment variables (GitHub repository secrets for
+# the deploy workflow). Each app's callback URL is
+# https://<project-ref>.supabase.co/auth/v1/callback. The sign-in page shows a
+# provider's button only while Auth reports it on.
+[auth.external.github]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)"
+
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+skip_nonce_check = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.
