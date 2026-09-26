@@ -469,7 +469,7 @@ passes.
 
 ## T16: returning to the rendered view keeps its place and does not take focus
 
-**Status:** Ready
+**Status:** Done (#16)
 
 Switching a note from Rendered to Source and back, without editing, should
 leave the rendered view as it was. The prototype promised this ("Switching to
@@ -580,3 +580,25 @@ shows only when the machine is busy.
 
 **Done when** the fix and its test pass, the workbench spec passes 20 times in
 a row under load in both browsers, and CI passes.
+
+## T21: "Unsaved changes" goes away when the text is back to the saved copy
+
+**Status:** Ready
+
+Type in a note and undo back to what was saved: the note still shows "Unsaved
+changes", the tab keeps its mark, and leaving still warns. The document store
+(`src/lib/documentStore.ts`) turns `dirty` on with any edit and off only on a
+save or a reload; it never compares the text with the saved copy.
+
+- Make `dirty` mean "the text differs from the saved copy": the store keeps
+  the saved text it was opened or last saved with, and every change compares
+  against it. A note that was never saved stays dirty while it has any text.
+- Unit tests in `src/lib/documentStore.test.ts`: edit then undo to the saved
+  text is clean; edit, save, edit, undo to the newly saved text is clean.
+- A browser journey: type in the Source view, undo, and the unsaved mark and
+  "Unsaved changes" go away, and a reload restores no draft. The same after an
+  edit in the Rendered view undone with Ctrl+Z there.
+- Drafts already follow the text (a draft equal to the saved copy is
+  dropped), so this is about what the person sees and the leave warning.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
