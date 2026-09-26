@@ -288,8 +288,15 @@ approach Hypothesis uses, rather than anything custom.
 `config.toml` wherever the CLI supports it.
 
 - **Email:** password, magic link and one-time code. Production needs custom
-  SMTP; Supabase's built-in sender is for testing only.
-- **Social:** GitHub and Google.
+  SMTP; Supabase's built-in sender is for testing only. The magic link email
+  (`supabase/templates/magic_link.html`) carries the code as well, and the
+  sign-in page accepts either.
+- **Social:** GitHub and Google, declared in `config.toml` and off. Turning one
+  on takes an OAuth app at the provider (callback
+  `https://<project-ref>.supabase.co/auth/v1/callback`), its client id and
+  secret in `SUPABASE_AUTH_EXTERNAL_<PROVIDER>_CLIENT_ID` and `_SECRET` for
+  `config push`, and `enabled = true`. The sign-in page reads Auth's public
+  settings and shows a button only for providers that are on.
 - **Passkeys:** Supabase's passkey sign-in (experimental; the API may change).
   A person signs up another way first, then adds a passkey.
 - **Phone codes:** only with an SMS provider, rate limits and CAPTCHA, because
