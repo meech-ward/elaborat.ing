@@ -35,9 +35,8 @@ user's files through MCP, on the hosted Supabase project.
    MCP Server block, with tools that wrap the core database functions, tested
    live with a signed-in session. Connecting real clients waits for step 3.
 5. **Prove it with real clients.** Connect Claude and ChatGPT, run a
-   read-edit-read loop, and record the answers to the open questions: whether
-   dynamic client registration is needed, and whether the clients' MCP Apps
-   frames allow runtime-compiled components.
+   read-edit-read loop, and confirm with a real OAuth token that it carries
+   `client_id` and that Auth refuses account changes made with it.
 6. **Hybrid search (open for contributors once step 1 lands).** Passage chunks
    per heading, the documented `hybrid_search` function, automatic embeddings
    with the built-in `gte-small` model, a `search` function for query

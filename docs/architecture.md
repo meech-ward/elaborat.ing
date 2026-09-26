@@ -273,9 +273,14 @@ secrets.
   exact redirect URIs (no wildcards), and dynamic client registration enabled,
   as Supabase's BYO-MCP guide requires. Registered clients show in the
   dashboard and can be revoked.
-- **Open:** whether Claude's and ChatGPT's MCP Apps frames allow
-  runtime-compiled components, or whether previews must be compiled first.
-  Roadmap phase 1 step 5 answers it.
+- **Previews are compiled before they reach the client.** An MCP Apps server
+  can declare origins but not CSP keywords, so it cannot ask for
+  `'unsafe-eval'`. The spec's default policy leaves it out, Claude's
+  documentation never mentions it, and a host may always restrict further. So
+  a view never runs code through `eval` or `new Function`: component code is
+  compiled to JavaScript before the view gets it, and the view runs it as an
+  ordinary script, inline or from an origin it declares in `resourceDomains`.
+  Details in [platform notes](platform-notes.md#mcp-apps-hosts).
 
 ## Component isolation
 

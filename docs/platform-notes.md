@@ -1,9 +1,9 @@
 # Platform notes
 
-Facts about Supabase and Cloudflare that shape the architecture, checked
-against primary sources on 2026-09-25 with Supabase CLI 2.118.0. Platforms
-change: re-check a fact before relying on it for something new, and update this
-page when it moves.
+Facts about Supabase, Cloudflare and MCP Apps hosts that shape the
+architecture, checked against primary sources on 2026-09-25 with Supabase CLI
+2.118.0 (MCP Apps hosts on 2026-09-26). Platforms change: re-check a fact
+before relying on it for something new, and update this page when it moves.
 
 ## Supabase: schema and config as code
 
@@ -143,6 +143,59 @@ page when it moves.
   [Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
 - **Static asset requests are free and unlimited.**
   [Billing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)
+
+## MCP Apps hosts
+
+OpenAI's Apps SDK documentation could not be reached when this section was
+checked, so the ChatGPT entry rests on the spec and OpenAI's example code.
+Re-check it against OpenAI's pages linked below.
+
+- **A server declares a view's CSP as lists of origins.** `_meta.ui.csp` goes on
+  the `ui://` resource's content in the `resources/read` result (the draft spec
+  also reads it from the `resources/list` entry, and the content wins). The
+  lists are `connectDomains` (`connect-src`), `resourceDomains` (`script-src`,
+  `style-src`, `img-src`, `font-src`, `media-src`), `frameDomains`
+  (`frame-src`) and `baseUriDomains` (`base-uri`). There is no field for CSP
+  keywords, so a server cannot ask for `'unsafe-eval'`. Hosts must not allow
+  undeclared origins, may restrict further, and tell the view what they
+  approved in `HostCapabilities.sandbox.csp` when it initializes.
+  [Spec, stable 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx),
+  [draft](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/draft/apps.mdx)
+- **The spec's default policy has no `'unsafe-eval'`.** Without `ui.csp`, a host
+  must apply `default-src 'none'; script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:;
+  connect-src 'none'` (the draft adds `object-src 'none'`). That runs inline
+  scripts, but not `eval` or `new Function`, which need `'unsafe-eval'`.
+- **The official SDK assumes views cannot use `eval`.** Its `App` class says
+  views "typically run under a strict CSP without `unsafe-eval`", puts Zod in
+  jitless mode by default for that reason, and offers `allowUnsafeEval` only
+  for hosts known to permit it. The change that added it names VS Code as a
+  host enforcing the default policy. The repository's example host allows
+  `'unsafe-eval'`, but the repository has no supported host implementation.
+  [`AppOptions`](https://github.com/modelcontextprotocol/ext-apps/blob/main/src/app.ts),
+  [the change](https://github.com/modelcontextprotocol/ext-apps/commit/9d68315720d021c448f55b57eac1f4395b3472ad),
+  [example host](https://github.com/modelcontextprotocol/ext-apps/blob/main/examples/basic-host/serve.ts)
+- **Claude** renders each view in a sandboxed iframe (a native WebView on iOS
+  and Android) from a `*.claudemcpcontent.com` origin, under "strict Content
+  Security Policies". Views declare origins with `_meta.ui.csp`, except that
+  `frameDomains` is restricted pending security review. By default the frame
+  runs only inline scripts and scripts from its own origin, and
+  `resourceDomains` adds origins to `script-src`. Anthropic's documentation
+  never mentions `'unsafe-eval'`, so a view cannot count on `eval` or
+  `new Function`.
+  [Design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines),
+  [quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart),
+  [theming](https://claude.com/docs/connectors/building/mcp-apps/transparent-theming),
+  [interactive connectors](https://support.claude.com/en/articles/13454812-use-interactive-connectors-in-claude)
+- **ChatGPT** takes the standard `_meta.ui.csp`, which OpenAI's current
+  examples declare. Its original Apps SDK format declared the same lists in
+  `_meta["openai/widgetCSP"]` (`connect_domains`, `resource_domains`,
+  `frame_domains`, and the OpenAI-only `redirect_domains`). Whether ChatGPT's
+  frame allows `'unsafe-eval'` is unchecked.
+  [OpenAI example](https://github.com/openai/openai-apps-sdk-examples/blob/main/cards_against_ai_server_node/src/server.ts),
+  [field mapping](https://github.com/modelcontextprotocol/ext-apps/blob/main/docs/migrate_from_openai_apps.md),
+  [MCP Apps in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt/),
+  [security and privacy](https://developers.openai.com/apps-sdk/guides/security-privacy)
 
 ## Browser isolation
 
