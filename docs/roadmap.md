@@ -60,7 +60,8 @@ this repository once the steps before them have landed.
    browser (done)** with a Playwright and axe harness: fonts, the font
    worker, SVG export, and drawing fidelity (a no-op open is byte-exact,
    delete and undo, editing a text by its id, image pixels, PNG and SVG
-   export) on the synthetic demo scene. Task T9 adds step 2's drawing.
+   export) on the synthetic demo scene and on step 2's compressed Obsidian
+   drawing.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
    build (done)**, so the license notices cover the frame's code too. Browser
    journeys on a test page cover typing, selections, split and join, lists,

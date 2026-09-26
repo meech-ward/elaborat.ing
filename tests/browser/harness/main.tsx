@@ -2,6 +2,9 @@
 // the app's Excalidraw plugins. Edits in tests go through Excalidraw's own UI;
 // `window.harness` only observes (saved bytes, live canvas pixels, exports)
 // and pushes scenes through the canvas's public `scene` prop.
+//
+// `?drawing=` picks the file: `demo` (the default) is the plain demo scene,
+// `obsidian` the compressed Obsidian drawing.
 import "@excalidraw/excalidraw/index.css"
 import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
@@ -15,10 +18,19 @@ import {
   type DrawingScene,
 } from "../../../src/features/drawings/index.ts"
 import demo from "../../../src/features/drawings/fixtures/demo.scene.json"
+import obsidian from "../../../src/features/drawings/fixtures/synthetic.excalidraw.md?raw"
 
 configureExcalidrawAssets()
 
-let parsed = parseDrawingFile(`${JSON.stringify(demo, null, 2)}\n`, "demo.excalidraw")
+const drawings: Record<string, { source: string; filename: string }> = {
+  demo: { source: `${JSON.stringify(demo, null, 2)}\n`, filename: "demo.excalidraw" },
+  obsidian: { source: obsidian, filename: "synthetic.excalidraw.md" },
+}
+const choice = new URLSearchParams(location.search).get("drawing") ?? "demo"
+const drawing = drawings[choice]
+if (!drawing) throw new Error(`Unknown drawing: ${choice}`)
+
+let parsed = parseDrawingFile(drawing.source, drawing.filename)
 let current = parsed.scene
 let changeCount = 0
 let handlerError: string | null = null
@@ -90,13 +102,14 @@ const harness = {
     saved: saveDrawingFile(current, parsed),
     original: parsed.scene,
     originalSource: parsed.originalSource,
+    sourceKind: parsed.sourceKind,
   }),
   push: (scene: DrawingScene) => {
     current = scene
     setScene?.(scene)
   },
   reopen: (text: string) => {
-    parsed = parseDrawingFile(text, "demo.excalidraw")
+    parsed = parseDrawingFile(text, drawing.filename)
     current = parsed.scene
     setScene?.(current)
   },
