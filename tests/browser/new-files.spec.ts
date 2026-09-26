@@ -64,8 +64,11 @@ for (const kind of kinds) {
   })
 
   test(`Escape creates no ${kind.noun}, and a taken name is refused in place`, async ({ page }) => {
-    const { fake, id } = await openProject(page, { [kind.path]: kind.existing })
+    const { fake, id } = await openProject(page, { "a.md": "a\n", [kind.path]: kind.existing })
+    // The project opens its first note by itself, sometimes after "Synced" shows.
+    // Wait for that, so any change to the tabs below comes from this journey.
     const tabs = () => page.getByRole("tab").allTextContents()
+    await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
     const opened = await tabs()
     await fromMenu(page, kind.item)
     const field = nameField(page, kind.noun)
@@ -78,9 +81,9 @@ for (const kind of kinds) {
 
     await page.keyboard.press("Escape")
     await expect(field).toHaveCount(0)
-    expect(await tabs()).toEqual(opened)
     await quiet(fake)
-    expect(serverPaths(fake, id)).toEqual([kind.path])
+    expect(await tabs()).toEqual(opened)
+    expect(serverPaths(fake, id)).toEqual(["a.md", kind.path].sort())
   })
 }
 
