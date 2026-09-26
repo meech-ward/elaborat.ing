@@ -6,7 +6,6 @@ import {
   expectNoErrors,
   frameOf,
   load,
-  nextFrame,
   openHarness,
   paragraph,
   point,
@@ -224,7 +223,6 @@ test.describe("MDX documents", () => {
         })
       })
     await paragraph(page, /^Source-owned paragraph\.$/).click()
-    await nextFrame(page)
     await press(page, "End")
     await page.keyboard.type(" Updated")
     await settled(page)
@@ -237,7 +235,6 @@ test.describe("MDX documents", () => {
     const heading = text.replace("#Inline", "# Inline")
     await load(page, text, "mdx", /^Before\.$/)
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^#Inline 4 text\.$/ }).click()
-    await nextFrame(page)
     await press(page, "Home")
     await press(page, "ArrowRight")
     await page.keyboard.type(" ")
@@ -245,8 +242,6 @@ test.describe("MDX documents", () => {
     await expect.poll(() => source(page)).toBe(heading)
 
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^-Inline 6 text\.$/ }).click()
-
-    await nextFrame(page)
     await press(page, "Home")
     await press(page, "ArrowRight")
     await page.keyboard.type(" ")
@@ -257,8 +252,6 @@ test.describe("MDX documents", () => {
     expect(await source(page)).toBe(heading)
 
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^Before\.$/ }).click()
-
-    await nextFrame(page)
     await press(page, "ControlOrMeta+a")
     await press(page, "Backspace")
     await expect(page.getByText(/This selection crosses computed output/).first()).toBeVisible()
@@ -266,8 +259,6 @@ test.describe("MDX documents", () => {
     await expect(page.locator('iframe[title="Isolated document preview"]')).toBeVisible()
 
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^After\.$/ }).click()
-
-    await nextFrame(page)
     await press(page, "End")
     await page.keyboard.type(" More")
     await expect.poll(() => source(page)).toBe(`${heading} More`)
@@ -284,7 +275,6 @@ test.describe("lists", () => {
     test(`${command} in an empty last item leaves the list and typing continues`, async ({ page }) => {
       let mark = await load(page, list, "mdx", /^Before paragraph\.$/)
       await paragraph(page, /^third$/).click()
-      await nextFrame(page)
       await press(page, "End")
       await press(page, "Shift+Home")
       expect((await selection(page)).text).toBe("third")
@@ -347,7 +337,6 @@ test("a diagram arriving while prose is being edited keeps the edit", async ({ p
     window.transactionGate.enabled = true
   })
   await paragraph(page, /^Original editable prose\.$/).click()
-  await nextFrame(page)
   await press(page, "End")
   await press(page, "Shift+Home")
   await page.keyboard.type("Draft survives arriving SVG")
