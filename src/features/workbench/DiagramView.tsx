@@ -123,8 +123,11 @@ export function DiagramView({
     frozen.current = blocked;
   }, [blocked]);
   const sourceApi = useRef<SourceEditorApi | null>(null);
+  // The latest code and canvas, ahead of React's render: edits write it at
+  // once, and a layout effect (which runs as a render commits, before any
+  // later input) catches the other updates without undoing a newer edit.
   const latest = useRef({ source, scene });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { source, scene };
   }, [source, scene]);
 
@@ -358,11 +361,16 @@ export function DiagramView({
       setNotice("Wait for the canvas label to reach the code before saving.");
       return;
     }
+    // Ctrl+S can arrive before React has rendered the last keystrokes, so
+    // save the latest code and canvas rather than this render's.
+    const { source, scene } = latest.current;
     if (!scene) {
       setNotice("Nothing to save yet: the diagram has not compiled.");
       return;
     }
-    if (!dirty && !overwrite && baseRevision !== null) {
+    const sidecar = diagramSidecarText(baseline, scene);
+    const changed = source !== savedSource || !savedScene || !scenesEqual(savedScene, scene) || sidecar !== savedSidecarText;
+    if (!changed && !overwrite && baseRevision !== null) {
       setNotice("No changes to save.");
       return;
     }
@@ -371,7 +379,6 @@ export function DiagramView({
     try {
       const current = async (file: string, known: string | null) => (overwrite ? (await readDiagramCompanion(client, file))?.revision ?? null : known);
       const nativeText = saveDrawingFile(scene, null).text;
-      const sidecar = diagramSidecarText(baseline, scene);
       const changes: LocalChange[] = [
         { kind: "write", path, content: source, expectedRevision: await current(path, baseRevision) },
         { kind: "write", path: nativePath, content: nativeText, expectedRevision: await current(nativePath, nativeRevision) },
@@ -401,7 +408,7 @@ export function DiagramView({
     } finally {
       setSaving(false);
     }
-  }, [saving, pendingLabels.length, scene, dirty, baseRevision, client, baseline, path, source, nativePath, nativeRevision, sidecarPath, sidecarRevision]);
+  }, [saving, pendingLabels.length, baseline, savedSource, savedScene, savedSidecarText, baseRevision, client, path, nativePath, nativeRevision, sidecarPath, sidecarRevision]);
 
   // Ctrl or Cmd+S saves the active diagram (the code editor handles its own).
   useEffect(() => {

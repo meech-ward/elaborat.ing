@@ -92,9 +92,10 @@ this repository once the steps before them have landed.
     with drafts and conflict recovery (keep mine, keep theirs, keep both), and
     leaving a project or signing out keeps unsaved edits first. Drawings and
     diagrams got their views in steps 13 and 14, and renaming and moving came
-    with step 12. Not yet carried over from the prototype: its reading-position
-    and touch-focus journeys, and undo through the source editor after a
-    rendered edit.
+    with step 12. The rendered view keeps its place and focus across a Source
+    round trip, a touch scroll never focuses it while a tap does, one undo
+    history serves both views, and undoing back to the saved text clears
+    "Unsaved changes".
 11. **Custom MDX components load from project files (done).** A note imports
     named components from other MDX files with `workspace:` specifiers.
     Modules load from their saved copies and run only in the frame, and a
@@ -117,8 +118,7 @@ this repository once the steps before them have landed.
     Regenerate keeps freehand additions and moved shapes, a syntax error keeps
     the last valid canvas, and renaming a node on the canvas updates the code.
     Notes show pictures of the drawings and diagrams they embed, with a zoomable
-    viewer. New diagrams come from the workbench menu. Canvas label renames are
-    covered by unit tests, not yet by a browser journey.
+    viewer. New diagrams come from the workbench menu.
 15. **The app restarts offline (done)**, using vite-plugin-pwa. Once a
     project has opened on a device, the app, its projects and unsaved edits
     come back with no network, and a new version waits until the person
