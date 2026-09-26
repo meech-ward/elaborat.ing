@@ -89,6 +89,35 @@ test("a file and a folder cannot share a path, and a file cannot contain anythin
   expect((await store.listEntries()).directories).toEqual(["d"])
 })
 
+test("within one save, each change sees the ones before it", async () => {
+  const { store } = await setup()
+  const write = (path: string, content = "x") => ({ kind: "write" as const, path, content, expectedRevision: null })
+  await expect(store.save([write("a"), write("a/b.md")])).rejects.toThrow("a is a file, so it cannot contain a/b.md.")
+  await expect(store.save([write("d/e.md"), write("d")])).rejects.toThrow("d already contains other files.")
+  expect((await store.listEntries()).files).toEqual([])
+
+  // A move or a delete earlier in the save frees its path for later changes.
+  const x = await store.write("x", "file", null)
+  const gone = await store.write("gone", "file", null)
+  await store.save([
+    { kind: "move", from: "x", to: "y", expectedRevision: x.revision },
+    write("x/z.md"),
+    { kind: "delete", path: "gone", expectedRevision: gone.revision },
+    write("gone/kept.md"),
+  ])
+  expect((await store.listEntries()).files.map((file) => file.path).sort()).toEqual(["gone/kept.md", "x/z.md", "y"])
+})
+
+test("several folders are created together, or none is", async () => {
+  const { store } = await setup()
+  await store.write("a", "file", null)
+  await expect(store.createDirectories(["fine", "a"])).rejects.toThrow("a is a file.")
+  await expect(store.createDirectories(["fine", "a/inside"])).rejects.toThrow("a is a file, so it cannot contain a/inside.")
+  expect((await store.listEntries()).directories).toEqual([])
+  await store.createDirectories(["one", "two/three"])
+  expect((await store.listEntries()).directories).toEqual(["one", "two/three"])
+})
+
 test("drafts are kept apart from the saved copy until saved or discarded", async () => {
   const { store } = await setup()
   const saved = await store.write("a.md", "saved", null)

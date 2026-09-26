@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { projectHref } from "@/features/navigation"
 import { libraryFor, useLibraryState, type ProjectAccount } from "./account"
+import { ImportProject } from "./ImportProject"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 
-/** The account's projects, and a way to start a new one. */
+/** The account's projects, and ways to start a new one or import one. */
 export function ProjectList({ account }: { account: ProjectAccount }) {
   const library = libraryFor(account)
   const state = useLibraryState(library)
@@ -64,6 +65,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         </div>
         <Button type="submit">Create</Button>
       </form>
+      <ImportProject library={library} />
     </section>
   )
 }
