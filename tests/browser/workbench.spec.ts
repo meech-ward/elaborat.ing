@@ -149,6 +149,55 @@ test("closing a tab from the keyboard works, and an unsaved one asks first", asy
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
 })
 
+/** Open a file from the explorer, in a new tab, without reloading the page. */
+async function openFromExplorer(page: Page, path: string) {
+  const toggle = page.getByRole("button", { name: "Toggle explorer" })
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await page.getByRole("button", { name: path, exact: true }).click()
+  await expect(page.getByRole("tab", { name: path })).toHaveAttribute("aria-selected", "true")
+}
+
+test("Ctrl+S saves the note whose editor has focus, with two notes open", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  // b.md's editor is created second, after a.md's.
+  await openFromExplorer(page, "b.md")
+  await page.getByRole("tab", { name: "a.md" }).click()
+  await typeAtEnd(page, "first")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect.poll(() => serverContent(fake, id, "a.md")).toBe("a\nfirst")
+
+  await page.getByRole("tab", { name: "b.md" }).click()
+  await typeAtEnd(page, "second")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => serverContent(fake, id, "b.md")).toBe("b\nsecond")
+  expect(serverContent(fake, id, "a.md")).toBe("a\nfirst")
+})
+
+test("Ctrl+S saves the note whose editor has focus, with a diagram's code open too", async ({ page }) => {
+  // The diagram compiles with D2's 8 MB WebAssembly build.
+  test.slow()
+  const { fake, id } = await openProject(page, { "a.md": "a\n", "flow.d2": "x -> y\n" }, "a.md")
+  await openFromExplorer(page, "flow.d2")
+  await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
+  // The code editor is created after the note's.
+  await page.getByRole("button", { name: "Code" }).click()
+  await expect(page.locator(".monaco-editor:visible")).toBeVisible()
+
+  await page.getByRole("tab", { name: "a.md" }).click()
+  await typeAtEnd(page, "note")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => serverContent(fake, id, "a.md")).toBe("a\nnote")
+  // The diagram, which has unsaved generated files, was not saved instead.
+  expect(serverContent(fake, id, "flow.excalidraw")).toBeUndefined()
+
+  await page.getByRole("tab", { name: "flow.d2" }).click()
+  await typeAtEnd(page, "y -> z\n")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => serverContent(fake, id, "flow.d2")).toBe("x -> y\ny -> z\n")
+  expect(serverContent(fake, id, "a.md")).toBe("a\nnote")
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
