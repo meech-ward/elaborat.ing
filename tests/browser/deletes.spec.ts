@@ -179,6 +179,26 @@ test("a note with unsaved edits cannot be deleted until they are saved", async (
   await expect.poll(() => fake.server.paths(id)).toEqual([])
 })
 
+test("deleting the only open file keeps the project page: the explorer stays open and the notice shows", async ({ page }) => {
+  const { id } = await openProject(page, { "plan.md": "# Plan\n", "other.md": "# Other\n" }, [], "plan.md")
+  const files = await explorer(page)
+  await expect(page.getByRole("tab")).toHaveCount(1)
+
+  // With its last tab closed, the page moves to the project's own URL and stays the same page.
+  await deleteFrom(page, "plan.md")
+  await page.getByRole("alertdialog", { name: "Delete plan.md" }).getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page).toHaveURL(projectUrl(id))
+  await expect(page.getByText("Deleted plan.md.")).toBeVisible()
+  await expect(page.getByRole("tab")).toHaveCount(0)
+  await expect(files).toBeVisible()
+
+  // Opening a file from there keeps it too.
+  await files.getByRole("button", { name: "other.md", exact: true }).click()
+  await expect(page).toHaveURL(projectUrl(id, "other.md"))
+  await expect(page.getByRole("tab", { name: "other.md" })).toBeVisible()
+  await expect(files).toBeVisible()
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
