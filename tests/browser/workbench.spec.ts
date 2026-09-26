@@ -55,6 +55,17 @@ async function typeAtEnd(page: Page, text: string) {
   await page.keyboard.type(text)
 }
 
+/** Select a file's tab, then type at the end of that tab's own code editor and check the text arrived. */
+async function typeInTab(page: Page, path: string, text: string) {
+  await page.getByRole("tab", { name: path }).click()
+  await expect(page.getByRole("tab", { name: path })).toHaveAttribute("aria-selected", "true")
+  const editor = page.getByRole("tabpanel", { name: path }).locator(".monaco-editor:visible .view-lines")
+  await editor.click()
+  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.type(text)
+  await expect(editor).toContainText(text)
+}
+
 test("typing in the source view saves on this device and reaches the server", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# Title\n" }, "a.md")
   await typeAtEnd(page, "Typed here.")
@@ -88,6 +99,65 @@ test("unsaved edits survive a reload, and are not sent to the server", async ({ 
   await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible({ timeout: 15_000 })
   await expect(editorText(page)).toContainText("saveddraft")
   expect(serverContent(fake, id, "a.md")).toBe("saved\n")
+})
+
+/** Whether leaving the page now would ask first: the app cancels `beforeunload` while a file has unsaved changes. */
+const warnsOnLeave = (page: Page) =>
+  page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+
+test("undoing back to the saved text clears the unsaved state, and a reload restores no draft", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
+  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  await typeAtEnd(page, "draft")
+  await expect(mark).toBeVisible()
+  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
+  expect(await warnsOnLeave(page)).toBe(true)
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(editorText(page)).not.toContainText("draft")
+  await expect(mark).toHaveCount(0)
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page).not.toHaveTitle(/^•/)
+  expect(await warnsOnLeave(page)).toBe(false)
+
+  // Drafts are kept in the background, as in the journey above.
+  await page.waitForTimeout(300)
+  await page.reload()
+  // The reload loads the editor again, as slowly as the first open.
+  await expect(editorText(page)).toContainText("saved", { timeout: 15_000 })
+  await expect(editorText(page)).not.toContainText("draft")
+  await expect(mark).toHaveCount(0)
+  expect(serverContent(fake, id, "a.md")).toBe("saved\n")
+})
+
+test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved state, and a reload restores no draft", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
+  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const paragraph = frame.locator("p").filter({ hasText: /^First paragraph\./ })
+  await paragraph.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" More.")
+  await expect(paragraph).toHaveText("First paragraph. More.")
+  await expect(mark).toBeVisible()
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(paragraph).toHaveText("First paragraph.")
+  await expect(mark).toHaveCount(0)
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  expect(await warnsOnLeave(page)).toBe(false)
+
+  await page.waitForTimeout(300)
+  await page.reload()
+  // The note opens in the view it was left in.
+  await expect(paragraph).toHaveText("First paragraph.", { timeout: 15_000 })
+  await expect(mark).toHaveCount(0)
+  expect(serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph.\n")
 })
 
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {
@@ -144,6 +214,8 @@ test("a new note from the menu is saved under a new name", async ({ page }) => {
 })
 
 test("open tabs come back after a reload, with the same one active", async ({ page }) => {
+  // Three editor loads, each allowed 15 seconds, can outlast the default test time on a busy machine.
+  test.slow()
   const { id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await remembered(page, "a.md")
   // Each navigation loads the editor again, as slowly as the first open.
@@ -157,6 +229,8 @@ test("open tabs come back after a reload, with the same one active", async ({ pa
 })
 
 test("closing a tab from the keyboard works, and an unsaved one asks first", async ({ page }) => {
+  // Two editor loads and a dialog; see the journey above.
+  test.slow()
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await remembered(page, "a.md")
   await page.goto(page.url().replace(/a\.md$/, "b.md"))
@@ -210,17 +284,16 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   await page.getByRole("button", { name: "Code" }).click()
   await expect(page.locator(".monaco-editor:visible")).toBeVisible()
 
-  await page.getByRole("tab", { name: "a.md" }).click()
-  await typeAtEnd(page, "note")
+  await typeInTab(page, "a.md", "note")
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("a\nnote")
   // The diagram, which has unsaved generated files, was not saved instead.
   expect(serverContent(fake, id, "flow.excalidraw")).toBeUndefined()
 
-  await page.getByRole("tab", { name: "flow.d2" }).click()
   // No Enter after a name: the suggestions it opens could take the key.
-  await typeAtEnd(page, "y -> z")
+  await typeInTab(page, "flow.d2", "y -> z")
   await page.keyboard.press("ControlOrMeta+s")
+  await expect(page.getByRole("tabpanel", { name: "flow.d2" }).getByText("Saved flow.d2 and its generated files.")).toBeVisible()
   await expect.poll(() => serverContent(fake, id, "flow.d2")).toBe("x -> y\ny -> z")
   expect(serverContent(fake, id, "a.md")).toBe("a\nnote")
 })

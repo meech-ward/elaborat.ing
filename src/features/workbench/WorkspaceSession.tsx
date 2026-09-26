@@ -343,6 +343,8 @@ export function WorkspaceSession({
           setSnapshot(store.markSaved());
           setNotice(`${verb} ${ok.path}.`);
         } else {
+          // The newer edits now compare against what was just saved.
+          setSnapshot(store.markSaved(captured.text));
           setNotice(`${verb} ${ok.path}, but newer edits are still unsaved.`);
         }
         setOpenFile((f) => markSaved(f, ok.path, ok.revision));

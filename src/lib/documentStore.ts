@@ -3,6 +3,11 @@ import { applySourcePatches, type DocumentSnapshot, type SourcePatch } from "@/f
 /**
  * Workbench buffer state: the authoritative snapshot plus save tracking.
  *
+ * `dirty` means the text differs from the saved copy: the store keeps the
+ * text the document was opened or last saved with, and every change compares
+ * against it, so undoing back to the saved text is clean again. A note that
+ * was never saved opens from empty text, so it stays dirty while it has any.
+ *
  * `docId` is the opened-document identity: it bumps only on replaceDocument
  * (file open / new document), never on typing, patches or save. The source
  * editor keys its Monaco model on it so reopening the same bytes still
@@ -13,8 +18,10 @@ export interface StoreState extends DocumentSnapshot {
   docId: number
 }
 
+/** `initialText` is the saved copy's text, or "" for a note that was never saved. */
 export function createDocumentStore(initialText: string, format: DocumentSnapshot["format"]) {
   let state: StoreState = { text: initialText, revision: 1, format, dirty: false, docId: 1 }
+  let saved = initialText
 
   const snapshot = (): StoreState => ({ ...state })
 
@@ -27,28 +34,31 @@ export function createDocumentStore(initialText: string, format: DocumentSnapsho
      */
     setText(text: string): StoreState {
       if (text === state.text) return snapshot()
-      state = { ...state, text, revision: state.revision + 1, dirty: true }
+      state = { ...state, text, revision: state.revision + 1, dirty: text !== saved }
       return snapshot()
     },
 
     /**
-     * Opened file. The buffer now matches the source of truth, so dirty
-     * clears; the document identity always advances, even when the new
-     * bytes equal the old ones, so the editor drops the old undo history.
+     * Opened file. The buffer now matches the source of truth and is its
+     * saved copy, so dirty clears; the document identity always advances,
+     * even when the new bytes equal the old ones, so the editor drops the old
+     * undo history.
      */
     replaceDocument(text: string, nextFormat: DocumentSnapshot["format"]): StoreState {
+      saved = text
       state = { text, revision: state.revision + 1, format: nextFormat, dirty: false, docId: state.docId + 1 }
       return snapshot()
     },
 
     /**
-     * Restored stashed draft (returning from a referenced file). The text
-     * differs from the last saved revision by construction, so the buffer
-     * is dirty: leaving without saving must warn. Identity still advances
-     * so the canvas view's undo history never leaks into the note.
+     * Restored stashed draft (returning from a referenced file), with the
+     * saved copy it was made on. A draft that differs from it is dirty:
+     * leaving without saving must warn. Identity still advances so the
+     * canvas view's undo history never leaks into the note.
      */
-    restoreUnsaved(text: string, nextFormat: DocumentSnapshot["format"]): StoreState {
-      state = { text, revision: state.revision + 1, format: nextFormat, dirty: true, docId: state.docId + 1 }
+    restoreUnsaved(text: string, nextFormat: DocumentSnapshot["format"], savedText: string): StoreState {
+      saved = savedText
+      state = { text, revision: state.revision + 1, format: nextFormat, dirty: text !== saved, docId: state.docId + 1 }
       return snapshot()
     },
 
@@ -65,15 +75,20 @@ export function createDocumentStore(initialText: string, format: DocumentSnapsho
         format: state.format,
       }
       const next = applySourcePatches(current, revision, patches)
-      // The applier returns the same snapshot for empty/no-op patches: no new revision,
-      // so dirty only flips when the text actually changed. The document
-      // identity is shell-owned: patches never open a new document.
-      state = { ...next, dirty: next.revision !== state.revision ? true : state.dirty, docId: state.docId }
+      // The applier returns the same snapshot for empty/no-op patches: no new
+      // revision. The document identity is shell-owned: patches never open a
+      // new document.
+      state = { ...next, dirty: next.text !== saved, docId: state.docId }
       return snapshot()
     },
 
-    markSaved(): StoreState {
-      state = { ...state, dirty: false }
+    /**
+     * `text` was saved (by default the current text). When newer edits
+     * arrived during the save, they stay dirty and compare against it.
+     */
+    markSaved(text: string = state.text): StoreState {
+      saved = text
+      state = { ...state, dirty: state.text !== saved }
       return snapshot()
     },
   }
