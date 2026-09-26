@@ -62,9 +62,9 @@ this repository once the steps before them have landed.
    delete and undo, editing a text by its id, image pixels, PNG and SVG
    export) on the synthetic demo scene. Task T9 adds step 2's drawing.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
-   build**, so the license notices cover the frame's code too. The frame build,
-   the rendered editor and first journeys (typing, components, errors) are in;
-   the rest of the prototype's rendered-editing journeys follow.
+   build (done)**, so the license notices cover the frame's code too. Browser
+   journeys on a test page cover typing, selections, split and join, lists,
+   protected MDX, edits in flight and arriving diagram previews.
 5. **Projects are stored per file on the device, behind one storage
    interface (done)**: IndexedDB keeps each file's draft, saved copy and
    server copy, plus the one batch in flight. Code in
@@ -78,7 +78,9 @@ this repository once the steps before them have landed.
 8. **People sign in with Supabase Auth, and signing out never loses drafts.**
 9. **The app opens a user's projects at real URLs, online or offline.**
 10. **Notes open in tabs, edit in source and rendered views, and save** with
-    drafts and conflict recovery.
+    drafts and conflict recovery. This step adds the journeys that need the
+    source editor: exact bytes and one undo for rendered edits, and typing,
+    undo and redo in the source view.
 11. **Custom MDX components load from project files (open for contributors).**
 12. **Files and folders can be created, renamed and moved**, with references
     rewritten in the same save.

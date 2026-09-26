@@ -1,43 +1,56 @@
 // A test-only page: the real rendered editor over an in-memory document, the
-// way the workbench will mount it, but with no storage. `window.harness`
-// loads a note and reads back its source; edits go through the frame's UI.
+// way the workbench will mount it, but with no storage. `window.renderedHarness`
+// loads a note, reads back its source, delivers diagram pixels and sets the
+// appearance; edits go through the frame's own UI.
 import "../../../src/index.css"
-import { StrictMode, useState, useSyncExternalStore } from "react"
+import { StrictMode, useEffect, useState, useSyncExternalStore } from "react"
 import { createRoot } from "react-dom/client"
-import { AppearanceProvider } from "../../../src/features/appearance/index.ts"
-import { RenderedEditor } from "../../../src/features/rendered/index.ts"
+import { AppearanceProvider, useAppearance } from "../../../src/features/appearance/index.ts"
+import type { ColorScheme, ThemeName } from "../../../src/features/appearance/tokens.ts"
 import type { DocumentSnapshot } from "../../../src/features/document/index.ts"
+import { RenderedEditor } from "../../../src/features/rendered/index.ts"
 import { createDocumentStore } from "../../../src/lib/documentStore.ts"
 
 const store = createDocumentStore("", "md")
-let snapshot = store.snapshot()
+let state = { snapshot: store.snapshot(), resources: undefined as Record<string, string> | undefined }
 let pending = false
 let lastError: string | null = null
+let appearance: { setTheme: (theme: ThemeName) => void; setScheme: (scheme: ColorScheme) => void } | null = null
 const listeners = new Set<() => void>()
-const publish = (next: typeof snapshot) => {
-  snapshot = next
+const publish = (next: Partial<typeof state>) => {
+  state = { ...state, ...next }
   for (const listener of listeners) listener()
+}
+const subscribe = (listener: () => void) => {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+function AppearanceBridge() {
+  const { setTheme, setScheme } = useAppearance()
+  useEffect(() => {
+    appearance = { setTheme, setScheme }
+  }, [setTheme, setScheme])
+  return null
 }
 
 function App() {
-  const current = useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    () => snapshot,
-  )
+  const { snapshot, resources } = useSyncExternalStore(subscribe, () => state)
   const [, setError] = useState<string | null>(null)
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <h1 className="sr-only">Rendered note</h1>
+      <AppearanceBridge />
       <RenderedEditor
-        key={current.docId}
-        document={current}
-        documentId={current.docId}
+        key={snapshot.docId}
+        document={snapshot}
+        documentId={snapshot.docId}
+        resources={resources}
         onPatch={(revision, patches) => {
           try {
-            publish(store.applyPatches(revision, patches))
+            publish({ snapshot: store.applyPatches(revision, patches) })
             return true
           } catch {
             return false
@@ -56,9 +69,14 @@ function App() {
 }
 
 const harness = {
-  load: (text: string, format: DocumentSnapshot["format"]) => publish(store.replaceDocument(text, format)),
-  source: () => snapshot.text,
-  state: () => ({ revision: snapshot.revision, pending, error: lastError }),
+  load: (text: string, format: DocumentSnapshot["format"]) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined }),
+  source: () => state.snapshot.text,
+  state: () => ({ revision: state.snapshot.revision, pending, error: lastError }),
+  setResources: (resources: Record<string, string>) => publish({ resources }),
+  appearance: (theme: ThemeName, scheme: ColorScheme) => {
+    appearance?.setTheme(theme)
+    appearance?.setScheme(scheme)
+  },
 }
 
 declare global {

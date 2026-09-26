@@ -250,3 +250,28 @@ compressed Obsidian drawing from T7 is the realistic case.
 
 **Done when** every fidelity test passes on both drawings in Chromium and
 Firefox, and CI passes.
+
+## T10: Enter right after arrow keys splits at the old caret position in Chromium
+
+**Status:** Ready
+
+In the rendered view, in Chromium only, pressing Enter within a few
+milliseconds of arrow keys sometimes splits the paragraph where the caret was
+before the last arrow key. Firefox is not affected. To reproduce on the browser
+test harness (`tests/browser/harness/rendered.html`): load a note with a
+paragraph `Alphabeta.`, click its first character, press Home, press
+ArrowRight five times and Enter immediately, with no waits between keys. About
+one run in four produces `Alph` and `abeta.` instead of `Alpha` and `beta.`.
+Real typing is rarely that fast, but key repeat, macros and assistive tools
+can be.
+
+- Add a browser test that fails on this (repeat the sequence enough times to
+  fail reliably before the fix).
+- Find where the frame's editing layer (`src/preview/`) or the parent
+  (`src/features/rendered/`) acts on a caret position it has not updated yet,
+  and fix it there. ProseMirror itself reads the DOM selection on keydown.
+- Then remove the settle wait in the "Enter splits a paragraph" journey in
+  `tests/browser/rendered-editing.spec.ts`.
+
+**Done when** the new test and the journey pass without waits in Chromium and
+Firefox, and CI passes.
