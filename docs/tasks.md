@@ -771,7 +771,7 @@ today, so the store is the last guard, as it is for moves.
 
 ## T28: viewers and archived projects open read-only
 
-**Status:** Ready
+**Status:** Done (#28)
 
 The file store refuses changes from a viewer or commenter, and to an archived
 project (`editableProject` in `src/features/project-storage/fileStore.ts`:
@@ -797,7 +797,7 @@ draw and rename, and only find out when the save fails.
 
 ## T29: sign in with a one-time code, GitHub or Google
 
-**Status:** Ready
+**Status:** Done (#29)
 
 The sign-in page offers a password and an emailed link
 (`src/features/auth/MagicLinkForm.tsx`). The roadmap's phase 3 adds a one-time
