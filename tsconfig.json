@@ -16,5 +16,5 @@
     "types": ["bun-types", "node", "vite/client"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "vite.config.ts", "eslint.config.js"]
+  "include": ["src", "vite-plugins", "vite.config.ts", "eslint.config.js"]
 }
