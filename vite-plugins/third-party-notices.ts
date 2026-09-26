@@ -85,8 +85,16 @@ export function licenseFileText(packageDir: string): string | undefined {
 
 const SUPPLEMENTS = path.join(import.meta.dirname, "licenses")
 
-/** A checked-in license text for a package that ships without one. */
+/**
+ * A checked-in license text for a package that ships without one: the
+ * package's own file, or its scope's when every package in the scope comes
+ * from one repository under one license.
+ */
 function supplementalLicense(name: string): string | undefined {
-  const file = path.join(SUPPLEMENTS, `${name.replace("/", "__")}.txt`)
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : undefined
+  const names = [name.replace("/", "__"), ...(name.startsWith("@") ? [name.split("/")[0]] : [])]
+  for (const candidate of names) {
+    const file = path.join(SUPPLEMENTS, `${candidate}.txt`)
+    if (fs.existsSync(file)) return fs.readFileSync(file, "utf8").trim()
+  }
+  return undefined
 }
