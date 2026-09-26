@@ -20,3 +20,6 @@ scope, for scopes published from one repository under one license.
 - `victory-vendor.txt`: victory-vendor 37.3.6, MIT, from
   https://github.com/FormidableLabs/victory/blob/main/LICENSE.txt. Its ES
   build re-exports the d3 packages, which ship their own license files.
+- `@terrastruct__d2.txt`: @terrastruct/d2 0.1.33, MPL-2.0, from
+  https://github.com/terrastruct/d2/blob/master/LICENSE.txt. The ELK layout
+  engine its browser build embeds is noted in `src/features/structured/compiler.ts`.

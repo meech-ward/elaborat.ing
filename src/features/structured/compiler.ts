@@ -226,6 +226,21 @@ export function getDefaultD2Port(): D2CompilePort {
   return defaultPort;
 }
 
+/**
+ * Compile D2 in the browser through the shared worker, returning the raw
+ * diagram or the compiler's message. The D2 package (an 8 MB chunk with its
+ * WASM inlined) loads on the first call.
+ */
+export async function compileD2Diagram(
+  source: string,
+): Promise<{ ok: true; diagram: D2Diagram } | { ok: false; error: string }> {
+  try {
+    return { ok: true, diagram: await getDefaultD2Port()({ source }) };
+  } catch (error) {
+    return { ok: false, error: syntaxMessage(error) };
+  }
+}
+
 function syntaxMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);

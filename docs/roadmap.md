@@ -107,7 +107,12 @@ this repository once the steps before them have landed.
     A file that does not parse opens as text with the error. New drawings come
     from the workbench menu. Drawings embedded in notes arrive with step 14.
 14. **D2 diagrams compile in the browser, save as one three-file batch, and
-    embed in notes.**
+    embed in notes (done).** The diagram view has code and a generated canvas;
+    Regenerate keeps freehand additions and moved shapes, a syntax error keeps
+    the last valid canvas, and renaming a node on the canvas updates the code.
+    Notes show pictures of the drawings and diagrams they embed, with a zoomable
+    viewer. New diagrams come from the workbench menu. Canvas label renames are
+    covered by unit tests, not yet by a browser journey.
 15. **The app restarts offline (open for contributors)**, using
     vite-plugin-pwa.
 16. **Projects exported from the prototype import into elaborat.ing (open for

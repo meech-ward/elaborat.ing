@@ -187,6 +187,17 @@ the preview the person sees the new preview first. There is no move journal on
 the server: the device's save is atomic, and the mutation id covers a lost
 answer. The planner is `src/features/workbench/movePlan.ts`.
 
+**Decision: D2 compiles in the browser.** `@terrastruct/d2` ships a browser
+build that inlines its WebAssembly and worker in one module, about 8 MB, loaded
+the first time a diagram opens (the first compile takes a few seconds; later
+ones take well under a second). One shared worker serves every compile, through
+a queue, because the package answers requests without ids. A diagram is three
+files: the `.d2` source, the generated `.excalidraw` canvas that holds freehand
+additions and moved shapes, and the `.d2.json` sidecar with the generation
+baseline. They save on the device as one change, so a file that changed
+elsewhere stops the whole save rather than leaving the source ahead of its
+canvas.
+
 (The prototype stored a full snapshot of the whole project as each revision.
 That was simple for one person, but it duplicates everything on every save and
 makes edits to different files conflict. It is not carried forward.)

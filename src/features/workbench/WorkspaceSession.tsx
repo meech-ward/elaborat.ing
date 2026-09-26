@@ -15,6 +15,7 @@ import { createDocumentStore, type StoreState } from "@/lib/documentStore";
 import { formatForFilename, saveSourceText } from "@/lib/fileAdapter";
 import { diagnoseSource } from "@/lib/sourceDiagnostics";
 import { parseSourceRefs } from "./refs";
+import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
@@ -38,8 +39,8 @@ type Mode = "source" | "rendered";
 
 /**
  * One open file: its document, undo history and the revision its edits are
- * based on. Drawings open in `DrawingView` instead; diagrams are edited as
- * text here until their view arrives (roadmap phase 2 step 14).
+ * based on. Drawings open in `DrawingView` and D2 diagrams in `DiagramView`
+ * instead; other files open here as text.
  */
 export function WorkspaceSession({
   client,
@@ -181,9 +182,42 @@ export function WorkspaceSession({
     onState(initial.path, overallDirty, notice);
   }, [initial.path, overallDirty, notice, onState]);
 
-  // Previews of drawings and diagrams inside notes arrive with their canvas
-  // views (roadmap phase 2 steps 13 and 14); until then they show a placeholder.
-  const resourcePixels = useMemo<Record<string, string>>(() => ({}), []);
+  // Pictures of the drawings and diagrams the note embeds (at most eight),
+  // made from their saved files here; only the SVG reaches the note frame.
+  // Prose edits do not change them; returning to the note refreshes them.
+  const resourceTargetsKey = JSON.stringify(
+    refs
+      .filter((ref) => (ref.kind === "drawing" || ref.kind === "diagram") && ref.path !== openFile.path)
+      .slice(0, 8)
+      .map(({ kind, path }) => ({ kind, path })),
+  );
+  const [resourcePixels, setResourcePixels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!active || !isNote) return;
+    const targets: Array<{ kind: string; path: string }> = JSON.parse(resourceTargetsKey);
+    let alive = true;
+    void (async () => {
+      const pixels: Record<string, string> = {};
+      for (const target of targets) {
+        try {
+          const read = await client.read(target.path);
+          if (!alive) return;
+          if (read.savedContent === null) continue;
+          pixels[target.path] =
+            target.kind === "drawing"
+              ? await drawingSvgForContent(read.savedContent, target.path)
+              : await diagramSvgForWorkspace(read.savedContent, target.path, client);
+        } catch {
+          // A file that cannot be pictured shows as a placeholder in the note.
+        }
+        if (!alive) return;
+      }
+      if (alive) setResourcePixels(pixels);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [active, client, isNote, resourceTargetsKey, snapshot.docId]);
 
   const handleSourceChange = useCallback(
     (text: string) => {
