@@ -50,7 +50,7 @@ per-file storage, and its server and single-folder storage mode are not
 ported. Steps, in order; **(open for contributors)** marks steps that need only
 this repository once the steps before them have landed.
 
-1. **The pure editor, drawing and diagram code lands in the repo**, not yet
+1. **The pure editor, drawing and diagram code lands in the repo (done)**, not yet
    mounted: source editor, rendered view and frame, document model, component
    catalog, Excalidraw drawings, D2 diagrams, workbench pieces, appearance and
    UI primitives, with their unit tests.
@@ -61,10 +61,13 @@ this repository once the steps before them have landed.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
    build**, so the license notices cover the frame's code too.
 5. **Projects are stored per file on the device, behind one storage
-   interface**: IndexedDB drafts, the saved copy and base version of each file,
-   and an outbox of pending saves.
-6. **Saves sync through `save_files` with per-file conflict recovery**: keep
-   mine, keep theirs, or keep both.
+   interface (done)**: IndexedDB keeps each file's draft, saved copy and
+   server copy, plus the one batch in flight. Code in
+   `src/features/project-storage/`.
+6. **Saves sync through `save_files` with per-file conflict recovery (done)**:
+   keep mine, keep theirs, or keep both. Tested against an in-memory server
+   that follows the database's rules; the first run against the hosted
+   project comes with sign-in (step 8).
 7. **Open projects hear about remote changes over Realtime Broadcast (open for
    contributors).**
 8. **People sign in with Supabase Auth, and signing out never loses drafts.**

@@ -1,0 +1,122 @@
+import { expect, test } from "bun:test"
+import { FileStoreError, LocalConflictError } from "./fileStore"
+import { contentToken } from "./model"
+import { device, FakeProjectServer, put } from "./testing"
+
+async function setup() {
+  const a = device(new FakeProjectServer())
+  const project = await a.sync.createProject("Notes")
+  return { a, id: project.id, store: a.files(project.id) }
+}
+
+test("a save is checked against the revision it was based on", async () => {
+  const { a, id, store } = await setup()
+  const first = await store.write("a.md", "one", null)
+  expect(first.revision).toBe(await contentToken("one"))
+  await store.write("a.md", "two", first.revision)
+  await expect(store.write("a.md", "three", first.revision)).rejects.toBeInstanceOf(LocalConflictError)
+  await expect(store.write("a.md", "new", null)).rejects.toBeInstanceOf(LocalConflictError)
+  expect((await store.read("a.md")).content).toBe("two")
+  expect((await a.record(id, "a.md"))?.batch).toBeNull()
+})
+
+test("changes saved together share a batch and fail together", async () => {
+  const { a, id, store } = await setup()
+  await store.writeBatch([
+    { path: "x.md", content: "x", expectedRevision: null },
+    { path: "y.md", content: "y", expectedRevision: null },
+  ])
+  const [x, y] = [await a.record(id, "x.md"), await a.record(id, "y.md")]
+  expect(x?.batch).not.toBeNull()
+  expect(x?.batch).toBe(y?.batch ?? "")
+
+  const stale = await contentToken("stale")
+  await expect(
+    store.save([
+      { kind: "write", path: "z.md", content: "z", expectedRevision: null },
+      { kind: "write", path: "x.md", content: "x2", expectedRevision: stale },
+    ]),
+  ).rejects.toBeInstanceOf(LocalConflictError)
+  expect(await a.record(id, "z.md")).toBeNull()
+})
+
+test("moves refuse to lose unsaved edits or overwrite a file", async () => {
+  const { store } = await setup()
+  const a = await store.write("a.md", "a", null)
+  await store.write("b.md", "b", null)
+  await expect(store.move("a.md", "b.md", a.revision)).rejects.toThrow("already exists")
+  await store.persistDrafts([{ path: "a.md", content: "unsaved", baseRevision: a.revision }])
+  await expect(store.move("a.md", "c.md", a.revision)).rejects.toThrow("unsaved edits")
+  await store.discardDraft("a.md")
+  const moved = await store.move("a.md", "c.md", a.revision, "a, edited while moving")
+  expect(moved.path).toBe("c.md")
+  expect((await store.read("c.md")).content).toBe("a, edited while moving")
+  await expect(store.read("a.md")).rejects.toBeInstanceOf(FileStoreError)
+})
+
+test("deleting a file never synced forgets it; deleting a synced file keeps the deletion to send", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  const store = a.files(id)
+  const local = await store.write("local.md", "x", null)
+  await store.delete("local.md", local.revision)
+  expect(await a.record(id, "local.md")).toBeNull()
+
+  const synced = await store.write("synced.md", "x", null)
+  await a.sync.sync(id)
+  await store.delete("synced.md", synced.revision)
+  expect((await a.record(id, "synced.md"))?.content).toBeNull()
+  expect((await store.listEntries()).files).toEqual([])
+
+  // Saving at the path again replaces the pending deletion with an edit.
+  await store.write("synced.md", "back", null)
+  expect((await a.record(id, "synced.md"))?.base?.content).toBe("x")
+})
+
+test("a file and a folder cannot share a path, and a file cannot contain anything", async () => {
+  const { store } = await setup()
+  await store.write("a", "file", null)
+  await expect(store.write("a/b.md", "x", null)).rejects.toThrow("is a file")
+  await store.write("d/e.md", "x", null)
+  await expect(store.write("d", "x", null)).rejects.toThrow("already contains")
+  await store.createDirectory("empty")
+  await expect(store.write("empty", "x", null)).rejects.toThrow("is a folder")
+  await expect(store.createDirectory("a")).rejects.toThrow("is a file")
+  expect((await store.listEntries()).directories).toEqual(["d", "empty"])
+  await store.removeDirectory("empty")
+  expect((await store.listEntries()).directories).toEqual(["d"])
+})
+
+test("drafts are kept apart from the saved copy until saved or discarded", async () => {
+  const { store } = await setup()
+  const saved = await store.write("a.md", "saved", null)
+  await store.persistDrafts([{ path: "a.md", content: "typing", baseRevision: saved.revision }])
+  await store.persistDrafts([{ path: "new.md", content: "brand new", baseRevision: null }])
+  await store.flushDrafts()
+  const a = await store.read("a.md")
+  expect([a.content, a.savedContent, a.draft, a.revision]).toEqual(["typing", "saved", true, saved.revision])
+  expect((await store.read("new.md")).savedContent).toBeNull()
+
+  await store.write("a.md", "typing", saved.revision)
+  expect((await store.read("a.md")).draft).toBe(false)
+  await store.discardDraft("new.md")
+  expect((await store.listEntries()).files.map((file) => file.path)).toEqual(["a.md"])
+})
+
+test("viewers and archived projects cannot change files", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  await put(a.files(id), "a.md", "x")
+  await a.db.transaction(a.partition, "readwrite", async (tx) => {
+    const project = (await tx.getProject(id))!
+    await tx.putProject({ ...project, role: "viewer" })
+  })
+  await expect(put(a.files(id), "b.md", "x")).rejects.toThrow("view this project")
+  await a.db.transaction(a.partition, "readwrite", async (tx) => {
+    const project = (await tx.getProject(id))!
+    await tx.putProject({ ...project, role: "owner", archivedAt: new Date().toISOString() })
+  })
+  await expect(put(a.files(id), "b.md", "x")).rejects.toThrow("archived")
+})

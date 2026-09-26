@@ -156,6 +156,24 @@ offline. If `create_project` answers "Project unavailable", the id already
 belongs to someone else: the client gives its local project a fresh id and
 never saves to the refused one.
 
+**Decision: projects live on the device and sync per file.** The browser keeps
+every file in IndexedDB with three layers: the server's copy as last seen (id,
+path, version, content), the saved copy, and unsaved edits kept only for
+recovery. What to send is the difference between the saved copy and the
+server's copy, so there is no change log to replay. Files saved together, and a
+D2 source with its companions, go in one `save_files` call; everything else
+goes file by file, so one stale file never blocks the rest. The batch in
+flight is stored with its mutation id before it is sent, so a lost answer is
+retried without saving twice. A project's local revision is the highest server
+revision this device has fully taken in: a pull reads files changed and
+deleted after it, leaves files with local changes alone, and holds the
+revision below anything it left, so the next pull looks again. A save that
+conflicts marks the file with the server's copy, and the person keeps theirs,
+keeps mine, or keeps both. Two known gaps: swapping two files' paths offline
+cannot sync (the server takes each path once per save), and a pulled file can
+briefly sit under a local file of the same name until the push marks the path
+as taken.
+
 (The prototype stored a full snapshot of the whole project as each revision.
 That was simple for one person, but it duplicates everything on every save and
 makes edits to different files conflict. It is not carried forward.)
