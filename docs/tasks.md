@@ -203,7 +203,7 @@ compressed scene, which the port could not publish (roadmap phase 2 step 2).
 
 ## T8: tell open projects about remote changes over Realtime Broadcast
 
-**Status:** Ready
+**Status:** Done (#8)
 
 Roadmap phase 2 step 7. Devices learn about other people's saves only when
 they refresh. The architecture decision "change signals use Realtime Broadcast
