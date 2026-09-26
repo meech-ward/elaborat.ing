@@ -85,7 +85,7 @@ test("the license notices cover the Workbox code the service worker ships", () =
   expect([...modules].filter((name) => !notices.includes(`\n## ${name} - `))).toEqual([])
 })
 
-test("after a project has opened, a reload with no network brings back the app, the project and an unsaved edit", async ({ page, context }) => {
+test("after a project has opened, loading it again with no network brings back the app, the project and an unsaved edit", async ({ page, context }) => {
   const { fake } = await openProject(page, { "notes/a.md": "saved\n" }, "notes/a.md")
   await offlineReady(page)
   await editorText(page).click()
@@ -97,7 +97,9 @@ test("after a project has opened, a reload with no network brings back the app, 
 
   fake.offline = true
   await context.setOffline(true)
-  await page.reload()
+  // Load the same address again. In Firefox, Playwright's page.reload() fails
+  // offline (NS_ERROR_OFFLINE), while a navigation is answered by the worker.
+  await page.goto(page.url())
   await expect(page.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible()
   await expect(unsaved(page, "notes/a.md")).toBeVisible()
   await expect(editorText(page)).toContainText("saveddraft")
