@@ -535,7 +535,7 @@ same source-owned undo".
 
 ## T19: renaming a node on a diagram's canvas updates its code
 
-**Status:** Ready
+**Status:** Done (#19)
 
 In a D2 diagram's Canvas view, renaming a generated node's text writes the
 new label back to the code: a qualified `.label` assignment marked
@@ -583,7 +583,7 @@ a row under load in both browsers, and CI passes.
 
 ## T21: "Unsaved changes" goes away when the text is back to the saved copy
 
-**Status:** Ready
+**Status:** Done (#20)
 
 Type in a note and undo back to what was saved: the note still shows "Unsaved
 changes", the tab keeps its mark, and leaving still warns. The document store
