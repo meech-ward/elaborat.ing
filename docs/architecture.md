@@ -190,7 +190,13 @@ clients that Auth refuses account changes from OAuth client tokens.
 learn that a project changed from a private Broadcast channel per project,
 authorized by RLS on `realtime.messages`, which is Supabase's recommended
 approach. Postgres Changes is not used: it delivers DELETE events to every
-subscriber regardless of RLS. This is built with the client sync in phase 2.
+subscriber regardless of RLS. When a project's revision goes up, a trigger
+sends `{ "revision": n }` as the event `changed` on `project:<id>`. Anyone who
+can read the project may receive it, and no client may send. The signal
+carries nothing else because Realtime checks access only when a client joins
+or sends a new token, so someone removed from a project keeps receiving until
+their token expires. Devices then fetch the changes through reads that check
+access every time.
 
 ## Search
 
@@ -257,6 +263,20 @@ approach Hypothesis uses, rather than anything custom.
   Claude.ai login. If OpenAI opens its sign-in to all apps, it can be added as a
   custom OIDC provider. None of this affects agents: Claude and ChatGPT connect
   through the OAuth server below, where elaborat.ing is the one issuing access.
+
+**Decision:** the sign-in, sign-up, password reset and OAuth consent pages
+are the Supabase UI Library's React blocks, installed with the shadcn CLI, plus
+a small form for emailed sign-in links. A page that needs a signed-in person
+sends them to `/sign-in?next=<path>` and they come back to it, including from
+an emailed link, which is why Auth's redirect list allows any path on the site.
+
+**Decision: signing out keeps work on the device.** Projects on the device
+belong to one backend and account, so signing out hides them without deleting
+anything, and signing back in finds them. Before signing out, every registered
+guard runs (such as keeping unsaved edits), and any guard can refuse. The
+device remembers the last account signed in, so its projects can open offline;
+this marker selects local data only and is never a credential. Someone signed
+in stays signed in while the Auth server cannot be reached.
 
 **Decision:** hosted limits are generous and exist only to stop abuse.
 Numbers are set when accounts ship.

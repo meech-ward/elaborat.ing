@@ -18,7 +18,7 @@ Every task is done only when `bun run build`, `bun run typecheck`,
 `bun run lint` and `bun run test` pass, plus the task's own checks.
 
 Status values: **Ready** (take it), **Waiting** (depends on something named in
-the task), **Done** (merged).
+the task), **Taken** (the maintainer is doing it; skip it), **Done** (merged).
 
 ---
 
@@ -106,7 +106,7 @@ each passage's origin.
 
 ## T4: sign-in and OAuth consent pages
 
-**Status:** Ready
+**Status:** Done (by the maintainer)
 
 People sign in to elaborat.ing, and approve an agent (Claude, ChatGPT) on the
 OAuth consent page, which lives in this app at `/oauth/consent` (see
@@ -203,7 +203,7 @@ compressed scene, which the port could not publish (roadmap phase 2 step 2).
 
 ## T8: tell open projects about remote changes over Realtime Broadcast
 
-**Status:** Ready
+**Status:** Done (#8)
 
 Roadmap phase 2 step 7. Devices learn about other people's saves only when
 they refresh. The architecture decision "change signals use Realtime Broadcast
@@ -263,7 +263,10 @@ paragraph `Alphabeta.`, click its first character, press Home, press
 ArrowRight five times and Enter immediately, with no waits between keys. About
 one run in four produces `Alph` and `abeta.` instead of `Alpha` and `beta.`.
 Real typing is rarely that fast, but key repeat, macros and assistive tools
-can be.
+can be. On slower machines (GitHub's runners) arrow and Home keys pressed
+right after a click are sometimes lost the same way, so the browser-test
+helpers wait an animation frame after each click and key; remove that wait
+too once this is fixed.
 
 - Add a browser test that fails on this (repeat the sequence enough times to
   fail reliably before the fix).

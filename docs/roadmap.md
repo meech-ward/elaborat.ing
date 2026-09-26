@@ -74,9 +74,13 @@ this repository once the steps before them have landed.
    keep mine, keep theirs, or keep both. Tested against an in-memory server
    that follows the database's rules; the first run against the hosted
    project comes with sign-in (step 8).
-7. **Open projects hear about remote changes over Realtime Broadcast (open for
-   contributors).**
-8. **People sign in with Supabase Auth, and signing out never loses drafts.**
+7. **Open projects hear about remote changes over Realtime Broadcast (done).**
+   The database side is live on the hosted project; the app joins the channel
+   once it opens projects (step 9).
+8. **People sign in with Supabase Auth, and signing out never loses drafts
+   (done).** Sign-out runs every registered guard first (the workbench
+   registers one that keeps unsaved edits, step 10), and projects stay on the
+   device under their account.
 9. **The app opens a user's projects at real URLs, online or offline.**
 10. **Notes open in tabs, edit in source and rendered views, and save** with
     drafts and conflict recovery. This step adds the journeys that need the

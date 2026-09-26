@@ -75,6 +75,41 @@ before relying on it for something new, and update this page when it moves.
 - **Free projects** pause after a week of inactivity, and a free account can
   have two active projects. [Pricing](https://supabase.com/pricing)
 
+## Supabase: Realtime
+
+Checked on 2026-09-26 against the docs' source in `supabase/supabase` and
+Realtime's own source in `supabase/realtime`.
+
+- **Broadcast from the database** is `realtime.send(payload, event, topic,
+  private)`, which inserts into `realtime.messages`; Realtime streams the
+  inserts to the topic's subscribers. A private message reaches only private
+  channels and a public one only public channels, so the "Allow public access"
+  setting does not affect private messages.
+  [Broadcast](https://supabase.com/docs/guides/realtime/broadcast)
+- **`realtime.send` never raises.** A failed insert becomes a
+  `WarnSendingBroadcastMessage` warning and the caller's transaction carries
+  on. It also adds a message `id` to the payload.
+- **Messages go in daily partitions that only a connecting client creates.**
+  When a client joins a channel, Realtime creates partitions from yesterday to
+  three days ahead, and a janitor moves the window along while clients keep
+  connecting. With no partition for today, `realtime.send` drops the message
+  with that warning; nobody was listening anyway. A database test that counts
+  queued messages needs today's partition.
+  [WarnSendingBroadcastMessage](https://supabase.com/docs/guides/troubleshooting/realtime-warn-sending-broadcast-message)
+- **Private channels are authorized by RLS on `realtime.messages`.** When a
+  client joins, Realtime inserts a probe message on the topic, sets `role`,
+  `request.jwt.claims` and `realtime.topic` as that client, checks whether it
+  can select the probe, and rolls back. A select policy lets clients receive;
+  an insert policy would let them send. The answer holds for the connection
+  until the client sends a new token, so someone who loses access keeps
+  receiving until their token expires.
+  [Realtime Authorization](https://supabase.com/docs/guides/realtime/authorization),
+  [authorization.ex](https://github.com/supabase/realtime/blob/main/lib/realtime/tenants/authorization.ex)
+- **Policies on `realtime.messages` are declared in `supabase/schemas/`**, and
+  pg-delta generates them. The table's RLS is already on:
+  `alter table realtime.messages enable row level security` fails with
+  `must be owner of table messages` and aborts the migration.
+
 ## Supabase: search and embeddings
 
 - **Hybrid search** runs full-text and pgvector searches separately and fuses
@@ -129,6 +164,17 @@ before relying on it for something new, and update this page when it moves.
   [Getting started](https://supabase.com/docs/guides/auth/oauth-server/getting-started),
   [MCP authentication](https://supabase.com/docs/guides/auth/oauth-server/mcp-authentication),
   [BYO MCP](https://supabase.com/docs/guides/ai-tools/byo-mcp)
+- **UI Library blocks** install with the shadcn CLI from the `@supabase`
+  registry (`components.json` maps it to `https://supabase.com/ui/r/{name}.json`).
+  Checked 2026-09-26 with shadcn 4.21.0 on this repo: the CLI wrote
+  `import { cn } from "cn"` in new primitives and added a `cn` npm package,
+  and it replaced the pinned `@supabase/supabase-js` with a `^latest` range.
+  Fix the imports to `@/lib/utils`, and restore `package.json` and `bun.lock`.
+  It also writes an `.env.local` with empty `VITE_SUPABASE_*` entries.
+  [Supabase UI Library](https://supabase.com/ui)
+- **Redirect URLs** in `additional_redirect_urls` are matched as globs, so
+  `https://elaborat.ing/**` allows any path on the site.
+  [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)
 
 ## Cloudflare
 
