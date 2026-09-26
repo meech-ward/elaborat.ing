@@ -124,6 +124,11 @@ export interface ProjectRemote {
   acceptInvitation(projectId: string): Promise<RemoteProject>
   /** Leave a project shared with the caller, or decline an invitation. Owners cannot leave. */
   leaveProject(projectId: string): Promise<void>
+  /** Archive a project, so it refuses changes (55000) until unarchived. Owners and editors, agents included. */
+  archiveProject(projectId: string): Promise<RemoteProject>
+  unarchiveProject(projectId: string): Promise<RemoteProject>
+  /** Permanently delete a project and everything in it. Only its owner, and never with an agent's token. */
+  deleteProject(projectId: string): Promise<void>
 }
 
 type Page = PromiseLike<{ data: unknown[] | null; error: PostgrestLikeError | null }>
@@ -176,6 +181,18 @@ export class SupabaseProjectRemote implements ProjectRemote {
 
   async leaveProject(projectId: string) {
     z.object({ project_id: z.uuid(), left: z.literal(true) }).parse(await this.rpc("leave_project", { project_id: projectId }))
+  }
+
+  async archiveProject(projectId: string) {
+    return RemoteProject.parse(await this.rpc("archive_project", { project_id: projectId }))
+  }
+
+  async unarchiveProject(projectId: string) {
+    return RemoteProject.parse(await this.rpc("unarchive_project", { project_id: projectId }))
+  }
+
+  async deleteProject(projectId: string) {
+    z.object({ id: z.uuid(), deleted: z.literal(true) }).parse(await this.rpc("delete_project", { project_id: projectId }))
   }
 
   /**

@@ -209,6 +209,121 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   expect(fake.requests.some((request) => request.url().endsWith("/rpc/leave_project"))).toBe(false)
 })
 
+/** The items in a project's menu on the projects home. */
+async function menuItems(page: Page, title: string) {
+  await page.getByRole("button", { name: `Actions for ${title}` }).click()
+  const menu = page.getByRole("menu")
+  await expect(menu).toBeVisible()
+  const items = await menu.getByRole("menuitem").allTextContents()
+  await page.keyboard.press("Escape")
+  await expect(menu).toBeHidden()
+  return items
+}
+
+async function pick(page: Page, title: string, item: string) {
+  await page.getByRole("button", { name: `Actions for ${title}` }).click()
+  await page.getByRole("menuitem", { name: item }).click()
+}
+
+test("an archived project moves to its own section and refuses edits until it is unarchived", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await serverProject(server, "Notes", { "a.md": "# Notes" })
+  await serverProject(server, "Other", {})
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  await home(page)
+  const archived = page.getByRole("region", { name: "Archived" })
+  await expect(archived).toHaveCount(0)
+
+  await pick(page, "Notes", "Archive")
+  await expect(page.getByText("Archived Notes. It refuses changes until it is unarchived.")).toBeVisible()
+  await expect(archived.getByRole("link", { name: "Notes" })).toBeVisible()
+  // The other project stays above, outside the section.
+  await expect(archived.getByRole("link", { name: "Other" })).toHaveCount(0)
+  await expect(page.getByRole("link", { name: "Other" })).toBeVisible()
+  expect(server.projects.get(id)!.archivedAt).not.toBeNull()
+
+  // Its files still open, but an edit is not saved.
+  await page.goto(projectUrl(id, "a.md"))
+  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
+  const editor = page.locator(".monaco-editor:visible .view-lines").first()
+  await editor.click()
+  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.type(" edited")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(page.getByText("Save failed: This project is archived. Unarchive it to make changes.")).toBeVisible()
+  expect(server.content(id, "a.md")).toBe("# Notes")
+
+  // Unarchived, it is back with the others, and the edit saves and reaches the server.
+  await page.getByRole("link", { name: "Your projects" }).click()
+  await pick(page, "Notes", "Unarchive")
+  await expect(page.getByText("Unarchived Notes.")).toBeVisible()
+  await expect(archived).toHaveCount(0)
+  await page.getByRole("link", { name: "Notes" }).click()
+  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
+  await editor.click()
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => server.content(id, "a.md")).toBe("# Notes edited")
+})
+
+test("deleting a project permanently needs its title typed, and removes it from the server and this device", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await serverProject(server, "Notes", { "a.md": "# Notes" })
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  await page.goto(projectUrl(id, "a.md"))
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  // Saved on this device while offline, so the server does not have it.
+  fake.offline = true
+  await page.locator(".monaco-editor:visible .view-lines").first().click()
+  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.type(" and more")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await page.getByRole("link", { name: "Your projects" }).click()
+  await expect(page.getByRole("listitem").filter({ hasText: "Notes" })).toContainText("Saved on this device, waiting to sync")
+
+  await pick(page, "Notes", "Delete permanently")
+  const dialog = page.getByRole("dialog", { name: "Delete Notes permanently" })
+  await expect(dialog).toContainText("It cannot be undone. Agents cannot do this; they can only archive a project.")
+  await expect(dialog).toContainText("1 file on this device has changes that have not synced. They are deleted too.")
+  const confirm = dialog.getByRole("button", { name: "Delete permanently" })
+  await expect(confirm).toBeDisabled()
+  await dialog.getByLabel("Type Notes to confirm").fill("notes")
+  await expect(confirm).toBeDisabled()
+  const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
+  expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
+  await dialog.getByLabel("Type Notes to confirm").fill("Notes")
+  await confirm.click()
+  await expect(dialog.getByRole("alert")).toHaveText("Deleting a project needs a connection. Try again when you are online.")
+  expect(server.projects.has(id)).toBe(true)
+
+  fake.offline = false
+  await confirm.click()
+  await expect(page.getByText("Deleted Notes permanently.")).toBeVisible()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole("link", { name: "Notes" })).toHaveCount(0)
+  expect(server.projects.has(id)).toBe(false)
+  // Nothing of it is left here: a copy on this device would still be listed.
+  await page.reload()
+  await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
+  await expect(page.getByText("No projects yet.")).toBeVisible()
+})
+
+test("a project's menu depends on the role: a viewer can only leave", async ({ page }) => {
+  const server = new FakeProjectServer()
+  await serverProject(server, "Mine", {})
+  await sharedWithMe(server, "Edited", {}, true)
+  const viewed = await sharedWithMe(server, "Viewed", {}, true)
+  server.share(viewed, person.id, "viewer")
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  await home(page)
+  expect(await menuItems(page, "Mine")).toEqual(["Archive", "Delete permanently"])
+  expect(await menuItems(page, "Edited")).toEqual(["Archive", "Leave project"])
+  expect(await menuItems(page, "Viewed")).toEqual(["Leave project"])
+})
+
 test("the projects home does not download the editor", async ({ page }) => {
   // The editor (Monaco, Excalidraw, the note frame) loads only for a project.
   await fakeSupabase(page)

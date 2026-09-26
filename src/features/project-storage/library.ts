@@ -1,5 +1,5 @@
 import type { ProjectDatabase } from "./database"
-import { isDirty, type LocalProject } from "./model"
+import { isDirty, type LocalFile, type LocalProject } from "./model"
 import { RemoteError, type ProjectRemote, type RemoteInvitation, type RemoteProject } from "./remote"
 import { ProjectSync, type SyncOutcome } from "./sync"
 
@@ -41,6 +41,9 @@ export type LibraryState = {
   offline: boolean
   loaded: boolean
 }
+
+/** Files with changes the server does not have: saved but not synced, unsaved edits, or a conflict. */
+const waiting = (files: LocalFile[]) => files.filter((file) => isDirty(file) || file.draft !== null || file.conflict !== null)
 
 /** A remote for a device with no connection to the server: every call is "offline". */
 export const offlineRemote: ProjectRemote = new Proxy({} as ProjectRemote, {
@@ -179,10 +182,10 @@ export class ProjectLibrary {
   async leaveProblem(projectId: string): Promise<string | null> {
     const [project, files] = await this.db.transaction(this.partition, "readonly", async (tx) => [await tx.getProject(projectId), await tx.listFiles(projectId)] as const)
     if (!project) return null
-    const waiting = files.filter((file) => isDirty(file) || file.draft !== null || file.conflict !== null).map((file) => file.path)
-    if (waiting.length === 0 && project.pendingTitle === null) return null
+    const paths = waiting(files).map((file) => file.path)
+    if (paths.length === 0 && project.pendingTitle === null) return null
     const title = project.pendingTitle ?? project.title
-    const what = waiting.length > 0 ? waiting.join(", ") : "its new title"
+    const what = paths.length > 0 ? paths.join(", ") : "its new title"
     return `Not left: ${title} has changes on this device that have not synced (${what}). Sync them first, so nothing is lost.`
   }
 
@@ -199,6 +202,57 @@ export class ProjectLibrary {
     } catch (error) {
       if (error instanceof RemoteError && error.kind === "network") throw new Error("Leaving a project needs a connection. Try again when you are online.")
       throw error
+    }
+    this.catalog = this.catalog.filter((entry) => entry.id !== projectId)
+    await this.sync.forget(projectId)
+    await this.load()
+  }
+
+  /** Archive a project: it stays readable, and refuses changes until it is unarchived. */
+  async archive(projectId: string): Promise<void> {
+    await this.setArchived(projectId, true)
+  }
+
+  /** Unarchive a project, so it takes changes again. */
+  async unarchive(projectId: string): Promise<void> {
+    await this.setArchived(projectId, false)
+  }
+
+  private async setArchived(projectId: string, archived: boolean): Promise<void> {
+    let project: RemoteProject
+    try {
+      project = archived ? await this.remote.archiveProject(projectId) : await this.remote.unarchiveProject(projectId)
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") {
+        throw new Error(`${archived ? "Archiving" : "Unarchiving"} a project needs a connection. Try again when you are online.`)
+      }
+      throw error
+    }
+    this.catalog = [...this.catalog.filter((entry) => entry.id !== project.id), project]
+    await this.sync.adopt(project)
+    await this.load()
+  }
+
+  /** How many of the project's files on this device have changes the server does not have. */
+  async unsyncedFiles(projectId: string): Promise<number> {
+    return waiting(await this.db.transaction(this.partition, "readonly", (tx) => tx.listFiles(projectId))).length
+  }
+
+  /**
+   * Permanently delete a project this account owns: from the server, then
+   * from this device, changes not yet synced included. The server refuses
+   * anyone but the owner, and agents. A project that never reached the
+   * server is only removed from this device.
+   */
+  async deletePermanently(projectId: string): Promise<void> {
+    const local = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(projectId))
+    if (local?.created !== false || this.catalog.some((entry) => entry.id === projectId)) {
+      try {
+        await this.remote.deleteProject(projectId)
+      } catch (error) {
+        if (error instanceof RemoteError && error.kind === "network") throw new Error("Deleting a project needs a connection. Try again when you are online.")
+        throw error
+      }
     }
     this.catalog = this.catalog.filter((entry) => entry.id !== projectId)
     await this.sync.forget(projectId)

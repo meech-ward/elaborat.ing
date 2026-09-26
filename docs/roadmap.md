@@ -87,7 +87,10 @@ this repository once the steps before them have landed.
    `/projects/<id>/<file path>`; projects download on first open, sync in the
    background and on Realtime change signals, and wait on the device while
    offline. Guarding navigation away from unsaved edits comes with the editor
-   (step 10).
+   (step 10). On the projects home, owners and editors archive and unarchive
+   a project, and archived projects are listed in their own section and refuse
+   changes. The owner can delete a project permanently after typing its title,
+   which removes it from the server and from the device.
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both), and
     leaving a project or signing out keeps unsaved edits first. Drawings and

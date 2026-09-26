@@ -74,6 +74,9 @@ export class FakeProjectServer {
       listInvitations: () => call("listInvitations", [], () => this.pendingFor(user)),
       acceptInvitation: (projectId) => call("acceptInvitation", [projectId], () => this.accept(user, projectId)),
       leaveProject: (projectId) => call("leaveProject", [projectId], () => this.leave(user, projectId)),
+      archiveProject: (projectId) => call("archiveProject", [projectId], () => this.setArchived(user, projectId, true)),
+      unarchiveProject: (projectId) => call("unarchiveProject", [projectId], () => this.setArchived(user, projectId, false)),
+      deleteProject: (projectId) => call("deleteProject", [projectId], () => this.remove(user, projectId)),
     }
   }
 
@@ -123,6 +126,23 @@ export class FakeProjectServer {
     const project = this.projects.get(projectId)
     if (!project || !project.members.delete(user)) throw new RemoteError("access", "You are not a member of this project")
     project.revision++
+  }
+
+  /** Owners and editors archive and unarchive, whether or not the project is archived already (42501 for anyone else). */
+  private setArchived(user: string, projectId: string, archived: boolean): RemoteProject {
+    const project = this.editable(user, projectId)
+    if ((project.archivedAt !== null) !== archived) {
+      project.archivedAt = archived ? new Date().toISOString() : null
+      project.revision++
+    }
+    return this.summary(project, user)
+  }
+
+  /** Only the owner deletes, and the project goes with everything in it (42501 for anyone else). */
+  private remove(user: string, projectId: string): void {
+    const project = this.projects.get(projectId)
+    if (!project || project.owner !== user) throw new RemoteError("access", "Only the project owner can permanently delete it")
+    this.projects.delete(projectId)
   }
 
   private summary(project: ServerProject, user: string): RemoteProject {

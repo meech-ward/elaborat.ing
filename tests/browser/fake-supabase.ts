@@ -147,6 +147,9 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "list_invitations") return answer(route, () => remote.listInvitations())
       if (rpc === "accept_invitation") return answer(route, () => remote.acceptInvitation(body.project_id))
       if (rpc === "leave_project") return answer(route, async () => (await remote.leaveProject(body.project_id), { project_id: body.project_id, left: true }))
+      if (rpc === "archive_project") return answer(route, () => remote.archiveProject(body.project_id))
+      if (rpc === "unarchive_project") return answer(route, () => remote.unarchiveProject(body.project_id))
+      if (rpc === "delete_project") return answer(route, async () => (await remote.deleteProject(body.project_id), { id: body.project_id, deleted: true }))
     }
 
     // Table reads (everything fits in the first page here)
