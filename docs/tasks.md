@@ -663,3 +663,63 @@ either. Until someone accepts, the project is invisible to them: it is not in
   `tests/browser/fake-supabase.ts` routes the three RPCs.
 
 **Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T24: delete a file or a folder
+
+**Status:** Ready
+
+The app can create, rename and move files and folders, but not delete them.
+The storage port already deletes (`ProjectFileStore` in
+`src/features/project-storage/fileStore.ts`, a `delete` change with the
+expected revision), and `save_files` takes `delete` for files and `rmdir` for
+folder entries, all in one atomic batch.
+
+- The explorer's file and folder menus get Delete, with a confirmation that
+  names what goes. A folder deletes every file and folder under it in one save.
+  More changes than one `save_files` call accepts (4096) are refused with a
+  message, rather than split.
+- A D2 diagram's `.excalidraw` and `.d2.json` companions go with its `.d2`, as
+  they do in a move (`src/features/workbench/movePlan.ts`).
+- If other files reference what is being deleted (a note embedding a drawing,
+  a link), the confirmation lists them. The person can still delete; the
+  references are left as they are.
+- A file with unsaved edits or a sync conflict can't be deleted until that is
+  settled, with the same messages a move gives. Open tabs of deleted files
+  close.
+- Unit tests for the plan (companions, folder contents, references listed,
+  blockers). Browser journeys: delete a note, and the server loses it in one
+  `save_files` request; delete a folder holding a diagram, and all three D2
+  files and the folder go in one request; cancelling the confirmation sends
+  nothing; a file with unsaved edits is refused.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
+
+## T25: archive, unarchive and permanently delete a project
+
+**Status:** Ready
+
+The database archives and unarchives projects for any editor, agents included,
+and permanently deletes them for the owner only, and only in a person's own
+session, never with an agent's token (`archive_project`, `unarchive_project`
+and `delete_project` in `supabase/schemas/project_functions.sql`). The
+projects home can do none of these, although it already knows which projects
+are archived (`archived` in `src/features/project-storage/library.ts`).
+
+- Add the three calls to the remote port (`remote.ts`) and the in-memory
+  server (`fakeServer.ts`), following the database's rules: editors archive
+  and unarchive, only the owner deletes, and an archived project refuses saves
+  (`55000`, which the app already reports as "Archived").
+- The projects home lists archived projects in their own section below the
+  others. Each project's menu offers Archive or Unarchive to owners and
+  editors, and Delete permanently to the owner.
+- Delete permanently asks the person to type the project's title, and says
+  that it cannot be undone and that agents cannot do it. It removes the
+  project from the server and from this device, unsynced changes included, and
+  the confirmation says how many files have changes not yet synced.
+- Unit tests for the in-memory server's rules. Browser journeys: archive a
+  project, and it moves to the archived section and refuses an edit;
+  unarchive it; delete it permanently after typing the title, and it is gone
+  from the list and, after a reload, from the device; a viewer's menu offers
+  none of the three.
+
+**Done when** the tests pass in Chromium and Firefox, and CI passes.
