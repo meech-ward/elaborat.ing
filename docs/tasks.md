@@ -63,7 +63,7 @@ says where to find them.
 
 ## T3: extract searchable passages from notes and diagrams
 
-**Status:** Ready
+**Status:** Done (#4)
 
 Hybrid search embeds passages with a model that reads at most 512 tokens of
 English (see [architecture: Search](architecture.md#search)). Build a pure
@@ -133,7 +133,7 @@ non-trivial logic (such as the return-after-sign-in redirect).
 
 ## T5: fail pull requests whose migrations are out of date
 
-**Status:** Ready
+**Status:** Done (#5)
 
 Add a job to `.github/workflows/ci.yml` that installs Supabase CLI 2.118.0
 with the official `supabase/setup-cli` action, runs
@@ -146,7 +146,7 @@ failing on a throwaway commit that changes a schema file without a migration.
 
 ## T6: test the MCP server's tools and check Edge Functions in CI
 
-**Status:** Ready
+**Status:** Done (#6)
 
 The MCP server (`supabase/functions/mcp-server/`) runs on Deno in Supabase Edge
 Functions. Its project tools live in `tools/projects.ts` and call the database
