@@ -117,8 +117,10 @@ this repository once the steps before them have landed.
     Notes show pictures of the drawings and diagrams they embed, with a zoomable
     viewer. New diagrams come from the workbench menu. Canvas label renames are
     covered by unit tests, not yet by a browser journey.
-15. **The app restarts offline (open for contributors)**, using
-    vite-plugin-pwa.
+15. **The app restarts offline (done)**, using vite-plugin-pwa. Once a
+    project has opened on a device, the app, its projects and unsaved edits
+    come back with no network, and a new version waits until the person
+    chooses "Update ready".
 16. **Projects exported from the prototype import into elaborat.ing (open for
     contributors).**
 

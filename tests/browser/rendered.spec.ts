@@ -7,6 +7,11 @@ import { HARNESS_URL } from "./urls.ts"
 // the sandboxed frame, and typing in the frame changes exactly the source
 // text it shows.
 
+// Playwright's service worker blocking (playwright.config.ts) runs a script in
+// every frame, which throws inside the sandboxed preview frame. The harness
+// registers no worker, so these tests leave workers allowed.
+test.use({ serviceWorkers: "allow" })
+
 const RENDERED = new URL("rendered.html", HARNESS_URL).href
 const frameOf = (page: Page) => page.frameLocator('iframe[title="Isolated document preview"]')
 const source = (page: Page) => page.evaluate(() => window.renderedHarness.source())
