@@ -89,6 +89,10 @@ function checkFree(folders: ReadonlySet<string>, live: ReadonlyMap<string, strin
 export class ProjectFileStore {
   private listeners = new Set<() => void>()
   private draftQueue: Promise<void> = Promise.resolve()
+  /** Drafts waiting for the next write, by path (the latest text wins). */
+  private queuedDrafts = new Map<string, { path: string; content: string; baseRevision: string | null }>()
+  /** The write that will take `queuedDrafts`, until it starts. */
+  private nextDraftWrite: Promise<void> | null = null
   private draftFailure: unknown = null
 
   constructor(
@@ -346,20 +350,33 @@ export class ProjectFileStore {
   }
 
   /**
-   * Keep unsaved edits on this device. Queued, so drafts are written in the
-   * order they were made; a draft equal to the saved copy is removed.
+   * Keep unsaved edits on this device; a draft equal to the saved copy is
+   * removed. Writes are queued, one at a time. While one is waiting, newer
+   * edits to the same file replace its queued text, so fast typing never
+   * builds a backlog: at most one write waits behind the one in progress,
+   * and it carries the latest text of every file. The promise settles once
+   * this call's text (or a newer one) is written.
    */
   persistDrafts(entries: Array<{ path: string; content: string; baseRevision: string | null }>): Promise<void> {
-    const pending = this.draftQueue.then(() => this.writeDrafts(entries))
-    this.draftQueue = pending.then(
-      () => {
-        this.draftFailure = null
-      },
-      (error: unknown) => {
-        this.draftFailure = error
-      },
-    )
-    return pending
+    for (const entry of entries) this.queuedDrafts.set(entry.path, entry)
+    if (!this.nextDraftWrite) {
+      const write = this.draftQueue.then(() => {
+        this.nextDraftWrite = null
+        const batch = [...this.queuedDrafts.values()]
+        this.queuedDrafts.clear()
+        return this.writeDrafts(batch)
+      })
+      this.nextDraftWrite = write
+      this.draftQueue = write.then(
+        () => {
+          this.draftFailure = null
+        },
+        (error: unknown) => {
+          this.draftFailure = error
+        },
+      )
+    }
+    return this.nextDraftWrite
   }
 
   /** Wait for queued drafts; throws if the last one could not be kept. */

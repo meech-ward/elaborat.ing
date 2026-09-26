@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { MemoryProjectDatabase, type ProjectDatabase } from "./database"
+import { MemoryProjectDatabase, type ProjectDatabase, type StorageTransaction } from "./database"
 import { FileStoreError, LocalConflictError, ProjectFileStore } from "./fileStore"
 import { contentToken } from "./model"
 import { device, FakeProjectServer, put } from "./testing"
@@ -116,6 +116,37 @@ test("several folders are created together, or none is", async () => {
   expect((await store.listEntries()).directories).toEqual([])
   await store.createDirectories(["one", "two/three"])
   expect((await store.listEntries()).directories).toEqual(["one", "two/three"])
+})
+
+/** Counts write transactions, to see how many writes a burst of drafts takes. */
+class CountingDatabase extends MemoryProjectDatabase {
+  writes = 0
+  override transaction<T>(partition: string, mode: "readonly" | "readwrite", work: (tx: StorageTransaction) => Promise<T>): Promise<T> {
+    if (mode === "readwrite") this.writes++
+    return super.transaction(partition, mode, work)
+  }
+}
+
+test("drafts made faster than they are written coalesce, and the latest text is kept", async () => {
+  const db = new CountingDatabase()
+  const a = device(new FakeProjectServer(), undefined, db)
+  const project = await a.sync.createProject("Notes")
+  const store = a.files(project.id)
+  const saved = await store.write("a.md", "saved", null)
+  const before = db.writes
+  // Five keystrokes, each asking for its draft to be kept before the first is written.
+  const kept = ["savedd", "saveddr", "saveddra", "saveddraf", "saveddraft"].map((content) =>
+    store.persistDrafts([{ path: "a.md", content, baseRevision: saved.revision }]),
+  )
+  await Promise.all(kept)
+  expect((await store.read("a.md")).content).toBe("saveddraft")
+  expect(db.writes - before).toBeLessThanOrEqual(2)
+  // Another file's draft made meanwhile is kept too.
+  await Promise.all([
+    store.persistDrafts([{ path: "a.md", content: "saveddrafts", baseRevision: saved.revision }]),
+    store.persistDrafts([{ path: "b.md", content: "other", baseRevision: null }]),
+  ])
+  expect([(await store.read("a.md")).content, (await store.read("b.md")).content]).toEqual(["saveddrafts", "other"])
 })
 
 test("drafts are kept apart from the saved copy until saved or discarded", async () => {

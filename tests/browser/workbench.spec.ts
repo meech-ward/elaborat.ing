@@ -65,7 +65,8 @@ test("unsaved edits survive a reload, and are not sent to the server", async ({ 
   await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
   await page.waitForTimeout(300)
   await page.reload()
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
+  // The reload loads the editor again, as slowly as the first open.
+  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible({ timeout: 15_000 })
   await expect(editorText(page)).toContainText("saveddraft")
   expect(serverContent(fake, id, "a.md")).toBe("saved\n")
 })
