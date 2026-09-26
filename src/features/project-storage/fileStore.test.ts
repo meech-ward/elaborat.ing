@@ -55,6 +55,26 @@ test("moves refuse to lose unsaved edits or overwrite a file", async () => {
   await expect(store.read("a.md")).rejects.toBeInstanceOf(FileStoreError)
 })
 
+test("deleting refuses to lose unsaved edits, and changes nothing", async () => {
+  const { store } = await setup()
+  const a = await store.write("a.md", "a", null)
+  const b = await store.write("b.md", "b", null)
+  await store.persistDrafts([{ path: "a.md", content: "unsaved", baseRevision: a.revision }])
+  await expect(
+    store.save([
+      { kind: "delete", path: "b.md", expectedRevision: b.revision },
+      { kind: "delete", path: "a.md", expectedRevision: a.revision },
+    ]),
+  ).rejects.toThrow(new FileStoreError("Save or discard the unsaved edits in a.md before deleting it."))
+  // Both files are still there, and so is the draft.
+  expect(await store.read("a.md")).toMatchObject({ savedContent: "a", content: "unsaved", draft: true })
+  expect((await store.read("b.md")).content).toBe("b")
+
+  await store.discardDraft("a.md")
+  await store.delete("a.md", a.revision)
+  await expect(store.read("a.md")).rejects.toBeInstanceOf(FileStoreError)
+})
+
 test("deleting a file never synced forgets it; deleting a synced file keeps the deletion to send", async () => {
   const server = new FakeProjectServer()
   const a = device(server)

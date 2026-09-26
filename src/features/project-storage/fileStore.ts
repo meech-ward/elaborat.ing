@@ -319,6 +319,7 @@ export class ProjectFileStore {
           live.set(change.to, source.localId)
         } else {
           if (!source || source.content === null) throw new FileStoreError(`${change.path} is not in this project.`)
+          if (source.draft) throw new FileStoreError(`Save or discard the unsaved edits in ${change.path} before deleting it.`)
           if (source.base === null && !inFlight.has(source.localId)) {
             // Never synced and not being sent: nothing to tell the server.
             await tx.deleteFile(this.projectId, source.path)
