@@ -190,7 +190,13 @@ clients that Auth refuses account changes from OAuth client tokens.
 learn that a project changed from a private Broadcast channel per project,
 authorized by RLS on `realtime.messages`, which is Supabase's recommended
 approach. Postgres Changes is not used: it delivers DELETE events to every
-subscriber regardless of RLS. This is built with the client sync in phase 2.
+subscriber regardless of RLS. When a project's revision goes up, a trigger
+sends `{ "revision": n }` as the event `changed` on `project:<id>`. Anyone who
+can read the project may receive it, and no client may send. The signal
+carries nothing else because Realtime checks access only when a client joins
+or sends a new token, so someone removed from a project keeps receiving until
+their token expires. Devices then fetch the changes through reads that check
+access every time.
 
 ## Search
 
