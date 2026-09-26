@@ -36,6 +36,8 @@ jobs:
       # The app built against a stand-in Supabase URL the tests answer themselves.
       - run: bun run build:browser-test
       - run: bun run build:harness
+      # The app's next version, for the update journey in offline.spec.ts.
+      - run: bun run build:next-version
       - run: npx playwright install --with-deps chromium firefox
       - run: npx playwright test
       - uses: actions/upload-artifact@v4

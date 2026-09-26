@@ -413,6 +413,48 @@ startup, so drawings work offline and no font request leaves the site. The
 font-subset worker is built as its own worker graph; bundled as app code it
 imports the DOM entry and fails.
 
+## Offline start
+
+**Decision: once a project has opened on a device, the app starts again with
+no network**: a reload, a new tab or a browser restart. A service worker from
+[vite-plugin-pwa](https://vite-pwa-org.netlify.app/), using Workbox's
+generated worker (`generateSW`), configured in `vite.config.ts`:
+
+- **It precaches every file the build writes** except Cloudflare's `_headers`:
+  every chunk including lazy ones, styles, workers, fonts (Excalidraw's too),
+  the preview frame (inlined in a chunk), `.wasm` files and the license texts.
+  That is about 30 MB. The largest chunks are over Workbox's 2 MiB default, so
+  `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
+  fails if any shipped file is missing from the precache list. Navigations fall
+  back to the cached `index.html`.
+- **No runtime caching.** Requests to Supabase, or to any other origin, never
+  pass through a cache, so no credentialed response is stored.
+- **Updates wait for the person** (`registerType: "prompt"`). A new version
+  installs in the background and `src/features/updates/UpdateReady.tsx` shows
+  "Update ready". The tab where it is chosen reloads into the new version;
+  other tabs keep running until it is chosen there too, so the app never
+  reloads by itself. Workbox removes the old version's files from the cache
+  only once the new worker activates. The first version takes over the page
+  that installed it (`clientsClaim`), so lazy chunks come from the cache if the
+  connection drops later in that visit.
+- `public/_headers` serves `/sw.js` and `/manifest.webmanifest` with
+  `Cache-Control: no-cache`.
+
+**Decision: Babel stays on 7.** Workbox bundles its generated worker with
+`@rollup/plugin-babel`, which works only with Babel 7. The React Compiler's
+Babel plugin is built on Babel 7 too: under Babel 8 it skipped every component
+with a default in its destructured props, silently.
+
+Browser tests block service workers (`playwright.config.ts`) except in
+`offline.spec.ts`, because `page.route` does not see requests a worker answers
+and each test would otherwise download the whole app. The harness's rendered
+specs allow them: Playwright's blocking script throws inside the sandboxed
+preview frame, and the harness registers no worker.
+
+**Not yet:** icons in the web manifest (browsers will not offer to install the
+app without them), and update checks while a page stays open (a new version is
+found when a page loads).
+
 ## Manual steps
 
 Settings with no file-based home yet. Each is a one-time step, to be written up
