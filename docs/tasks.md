@@ -379,7 +379,7 @@ worker, and record the decision in `docs/architecture.md`.
 
 ## T13: projects exported from the prototype import into elaborat.ing
 
-**Status:** Ready
+**Status:** Done (#13)
 
 The prototype that elaborat.ing grew from exports a project as one JSON file:
 
@@ -423,7 +423,7 @@ and 4096 directories, no duplicate paths, no file used as a directory, at most
 
 ## T14: Ctrl+S saves the file whose editor has focus
 
-**Status:** Ready
+**Status:** Done (#14)
 
 `src/features/source/SourceEditor.tsx` binds Ctrl+S (and Ctrl+Shift+L) with
 Monaco's `editor.addCommand`. In standalone Monaco those keybindings are
@@ -443,7 +443,7 @@ to `a.md`, type, and press Ctrl+S. `a.md` stays unsaved.
 
 ## T15: the first visit downloads less for offline use
 
-**Status:** Ready
+**Status:** Done (#15)
 
 Since T12 the service worker precaches every file the build ships, about
 50 MB, on a device's first visit. Two large parts are rarely needed:
