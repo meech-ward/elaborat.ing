@@ -311,6 +311,20 @@ never run with the app's privileges.
 and the app accepts only a fixed set of validated messages from it. The frame
 never receives tokens or files, only compiled code and rendered images.
 
+**Decision: until then, the frame is a `srcdoc` document built into the app.**
+`src/preview/preview-entry.tsx` is built by Vite as one script
+(`vite-plugins/preview-frame.ts`), so its npm packages are listed in the site's
+license notices, and inlined with the frame's styles and fonts into the
+`srcdoc`. The iframe has `sandbox="allow-scripts"` only (an opaque origin), and
+the frame document carries its own Content Security Policy
+(`PREVIEW_CHILD_CSP`): no network, inline script and style only, fonts from
+`data:` URLs. MDX's `run()` evaluates compiled code with `new Function`, so the
+frame's policy allows `'unsafe-eval'`. A `srcdoc` document also inherits the
+parent page's CSP, so any CSP added to `public/_headers` must allow the frame's
+inline script, `'unsafe-eval'` and `data:` fonts, or the frame goes blank.
+Messages use `postMessage` with target `*` and are checked by `event.source`;
+the sandbox domain replaces this with pinned origins.
+
 **Decision:** before components are offered publicly, the frame is served from
 a separate registrable domain (a "sandbox domain", Google's documented pattern
 for untrusted content, like `googleusercontent.com`). Chrome's Site Isolation

@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
 import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
+import { previewFrame } from "./vite-plugins/preview-frame.ts"
 import { thirdPartyNotices } from "./vite-plugins/third-party-notices.ts"
 
 // The TanStack Router plugin must come before react().
@@ -21,6 +22,8 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
+    // Before thirdPartyNotices, so the frame's licenses are merged first.
+    previewFrame(),
     thirdPartyNotices(),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },

@@ -62,7 +62,9 @@ this repository once the steps before them have landed.
    delete and undo, editing a text by its id, image pixels, PNG and SVG
    export) on the synthetic demo scene. Task T9 adds step 2's drawing.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
-   build**, so the license notices cover the frame's code too.
+   build**, so the license notices cover the frame's code too. The frame build,
+   the rendered editor and first journeys (typing, components, errors) are in;
+   the rest of the prototype's rendered-editing journeys follow.
 5. **Projects are stored per file on the device, behind one storage
    interface (done)**: IndexedDB keeps each file's draft, saved copy and
    server copy, plus the one batch in flight. Code in
