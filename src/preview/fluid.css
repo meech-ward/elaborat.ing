@@ -1,0 +1,48 @@
+.ProseMirror {
+  min-height: 5em;
+  outline: none;
+}
+.ProseMirror p:empty::before {
+  content: "Write something…";
+  color: var(--muted);
+  pointer-events: none;
+}
+.ProseMirror [data-fluid-object] {
+  white-space: normal;
+}
+.ProseMirror > [data-fluid-object] > figure[data-resource] {
+  margin-inline: 0;
+}
+:root[data-wide-media="true"]
+  .reading-document
+  > [data-fluid-object]:has(
+    > figure[data-resource],
+    > img,
+    > p > img:only-child
+  ) {
+  grid-column: 1 / -1;
+}
+:root[data-wide-tables="true"]
+  .reading-document
+  > [data-fluid-object]:has(> .reading-table) {
+  grid-column: 1 / -1;
+}
+/* Source-backed custom component controls use semantic inputs inside the sandbox. */
+.custom-component-controls label { flex-wrap: wrap; max-width: 100%; }
+.custom-component-controls input:not([type=checkbox]), .custom-component-controls select { min-height: 40px; min-width: 0; max-width: 100%; }
+.custom-component-controls input[type=checkbox] { width: 20px; height: 20px; }
+.custom-component-controls legend { font-size: .85em; color: var(--muted); }
+/* List items require a paragraph wrapper; collapse only its outer
+   edges. Internal multi-paragraph gaps and root paragraph spacing stay. */
+.ProseMirror li > p:only-child,
+.reading-document li > p:only-child {
+  margin-block: 0;
+}
+.ProseMirror li > p:first-child,
+.reading-document li > p:first-child {
+  margin-block-start: 0;
+}
+.ProseMirror li > p:last-child,
+.reading-document li > p:last-child {
+  margin-block-end: 0;
+}

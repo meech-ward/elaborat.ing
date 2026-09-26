@@ -1,0 +1,99 @@
+/* A canvas dialog, deliberately independent of command-palette sizing. */
+.rv-dialog[data-slot="dialog-content"] {
+  inset: 12px;
+  width: calc(100dvw - 24px);
+  height: calc(100dvh - 24px);
+  max-width: none;
+  max-height: none;
+  transform: none;
+  translate: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 80px #0003;
+}
+.rv-header {
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 8px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.rv-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+.rv-controls {
+  position: absolute;
+  z-index: 2;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 2px 12px #0001;
+}
+.rv-control { min-width: 40px; height: 40px; flex-shrink: 0; }
+.rv-scale { min-width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rv-divider { height: 20px; width: 1px; margin: 0 4px; background: var(--line); }
+.rv-viewport {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  overscroll-behavior: contain;
+  cursor: grab;
+  background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.rv-viewport:active { cursor: grabbing; }
+.rv-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.rv-image {
+  position: absolute;
+  width: calc(100% - 32px);
+  height: calc(100% - 32px);
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.rv-hint {
+  position: absolute;
+  bottom: 28px;
+  right: 24px;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+}
+@media (max-width: 640px) {
+  .rv-dialog[data-slot="dialog-content"] { inset: 0; width: 100dvw; height: 100dvh; border: 0; border-radius: 0; }
+  .rv-header { padding-top: env(safe-area-inset-top); flex-basis: calc(52px + env(safe-area-inset-top)); padding-left: 12px; }
+  .rv-controls { left: 50%; transform: translateX(-50%); }
+}
+@media (max-width: 800px) { .rv-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .rv-dialog[data-slot="dialog-content"] { animation: none; transition: none; } }

@@ -40,3 +40,5 @@ Every build lists the licenses of the third-party code it ships in
 `third-party-notices.txt`, which the app serves at `/third-party-notices.txt`.
 That covers the npm packages in the bundle and code adapted from other
 projects, whose license stays in a `/*! ... */` comment in the adapted file.
+Font licenses are served at `/font-licenses/`, indexed in
+[NATIVE-FONTS.md](public/font-licenses/NATIVE-FONTS.md).

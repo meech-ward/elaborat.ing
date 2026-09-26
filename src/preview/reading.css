@@ -1,0 +1,70 @@
+:root {
+  --reading-width: 760px;
+  --reading-font-size: 14px;
+  --reading-mobile-font-size: 13px;
+  --reading-scale: 1;
+  --reading-mobile-scale: 1;
+}
+body {
+  font-size: var(--reading-font-size);
+}
+#root {
+  max-width: none;
+}
+.reading-document {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      min(var(--reading-width), 100%)
+    ) minmax(0, 1fr);
+}
+.reading-document > * {
+  grid-column: 2;
+  min-width: 0;
+}
+.reading-document h1 {
+  font-size: calc(38px * var(--reading-scale));
+}
+.reading-document h2 {
+  font-size: calc(23px * var(--reading-scale));
+}
+.reading-document img {
+  max-width: 100%;
+  height: auto;
+}
+.reading-document > figure[data-resource] {
+  margin-inline: 0;
+}
+.reading-table {
+  max-width: 100%;
+  overflow: auto;
+}
+.reading-table > table {
+  min-width: 100%;
+}
+.reading-document > p {
+  overflow-wrap: anywhere;
+}
+:root[data-wide-media="true"]
+  .reading-document
+  > :is(figure[data-resource], img, p:has(> img:only-child)) {
+  grid-column: 1 / -1;
+}
+:root[data-wide-tables="true"] .reading-document > .reading-table {
+  grid-column: 1 / -1;
+}
+#root > .authoring-insert {
+  max-width: var(--reading-width);
+  margin-inline: auto;
+}
+@media (max-width: 500px) {
+  body {
+    font-size: var(--reading-mobile-font-size);
+  }
+  .reading-document h1 {
+    font-size: calc(29px * var(--reading-mobile-scale));
+  }
+  .reading-document h2 {
+    font-size: calc(20px * var(--reading-mobile-scale));
+  }
+}

@@ -1,0 +1,118 @@
+/* Embedded in the isolated preview. Utilities can override these defaults. */
+@layer components {
+  .document-chart {
+    --chart-1: var(--accent);
+    --chart-2: var(--green);
+    --chart-3: var(--amber);
+    --chart-4: var(--purple);
+    --chart-5: var(--blue);
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    height: 280px;
+    min-height: 200px;
+    margin-block: 1.5rem;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  /* Recharts 3.10 renders tick labels in a separate SVG z-index layer. */
+  .document-chart .recharts-cartesian-axis-tick-value,
+  .document-chart .recharts-polar-angle-axis-tick text,
+  .document-chart .recharts-polar-radius-axis-tick text {
+    fill: var(--muted);
+  }
+  .document-chart .recharts-cartesian-grid line[stroke='#ccc'],
+  .document-chart .recharts-polar-grid [stroke='#ccc'],
+  .document-chart .recharts-reference-line [stroke='#ccc'],
+  .document-chart .recharts-tooltip-cursor {
+    stroke: var(--line);
+  }
+  .document-chart .recharts-rectangle.recharts-tooltip-cursor,
+  .document-chart .recharts-radial-bar-background-sector {
+    fill: var(--raised);
+  }
+  .document-chart .recharts-sector[stroke='#fff'],
+  .document-chart .recharts-dot[stroke='#fff'] {
+    stroke: transparent;
+  }
+  .document-chart .recharts-surface:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .document-chart-description {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .document-chart-tooltip {
+    display: grid;
+    gap: 6px;
+    min-width: 8rem;
+    max-width: min(20rem, calc(100vw - 48px));
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: 0 4px 16px var(--shadow);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .document-chart-tooltip-label { font-weight: 600; }
+  .document-chart-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .document-chart-tooltip-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--muted);
+  }
+  .document-chart-tooltip-value {
+    color: var(--text);
+    font-family: var(--code-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .document-chart-indicator {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--indicator-color, var(--accent));
+  }
+  .document-chart-indicator[data-indicator='line'] {
+    width: 4px;
+    align-self: stretch;
+    height: auto;
+  }
+  .document-chart-indicator[data-indicator='dashed'] {
+    width: 0;
+    align-self: stretch;
+    height: auto;
+    border-left: 2px dashed var(--indicator-color, var(--accent));
+    background: transparent;
+  }
+  .document-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 16px;
+    padding-top: 12px;
+    color: var(--text);
+  }
+  .document-chart-legend[data-align='top'] { padding-top: 0; padding-bottom: 12px; }
+  .document-chart-legend-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .document-chart-legend-item > span:last-child { overflow-wrap: anywhere; }
+  .document-chart-legend-item > svg,
+  .document-chart-tooltip-row > svg { width: 12px; height: 12px; flex-shrink: 0; }
+}

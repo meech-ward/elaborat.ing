@@ -1,0 +1,58 @@
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@font-face {font-family:'Inter Variable';font-style:normal;font-display:swap;font-weight:100 900;src:url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2')}
+@font-face {font-family:'DM Sans Variable';font-style:normal;font-display:swap;font-weight:100 1000;src:url('@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2') format('woff2')}
+
+/* Tokens live above the React root so Base UI portals inherit the same theme.
+   The provider also mirrors these values as root inline variables (single
+   authoritative table in tokens.ts); this stylesheet is the first-paint
+   fallback and owns font-face, color-scheme and selection. */
+:root {
+  --ui-font:'Inter Variable',sans-serif;
+  --heading-font:var(--ui-font);
+  --code-font:'IBM Plex Mono',monospace;
+  --heading-weight:550;
+  --heading-tracking:-1.7px;
+  --bg:#191c22; --chrome:#11141a; --raised:#262b34;
+  --line:#353c49; --text:#e8edf5; --muted:#a5afc0; --accent:#91b7ff;
+  --blue:#8abaf0; --purple:#bcaaf3; --amber:#dac395; --green:#9ecbb3;
+  --source:#bdd2f0; --selection:#355884; --shadow:#0005;
+  color-scheme:dark;
+  font-family:var(--ui-font);
+}
+:root[data-scheme=light] {
+  --bg:#fff; --chrome:#f2f4f7; --raised:#e8edf4;
+  --line:#cbd3df; --text:#202936; --muted:#59677c; --accent:#215fb4;
+  --blue:#336b9e; --purple:#7453a8; --amber:#886319; --green:#317554;
+  --source:#305f93; --selection:#c6defe; --shadow:#26374f24;
+  color-scheme:light;
+}
+:root[data-theme=paper] {
+  --ui-font:'DM Sans Variable',sans-serif;
+  --heading-weight:500; --heading-tracking:-1.4px;
+  --bg:#24251f; --chrome:#1a1c16; --raised:#303329;
+  --line:#44493a; --text:#edeee2; --muted:#b1b8a3; --accent:#c4ce91;
+  --blue:#9bc8b8; --purple:#b7bfa0; --amber:#d3bf8b; --green:#b9cd97;
+  --source:#d4dcb8; --selection:#515d35;
+}
+:root[data-theme=paper][data-scheme=light] {
+  --bg:#faf7ee; --chrome:#eeeade; --raised:#e5e6d8;
+  --line:#d0cebb; --text:#30382b; --muted:#626c58; --accent:#5b7138;
+  --blue:#356e62; --purple:#6e7350; --amber:#866020; --green:#4d7238;
+  --source:#486647; --selection:#d9e4b9;
+}
+:root[data-theme=circuit] {
+  --heading-font:'IBM Plex Mono',monospace;
+  --heading-weight:400; --heading-tracking:-2px;
+  --bg:#101f2a; --chrome:#0b1720; --raised:#1c303e;
+  --line:#304c5d; --text:#e0f1f6; --muted:#a0bac9; --accent:#71dddf;
+  --blue:#7fc5e4; --purple:#a9bbed; --amber:#d2c39c; --green:#8ed8c2;
+  --source:#91d6df; --selection:#28566c;
+}
+:root[data-theme=circuit][data-scheme=light] {
+  --bg:#f0f7fa; --chrome:#dfebf0; --raised:#d3e5ec;
+  --line:#b2ccd7; --text:#173444; --muted:#4e6c7e; --accent:#096e7e;
+  --blue:#286986; --purple:#586daa; --amber:#7d671f; --green:#24745f;
+  --source:#176577; --selection:#b7e5ed;
+}
+::selection {background:var(--selection);color:var(--text)}
