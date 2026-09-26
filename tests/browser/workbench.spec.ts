@@ -101,6 +101,65 @@ test("unsaved edits survive a reload, and are not sent to the server", async ({ 
   expect(serverContent(fake, id, "a.md")).toBe("saved\n")
 })
 
+/** Whether leaving the page now would ask first: the app cancels `beforeunload` while a file has unsaved changes. */
+const warnsOnLeave = (page: Page) =>
+  page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+
+test("undoing back to the saved text clears the unsaved state, and a reload restores no draft", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
+  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  await typeAtEnd(page, "draft")
+  await expect(mark).toBeVisible()
+  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
+  expect(await warnsOnLeave(page)).toBe(true)
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(editorText(page)).not.toContainText("draft")
+  await expect(mark).toHaveCount(0)
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page).not.toHaveTitle(/^•/)
+  expect(await warnsOnLeave(page)).toBe(false)
+
+  // Drafts are kept in the background, as in the journey above.
+  await page.waitForTimeout(300)
+  await page.reload()
+  // The reload loads the editor again, as slowly as the first open.
+  await expect(editorText(page)).toContainText("saved", { timeout: 15_000 })
+  await expect(editorText(page)).not.toContainText("draft")
+  await expect(mark).toHaveCount(0)
+  expect(serverContent(fake, id, "a.md")).toBe("saved\n")
+})
+
+test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved state, and a reload restores no draft", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
+  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const paragraph = frame.locator("p").filter({ hasText: /^First paragraph\./ })
+  await paragraph.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" More.")
+  await expect(paragraph).toHaveText("First paragraph. More.")
+  await expect(mark).toBeVisible()
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(paragraph).toHaveText("First paragraph.")
+  await expect(mark).toHaveCount(0)
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  expect(await warnsOnLeave(page)).toBe(false)
+
+  await page.waitForTimeout(300)
+  await page.reload()
+  // The note opens in the view it was left in.
+  await expect(paragraph).toHaveText("First paragraph.", { timeout: 15_000 })
+  await expect(mark).toHaveCount(0)
+  expect(serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph.\n")
+})
+
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
   await typeAtEnd(page, "draft")

@@ -83,10 +83,12 @@ describe("createDocumentStore", () => {
   it("restoreUnsaved returns dirty: a stashed draft differs from the saved copy", () => {
     const store = createDocumentStore(TEXT, "mdx")
     store.setText("edited")
-    const state = store.restoreUnsaved("edited", "mdx")
+    const state = store.restoreUnsaved("edited", "mdx", TEXT)
     expect(state.dirty).toBe(true)
     expect(state.text).toBe("edited")
     expect(state.docId).toBe(2)
+    // Its later edits compare against the saved copy it was given.
+    expect(store.setText(TEXT).dirty).toBe(false)
   })
 
   it("markSaved clears dirty without moving the revision", () => {
@@ -94,5 +96,51 @@ describe("createDocumentStore", () => {
     store.setText("edited")
     const state = store.markSaved()
     expect(state).toEqual({ text: "edited", revision: 2, format: "mdx", dirty: false, docId: 1 })
+  })
+
+  it("an edit undone back to the saved text is clean", () => {
+    const store = createDocumentStore(TEXT, "mdx")
+    expect(store.setText(`${TEXT}More.\n`).dirty).toBe(true)
+    expect(store.setText(TEXT).dirty).toBe(false)
+  })
+
+  it("edit, save, edit, and undo to the newly saved text is clean", () => {
+    const store = createDocumentStore(TEXT, "mdx")
+    store.setText("first save")
+    store.markSaved()
+    expect(store.setText("first save, then more").dirty).toBe(true)
+    expect(store.setText("first save").dirty).toBe(false)
+    // The older saved copy is no longer the one that counts.
+    expect(store.setText(TEXT).dirty).toBe(true)
+  })
+
+  it("rendered patches that put the saved text back are clean", () => {
+    const store = createDocumentStore(TEXT, "mdx")
+    store.applyPatches(1, [{ from: 2, to: 7, insert: "Heading", expected: "Title" }])
+    const state = store.applyPatches(2, [{ from: 2, to: 9, insert: "Title", expected: "Heading" }])
+    expect(state.text).toBe(TEXT)
+    expect(state.dirty).toBe(false)
+  })
+
+  it("a save that lands after newer edits counts what it wrote as the saved copy", () => {
+    const store = createDocumentStore(TEXT, "mdx")
+    store.setText("written")
+    store.setText("written, and typed during the save")
+    expect(store.markSaved("written").dirty).toBe(true)
+    expect(store.setText("written").dirty).toBe(false)
+  })
+
+  it("a reopened file's edits compare against its new saved copy", () => {
+    const store = createDocumentStore(TEXT, "mdx")
+    store.replaceDocument("# Fresh\n", "md")
+    expect(store.setText(TEXT).dirty).toBe(true)
+    expect(store.setText("# Fresh\n").dirty).toBe(false)
+  })
+
+  it("a note that was never saved stays dirty while it has any text", () => {
+    // A note never saved has no saved copy: it opens from empty text.
+    const store = createDocumentStore("", "md")
+    expect(store.setText("x").dirty).toBe(true)
+    expect(store.setText("").dirty).toBe(false)
   })
 })
