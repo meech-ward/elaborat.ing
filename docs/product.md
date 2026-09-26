@@ -66,6 +66,9 @@ Developer first, friendly for everyone.
   each other: the second save gets a conflict and recovery. Before sharing as
   editor, the app warns that real-time co-editing is not supported.
   Real-time co-editing is a possible future feature, and nothing should block it.
+- **Sharing is an invitation.** Nothing appears in someone's account until
+  they accept, and only they can accept, never their agent. Anyone can leave a
+  project shared with them.
 - **Invites by email**, including people without an account yet.
 - **Comments** on a whole document, a section (heading), a text selection, or a
   drawing element. Comments stay attached as the document changes, and show as

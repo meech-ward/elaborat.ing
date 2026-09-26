@@ -67,6 +67,16 @@ supabase/
 - **Functions are open by default, so revoke first.** Postgres lets everyone
   execute a new function. Every function file revokes `execute` from `public`
   and `anon`, then grants it only to the roles that should call it.
+- **Writes go through functions.** Clients get `select` on tables, filtered by
+  RLS, and nothing else. Every write is a `security definer` function in the
+  `private` schema, which the Data API does not expose, called from a thin
+  `security invoker` wrapper in `public`. This keeps definer functions out of
+  the exposed schema, as Supabase's RLS guide recommends. Signed-in users can
+  still execute everything in `private`, so every private function checks the
+  caller itself and never trusts an argument to say who the caller is.
+- **RLS policies use `project_id in (select private.readable_project_ids())`**,
+  which Postgres evaluates once per query, following Supabase's RLS
+  performance guidance.
 - **RLS on every table.** No table ships without row-level security and a
   policy test.
 - **Generated migrations are never hand-edited.** A few things need a
@@ -119,12 +129,30 @@ folders, has an owner and members, and every save is version-checked.
 `commenter`, `editor`, plus the owner. RLS enforces isolation.
 
 **Decision: one row per file.** Each file has its own row with its current
-content and its own version number. History stores only the files that changed.
-A save is one database call carrying a list of changed files, each with the
-version it was based on, so multi-file changes (a D2 source plus its generated
-canvas and sidecar) stay atomic. Edits to different files never conflict; two
-edits to the same file get conflict recovery. Every save carries an idempotency
-key, so a retried save returns its original result instead of saving twice.
+content. History stores only the files that changed. A save is one database
+call (`save_files`) carrying a list of changes, each with the version it was
+based on, so multi-file changes (a D2 source plus its generated canvas and
+sidecar) stay atomic. Edits to different files never conflict; two edits to the
+same file get conflict recovery. Every save carries an idempotency key, so a
+retried save returns its original result instead of saving twice, even if the
+project was archived in between.
+
+**Decision: a file's version is the project revision at which it last
+changed.** Every successful write raises the project revision by one, and every
+file it touches takes that revision as its version. A revision is never reused,
+so a path and version pair identifies one exact write: an edit based on a file
+that was moved away can never land on a different file that later took its
+path.
+
+**Decision: sharing is an invitation.** Sharing a project with someone creates
+an invitation that grants nothing until they accept it, and only a signed-in
+person can accept, never an agent. Members can leave a project (or decline an
+invitation) themselves.
+
+**Decision: project ids are chosen by the client**, so projects can be created
+offline. If `create_project` answers "Project unavailable", the id already
+belongs to someone else: the client gives its local project a fresh id and
+never saves to the refused one.
 
 (The prototype stored a full snapshot of the whole project as each revision.
 That was simple for one person, but it duplicates everything on every save and
@@ -133,7 +161,16 @@ makes edits to different files conflict. It is not carried forward.)
 **Decision:** agents archive, people delete. Archive and unarchive are available
 to any editor, including agents. Permanent delete is for the project owner
 only, in a normal user session: the database refuses it when the token came
-from an OAuth client (the JWT carries a `client_id` claim).
+from an OAuth client (the JWT carries a `client_id` claim). Changing a password
+requires recent sign-in (`secure_password_change`), so an OAuth client token
+cannot be turned into a normal session that way. Phase 1 confirms on real
+clients that Auth refuses account changes from OAuth client tokens.
+
+**Decision: change signals use Realtime Broadcast from the database.** Clients
+learn that a project changed from a private Broadcast channel per project,
+authorized by RLS on `realtime.messages`, which is Supabase's recommended
+approach. Postgres Changes is not used: it delivers DELETE events to every
+subscriber regardless of RLS. This is built with the client sync in phase 2.
 
 ## Search
 
@@ -297,9 +334,9 @@ run with `bun run test`.
 
 **Decision:** database tests use pgTAP, Supabase's documented approach, in
 `supabase/tests/`. They set the role and JWT claims to act as different users,
-and prove isolation between users and the agent delete rule. They run with
-`supabase test db` against a hosted test project (confirm the remote-target
-flag on the pinned CLI when the first test lands), in CI once the deploy
-workflow exists.
+and prove grants, isolation between users, the save protocol and the agent
+rules. They run against the hosted project inside a transaction that is rolled
+back. The canonical runner is `supabase test db` pointed at the project; until
+CI runs them, the maintainer runs them before each schema change lands.
 
 Database, auth and function changes are verified on a hosted project.

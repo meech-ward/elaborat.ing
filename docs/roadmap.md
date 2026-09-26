@@ -13,11 +13,12 @@ original prototype.
 Claude and ChatGPT connect to an account over OAuth and read and edit that
 user's files through MCP, on the hosted Supabase project.
 
-1. **Core database.** Declarative schema for projects, folders, files, file
-   versions and members. Functions to read, list, save a batch of files with
-   per-file base versions and an idempotency key, create projects and folders,
+1. **Core database (done).** Declarative schema for projects, folders, files,
+   file versions and members. Functions to read, list, save a batch of files
+   with base versions and an idempotency key, create projects and folders,
    archive and unarchive, permanently delete (people only, never OAuth
-   clients), and share. RLS, explicit grants and policy tests for every table.
+   clients), invite, accept (people only) and leave. RLS, explicit grants and
+   70 pgTAP tests, passing on the hosted project.
 2. **Deploys from GitHub (open for contributors).** A GitHub Actions workflow
    that, on merge to `main`, runs `supabase config push`, `supabase db push` and
    `supabase functions deploy --use-api` against the project named in repository
@@ -72,7 +73,8 @@ The full editor from the original prototype, working on per-file storage.
 ## Phase 4: sharing and comments
 
 - Share by email, including people without an account yet.
-- Member list, leave a project, and a warning before sharing as editor.
+- Member list, leaving a project and accepting invitations in the app (the
+  database already supports them), and a warning before sharing as editor.
 - The commenter role, and comments on documents, sections, text selections and
   drawing elements.
 

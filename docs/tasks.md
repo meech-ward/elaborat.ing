@@ -133,7 +133,7 @@ non-trivial logic (such as the return-after-sign-in redirect).
 
 ## T5: fail pull requests whose migrations are out of date
 
-**Status:** Waiting (for the core database schema to reach `main`)
+**Status:** Ready
 
 Add a job to `.github/workflows/ci.yml` that installs Supabase CLI 2.118.0
 with the official `supabase/setup-cli` action, runs
