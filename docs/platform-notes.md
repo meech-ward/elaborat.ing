@@ -18,6 +18,13 @@ before relying on it for something new, and update this page when it moves.
   comments, domains, partitions and publications. Unsupported kinds (casts,
   operators, text search configurations and a few others) go in
   `supabase/schemas/_custom/` and ship through a versioned migration.
+- **pg-delta compares constraints as `pg_get_constraintdef` text**, so a
+  definition must store the same way from the schema and from its generated
+  migration. A check that puts `between` next to another `and` does not:
+  Postgres stores it nested, but the generated migration spells it out and is
+  stored flat, so every sync reports a change. Write such checks with `>=` and
+  `<=`.
+  [Constraint facts](https://github.com/supabase/pg-delta/blob/main/packages/pg-delta/src/extract/relations.ts)
 - **The schema directory is the full desired state.** Undeclared objects,
   including extensions, are planned as removals.
 - **DML is never part of the schema.** It is an error inside a declarative
