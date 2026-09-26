@@ -1,0 +1,74 @@
+import fs from "node:fs"
+import path from "node:path"
+import type { Plugin } from "vite"
+
+// Vite's build.license option writes the licenses of the npm packages in the
+// JavaScript bundle. This plugin appends what that misses:
+// - packages that stylesheets pull in with @import or @plugin, such as
+//   tailwindcss, whose CSS is compiled into the stylesheet;
+// - code adapted from other projects, from its /*! ... */ license comment.
+// It reads every stylesheet and source file under src/, bundled or not.
+export function thirdPartyNotices(): Plugin {
+  return {
+    name: "third-party-notices",
+    apply: "build",
+    generateBundle: {
+      order: "post",
+      handler(_options, bundle) {
+        const { root, build } = this.environment.config
+        if (!build.license) this.error("thirdPartyNotices needs build.license")
+        const fileName = build.license === true ? ".vite/license.md" : build.license.fileName
+        const notices = bundle[fileName]
+        if (notices?.type !== "asset") this.error(`build.license did not write ${fileName}`)
+
+        let text =
+          typeof notices.source === "string" ? notices.source : new TextDecoder().decode(notices.source)
+        const srcDir = path.join(root, "src")
+        const files = fs.readdirSync(srcDir, { recursive: true, encoding: "utf8" }).sort()
+
+        for (const name of stylesheetPackages(srcDir, files)) {
+          const dir = path.join(root, "node_modules", name)
+          const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
+          const heading = `## ${pkg.name} - ${pkg.version}`
+          if (text.includes(`\n${heading}`)) continue
+          const license = licenseFileText(dir)
+          text += `\n${heading}${pkg.license ? ` (${pkg.license})` : ""}\n${license ? `\n${license}\n` : ""}`
+        }
+
+        for (const file of files) {
+          if (!/\.tsx?$/.test(file) || /\.test\.tsx?$/.test(file)) continue
+          const source = fs.readFileSync(path.join(srcDir, file), "utf8")
+          for (const [, comment] of source.matchAll(/\/\*!([\s\S]*?)\*\//g)) {
+            const notice = comment.replace(/^[ \t]*\* ?/gm, "").trim()
+            text += `\n## src/${file.split(path.sep).join("/")} (adapted code)\n\n${notice}\n`
+          }
+        }
+
+        notices.source = text
+      },
+    },
+  }
+}
+
+/**
+ * Packages named by bare @import or @plugin specifiers in stylesheets, leaving
+ * out relative paths and URLs.
+ */
+function stylesheetPackages(srcDir: string, files: string[]): string[] {
+  const names = new Set<string>()
+  for (const file of files) {
+    if (!file.endsWith(".css")) continue
+    const css = fs.readFileSync(path.join(srcDir, file), "utf8")
+    for (const [, specifier] of css.matchAll(/@(?:import|plugin)\s+["']([^"'./:][^"':]*)["']/g)) {
+      const parts = specifier.split("/")
+      names.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0])
+    }
+  }
+  return [...names].sort()
+}
+
+/** The text of a package's LICENSE, LICENCE or COPYING file, found the way Vite finds it. */
+export function licenseFileText(packageDir: string): string | undefined {
+  const file = fs.readdirSync(packageDir).find((name) => /^(licen[cs]e|copying)/i.test(name))
+  return file === undefined ? undefined : fs.readFileSync(path.join(packageDir, file), "utf8").trim()
+}
