@@ -74,6 +74,17 @@ test("the service worker caches every file the build ships", () => {
   expect(files.filter((file) => !list.has(file))).toEqual([])
 })
 
+test("the license notices cover the Workbox code the service worker ships", () => {
+  // sw.js loads its Workbox runtime from a file of its own, outside the bundle.
+  const runtime = /define\(\["\.\/(workbox-[\w-]+)"\]/.exec(readFileSync(path.join(DIST, "sw.js"), "utf8"))?.[1]
+  expect(runtime).toBeDefined()
+  const code = readFileSync(path.join(DIST, `${runtime}.js`), "utf8")
+  const modules = new Set([...code.matchAll(/workbox:([a-z-]+):\d/g)].map((match) => `workbox-${match[1]}`))
+  const notices = readFileSync(path.join(DIST, "third-party-notices.txt"), "utf8")
+  expect(modules.size).toBeGreaterThan(0)
+  expect([...modules].filter((name) => !notices.includes(`\n## ${name} - `))).toEqual([])
+})
+
 test("after a project has opened, a reload with no network brings back the app, the project and an unsaved edit", async ({ page, context }) => {
   const { fake } = await openProject(page, { "notes/a.md": "saved\n" }, "notes/a.md")
   await offlineReady(page)

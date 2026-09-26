@@ -27,7 +27,9 @@ export default defineConfig({
     tailwindcss(),
     // Before thirdPartyNotices, so the frame's licenses are merged first.
     previewFrame(),
-    thirdPartyNotices(),
+    // The generated service worker ships these Workbox modules in its own
+    // workbox-*.js file, outside the bundle (checked by offline.spec.ts).
+    thirdPartyNotices({ packages: ["workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"] }),
     VitePWA({
       // A new version waits until the person chooses "Update ready"
       // (src/features/updates). The component registers the worker.

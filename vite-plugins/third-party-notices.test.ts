@@ -1,16 +1,21 @@
-import { expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { build, type Rolldown } from "vite"
 import { licenseFileText } from "./third-party-notices"
 
 const root = path.resolve(import.meta.dir, "..")
+// The service worker plugin writes its files even when the bundle is not
+// written, so this build goes to a scratch folder instead of dist/.
+const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "notices-"))
+afterAll(() => fs.rmSync(outDir, { recursive: true, force: true }))
 
 test("the build's notices cover every bundled package and the adapted code", async () => {
   const { output } = (await build({
     root,
     logLevel: "silent",
-    build: { write: false },
+    build: { write: false, outDir },
   })) as Rolldown.RolldownOutput
   const notices = output.find((file) => file.fileName === "third-party-notices.txt")
   if (notices?.type !== "asset") throw new Error("the build did not write third-party-notices.txt")
@@ -38,6 +43,10 @@ test("the build's notices cover every bundled package and the adapted code", asy
   })
   expect(withoutNotice).toEqual([])
 
+  // The Workbox modules the generated service worker ships outside the bundle.
+  for (const name of ["workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"]) {
+    expect(text).toContain(`\n## ${name} - `)
+  }
   expect(text).toContain("\n## src/features/comments/anchoring.ts (adapted code)\n")
   expect(text).toContain("Copyright (c) 2013-2019 Hypothes.is Project and contributors")
   expect(text).toContain("2. Redistributions in binary form must reproduce the above copyright notice,")
