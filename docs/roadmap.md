@@ -57,7 +57,10 @@ this repository once the steps before them have landed.
 2. **Drawing tests use a synthetic Obsidian-format drawing (open for
    contributors).**
 3. **The build ships Excalidraw's fonts and font worker, proven in a real
-   browser** with a Playwright and axe harness.
+   browser** with a Playwright and axe harness. Fonts, worker and SVG export
+   are done; the drawing-fidelity checks (no-op open is byte-exact, delete and
+   undo, editing a text by its stable id, image pixels, PNG and SVG export)
+   follow step 2's synthetic drawing.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
    build**, so the license notices cover the frame's code too.
 5. **Projects are stored per file on the device, behind one storage

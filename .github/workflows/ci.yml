@@ -20,6 +20,30 @@ jobs:
       - run: bun run lint
       - run: bun run test
 
+  # Browser tests run the production builds in Chromium and Firefox.
+  # Playwright runs on Node; Bun installs and builds.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run build:harness
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
   # Migrations are generated from supabase/schemas/ and committed. Regenerate
   # them and fail if that writes anything, so the two never drift apart.
   migrations:

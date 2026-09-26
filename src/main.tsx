@@ -2,7 +2,10 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
+import { configureExcalidrawAssets } from "./features/drawings/assets.ts"
 import "./index.css"
+
+configureExcalidrawAssets()
 
 const router = createRouter({ routeTree })
 

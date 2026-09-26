@@ -342,6 +342,13 @@ instance deploys with `wrangler deploy`, using a Cloudflare API token from the
 The build only needs public values (the Supabase URL and publishable key).
 Self-hosters can deploy the same static build to any host.
 
+**Decision: Excalidraw's fonts are served from this site.** Left alone,
+Excalidraw fetches fonts from a public CDN. The build copies the pinned
+package's fonts to `/excalidraw-assets/` and the app points Excalidraw there at
+startup, so drawings work offline and no font request leaves the site. The
+font-subset worker is built as its own worker graph; bundled as app code it
+imports the DOM entry and fails.
+
 ## Manual steps
 
 Settings with no file-based home yet. Each is a one-time step, to be written up
@@ -373,5 +380,12 @@ and prove grants, isolation between users, the save protocol and the agent
 rules. They run against the hosted project inside a transaction that is rolled
 back. The canonical runner is `supabase test db` pointed at the project; until
 CI runs them, the maintainer runs them before each schema change lands.
+
+**Decision:** browser tests use Playwright with axe, in Chromium and Firefox,
+against production builds: the app, and a test-only harness page
+(`tests/browser/harness/`) that mounts real components built with the app's
+plugins. Each accessibility check has a positive control that plants a known
+violation, so a check that can no longer fail is caught. CI runs them on every
+pull request.
 
 Database, auth and function changes are verified on a hosted project.

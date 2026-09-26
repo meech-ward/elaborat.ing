@@ -1,4 +1,5 @@
 import nativeFont from '../structured/native-font.json';
+import { excalidrawAssetBase } from './assets.ts';
 
 // Generated D2 text uses the exact pinned native family 5. Load it before the
 // first canvas paint: the native renderer can otherwise cache fallback glyphs
@@ -15,7 +16,7 @@ export function ensureGeneratedNativeFont(): Promise<void> {
       {family:'Liberation Sans',path:'Liberation/LiberationSans-Regular.woff2',unicodeRange:'U+0-10FFFF'},
     ];
     const faces = await Promise.all(descriptors.map(async ({family,path,unicodeRange}) => {
-      const url = new URL(`./excalidraw-assets/fonts/${path}`, document.baseURI);
+      const url = new URL(`fonts/${path}`, excalidrawAssetBase());
       const face = new FontFace(family, `url("${url.href}")`, {
         style:'normal',weight:'400',display:'swap',unicodeRange,
       });

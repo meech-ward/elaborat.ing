@@ -4,13 +4,19 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react"
 import babel from "@rolldown/plugin-babel"
 import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
+import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
+import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
 import { thirdPartyNotices } from "./vite-plugins/third-party-notices.ts"
 
 // The TanStack Router plugin must come before react().
 // React Compiler uses the stable documented Babel preset; plugin-react's
 // `compiler: true` option is experimental.
+// Excalidraw needs its fonts served from this site and its font-subset
+// worker built as a separate worker graph (see each plugin).
 export default defineConfig({
   plugins: [
+    nativeFontAssets(),
+    excalidrawSubsetWorker(),
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react(),
     babel({ presets: [reactCompilerPreset()] }),

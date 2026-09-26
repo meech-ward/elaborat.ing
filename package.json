@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "bun test src vite-plugins",
+    "build:harness": "vite build --config tests/browser/harness/vite.config.ts",
+    "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
@@ -58,7 +60,9 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@babel/core": "8.0.1",
+    "@playwright/test": "1.63.0",
     "@rolldown/plugin-babel": "0.2.4",
     "@tailwindcss/typography": "0.5.19",
     "@tanstack/router-plugin": "1.168.36",

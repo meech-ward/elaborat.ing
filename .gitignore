@@ -4,6 +4,11 @@ dist/
 .dev.vars*
 src/routeTree.gen.ts
 
+# Browser tests
+tests/browser/harness/dist/
+test-results/
+playwright-report/
+
 # Local environment files. Hosted builds get public values from build variables.
 .env
 .env.local

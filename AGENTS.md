@@ -22,7 +22,7 @@ planned work: never describe something as working until it is built and tested.
 | Validation | Zod v4 at real external boundaries (API responses, stored browser data, URL input, config) |
 | Backend | Supabase: Postgres with RLS, Auth, Realtime, Edge Functions. Supabase CLI 2.118.0 (`bunx supabase@2.118.0`). |
 | Frontend hosting | Cloudflare Workers static assets, configured in `wrangler.jsonc` |
-| Checks | ESLint, `tsc`, Bun tests; Playwright with axe for key journeys once there are journeys |
+| Checks | ESLint, `tsc`, Bun tests; Playwright with axe in Chromium and Firefox against production builds |
 
 ## Commands
 
@@ -33,14 +33,19 @@ bun run build       # production build; also generates the route tree
 bun run typecheck   # run after a build
 bun run lint
 bun run test
+
+# Browser tests (Playwright runs on Node): build both, install browsers once
+bun run build && bun run build:harness
+npx playwright install --with-deps chromium firefox
+npx playwright test
 ```
 
 Edge Functions run on Deno 2. In a function's folder, such as
 `supabase/functions/mcp-server/`, run `deno check .` and `deno test`.
 
-CI runs build, typecheck, lint and test on every pull request, checks and
-tests every Edge Function, and fails if regenerating migrations from
-`supabase/schemas/` would change `supabase/migrations/`.
+CI runs build, typecheck, lint, test and the browser tests on every pull
+request, checks and tests every Edge Function, and fails if regenerating
+migrations from `supabase/schemas/` would change `supabase/migrations/`.
 
 ## Rules
 

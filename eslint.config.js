@@ -6,6 +6,9 @@ export default defineConfig(
   {
     ignores: [
       "dist/",
+      "tests/browser/harness/dist/",
+      "test-results/",
+      "playwright-report/",
       "node_modules/",
       ".wrangler/",
       "supabase/functions/",
