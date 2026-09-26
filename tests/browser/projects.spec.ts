@@ -101,7 +101,8 @@ test("offline, a new project waits on this device and is sent when the connectio
   fake.offline = true
   await page.getByLabel("New project").fill("Written offline")
   await page.getByRole("button", { name: "Create" }).click()
-  await expect(page.getByRole("heading", { level: 1, name: "Written offline" })).toBeVisible()
+  // Opening the project loads the editor first, as slowly as any first open.
+  await expect(page.getByRole("heading", { level: 1, name: "Written offline" })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole("status").filter({ hasText: "waiting to sync" })).toBeVisible()
   const id = new URL(page.url()).pathname.split("/")[2]
   // Let every attempt made while offline finish failing first.
@@ -113,6 +114,99 @@ test("offline, a new project waits on this device and is sent when the connectio
   await page.evaluate(() => window.dispatchEvent(new Event("online")))
   await expect.poll(() => fake.server.projects.get(id)?.title).toBe("Written offline")
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
+})
+
+/** Someone else's project, shared with `person`: an invitation, or accepted already. */
+async function sharedWithMe(server: FakeProjectServer, title: string, files: Record<string, string>, accepted: boolean) {
+  const owner = server.remote(SOMEONE_ELSE)
+  const id = crypto.randomUUID()
+  await owner.createProject(id, title)
+  for (const [path, content] of Object.entries(files)) await owner.saveFiles(id, crypto.randomUUID(), [{ op: "put", path, content }])
+  if (accepted) server.share(id, person.id, "editor")
+  else server.invite(id, person.id, "editor")
+  return id
+}
+const SOMEONE_ELSE = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f"
+
+test("an invitation shows on the projects home, and accepting it opens the project", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedWithMe(server, "Their notes", { "a.md": "# From them" }, false)
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  await home(page)
+  const invitations = page.getByRole("region", { name: "Invitations" })
+  await expect(invitations.getByRole("listitem")).toHaveText(["Their notes, as editorAccept"])
+  await expect(page.getByRole("link", { name: "Their notes" })).toHaveCount(0)
+
+  await invitations.getByRole("button", { name: "Accept the invitation to Their notes" }).click()
+  await expect(page).toHaveURL(projectUrl(id))
+  await expect(page.getByRole("heading", { level: 1, name: "Their notes" })).toBeVisible()
+  await explorer(page)
+  await expect(page.getByRole("button", { name: "a.md", exact: true })).toBeVisible()
+  expect(server.projects.get(id)!.members.get(person.id)?.accepted).toBe(true)
+
+  await page.getByRole("link", { name: "Your projects" }).click()
+  await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Invitations" })).toHaveCount(0)
+})
+
+test("leaving a shared project removes it from the list and from this device", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedWithMe(server, "Their notes", { "a.md": "# From them" }, true)
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  // Open it once, so it is on this device.
+  await page.goto(projectUrl(id))
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  await page.getByRole("link", { name: "Your projects" }).click()
+  await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
+
+  let asked = ""
+  page.once("dialog", (dialog) => {
+    asked = dialog.message()
+    void dialog.accept()
+  })
+  await page.getByRole("button", { name: "Actions for Their notes" }).click()
+  await page.getByRole("menuitem", { name: "Leave project" }).click()
+  await expect(page.getByText("Left Their notes.")).toBeVisible()
+  expect(asked).toBe("Leave Their notes? You lose access to it, and it is removed from this device. Its owner can invite you again.")
+  await expect(page.getByRole("link", { name: "Their notes" })).toHaveCount(0)
+  expect(server.projects.get(id)!.members.has(person.id)).toBe(false)
+
+  // Nothing of it is left here: a copy on this device would still be listed.
+  await page.reload()
+  await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
+  await expect(page.getByText("No projects yet.")).toBeVisible()
+})
+
+test("leaving a shared project with an edit that has not synced is refused, naming the file", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedWithMe(server, "Their notes", { "a.md": "# From them" }, true)
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  await page.goto(projectUrl(id, "a.md"))
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+
+  // Saved on this device while offline, so the server does not have it.
+  fake.offline = true
+  await page.locator(".monaco-editor:visible .view-lines").first().click()
+  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.type(" and me")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await page.getByRole("link", { name: "Your projects" }).click()
+  const row = page.getByRole("listitem").filter({ hasText: "Their notes" })
+  await expect(row).toContainText("Saved on this device, waiting to sync")
+
+  page.once("dialog", (dialog) => void dialog.dismiss())
+  await row.getByRole("button", { name: "Actions for Their notes" }).click()
+  await page.getByRole("menuitem", { name: "Leave project" }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "Not left:" })).toHaveText(
+    "Not left: Their notes has changes on this device that have not synced (a.md). Sync them first, so nothing is lost.",
+  )
+  await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
+  expect(server.projects.get(id)!.members.has(person.id)).toBe(true)
+  expect(fake.requests.some((request) => request.url().endsWith("/rpc/leave_project"))).toBe(false)
 })
 
 test("the projects home does not download the editor", async ({ page }) => {

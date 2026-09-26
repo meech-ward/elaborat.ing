@@ -1,5 +1,5 @@
 import { isValidProjectPath, MAX_ENTRIES, MAX_PROJECT_BYTES, byteLength, type Role, type SaveChange } from "./model"
-import { RemoteError, RemoteProject, SaveResult, type DeletedFile, type ProjectRemote, type RemoteFile } from "./remote"
+import { RemoteError, RemoteProject, SaveResult, type DeletedFile, type ProjectRemote, type RemoteFile, type RemoteInvitation } from "./remote"
 
 /**
  * An in-memory stand-in for the project service, for tests. It follows the
@@ -19,8 +19,11 @@ type ServerProject = {
   history: Array<{ fileId: string; version: number; deleted: boolean }>
   folders: Set<string>
   savedResults: Map<string, { user: string; payload: string; result: SaveResult }>
-  members: Map<string, Role>
+  /** Everyone the owner shared the project with. An invitation grants nothing until its person accepts it. */
+  members: Map<string, { role: InvitedRole; accepted: boolean; invitedAt: string }>
 }
+
+type InvitedRole = RemoteInvitation["role"]
 
 const ancestors = (path: string) => {
   const parts = path.split("/")
@@ -35,6 +38,8 @@ export class FakeProjectServer {
   /** Apply the next N calls but lose their responses, as a dropped connection would. */
   loseResponses = 0
   maxFiles = MAX_ENTRIES
+  /** Orders invitations, newest last, as their times would. */
+  private invitations = 0
 
   remote(user: string): ProjectRemote {
     const call = async <T>(method: string, args: unknown[], work: () => T): Promise<T> => {
@@ -66,15 +71,58 @@ export class FakeProjectServer {
             .map((entry): DeletedFile => ({ id: entry.fileId, version: entry.version })),
         ),
       folders: (projectId) => call("folders", [projectId], () => [...this.readable(user, projectId).folders].sort()),
+      listInvitations: () => call("listInvitations", [], () => this.pendingFor(user)),
+      acceptInvitation: (projectId) => call("acceptInvitation", [projectId], () => this.accept(user, projectId)),
+      leaveProject: (projectId) => call("leaveProject", [projectId], () => this.leave(user, projectId)),
     }
   }
 
   role(user: string, project: ServerProject): Role | null {
-    return project.owner === user ? "owner" : (project.members.get(user) ?? null)
+    if (project.owner === user) return "owner"
+    const member = project.members.get(user)
+    return member?.accepted ? member.role : null
   }
 
-  share(projectId: string, user: string, role: Role) {
-    this.projects.get(projectId)!.members.set(user, role)
+  /** Make `user` a member, as if they had accepted an invitation. */
+  share(projectId: string, user: string, role: InvitedRole) {
+    this.invite(projectId, user, role)
+    this.projects.get(projectId)!.members.get(user)!.accepted = true
+  }
+
+  /** Invite `user`, as `share_project` does: they see nothing of the project until they accept. */
+  invite(projectId: string, user: string, role: InvitedRole) {
+    const project = this.projects.get(projectId)!
+    const invitedAt = new Date(Date.UTC(2026, 0, 1, 0, 0, ++this.invitations)).toISOString()
+    project.members.set(user, { role, accepted: false, invitedAt })
+    project.revision++
+  }
+
+  private pendingFor(user: string): RemoteInvitation[] {
+    return [...this.projects.values()]
+      .flatMap((project) => {
+        const member = project.members.get(user)
+        return member && !member.accepted ? [{ project_id: project.id, title: project.title, role: member.role, invited_at: member.invitedAt }] : []
+      })
+      .sort((a, b) => (a.invited_at < b.invited_at ? 1 : -1))
+  }
+
+  /** Only the invited person can accept, and only their own invitation (42501 otherwise). */
+  private accept(user: string, projectId: string): RemoteProject {
+    const project = this.projects.get(projectId)
+    const member = project?.members.get(user)
+    if (!project || !member) throw new RemoteError("access", "No invitation for this project")
+    if (!member.accepted) {
+      member.accepted = true
+      project.revision++
+    }
+    return this.summary(project, user)
+  }
+
+  /** A member leaves, or declines an invitation. The owner is not a member, so cannot leave (42501, as for anyone else). */
+  private leave(user: string, projectId: string): void {
+    const project = this.projects.get(projectId)
+    if (!project || !project.members.delete(user)) throw new RemoteError("access", "You are not a member of this project")
+    project.revision++
   }
 
   private summary(project: ServerProject, user: string): RemoteProject {

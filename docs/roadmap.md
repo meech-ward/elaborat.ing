@@ -155,8 +155,11 @@ Also done in this phase: the comment anchoring library (see the task below).
 ## Phase 4: sharing and comments
 
 - Share by email, including people without an account yet.
-- Member list, leaving a project and accepting invitations in the app (the
-  database already supports them), and a warning before sharing as editor.
+- Accepting invitations and leaving a shared project in the app (done:
+  invitations are listed on the projects home, and a shared project's menu
+  there has "Leave project"; leaving is refused while this device holds
+  changes to it that have not synced).
+- Member list, and a warning before sharing as editor.
 - The commenter role, and comments on documents, sections, text selections and
   drawing elements.
 
