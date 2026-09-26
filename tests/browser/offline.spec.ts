@@ -67,16 +67,18 @@ const cachedUrls = (page: Page) =>
     return urls
   })
 
-/** Excalidraw's drawing fonts, cached the first time a drawing shows them instead of precached. */
-const onFirstUse = (file: string) => file.startsWith("excalidraw-assets/fonts/")
+/** Excalidraw's CJK drawing font, cached the first time a drawing shows it instead of precached. */
+const onFirstUse = (file: string) => file.startsWith("excalidraw-assets/fonts/Xiaolai/")
 
-test("the service worker caches every file the build ships, except drawing fonts until they are used", () => {
+test("the service worker caches every file the build ships, except the CJK drawing font until it is used", () => {
   const list = precached(DIST)
   const files = shipped(DIST).filter((file) => file !== "_headers" && file !== "sw.js" && !/^workbox-[\w-]+\.js$/.test(file))
   expect(files.length).toBeGreaterThan(100)
   expect(files.filter((file) => !onFirstUse(file) && !list.has(file))).toEqual([])
   expect(files.filter(onFirstUse).length).toBeGreaterThan(100)
   expect([...list].filter(onFirstUse)).toEqual([])
+  // The other drawing fonts, including Excalifont (the default for new text), are precached.
+  expect([...list].filter((file) => file.startsWith("excalidraw-assets/fonts/Excalifont/")).length).toBeGreaterThan(0)
   // Only the editor and JSON workers of Monaco are built; the app never starts the others.
   expect(files.filter((file) => /(?:ts|css|html)\.worker/.test(file))).toEqual([])
 })

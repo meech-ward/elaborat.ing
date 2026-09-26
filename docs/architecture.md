@@ -445,18 +445,19 @@ no network**: a reload, a new tab or a browser restart. A service worker from
 generated worker (`generateSW`), configured in `vite.config.ts`:
 
 - **It precaches every file the build writes** except Cloudflare's `_headers`
-  and Excalidraw's drawing fonts: every chunk including lazy ones, styles,
-  workers, the fonts of the app's own interface, the preview frame (inlined in
-  a chunk), the D2 compiler, `.wasm` files and the license texts. That is about
+  and Excalidraw's CJK drawing font: every chunk including lazy ones, styles,
+  workers, the fonts of the app's own interface and of drawings (Excalifont,
+  the default for new text, among them), the preview frame (inlined in a
+  chunk), the D2 compiler, `.wasm` files and the license texts. That is about
   29 MB. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
   fails if any other shipped file is missing from the precache list.
   Navigations fall back to the cached `index.html`.
-- **Excalidraw's drawing fonts are cached when first used.** They are about
-  13 MB, most of it CJK subsets that few drawings need. A cache-first route
-  keeps each same-origin font file the first time it loads, so a drawing works
-  offline in the fonts this device has already shown; text in a script it has
-  never shown falls back to a system font until the next visit online.
+- **Excalidraw's CJK drawing font is cached when first used.** Xiaolai is
+  about 13 MB in 209 subsets, which few drawings need. A cache-first route
+  keeps each same-origin font file the first time it loads, so CJK text works
+  offline in the subsets this device has already shown; other characters fall
+  back to a system font until the next visit online.
 - **No other runtime caching.** Requests to Supabase, or to any other origin,
   never pass through a cache, so no credentialed response is stored.
 - **Monaco's TypeScript, CSS and HTML language services are left out of the

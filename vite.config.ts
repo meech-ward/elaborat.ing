@@ -58,7 +58,10 @@ export default defineConfig({
         // them, below. `_headers` is Cloudflare's configuration, not a file
         // it serves, and the plugin lists the web manifest itself.
         globPatterns: ["**/*"],
-        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/**"],
+        // Excalidraw's CJK drawing font (Xiaolai, 13 MB in 209 subsets) is
+        // cached on first use instead; its other drawing fonts (0.5 MB) are
+        // precached, so new drawings have their default font offline.
+        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/Xiaolai/**"],
         // Workbox skips files over 2 MiB by default, and the largest chunks
         // are bigger. tests/browser/offline.spec.ts checks nothing is skipped.
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
