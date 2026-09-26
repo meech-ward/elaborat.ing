@@ -235,7 +235,7 @@ class has its unit test.
 
 ## T9: run the drawing fidelity checks on the synthetic Obsidian drawing
 
-**Status:** Ready
+**Status:** Done (#9)
 
 `tests/browser/fidelity.spec.ts` checks that the drawing canvas changes only
 what it is asked to (byte-exact no-op open, delete and undo, editing a text by

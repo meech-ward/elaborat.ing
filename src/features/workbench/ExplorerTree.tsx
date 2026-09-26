@@ -27,8 +27,9 @@ export interface ExplorerTreeProps {
   onSelectFolder: (path: string) => void;
   onOpenFile: (path: string) => void;
   onFeedback: (message: string) => void;
-  onRenameFile: (path: string, newName: string) => Promise<void>;
-  onMoveFile: (path: string) => void;
+  /** Rename and move arrive with roadmap phase 2 step 12; without them the row offers neither. */
+  onRenameFile?: (path: string, newName: string) => Promise<void>;
+  onMoveFile?: (path: string) => void;
 }
 
 export function ExplorerTree({
@@ -58,8 +59,8 @@ export function ExplorerTree({
         draft={file.draft}
         onOpen={() => onOpenFile(file.path)}
         onFeedback={onFeedback}
-        onRename={(newName) => onRenameFile(file.path, newName)}
-        onMove={() => onMoveFile(file.path)}
+        onRename={onRenameFile ? (newName) => onRenameFile(file.path, newName) : undefined}
+        onMove={onMoveFile ? () => onMoveFile(file.path) : undefined}
       />
     </li>
   );

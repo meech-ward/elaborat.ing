@@ -22,6 +22,18 @@ async function serverProject(server: FakeProjectServer, title: string, files: Re
 const addFile = async (server: FakeProjectServer, id: string, path: string, content: string) =>
   server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path, content }])
 
+/** Show the explorer and expand the folders on the way to `path`. */
+async function explorer(page: Page, path?: string) {
+  const toggle = page.getByRole("button", { name: "Toggle explorer" })
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  const parts = path?.split("/").slice(0, -1) ?? []
+  for (let i = 1; i <= parts.length; i++) {
+    const folder = parts.slice(0, i).join("/")
+    const expand = page.getByRole("button", { name: `Expand ${folder}`, exact: true })
+    if (await expand.count()) await expand.click()
+  }
+}
+
 async function home(page: Page) {
   await page.goto(APP_URL)
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
@@ -56,12 +68,15 @@ test("a project from the server downloads on open, and its files have URLs", asy
   await row.getByRole("link").click()
 
   await expect(page).toHaveURL(projectUrl(id))
-  await page.getByRole("link", { name: "notes/a b.md" }).click()
+  await explorer(page, "notes/a b.md")
+  await page.getByRole("button", { name: "notes/a b.md", exact: true }).click()
   await expect(page).toHaveURL(projectUrl(id, "notes/a%20b.md"))
+  await expect(page.getByRole("tab", { name: "notes/a b.md" })).toBeVisible()
   await expect(page.getByText("spaces in the name")).toBeVisible()
 
   // The file's URL works on its own too.
   await page.goto(projectUrl(id, "readme.md"))
+  await expect(page.getByRole("tab", { name: "readme.md" })).toBeVisible()
   await expect(page.getByText("# Hello")).toBeVisible()
 })
 
@@ -70,12 +85,13 @@ test("a change made elsewhere arrives when the server signals it", async ({ page
   const id = await serverProject(fake.server, "Live", { "a.md": "first" })
   await signedIn(page)
   await page.goto(projectUrl(id))
-  await expect(page.getByRole("link", { name: "a.md" })).toBeVisible()
+  await explorer(page)
+  await expect(page.getByRole("button", { name: "a.md", exact: true })).toBeVisible()
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
 
   const saved = await addFile(fake.server, id, "b.md", "from another device")
   fake.signal(id, saved.project.revision)
-  await expect(page.getByRole("link", { name: "b.md" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "b.md", exact: true })).toBeVisible()
 })
 
 test("offline, a new project waits on this device and is sent when the connection returns", async ({ page }) => {
@@ -122,6 +138,7 @@ test("the project page has no accessibility violations", async ({ page }) => {
   await fakeSupabase(page, { server })
   await signedIn(page)
   await page.goto(projectUrl(id, "a.md"))
+  await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
   await expect(page.getByText("text", { exact: true })).toBeVisible()
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])

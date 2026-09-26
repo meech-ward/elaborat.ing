@@ -1,1 +1,77 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* shadcn Base UI token map. Component utilities (bg-popover, bg-sidebar,
+   text-muted-foreground, ...) resolve through these to the appearance themes
+   (studio/paper/circuit, dark/light), whose tokens AppearanceProvider sets on
+   the root element. `inline` keeps the var() references live, so switching
+   theme or scheme repaints every surface. */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--raised);
+  --color-card-foreground: var(--text);
+  --color-muted: var(--raised);
+  --color-muted-foreground: var(--muted);
+  --color-popover: var(--raised);
+  --color-popover-foreground: var(--text);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--accent);
+  --color-accent: var(--selection);
+  --color-accent-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--bg);
+  --color-secondary: var(--chrome);
+  --color-secondary-foreground: var(--text);
+  --color-sidebar: var(--chrome);
+  --color-sidebar-foreground: var(--text);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-accent: var(--selection);
+  --color-sidebar-accent-foreground: var(--text);
+  --color-sidebar-ring: var(--accent);
+}
+:root {
+  --color-destructive: #f0837f;
+}
+:root[data-scheme="light"] {
+  --color-destructive: #b3352b;
+}
+
+/* Every page follows the chosen appearance. */
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* The editor panes scroll internally; the page itself must never overflow
+   horizontally at 390px. min-w-0 on the flex children does the real work. */
+html,
+body {
+  overflow-x: clip;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--color-neutral-300);
+  border-bottom-width: 2px;
+  border-radius: 0.375rem;
+  background: var(--color-neutral-100);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dark kbd {
+  border-color: var(--color-neutral-700);
+  background: var(--color-neutral-800);
+}
+
+/* Keep Monaco inside its pane on narrow screens. */
+.monaco-editor {
+  max-width: 100%;
+}

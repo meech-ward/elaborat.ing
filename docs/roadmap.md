@@ -60,7 +60,8 @@ this repository once the steps before them have landed.
    browser (done)** with a Playwright and axe harness: fonts, the font
    worker, SVG export, and drawing fidelity (a no-op open is byte-exact,
    delete and undo, editing a text by its id, image pixels, PNG and SVG
-   export) on the synthetic demo scene. Task T9 adds step 2's drawing.
+   export) on the synthetic demo scene and on step 2's compressed Obsidian
+   drawing.
 4. **Notes render and edit in the sandboxed frame, built by the normal Vite
    build (done)**, so the license notices cover the frame's code too. Browser
    journeys on a test page cover typing, selections, split and join, lists,
@@ -85,11 +86,13 @@ this repository once the steps before them have landed.
    background and on Realtime change signals, and wait on the device while
    offline. Guarding navigation away from unsaved edits comes with the editor
    (step 10).
-10. **Notes open in tabs, edit in source and rendered views, and save** with
-    drafts and conflict recovery, and leaving a project or signing out waits
-    until unsaved edits are kept. This step adds the journeys that need the
-    source editor: exact bytes and one undo for rendered edits, and typing,
-    undo and redo in the source view.
+10. **Notes open in tabs, edit in source and rendered views, and save (done)**
+    with drafts and conflict recovery (keep mine, keep theirs, keep both), and
+    leaving a project or signing out keeps unsaved edits first. Drawings and
+    diagrams open as text until steps 13 and 14; renaming and moving arrive
+    with step 12. Not yet carried over from the prototype: its reading-position
+    and touch-focus journeys, and undo through the source editor after a
+    rendered edit.
 11. **Custom MDX components load from project files (open for contributors).**
 12. **Files and folders can be created, renamed and moved**, with references
     rewritten in the same save.

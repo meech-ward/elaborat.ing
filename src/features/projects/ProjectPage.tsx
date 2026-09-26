@@ -1,18 +1,23 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
-import type { FileRef } from "@/features/project-storage/fileStore"
+import type { ConflictChoice } from "@/features/project-storage/sync"
+import { WorkspaceWorkbench } from "@/features/workbench/WorkspaceWorkbench"
+import { projectWorkspace } from "@/features/workbench/workspaceStore"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, useLibraryState, type ProjectAccount } from "./account"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
+import { useDepartureGuard } from "./useDepartureGuard"
+
+/** Wait this long after a save before syncing, so a burst of saves is sent together. */
+const SYNC_DELAY_MS = 1_000
 
 /**
- * One project at its URL: downloaded on first open, kept in sync, with its
- * files listed. A file's URL selects it. (Files open in the editor from
- * roadmap phase 2 step 10; until then a selected file is shown as text.)
+ * One project at its URL: downloaded on first open, kept in sync, and edited
+ * in the workbench. A file's URL opens it.
  */
 export function ProjectPage({ account }: { account: ProjectAccount }) {
   const href = useLocation({ select: (location) => location.href })
@@ -24,31 +29,33 @@ export function ProjectPage({ account }: { account: ProjectAccount }) {
       </p>
     )
   }
-  return <OpenProject key={location.projectId} account={account} projectId={location.projectId} path={location.path} />
+  return <OpenProject key={location.projectId} account={account} projectId={location.projectId} />
 }
 
-function OpenProject({ account, projectId, path }: { account: ProjectAccount; projectId: string; path: string | null }) {
+function OpenProject({ account, projectId }: { account: ProjectAccount; projectId: string }) {
   const library = libraryFor(account)
   const state = useLibraryState(library)
   const navigate = useNavigate()
   const [opened, setOpened] = useState<"opening" | "open" | "missing">("opening")
   const [error, setError] = useState<string | null>(null)
-  const [files, setFiles] = useState<FileRef[]>([])
-  const [content, setContent] = useState<string | null>(null)
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
+  const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open")
   const entry = state.entries.find((candidate) => candidate.id === projectId)
 
   const syncNow = useCallback(async () => {
     setError(null)
     try {
       const outcome = await library.syncProject(projectId)
-      if (outcome.projectId !== projectId) await navigate({ href: projectHref(outcome.projectId, path), replace: true })
-      else if (outcome.status === "stopped" || outcome.status === "incomplete") setError(outcome.message)
+      if (outcome.projectId !== projectId) {
+        await navigate({ href: projectHref(outcome.projectId), replace: true, ignoreBlocker: true })
+      } else if (outcome.status === "stopped" || outcome.status === "incomplete") {
+        setError(outcome.message)
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [library, navigate, path, projectId])
+  }, [library, navigate, projectId])
 
   // Download on first open, then sync.
   useEffect(() => {
@@ -75,25 +82,27 @@ function OpenProject({ account, projectId, path }: { account: ProjectAccount; pr
     }
   }, [account.online, opened, projectId, syncNow])
 
-  // The file list and the selected file follow every change on this device.
-  useEffect(() => {
-    if (opened !== "open") return
-    const store = fileStoreFor(library, projectId)
-    let active = true
-    const load = async () => {
-      const entries = await store.listEntries()
-      const selected = path ? await store.read(path).catch(() => null) : null
-      if (!active) return
-      setFiles(entries.files)
-      setContent(selected ? selected.content : null)
-    }
-    void load()
-    const unsubscribe = library.subscribe(() => void load())
-    return () => {
-      active = false
-      unsubscribe()
-    }
-  }, [library, opened, path, projectId])
+  // Saves sync shortly after they happen, a burst of them together.
+  const [delayedSync] = useState(() => new Delayed(SYNC_DELAY_MS))
+  useEffect(() => () => delayedSync.cancel(), [delayedSync])
+  const workspace = useMemo(
+    () =>
+      projectWorkspace(fileStoreFor(library, projectId), {
+        afterSave: () => {
+          if (account.online) delayedSync.run(() => void syncNow())
+        },
+        subscribeSync: (listener) => library.subscribe(listener),
+      }),
+    [account.online, delayedSync, library, projectId, syncNow],
+  )
+
+  const resolveConflict = useCallback(
+    async (path: string, choice: ConflictChoice) => {
+      await library.sync.resolve(projectId, path, choice)
+      if (account.online) await syncNow()
+    },
+    [account.online, library, projectId, syncNow],
+  )
 
   if (opened === "missing") {
     return (
@@ -109,58 +118,49 @@ function OpenProject({ account, projectId, path }: { account: ProjectAccount; pr
       </main>
     )
   }
-
-  return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
-      <p>
-        <Link to="/" className="text-sm underline underline-offset-4">
-          Your projects
-        </Link>
+  if (opened === "opening") {
+    return (
+      <p role="status" className="p-6 text-sm text-muted-foreground">
+        Opening project...
       </p>
-      <h1 className="text-2xl font-semibold">{entry?.title ?? "Opening project..."}</h1>
-      <div className="flex items-center gap-3">
-        <p role="status" className="text-sm text-muted-foreground">
-          {opened === "opening" ? "Opening..." : entry ? statusLabel(entry) : ""}
-          {!account.online || state.offline ? " (offline)" : ""}
-        </p>
-        {account.online ? (
-          <Button variant="outline" size="sm" onClick={() => void syncNow()} disabled={opened !== "open"}>
-            Sync now
-          </Button>
-        ) : null}
-      </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
+    )
+  }
+
+  const header = (
+    <div className="flex min-w-0 items-center gap-3 text-sm">
+      <Link to="/" className="underline underline-offset-4">
+        Your projects
+      </Link>
+      <h1 className="truncate font-semibold">{entry?.title ?? "Project"}</h1>
+      <p role="status" className="truncate text-muted-foreground">
+        {entry ? statusLabel(entry) : ""}
+        {!account.online || state.offline ? " (offline)" : ""}
+      </p>
+      {account.online ? (
+        <Button variant="outline" size="sm" onClick={() => void syncNow()}>
+          Sync now
+        </Button>
+      ) : null}
+      {error || departureError ? (
+        <p role="alert" className="text-destructive">
+          {departureError ?? error}
         </p>
       ) : null}
-      <section aria-labelledby="files-heading">
-        <h2 id="files-heading" className="text-lg font-semibold">
-          Files
-        </h2>
-        {opened === "open" && files.length === 0 ? <p className="text-sm">No files yet.</p> : null}
-        <ul className="mt-2 flex flex-col gap-1">
-          {files.map((file) => (
-            <li key={file.path}>
-              <Link to={projectHref(projectId, file.path)} aria-current={file.path === path ? "page" : undefined} className="text-sm underline-offset-4 hover:underline">
-                {file.path}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-      {path ? (
-        <section aria-labelledby="file-heading">
-          <h2 id="file-heading" className="text-lg font-semibold">
-            {path}
-          </h2>
-          {content === null ? (
-            <p className="text-sm">{opened === "open" ? "This file is not in the project." : ""}</p>
-          ) : (
-            <pre className="mt-2 overflow-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">{content}</pre>
-          )}
-        </section>
-      ) : null}
-    </main>
+    </div>
   )
+
+  return <WorkspaceWorkbench client={workspace} projectId={projectId} projectHeader={header} onLeaveGuard={registerLeaveGuard} onResolveConflict={resolveConflict} />
+}
+
+/** Runs the latest scheduled work once, `ms` after the last request. */
+class Delayed {
+  private timer: ReturnType<typeof setTimeout> | undefined
+  constructor(private readonly ms: number) {}
+  run(work: () => void) {
+    clearTimeout(this.timer)
+    this.timer = setTimeout(work, this.ms)
+  }
+  cancel() {
+    clearTimeout(this.timer)
+  }
 }
