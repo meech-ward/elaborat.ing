@@ -264,6 +264,12 @@ approach Hypothesis uses, rather than anything custom.
   custom OIDC provider. None of this affects agents: Claude and ChatGPT connect
   through the OAuth server below, where elaborat.ing is the one issuing access.
 
+**Decision:** the sign-in, sign-up, password reset and OAuth consent pages
+are the Supabase UI Library's React blocks, installed with the shadcn CLI, plus
+a small form for emailed sign-in links. A page that needs a signed-in person
+sends them to `/sign-in?next=<path>` and they come back to it, including from
+an emailed link, which is why Auth's redirect list allows any path on the site.
+
 **Decision:** hosted limits are generous and exist only to stop abuse.
 Numbers are set when accounts ship.
 

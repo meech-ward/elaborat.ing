@@ -35,7 +35,7 @@ bun run lint
 bun run test
 
 # Browser tests (Playwright runs on Node): build both, install browsers once
-bun run build && bun run build:harness
+bun run build:browser-test && bun run build:harness
 npx playwright install --with-deps chromium firefox
 npx playwright test
 ```

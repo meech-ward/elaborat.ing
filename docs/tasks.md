@@ -106,7 +106,7 @@ each passage's origin.
 
 ## T4: sign-in and OAuth consent pages
 
-**Status:** Taken (the maintainer is doing it)
+**Status:** Done (by the maintainer)
 
 People sign in to elaborat.ing, and approve an agent (Claude, ChatGPT) on the
 OAuth consent page, which lives in this app at `/oauth/consent` (see

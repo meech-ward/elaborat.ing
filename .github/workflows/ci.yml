@@ -33,7 +33,8 @@ jobs:
         with:
           node-version: 24
       - run: bun install --frozen-lockfile
-      - run: bun run build
+      # The app built against a stand-in Supabase URL the tests answer themselves.
+      - run: bun run build:browser-test
       - run: bun run build:harness
       - run: npx playwright install --with-deps chromium firefox
       - run: npx playwright test

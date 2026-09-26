@@ -14,6 +14,7 @@ test("the home page has no accessibility violations", async ({ page }) => {
 // A positive control: the check above only means something if it can fail.
 test("the accessibility check catches a planted violation", async ({ page }) => {
   await page.goto(APP_URL)
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
   await page.evaluate(() => {
     const image = document.createElement("img")
     image.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="

@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test": "bun test src vite-plugins",
     "build:harness": "vite build --config tests/browser/harness/vite.config.ts",
+    "build:browser-test": "vite build --mode browser-test",
     "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"
   },

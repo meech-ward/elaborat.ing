@@ -164,6 +164,17 @@ Realtime's own source in `supabase/realtime`.
   [Getting started](https://supabase.com/docs/guides/auth/oauth-server/getting-started),
   [MCP authentication](https://supabase.com/docs/guides/auth/oauth-server/mcp-authentication),
   [BYO MCP](https://supabase.com/docs/guides/ai-tools/byo-mcp)
+- **UI Library blocks** install with the shadcn CLI from the `@supabase`
+  registry (`components.json` maps it to `https://supabase.com/ui/r/{name}.json`).
+  Checked 2026-09-26 with shadcn 4.21.0 on this repo: the CLI wrote
+  `import { cn } from "cn"` in new primitives and added a `cn` npm package,
+  and it replaced the pinned `@supabase/supabase-js` with a `^latest` range.
+  Fix the imports to `@/lib/utils`, and restore `package.json` and `bun.lock`.
+  It also writes an `.env.local` with empty `VITE_SUPABASE_*` entries.
+  [Supabase UI Library](https://supabase.com/ui)
+- **Redirect URLs** in `additional_redirect_urls` are matched as globs, so
+  `https://elaborat.ing/**` allows any path on the site.
+  [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)
 
 ## Cloudflare
 

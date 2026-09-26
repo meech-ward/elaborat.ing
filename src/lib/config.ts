@@ -2,7 +2,7 @@ import { z } from "zod"
 
 // Public build-time configuration. Only public values belong here: Vite inlines
 // every VITE_ variable into the client bundle.
-const ConfigSchema = z.object({
+export const ConfigSchema = z.object({
   VITE_SUPABASE_URL: z.url(),
   VITE_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
 })

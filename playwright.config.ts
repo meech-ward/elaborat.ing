@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test"
 import { APP_URL, HARNESS_URL } from "./tests/browser/urls.ts"
 
-// Browser tests run against production builds: the app (`bun run build`) and
-// the drawing harness (`bun run build:harness`). Build both first.
+// Browser tests run against production builds: the app built against a
+// stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test)
+// and the test harness (`bun run build:harness`). Build both first.
 export default defineConfig({
   testDir: "tests/browser",
   forbidOnly: !!process.env.CI,
