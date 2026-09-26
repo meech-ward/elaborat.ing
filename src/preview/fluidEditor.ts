@@ -27,6 +27,7 @@ import type {
   FluidSyntaxHint,
 } from "../features/rendered/protocol";
 import { isStructuralHistoryBoundary } from "../features/source/renderedHistory";
+import { isReadOnly } from "./readOnly";
 
 type Selection = { anchor: number; head: number };
 type Operation = {
@@ -194,12 +195,15 @@ export class FluidEditor {
           }),
         ],
       }),
-      attributes: {
+      // A read-only document (see readOnly.ts) is shown but cannot be edited.
+      editable: () => !isReadOnly(),
+      attributes: () => ({
         class: "reading-document preview-prose prose max-w-none",
         role: "textbox",
         "aria-label": "Rendered document",
         "aria-multiline": "true",
-      },
+        ...(isReadOnly() ? { "aria-readonly": "true" } : {}),
+      }),
       nodeViews: {
         object: (node) => this.objectView(node, false),
         inline_object: (node) => this.objectView(node, true),
@@ -482,6 +486,8 @@ export class FluidEditor {
       // burst. An ack only advances authority; it never overwrites that view.
       this.inFlight = false;
     }
+    // The render may have changed whether the document is read-only.
+    if (this.view.editable === isReadOnly()) this.view.setProps({});
     this.post({ kind: "rendered" });
     this.flush();
   }

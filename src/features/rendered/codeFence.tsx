@@ -43,9 +43,11 @@ export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'
 }
 
 /** An uncontrolled textarea keeps rapid typing and multiline input in one draft. */
-export function EditableCodeFence({ value, language, onCommit, sourceRegion, draft, onEditorInput, onEditorMount }: {
+export function EditableCodeFence({ value, language, onCommit, sourceRegion, draft, onEditorInput, onEditorMount, readOnly = false }: {
   value: string;
   language: string;
+  /** Show the code without an Edit code button (a read-only document). */
+  readOnly?: boolean;
   onCommit: (value: string) => void;
   sourceRegion?: { from: number; to: number; expected: string };
   draft?: { value: string; focused: boolean };
@@ -58,9 +60,9 @@ export function EditableCodeFence({ value, language, onCommit, sourceRegion, dra
     <div className="not-prose document-code" data-code-language={language || 'text'}>
       <div className="document-code-label">
         {language || 'text'}
-        {editing ? <span>Editing code</span> : <button type="button" onClick={() => setEditing(true)}>Edit code</button>}
+        {readOnly ? null : editing ? <span>Editing code</span> : <button type="button" onClick={() => setEditing(true)}>Edit code</button>}
       </div>
-      {editing ? (
+      {editing && !readOnly ? (
         <textarea
           autoFocus={!draft || draft.focused}
           className="document-code-editor"

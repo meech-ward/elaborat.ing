@@ -63,6 +63,7 @@ export function DrawingView({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  readOnly = null,
 }: {
   client: WorkspaceStore;
   initial: TabFile;
@@ -76,6 +77,8 @@ export function DrawingView({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Why the project cannot be changed, or null. The drawing is then shown in view mode, never edited or kept as a draft. */
+  readOnly?: string | null;
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
@@ -98,9 +101,10 @@ export function DrawingView({
   const [conflict, setConflict] = useState<{ revision: string; content: string | null } | null>(null);
   const [changedElsewhere, setChangedElsewhere] = useState<{ revision: string; content: string } | null>(null);
   const frozen = useRef(false);
+  const locked = blocked || Boolean(readOnly);
   useLayoutEffect(() => {
-    frozen.current = blocked;
-  }, [blocked]);
+    frozen.current = locked;
+  }, [locked]);
 
   const dirty = useMemo(() => {
     const canvasDirty = original && scene ? !scenesEqual(original.scene, scene) : false;
@@ -114,10 +118,10 @@ export function DrawingView({
   }, [dirty, savedText, view, scene, original, sourceDraft]);
 
   // Unsaved edits are kept on the device (a draft equal to the saved copy is dropped).
-  const persistDraft = useCallback(
-    () => client.persistDrafts([{ path, content: currentText(), baseRevision }]),
-    [client, path, currentText, baseRevision],
-  );
+  const persistDraft = useCallback(async () => {
+    if (readOnly) return;
+    await client.persistDrafts([{ path, content: currentText(), baseRevision }]);
+  }, [client, path, currentText, baseRevision, readOnly]);
   useEffect(() => {
     void persistDraft().catch((error: unknown) => setNotice(`Could not keep unsaved edits on this device: ${message(error)}`));
   }, [persistDraft]);
@@ -137,12 +141,12 @@ export function DrawingView({
         frozen.current = true;
       },
       release: () => {
-        frozen.current = blocked;
+        frozen.current = locked;
       },
       persistDraft,
     });
     return () => onOperationSession?.(path, null);
-  }, [onOperationSession, path, persistDraft, blocked]);
+  }, [onOperationSession, path, persistDraft, locked]);
 
   const summary = useMemo(() => (scene ? summarizeDrawing(scene) : null), [scene]);
   const sourceApi = useRef<SourceEditorApi | null>(null);
@@ -321,9 +325,11 @@ export function DrawingView({
           onSelect={(value) => (value === "canvas" ? switchToCanvas() : switchToSource())}
         />
         <ActionMenu>
-          <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
-            <Save className="size-4" aria-hidden /> Save
-          </button>
+          {!readOnly && (
+            <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
+              <Save className="size-4" aria-hidden /> Save
+            </button>
+          )}
           <button type="button" disabled={!scene} onClick={() => void exportSvg()} className={toolbarButton}>
             <Download className="size-4" aria-hidden /> SVG
           </button>
@@ -417,6 +423,7 @@ export function DrawingView({
             }}
             theme={theme}
             active={active && view === "canvas"}
+            viewOnly={Boolean(readOnly)}
           />
         </div>
       )}
@@ -433,8 +440,9 @@ export function DrawingView({
             if (!frozen.current) setSourceDraft(text);
           }}
           onCursor={() => {}}
-          onSave={() => void save()}
+          onSave={() => (readOnly ? setNotice(readOnly) : void save())}
           apiRef={sourceApi}
+          readOnly={readOnly}
         />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-neutral-500 dark:text-neutral-400">

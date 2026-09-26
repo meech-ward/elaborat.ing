@@ -78,6 +78,8 @@ export interface SourceEditorProps {
   onCursor: (line: number, column: number) => void;
   onSave: () => void;
   apiRef: React.RefObject<SourceEditorApi | null>;
+  /** Why the text cannot be changed here, or null (the default) when it can. Monaco shows it when someone tries to type. */
+  readOnly?: string | null;
 }
 
 /**
@@ -115,7 +117,7 @@ function parseErrorPosition(
 
 export function SourceEditor(props: SourceEditorProps) {
   const { appearance } = useAppearance();
-  const { visible } = props;
+  const { visible, readOnly } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
@@ -497,6 +499,13 @@ export function SourceEditor(props: SourceEditorProps) {
     );
     documentSyncRef.current?.receive(model, { text: documentText, docId: documentId });
   }, [documentText, docFormat, documentId, editorLanguage]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({
+      readOnly: Boolean(readOnly),
+      readOnlyMessage: readOnly ? { value: readOnly } : undefined,
+    });
+  }, [readOnly]);
 
   // The component stays mounted in rendered mode (history preserved);
   // relayout when it becomes visible again.

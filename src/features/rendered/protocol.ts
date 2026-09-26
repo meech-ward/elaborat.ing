@@ -250,6 +250,8 @@ export const renderMessageSchema = z.object({
   modules: z.array(z.object({path:z.string().max(512),code:z.string().max(4*1024*1024)})).max(32).optional(),
   slots: z.array(slotSchema),
   fluid: fluidRenderSchema.optional(),
+  /** The person can read the document but not change it (a viewer, or an archived project). */
+  readOnly: z.boolean().optional(),
   authoring: z
     .object({
       format: z.enum(["md", "mdx"]),

@@ -56,6 +56,7 @@ export function WorkspaceSession({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  readOnly = null,
 }: {
   client: WorkspaceStore;
   initial: TabFile;
@@ -72,6 +73,8 @@ export function WorkspaceSession({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Why the project cannot be changed (a viewer, or an archived project), or null. The file is then shown, never edited or kept as a draft. */
+  readOnly?: string | null;
 }) {
   const [store] = useState(() => {
     const store = createDocumentStore(
@@ -104,12 +107,13 @@ export function WorkspaceSession({
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
   const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore);
   useEffect(() => {
+    if (readOnly) return;
     let alive = true;
     void client.persistDrafts([{ path: initial.path, content: snapshot.text, baseRevision: openFile.baseRevision }]).catch((error: unknown) => {
       if (alive) setNotice(`Local draft could not be saved: ${error instanceof Error ? error.message : String(error)}`);
     });
     return () => { alive = false; };
-  }, [client, initial.path, openFile.baseRevision, snapshot.dirty, snapshot.text]);
+  }, [client, initial.path, openFile.baseRevision, readOnly, snapshot.dirty, snapshot.text]);
   const editorApi = useRef<SourceEditorApi | null>(null);
   const [renderedPending, setRenderedPending] = useState(false);
   const renderedPendingRef = useRef(false);
@@ -128,20 +132,22 @@ export function WorkspaceSession({
   const savingRef = useRef(false);
   const pendingOperation = useRef(0);
   const frozen = useRef(false);
-  useLayoutEffect(() => { frozen.current = blocked; }, [blocked]);
+  const locked = blocked || Boolean(readOnly);
+  useLayoutEffect(() => { frozen.current = locked; }, [locked]);
   useLayoutEffect(() => {
     onOperationSession?.(initial.path, {
       state: () => ({dirty:store.snapshot().dirty, pending:renderedPendingRef.current || pendingOperation.current > 0,
           saving:savingRef.current || openFile.save.stage === "saving",
           reconciled:openFile.baseRevision !== null && openFile.save.stage !== "conflict" && openFile.serverChanged === null}),
       freeze: () => { frozen.current = true; },
-      release: () => { frozen.current = false; },
+      release: () => { frozen.current = locked; },
       persistDraft: async () => {
+        if (readOnly) return;
         await client.persistDrafts([{ path: initial.path, content: store.snapshot().text, baseRevision: openFile.baseRevision }]);
       },
     });
     return () => onOperationSession?.(initial.path,null);
-  }, [client,initial.path,onOperationSession,openFile,store]);
+  }, [client,initial.path,locked,onOperationSession,openFile,readOnly,store]);
 
   const displayName = openFile.path ?? openFile.pendingName ?? "No file open";
   const isNote = openFile.kind === "note";
@@ -570,7 +576,7 @@ export function WorkspaceSession({
           )}
           {!navigation && <span className="wb-breadcrumb">{displayName}</span>}
           <ActionMenu>
-            <button
+            {!readOnly && <button
               disabled={
                 renderedPending || !hasFile || openFile.save.stage === "saving"
               }
@@ -585,20 +591,21 @@ export function WorkspaceSession({
               }}
             >
               <Save size={14} /> Save
-            </button>
-            <button
+            </button>}
+            {/* Read-only, the file follows its saved copy by itself. */}
+            {!readOnly && <button
               disabled={renderedPending || !openFile.path}
               onClick={() => void doReload(openFile)}
             >
               <RefreshCw size={14} /> Reload
-            </button>
+            </button>}
             <button
               disabled={renderedPending}
               onClick={() => void handleExport()}
             >
               <Download size={14} /> Export
             </button>
-            {isNote && (
+            {isNote && !readOnly && (
               <button
                 disabled={renderedPending}
                 onClick={() => void handleFormat()}
@@ -775,7 +782,12 @@ export function WorkspaceSession({
               renderError={renderError ?? sourceError}
               onChange={handleSourceChange}
               onCursor={handleCursor}
+              readOnly={readOnly}
               onSave={() => {
+                if (readOnly) {
+                  setNotice(readOnly);
+                  return;
+                }
                 const t = saveTarget(openFile);
                 if (t)
                   void doWrite(
@@ -806,6 +818,7 @@ export function WorkspaceSession({
                   /\.(?:excalidraw(?:\.md)?|d2)$/.test(path),
                 )}
                 onEditResource={handleEditResource}
+                readOnly={Boolean(readOnly)}
               />
             </div>
           )}

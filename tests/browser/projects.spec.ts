@@ -243,25 +243,28 @@ test("an archived project moves to its own section and refuses edits until it is
   await expect(page.getByRole("link", { name: "Other" })).toBeVisible()
   expect(server.projects.get(id)!.archivedAt).not.toBeNull()
 
-  // Its files still open, but an edit is not saved.
+  // Its files still open, read-only: typing changes nothing.
   await page.goto(projectUrl(id, "a.md"))
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("banner").getByText("This project is archived. Unarchive it to make changes.")).toBeVisible()
   const editor = page.locator(".monaco-editor:visible .view-lines").first()
-  await editor.click()
-  await page.keyboard.press("ControlOrMeta+End")
-  await page.keyboard.type(" edited")
-  await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByText("Save failed: This project is archived. Unarchive it to make changes.")).toBeVisible()
+  const typeAtEnd = async (text: string) => {
+    await editor.click()
+    await page.keyboard.press("ControlOrMeta+End")
+    await page.keyboard.type(text)
+  }
+  await typeAtEnd(" edited")
+  await expect(editor).not.toContainText("edited")
   expect(server.content(id, "a.md")).toBe("# Notes")
 
-  // Unarchived, it is back with the others, and the edit saves and reaches the server.
+  // Unarchived, it is back with the others, and an edit saves and reaches the server.
   await page.getByRole("link", { name: "Your projects" }).click()
   await pick(page, "Notes", "Unarchive")
   await expect(page.getByText("Unarchived Notes.")).toBeVisible()
   await expect(archived).toHaveCount(0)
   await page.getByRole("link", { name: "Notes" }).click()
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
-  await editor.click()
+  await typeAtEnd(" edited")
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => server.content(id, "a.md")).toBe("# Notes edited")
 })

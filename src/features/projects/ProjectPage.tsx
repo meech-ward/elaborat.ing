@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
+import { canEdit } from "@/features/project-storage/model"
 import { projectWorkspace } from "@/features/workbench/workspaceStore"
 import { loadWorkbench } from "@/features/workbench/load"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, useLibraryState, type ProjectAccount } from "./account"
+import { readOnlyReason } from "./readOnly"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 import { useDepartureGuard } from "./useDepartureGuard"
@@ -99,6 +101,15 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     [account.online, delayedSync, library, projectId, syncNow],
   )
 
+  const unarchive = useCallback(async () => {
+    setError(null)
+    try {
+      await library.unarchive(projectId)
+    } catch (cause) {
+      setError(`Not unarchived: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }, [library, projectId])
+
   const resolveConflict = useCallback(
     async (path: string, choice: ConflictChoice) => {
       await library.sync.resolve(projectId, path, choice)
@@ -129,12 +140,19 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     )
   }
 
+  const readOnly = readOnlyReason(entry)
   const header = (
     <div className="flex min-w-0 items-center gap-3 text-sm">
       <Link to="/" className="underline underline-offset-4">
         Your projects
       </Link>
       <h1 className="truncate font-semibold">{entry?.title ?? "Project"}</h1>
+      {readOnly ? <p className="text-amber-800 dark:text-amber-200">{readOnly}</p> : null}
+      {entry?.archived && canEdit(entry.role) ? (
+        <Button variant="outline" size="sm" onClick={() => void unarchive()}>
+          Unarchive
+        </Button>
+      ) : null}
       <p role="status" className="truncate text-muted-foreground">
         {entry ? statusLabel(entry) : ""}
         {!account.online || state.offline ? " (offline)" : ""}
@@ -160,7 +178,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         </p>
       }
     >
-      <WorkspaceWorkbench client={workspace} projectId={projectId} projectHeader={header} onLeaveGuard={registerLeaveGuard} onResolveConflict={resolveConflict} />
+      <WorkspaceWorkbench
+        client={workspace}
+        projectId={projectId}
+        projectHeader={header}
+        onLeaveGuard={registerLeaveGuard}
+        onResolveConflict={resolveConflict}
+        readOnly={readOnly}
+      />
     </Suspense>
   )
 }
