@@ -23,10 +23,10 @@ user's files through MCP, on the hosted Supabase project.
    that, on merge to `main`, runs `supabase config push`, `supabase db push` and
    `supabase functions deploy --use-api` against the project named in repository
    secrets, using Supabase CLI 2.118.0, after `supabase link` and with
-   `supabase config diff` printed before the config push. Plus a pull request
-   check that regenerates migrations from `supabase/schemas/` and fails if the
-   committed migrations are out of date. Test it from a fork against your own
-   project.
+   `supabase config diff` printed before the config push. Test it from a fork
+   against your own project. (The pull request check that fails when committed
+   migrations are out of date with `supabase/schemas/` is done: the
+   `migrations` job in `ci.yml`.)
 3. **Sign-in and consent.** Email sign-in, the OAuth 2.1 server enabled in
    `config.toml`, asymmetric signing keys, and the app's sign-in and consent
    pages using Supabase's React consent block. The app deploys to

@@ -35,7 +35,9 @@ bun run lint
 bun run test
 ```
 
-CI runs build, typecheck, lint and test on every pull request.
+CI runs build, typecheck, lint and test on every pull request, and fails if
+regenerating migrations from `supabase/schemas/` would change
+`supabase/migrations/`.
 
 ## Rules
 
