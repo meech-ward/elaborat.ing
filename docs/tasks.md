@@ -466,3 +466,117 @@ CJK text, go offline, reload, and the text still renders in its font.
 **Done when** the precache is at most about 30 MB (say the measured size in
 the pull request), the offline spec and the whole browser suite pass, and CI
 passes.
+
+## T16: returning to the rendered view keeps its place and does not take focus
+
+**Status:** Ready
+
+Switching a note from Rendered to Source and back, without editing, should
+leave the rendered view as it was. The prototype promised this ("Switching to
+Source and back without changing the note preserves the rendered reading
+position; returning does not focus the prose or save the document"), and
+elaborat.ing has no test for it yet.
+
+- Add journeys to `tests/browser/workbench.spec.ts` (or a new spec) with a
+  note long enough to scroll well below the fold (at least 300 px) in the
+  rendered frame:
+  - Rendered, scrolled deep, then Source, then Rendered: the frame's scroll
+    position is within 2 px of where it was, no editable prose in the frame
+    has focus, the file's content and saved revision are unchanged, and no
+    unsaved mark appears.
+  - Clicking a deep paragraph does focus it, typing lands in that paragraph,
+    and Ctrl+Z in the frame removes the typing, leaving the exact original
+    source bytes.
+- Run them in Chromium and Firefox, and once at phone width (390 px, touch).
+- If a journey fails, fix the app, not the journey, and say what was wrong.
+
+**Done when** the journeys pass in Chromium and Firefox, and CI passes.
+
+## T17: a touch scroll over a rendered note does not focus the editor, and a tap does
+
+**Status:** Ready
+
+On a phone, starting to scroll over rendered text must not focus the prose
+(that would open the keyboard and jump the page). A completed tap should
+focus the tapped paragraph, and a mouse click should keep focusing as it does
+now. `src/preview/fluidEditor.ts` handles `pointerdown` for touch with a
+fallback after completed taps; this task proves it.
+
+- Chromium with `hasTouch`: a real touch scroll over rendered text (Playwright
+  can send trusted touch events through the Chrome DevTools Protocol,
+  `Input.dispatchTouchEvent`) scrolls the frame and leaves the editor
+  unfocused.
+- A tap (`page.touchscreen.tap`) on a paragraph focuses it, typing lands
+  there, and saving keeps every other byte of the source.
+- A mouse click on a paragraph still focuses it, in Chromium and Firefox.
+- If Firefox cannot send touch events under Playwright, run the touch
+  journeys in Chromium only and say so.
+
+**Done when** the journeys pass, and CI passes.
+
+## T18: Undo in the Source view reverts an edit made in the Rendered view
+
+**Status:** Ready
+
+Rendered edits change the note's source, and the Source editor records them in
+its own undo history (`src/features/source/renderedHistory.ts`), so there is
+one history, not two. The prototype's promise: "Ctrl/Cmd+Z there also undoes
+accepted rendered edits", and "Ctrl/Cmd+Z in this prose surface requests the
+same source-owned undo".
+
+- Journeys: type in a paragraph in Rendered; switch to Source; Ctrl+Z restores
+  the exact original source, and Rendered then shows the original paragraph.
+  Then Ctrl+Shift+Z (redo) brings the edit back in both views.
+- Two rendered edits in a row undo one at a time, newest first.
+- Ctrl+Z inside the rendered prose undoes the same way.
+- If a journey fails, fix the app, not the journey, and say what was wrong.
+
+**Done when** the journeys pass in Chromium and Firefox, and CI passes.
+
+## T19: renaming a node on a diagram's canvas updates its code
+
+**Status:** Ready
+
+In a D2 diagram's Canvas view, renaming a generated node's text writes the
+new label back to the code: a qualified `.label` assignment marked
+`# canvas-label`, keeping the rest of the source and its comments. Connection
+labels and table rows stay canvas-only, with a notice. Save waits until the
+label reaches the code. This is unit-tested (`src/features/structured/labelSync`)
+but has no browser journey.
+
+- Journey in `tests/browser/diagram-editing.spec.ts`: open `flow.d2` with
+  `a -> b`, save once (so the generated canvas exists), double-click node `a`'s
+  text on the canvas, type `Alpha`, press Escape. The Code view then contains
+  `a.label: Alpha # canvas-label` (or the label sync's exact form), and after
+  Save the fake server has it too.
+- Renaming the connection's label shows the canvas-only notice and leaves the
+  code unchanged.
+- Finding the node on screen: the saved `flow.excalidraw` on the fake server
+  holds each element's scene position; Excalidraw's "zoom to fit"
+  (Shift+1) or the saved view's scroll gives a predictable mapping to the
+  canvas.
+
+**Done when** the journeys pass in Chromium and Firefox, and CI passes.
+
+## T20: a reloaded project never drops a remembered tab
+
+**Status:** Ready
+
+Once, under a full parallel browser run, the journey "closing a tab from the
+keyboard works, and an unsaved one asks first" in
+`tests/browser/workbench.spec.ts` failed in Chromium. After loading
+`.../b.md` (with `a.md` already open) and closing `b.md`, no `a.md` tab was
+there. The journey passed 16 times in a row on its own, so this looks like a
+race between restoring remembered tabs and opening the file in the URL, which
+shows only when the machine is busy.
+
+- Reproduce it under load (for example `--cpus=2` for the browser container,
+  more workers, or `--repeat-each` with the whole workbench spec).
+- Find where a remembered tab can be lost (the tab restore in
+  `WorkspaceWorkbench.tsx` and `tabPersistence.ts`), fix it, and add a test
+  that fails before the fix, a unit test on the tab logic if possible.
+- If it turns out to be the journey's own timing, fix the journey and explain
+  why the app is right.
+
+**Done when** the fix and its test pass, the workbench spec passes 20 times in
+a row under load in both browsers, and CI passes.
