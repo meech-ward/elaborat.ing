@@ -45,14 +45,44 @@ user's files through MCP, on the hosted Supabase project.
 ## Phase 2: the editor moves in
 
 The full editor from the original prototype, working on per-file storage.
+About half of the prototype's code moves over unchanged, a fifth is adapted to
+per-file storage, and its server and single-folder storage mode are not
+ported. Steps, in order; **(open for contributors)** marks steps that need only
+this repository once the steps before them have landed.
 
-- **Port the editor.** Notes with source and rendered editing, custom MDX
-  components in the sandboxed frame, Excalidraw drawings, D2 diagrams with
-  their native canvases, offline drafts and conflict recovery.
-- **Comment anchoring library (done).** A pure TypeScript module implementing
-  W3C Web Annotation text-quote and text-position selectors and approximate
-  re-anchoring the way Hypothesis does it. See the task below.
-- **Import tool** for projects exported from the prototype.
+1. **The pure editor, drawing and diagram code lands in the repo**, not yet
+   mounted: source editor, rendered view and frame, document model, component
+   catalog, Excalidraw drawings, D2 diagrams, workbench pieces, appearance and
+   UI primitives, with their unit tests.
+2. **Drawing tests use a synthetic Obsidian-format drawing (open for
+   contributors).**
+3. **The build ships Excalidraw's fonts and font worker, proven in a real
+   browser** with a Playwright and axe harness.
+4. **Notes render and edit in the sandboxed frame, built by the normal Vite
+   build**, so the license notices cover the frame's code too.
+5. **Projects are stored per file on the device, behind one storage
+   interface**: IndexedDB drafts, the saved copy and base version of each file,
+   and an outbox of pending saves.
+6. **Saves sync through `save_files` with per-file conflict recovery**: keep
+   mine, keep theirs, or keep both.
+7. **Open projects hear about remote changes over Realtime Broadcast (open for
+   contributors).**
+8. **People sign in with Supabase Auth, and signing out never loses drafts.**
+9. **The app opens a user's projects at real URLs, online or offline.**
+10. **Notes open in tabs, edit in source and rendered views, and save** with
+    drafts and conflict recovery.
+11. **Custom MDX components load from project files (open for contributors).**
+12. **Files and folders can be created, renamed and moved**, with references
+    rewritten in the same save.
+13. **Drawings edit, save and export on per-file storage.**
+14. **D2 diagrams compile in the browser, save as one three-file batch, and
+    embed in notes.**
+15. **The app restarts offline (open for contributors)**, using
+    vite-plugin-pwa.
+16. **Projects exported from the prototype import into elaborat.ing (open for
+    contributors).**
+
+Also done in this phase: the comment anchoring library (see the task below).
 
 ## Phase 3: public v1
 
