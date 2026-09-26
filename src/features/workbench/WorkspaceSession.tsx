@@ -99,7 +99,9 @@ export function WorkspaceSession({
     const file = await client.read(path);
     return savedComponentSource({ ...file, revision: file.revision ?? "" });
   }, [client]);
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration);
+  // A module saved in another tab, or brought in by sync, rebuilds the components.
+  const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
+  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore);
   useEffect(() => {
     let alive = true;
     void client.persistDrafts([{ path: initial.path, content: snapshot.text, baseRevision: openFile.baseRevision }]).catch((error: unknown) => {
