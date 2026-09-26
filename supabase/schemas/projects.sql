@@ -10,7 +10,11 @@ create table public.projects (
   archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint projects_title_valid check (char_length(title) between 1 and 160 and title ~ '\S'),
+  -- Not `between 1 and 160`: next to another `and`, Postgres stores that nested,
+  -- but the migration generated from it is stored flat, so regenerating
+  -- migrations would always report a change.
+  constraint projects_title_valid
+    check (char_length(title) >= 1 and char_length(title) <= 160 and title ~ '\S'),
   constraint projects_revision_nonnegative check (revision >= 0),
   constraint projects_content_bytes_limit check (content_bytes between 0 and 67108864)
 );
