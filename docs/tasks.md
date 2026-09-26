@@ -263,7 +263,10 @@ paragraph `Alphabeta.`, click its first character, press Home, press
 ArrowRight five times and Enter immediately, with no waits between keys. About
 one run in four produces `Alph` and `abeta.` instead of `Alpha` and `beta.`.
 Real typing is rarely that fast, but key repeat, macros and assistive tools
-can be.
+can be. On slower machines (GitHub's runners) arrow and Home keys pressed
+right after a click are sometimes lost the same way, so the browser-test
+helpers wait an animation frame after each click and key; remove that wait
+too once this is fixed.
 
 - Add a browser test that fails on this (repeat the sequence enough times to
   fail reliably before the fix).
