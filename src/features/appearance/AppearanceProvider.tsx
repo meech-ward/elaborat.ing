@@ -9,11 +9,11 @@ import {
 import type { ReactNode } from "react";
 import {
   APPEARANCE_STORAGE_KEY,
-  DEFAULT_APPEARANCE,
+  DEFAULT_SETTING,
   getAppearanceTokens,
-  parseAppearance,
+  parseAppearanceSetting,
 } from "./tokens";
-import type { Appearance, ColorScheme, ThemeName } from "./tokens";
+import type { Appearance, AppearanceSetting, ColorMode, ColorScheme, ThemeName } from "./tokens";
 import "./themes.css";
 import {
   readReading,
@@ -23,7 +23,11 @@ import {
 } from "./reading";
 
 interface AppearanceContextValue {
+  /** The palette and the light or dark it resolves to now. */
   appearance: Appearance;
+  /** Light, dark, or the device's setting. */
+  mode: ColorMode;
+  setMode: (mode: ColorMode) => void;
   setTheme: (theme: ThemeName) => void;
   setScheme: (scheme: ColorScheme) => void;
   toggleScheme: () => void;
@@ -34,23 +38,23 @@ interface AppearanceContextValue {
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
-function readStoredAppearance(): Appearance {
+function readStoredSetting(): AppearanceSetting {
   try {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
-      return { ...DEFAULT_APPEARANCE };
-    }
     const raw = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
-    // A first visit follows the device's light or dark setting.
-    if (raw == null) {
-      const light = window.matchMedia?.("(prefers-color-scheme: light)").matches;
-      return { ...DEFAULT_APPEARANCE, scheme: light ? "light" : "dark" };
-    }
-    return parseAppearance(JSON.parse(raw));
+    return raw == null ? { ...DEFAULT_SETTING } : parseAppearanceSetting(JSON.parse(raw));
   } catch {
-    return { ...DEFAULT_APPEARANCE };
+    // No storage (private mode, disabled) or an unreadable record.
+    return { ...DEFAULT_SETTING };
+  }
+}
+
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function deviceScheme(): ColorScheme {
+  try {
+    return window.matchMedia?.(DARK_QUERY).matches === false ? "light" : "dark";
+  } catch {
+    return "dark";
   }
 }
 
@@ -85,8 +89,20 @@ function tokenEntries(
 }
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [appearance, setAppearance] =
-    useState<Appearance>(readStoredAppearance);
+  const [setting, setSetting] = useState<AppearanceSetting>(readStoredSetting);
+  const [device, setDevice] = useState<ColorScheme>(deviceScheme);
+  // Follow the device while the page is open, for the System mode.
+  useEffect(() => {
+    const query = window.matchMedia?.(DARK_QUERY);
+    if (!query) return;
+    const update = () => setDevice(query.matches ? "dark" : "light");
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const appearance = useMemo<Appearance>(
+    () => ({ theme: setting.theme, scheme: setting.mode === "system" ? device : setting.mode }),
+    [setting, device],
+  );
   const [reading, setReading] = useState<ReadingPreferences>(() => {
     try {
       return readReading(window.localStorage);
@@ -108,32 +124,31 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   }, [reading]);
 
   const setTheme = useCallback((theme: ThemeName) => {
-    setAppearance((prev) => (prev.theme === theme ? prev : { ...prev, theme }));
+    setSetting((prev) => (prev.theme === theme ? prev : { ...prev, theme }));
   }, []);
 
-  const setScheme = useCallback((scheme: ColorScheme) => {
-    setAppearance((prev) =>
-      prev.scheme === scheme ? prev : { ...prev, scheme },
-    );
+  const setMode = useCallback((mode: ColorMode) => {
+    setSetting((prev) => (prev.mode === mode ? prev : { ...prev, mode }));
   }, []);
 
-  const toggleScheme = useCallback(() => {
-    setAppearance((prev) => ({
-      ...prev,
-      scheme: prev.scheme === "dark" ? "light" : "dark",
-    }));
-  }, []);
+  /** An explicit light or dark, leaving System. */
+  const setScheme = useCallback((scheme: ColorScheme) => setMode(scheme), [setMode]);
+
+  const toggleScheme = useCallback(
+    () => setMode(appearance.scheme === "dark" ? "light" : "dark"),
+    [appearance.scheme, setMode],
+  );
 
   useEffect(() => {
     try {
       window.localStorage.setItem(
         APPEARANCE_STORAGE_KEY,
-        JSON.stringify(appearance),
+        JSON.stringify(setting),
       );
     } catch {
       // Storage unavailable (private mode, quota, disabled): keep in-memory state.
     }
-  }, [appearance]);
+  }, [setting]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -170,6 +185,8 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppearanceContextValue>(
     () => ({
       appearance,
+      mode: setting.mode,
+      setMode,
       setTheme,
       setScheme,
       toggleScheme,
@@ -179,6 +196,8 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     }),
     [
       appearance,
+      setting.mode,
+      setMode,
       setTheme,
       setScheme,
       toggleScheme,

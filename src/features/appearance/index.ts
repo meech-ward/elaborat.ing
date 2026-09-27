@@ -3,13 +3,16 @@ export { ReadingSettings } from "./ReadingSettings";
 export {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE,
+  DEFAULT_SETTING,
   getAppearanceTokens,
-  parseAppearance,
+  parseAppearanceSetting,
   themes,
 } from "./tokens";
 export type {
   Appearance,
+  AppearanceSetting,
   AppearanceTokens,
+  ColorMode,
   ColorScheme,
   ThemeEntry,
   ThemeName,

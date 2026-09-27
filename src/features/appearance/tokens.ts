@@ -45,23 +45,38 @@ export interface AppearanceTokens {
 
 export const DEFAULT_THEME: ThemeName = 'supabase-green';
 
+/** Light or dark, or whatever the device uses. */
+export type ColorMode = ColorScheme | 'system';
+
+/** What people choose: a palette, and light, dark or the device's setting. */
+export interface AppearanceSetting {
+  theme: ThemeName;
+  mode: ColorMode;
+}
+
+export const DEFAULT_SETTING: AppearanceSetting = { theme: DEFAULT_THEME, mode: 'system' };
+
+/** The resolved appearance when nothing else is known. */
 export const DEFAULT_APPEARANCE: Appearance = { theme: DEFAULT_THEME, scheme: 'dark' };
 
 export const APPEARANCE_STORAGE_KEY = 'elaborating.appearance.v1';
 
-const schemeSchema = z.enum(['light', 'dark']);
+const modeSchema = z.enum(['light', 'dark', 'system']);
 const themeSchema = z.enum(PALETTE_IDS);
 
 /**
- * Validate an unknown persisted record. A theme that is no longer offered
- * (such as the earlier Studio, Paper and Circuit) becomes the default palette
- * and keeps its light or dark choice; anything else falls back entirely.
+ * Validate an unknown persisted setting. Records saved before the mode
+ * existed hold `scheme`, which becomes the mode. A theme that is no longer
+ * offered (such as the earlier Studio, Paper and Circuit) becomes the
+ * default palette; anything unreadable falls back to the default setting.
  */
-export function parseAppearance(value: unknown): Appearance {
-  const record = z.object({ theme: z.unknown(), scheme: schemeSchema }).safeParse(value);
-  if (!record.success) return { ...DEFAULT_APPEARANCE };
+export function parseAppearanceSetting(value: unknown): AppearanceSetting {
+  const record = z.object({ theme: z.unknown(), mode: z.unknown(), scheme: z.unknown() }).partial().safeParse(value);
+  if (!record.success) return { ...DEFAULT_SETTING };
+  const mode = modeSchema.safeParse(record.data.mode ?? record.data.scheme);
+  if (!mode.success) return { ...DEFAULT_SETTING };
   const theme = themeSchema.safeParse(record.data.theme);
-  return { theme: theme.success ? theme.data : DEFAULT_THEME, scheme: record.data.scheme };
+  return { theme: theme.success ? theme.data : DEFAULT_THEME, mode: mode.data };
 }
 
 const colorsFor = (appearance: Appearance): PaletteColors =>
@@ -91,10 +106,10 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     source: colors.codeHead,
     selection: colors.accentSoft,
     shadow: colors.shadow,
-    uiFont: "'Inter Variable', sans-serif",
-    headingFont: "'Inter Variable', sans-serif",
-    codeFont: "'IBM Plex Mono', monospace",
-    headingWeight: 550,
-    headingTracking: '-1.7px',
+    uiFont: "'Space Grotesk Variable', sans-serif",
+    headingFont: "'Space Grotesk Variable', sans-serif",
+    codeFont: "'JetBrains Mono Variable', monospace",
+    headingWeight: 700,
+    headingTracking: '-0.5px',
   };
 }

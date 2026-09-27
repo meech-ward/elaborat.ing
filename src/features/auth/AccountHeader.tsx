@@ -1,15 +1,20 @@
 import { Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { useOpenSettings } from "@/features/settings/SettingsDialog"
 import { signOut, useAuth } from "./useAuth"
 
 /** Who is signed in, with a way out; or a way in. Nothing when the build has no Supabase project. */
 export function AccountHeader() {
   const state = useAuth()
+  const openSettings = useOpenSettings()
   const [error, setError] = useState<string | null>(null)
   if (state.status === "unconfigured" || state.status === "loading") return null
   return (
     <header className="flex items-center justify-end gap-3 px-6 py-3 text-sm">
+      <Button variant="ghost" size="sm" onClick={openSettings}>
+        Settings
+      </Button>
       {state.status === "ready" ? (
         <>
           <span>

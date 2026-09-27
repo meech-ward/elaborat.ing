@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
 import { AppearanceProvider } from "./features/appearance"
+import { SettingsProvider } from "./features/settings/SettingsDialog"
 import { configureExcalidrawAssets } from "./features/drawings/assets.ts"
 import "./index.css"
 
@@ -22,7 +23,9 @@ if (!root) throw new Error("Missing #root element")
 createRoot(root).render(
   <StrictMode>
     <AppearanceProvider>
-      <RouterProvider router={router} />
+      <SettingsProvider>
+        <RouterProvider router={router} />
+      </SettingsProvider>
     </AppearanceProvider>
   </StrictMode>,
 )

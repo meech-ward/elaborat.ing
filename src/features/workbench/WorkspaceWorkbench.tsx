@@ -64,7 +64,8 @@ import {
   FileUp,
   Terminal,
 } from "lucide-react";
-import { themes, useAppearance, type ThemeName } from "@/features/appearance";
+import { themes, useAppearance } from "@/features/appearance";
+import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { AccountMenu } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { isValidProjectPath } from "@/features/project-storage/model";
@@ -193,7 +194,8 @@ export function WorkspaceWorkbench({
   const [readingSettings, setReadingSettings] = useState(false);
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<Record<string, string | null>>({});
-  const { appearance, setTheme, toggleScheme } = useAppearance();
+  const { appearance, toggleScheme } = useAppearance();
+  const openSettings = useOpenSettings();
   const sequence = useRef(0);
   const restoreDone = useRef(false);
   const interacted = useRef(false);
@@ -745,6 +747,7 @@ export function WorkspaceWorkbench({
   const commands = [
     { name: "Toggle explorer", run: () => setSidebar((v) => !v) },
     { name: "Toggle bottom panel", run: () => setPanel((v) => !v) },
+    { name: "Settings", run: () => { afterClose.current = openSettings; } },
     ...(readOnly
       ? []
       : [
@@ -766,17 +769,6 @@ export function WorkspaceWorkbench({
         </span>
         {/* On a phone the navigation sheet shows the project header at its top instead. */}
         {!narrow && projectHeader}
-        <select
-          aria-label="Palette"
-          value={appearance.theme}
-          onChange={(e) => setTheme(e.target.value as ThemeName)}
-        >
-          {themes.map((theme) => (
-            <option key={theme.id} value={theme.id}>
-              {theme.label}
-            </option>
-          ))}
-        </select>
         <button
           className="wb-command"
           aria-label="Open workspace commands"
@@ -831,6 +823,7 @@ export function WorkspaceWorkbench({
             <FolderSync size={14} /> Refresh file list
           </button>
           <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
+          <button onClick={() => afterMenu(openSettings)}>Settings</button>
           <button onClick={() => setReadingSettings(true)}>
             Reading preferences
           </button>

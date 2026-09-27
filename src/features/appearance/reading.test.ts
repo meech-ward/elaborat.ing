@@ -6,7 +6,7 @@ import {
   readReading,
   resetReading,
 } from "./reading";
-import { APPEARANCE_STORAGE_KEY, parseAppearance } from "./tokens";
+import { APPEARANCE_STORAGE_KEY, parseAppearanceSetting } from "./tokens";
 import { checkParentMessage } from "../rendered/protocol";
 
 test("valid reading records round-trip; unknown and invalid settings recover to defaults", () => {
@@ -42,8 +42,8 @@ test("old appearance records retain themes while reading preferences default ind
       key === APPEARANCE_STORAGE_KEY ? JSON.stringify(old) : null,
   };
   expect(
-    parseAppearance(JSON.parse(storage.getItem(APPEARANCE_STORAGE_KEY)!)),
-  ).toEqual(old);
+    parseAppearanceSetting(JSON.parse(storage.getItem(APPEARANCE_STORAGE_KEY)!)),
+  ).toEqual({ theme: old.theme, mode: old.scheme });
   expect(readReading(storage)).toEqual(DEFAULT_READING);
   const custom = { ...DEFAULT_READING, width: "wide", wideTables: true } as const;
   expect(

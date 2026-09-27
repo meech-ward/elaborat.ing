@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { getAppearanceTokens, parseAppearance, themes } from './index';
+import { getAppearanceTokens, parseAppearanceSetting, themes } from './index';
 import { palettes } from './palettes';
 
 describe('themes', () => {
@@ -77,26 +77,27 @@ describe('getAppearanceTokens', () => {
   });
 });
 
-describe('parseAppearance', () => {
-  test('accepts every palette in both schemes', () => {
+describe('parseAppearanceSetting', () => {
+  test('accepts every palette with light, dark or system', () => {
     for (const { id } of themes) {
-      for (const scheme of ['light', 'dark'] as const) {
-        expect(parseAppearance({ theme: id, scheme })).toEqual({ theme: id, scheme });
+      for (const mode of ['light', 'dark', 'system'] as const) {
+        expect(parseAppearanceSetting({ theme: id, mode })).toEqual({ theme: id, mode });
       }
     }
   });
 
-  test('moves a theme that is no longer offered to Supabase Green, keeping light or dark', () => {
-    expect(parseAppearance({ theme: 'studio', scheme: 'light' })).toEqual({ theme: 'supabase-green', scheme: 'light' });
-    expect(parseAppearance({ theme: 'circuit', scheme: 'dark' })).toEqual({ theme: 'supabase-green', scheme: 'dark' });
+  test('reads a record saved before the mode existed, moving old themes to Supabase Green', () => {
+    expect(parseAppearanceSetting({ theme: 'pewter', scheme: 'light' })).toEqual({ theme: 'pewter', mode: 'light' });
+    expect(parseAppearanceSetting({ theme: 'studio', scheme: 'light' })).toEqual({ theme: 'supabase-green', mode: 'light' });
+    expect(parseAppearanceSetting({ theme: 'circuit', scheme: 'dark' })).toEqual({ theme: 'supabase-green', mode: 'dark' });
   });
 
-  test('falls back to Supabase Green dark for malformed records', () => {
-    const fallback = { theme: 'supabase-green', scheme: 'dark' } as const;
-    expect(parseAppearance(null)).toEqual(fallback);
-    expect(parseAppearance('studio')).toEqual(fallback);
-    expect(parseAppearance({})).toEqual(fallback);
-    expect(parseAppearance({ theme: 'pewter' })).toEqual(fallback);
-    expect(parseAppearance({ theme: 'pewter', scheme: 'system' })).toEqual(fallback);
+  test('falls back to Supabase Green following the device', () => {
+    const fallback = { theme: 'supabase-green', mode: 'system' } as const;
+    expect(parseAppearanceSetting(null)).toEqual(fallback);
+    expect(parseAppearanceSetting('studio')).toEqual(fallback);
+    expect(parseAppearanceSetting({})).toEqual(fallback);
+    expect(parseAppearanceSetting({ theme: 'pewter' })).toEqual(fallback);
+    expect(parseAppearanceSetting({ theme: 'pewter', mode: 'sepia' })).toEqual(fallback);
   });
 });

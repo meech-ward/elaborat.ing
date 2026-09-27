@@ -20,9 +20,8 @@ const ENTRY = path.join(REPO, "src/preview/preview-entry.tsx")
 
 /** Fonts the frame embeds as data URLs, since the frame cannot load URLs. */
 const FONTS: Array<[family: string, file: string, weight: string]> = [
-  ["Inter Variable", "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", "100 900"],
-  ["DM Sans Variable", "@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2", "100 1000"],
-  ["IBM Plex Mono", "@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2", "400"],
+  ["Space Grotesk Variable", "@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2", "300 700"],
+  ["JetBrains Mono Variable", "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2", "100 800"],
 ]
 
 type FrameBuild = { code: string; licenses: string; modules: Set<string> }

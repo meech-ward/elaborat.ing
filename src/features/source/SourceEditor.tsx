@@ -414,6 +414,9 @@ export function SourceEditor(props: SourceEditorProps) {
       theme: name,
       fontFamily: tokens.codeFont,
     });
+    // The code font is a web font: measure again once it has loaded, so the
+    // cursor lines up with the text.
+    void document.fonts?.ready.then(() => monaco.editor.remeasureFonts());
   }, [appearance]);
 
   // Render-error diagnostics as editor markers (best effort on position).

@@ -42,6 +42,6 @@ original attribution. These supplement, rather than replace, embedded notices.
 
 ## Interface fonts
 
-The app's own interface uses Inter ([OFL](Inter-OFL.txt)), DM Sans
-([OFL](DM-Sans-OFL.txt)) and IBM Plex Mono ([OFL](IBM-Plex-Mono-OFL.txt)),
-self-hosted from their `@fontsource` packages.
+The app's own interface uses Space Grotesk ([OFL](Space-Grotesk-OFL.txt)) and
+JetBrains Mono ([OFL](JetBrains-Mono-OFL.txt)), self-hosted from their
+`@fontsource-variable` packages.
