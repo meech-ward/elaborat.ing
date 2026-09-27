@@ -1277,13 +1277,15 @@ above the choices. */
   align-items: center;
   flex-shrink: 0;
   min-width: 0;
+  min-height: 46px;
+  padding: 0 6px;
+  gap: 6px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
 .wb-tabline > .wb-icon {
   width: 32px;
   height: 32px;
-  margin: 0 4px;
 }
 .wb-tabline > .wb-tabs {
   flex: 1;
