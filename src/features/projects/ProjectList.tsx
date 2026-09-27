@@ -1,4 +1,3 @@
-import { Menu } from "@base-ui/react/menu"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { Ellipsis } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
@@ -6,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { panel } from "@/components/panel"
+import { Menu, MenuContent, MenuItems, MenuTrigger, type MenuEntry } from "@/components/ui/menu"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
@@ -32,28 +32,20 @@ function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
   onDelete: () => void
   onLeave: () => void
 }) {
-  const items = [
-    { label: "Members", run: onMembers },
-    ...(canEdit(entry.role) ? [{ label: entry.archived ? "Unarchive" : "Archive", run: onArchive }] : []),
-    ...(entry.role === "owner" ? [{ label: "Delete permanently", run: onDelete }] : [{ label: "Leave project", run: onLeave }]),
+  const items: MenuEntry[] = [
+    { label: "Members", onSelect: onMembers },
+    ...(canEdit(entry.role) ? [{ label: entry.archived ? "Unarchive" : "Archive", onSelect: onArchive }] : []),
+    ...(entry.role === "owner" ? [{ label: "Delete permanently", onSelect: onDelete, destructive: true }] : [{ label: "Leave project", onSelect: onLeave }]),
   ]
   return (
-    <Menu.Root>
-      <Menu.Trigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${entry.title}`} title={`Actions for ${entry.title}`} />}>
+    <Menu>
+      <MenuTrigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${entry.title}`} title={`Actions for ${entry.title}`} />}>
         <Ellipsis aria-hidden="true" />
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={4} align="end" className="z-50">
-          <Menu.Popup className="min-w-40 rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-md">
-            {items.map((item) => (
-              <Menu.Item key={item.label} className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent" onClick={item.run}>
-                {item.label}
-              </Menu.Item>
-            ))}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </MenuTrigger>
+      <MenuContent align="end" sideOffset={4}>
+        <MenuItems items={items} />
+      </MenuContent>
+    </Menu>
   )
 }
 

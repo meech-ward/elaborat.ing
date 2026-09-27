@@ -26,6 +26,7 @@ describe('getAppearanceTokens', () => {
     expect(tokens.chrome).toBe(dark.bg);
     expect(tokens.accent).toBe('#3ECF8E');
     expect(tokens.selection).toBe(dark.accentSoft);
+    expect([tokens.danger, tokens.note, tokens.drawing, tokens.diagram]).toEqual([dark.danger, dark.note, dark.drawing, dark.diagram]);
     expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).accent).toBe('#097C4F');
     expect(getAppearanceTokens({ theme: 'pewter', scheme: 'light' }).accent).toBe(palettes[6].light.accent);
   });
@@ -59,6 +60,8 @@ describe('getAppearanceTokens', () => {
         for (const surface of [t.bg, t.chrome, t.raised]) {
           for (const ink of [t.text, t.muted, t.link]) expect([where, contrast(ink, surface) >= 4.5]).toEqual([where, true]);
         }
+        // Destructive menu items sit on the panel.
+        expect([where, contrast(t.danger, t.bg) >= 4.5]).toEqual([where, true]);
       }
     }
   });
@@ -68,7 +71,7 @@ describe('getAppearanceTokens', () => {
     const dark = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
     const light = getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' });
     const [rootBlock, lightBlock] = [css.split(':root {')[1], css.split(':root[data-scheme=light] {')[1]].map((block) => block.split('}')[0]);
-    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection'] as const) {
+    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection', 'danger', 'note', 'drawing', 'diagram'] as const) {
       expect(rootBlock).toContain(`--${key}:${dark[key]};`);
       expect(lightBlock).toContain(`--${key}:${light[key]};`);
     }

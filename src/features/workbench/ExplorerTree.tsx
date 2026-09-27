@@ -8,9 +8,11 @@
  * without touching the active editor, and Rename, Move to folder and
  * Delete. The explicit Workspace root row selects the root. Files reuse
  * ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
- * basename labels; full paths stay in titles and accessible names.
+ * basename labels; full paths stay in titles and accessible names. The
+ * active file's row scrolls into view once each time the active file
+ * changes (the workbench expands its folders).
  */
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { FolderOpen } from "lucide-react";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
@@ -66,6 +68,17 @@ export function ExplorerTree({
   onDeleteFolder,
   newEntry = null,
 }: ExplorerTreeProps) {
+  const root = useRef<HTMLDivElement>(null);
+  // The file whose row was last scrolled to, so scrolling the tree by hand is left alone.
+  const shown = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFile || shown.current === activeFile) return;
+    const row = root.current?.querySelector('.wb-explorer-row[data-active="true"]');
+    // Not there yet (a folder above it is still closed) or not shown: try again later.
+    if (!row || row.getClientRects().length === 0) return;
+    shown.current = activeFile;
+    row.scrollIntoView({ block: "nearest" });
+  }, [activeFile, expanded]);
   const open = new Set(expanded);
   const fieldIn = (dir: string) => (newEntry?.dir === dir ? <li key="new-entry" className="wb-tree-new">{newEntry.field}</li> : null);
   const rootSelected = selectedFolder === "";
@@ -113,7 +126,7 @@ export function ExplorerTree({
     );
   };
   return (
-    <div className="wb-tree">
+    <div className="wb-tree" ref={root}>
       <button
         className="wb-tree-root"
         aria-pressed={rootSelected}

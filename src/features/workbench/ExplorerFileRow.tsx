@@ -1,11 +1,12 @@
 /**
- * Explorer file row with shadcn/Base UI context-menu actions.
+ * Explorer file row with Base UI context-menu actions.
  *
  * Each row exposes Copy filename, Copy path, Rename, Move to folder and
  * Delete through a real Base UI context menu (right-click, keyboard
- * Menu/Shift+F10, long-press) on the whole row, plus an always-visible
- * action-menu button carrying the same actions for touch and
- * assistive-technology users.
+ * Menu/Shift+F10, long-press) on the whole row, plus an action-menu button
+ * carrying the same list for touch and assistive-technology users. The
+ * button shows on hover, on focus and on the active row, and always on
+ * touch screens; hidden, it stays in the accessibility tree.
  * Requesting the menu never opens the file: opening happens only through
  * the row's primary button. Rename runs through a dialog with inline
  * validation; the workbench performs the rename and reports the
@@ -14,14 +15,15 @@
  * and typing cannot create a newly dirty draft under async completion.
  */
 import { useState } from "react";
-import { Copy, Link, Pencil, FolderInput, Trash2 } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
-  ContextMenuItem,
-} from "@/components/ui/context-menu";
+  MenuItems,
+  type MenuEntry,
+} from "@/components/ui/menu";
 import { ActionMenu } from "./WorkbenchChrome";
+import { KindBadge } from "./KindBadge";
 import {
   copyPayloadForPath,
   copyTextToClipboard,
@@ -121,6 +123,15 @@ export function ExplorerFileRow({
     setRenameOpen(true);
   };
 
+  // One list for the action button and the right-click menu.
+  const items: MenuEntry[] = [
+    { label: "Copy filename", onSelect: () => void copyFilename() },
+    { label: "Copy path", onSelect: () => void copyPath() },
+    ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
+    ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
+    ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
+  ];
+
   return (
     <div className="wb-explorer-row" data-active={active}>
       <ContextMenu>
@@ -139,6 +150,7 @@ export function ExplorerFileRow({
             onClick={onOpen}
             onKeyDown={openRowMenuFromKeyboard}
           >
+            <KindBadge path={path} />
             {label ?? path}
             {draft && (
               <span aria-hidden="true" className="wb-explorer-draft">
@@ -147,38 +159,12 @@ export function ExplorerFileRow({
               </span>
             )}
           </button>
-          {/* Visible fallback for users who cannot open a context menu: the
-          same three actions through an ordinary dropdown button. */}
-          <ActionMenu label={`Actions for ${path}`}>
-            <button onClick={() => void copyFilename()}>
-              <Copy size={14} /> Copy filename
-            </button>
-            <button onClick={() => void copyPath()}>
-              <Link size={14} /> Copy path
-            </button>
-            {onRename && (
-              <button onClick={requestRename}>
-                <Pencil size={14} /> Rename
-              </button>
-            )}
-            {onMove && <button onClick={onMove}><FolderInput size={14} /> Move to folder</button>}
-            {onDelete && <button onClick={onDelete}><Trash2 size={14} /> Delete</button>}
-          </ActionMenu>
+          {/* For users who cannot open a context menu: the same actions
+          through an ordinary menu button. */}
+          <ActionMenu label={`Actions for ${path}`} items={items} />
         </ContextMenuTrigger>
         <ContextMenuContent aria-label={`Actions for ${path}`}>
-          <ContextMenuItem onClick={() => void copyFilename()}>
-            <Copy size={14} /> Copy filename
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => void copyPath()}>
-            <Link size={14} /> Copy path
-          </ContextMenuItem>
-          {onRename && (
-            <ContextMenuItem onClick={requestRename}>
-              <Pencil size={14} /> Rename
-            </ContextMenuItem>
-          )}
-          {onMove && <ContextMenuItem onClick={onMove}><FolderInput size={14} /> Move to folder</ContextMenuItem>}
-          {onDelete && <ContextMenuItem onClick={onDelete}><Trash2 size={14} /> Delete</ContextMenuItem>}
+          <MenuItems items={items} />
         </ContextMenuContent>
       </ContextMenu>
       <RenameDialog

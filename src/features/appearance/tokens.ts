@@ -38,6 +38,12 @@ export interface AppearanceTokens {
   shadow: string;
   /** The dots on the app's dotted background. */
   dot: string;
+  /** Destructive actions, such as Delete in a menu. */
+  danger: string;
+  /** The kind colours: notes, drawings and D2 diagrams. */
+  note: string;
+  drawing: string;
+  diagram: string;
   uiFont: string;
   headingFont: string;
   codeFont: string;
@@ -110,6 +116,10 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     selection: colors.accentSoft,
     shadow: colors.shadow,
     dot: colors.dot,
+    danger: colors.danger,
+    note: colors.note,
+    drawing: colors.drawing,
+    diagram: colors.diagram,
     uiFont: "'Space Grotesk Variable', sans-serif",
     headingFont: "'Space Grotesk Variable', sans-serif",
     codeFont: "'JetBrains Mono Variable', monospace",

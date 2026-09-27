@@ -2,18 +2,20 @@
  * Explorer folder row: a name button that selects the folder as the
  * creation destination, a chevron that expands or collapses it, and, as for
  * files, Rename, Move to folder and Delete through a Base UI context menu
- * (right-click, keyboard Menu/Shift+F10, long-press) plus an always-visible
- * action-menu button. Renaming uses the files' rename dialog; the workbench
- * moves or deletes the folder with everything in it and reports the result.
+ * (right-click, keyboard Menu/Shift+F10, long-press) plus an action-menu
+ * button with the same list. Renaming uses the files' rename dialog; the
+ * workbench moves or deletes the folder with everything in it and reports
+ * the result.
  */
 import { useState } from "react";
-import { ChevronRight, Folder, FolderInput, FolderOpen, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+  MenuItems,
+  type MenuEntry,
+} from "@/components/ui/menu";
 import { ActionMenu } from "./WorkbenchChrome";
 import { openRowMenuFromKeyboard } from "./explorerActions";
 import { folderRenameError } from "./folderTree";
@@ -54,6 +56,12 @@ export function ExplorerFolderRow({
     setRenameKey((key) => key + 1);
     setRenameOpen(true);
   };
+  // One list for the action button and the right-click menu.
+  const items: MenuEntry[] = [
+    ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
+    ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
+    ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
+  ];
 
   const buttons = (
     <>
@@ -68,25 +76,7 @@ export function ExplorerFolderRow({
         <Icon size={15} aria-hidden="true" />
         <span className="wb-tree-name">{name}</span>
       </button>
-      {hasActions && (
-        <ActionMenu label={`Actions for folder ${path}`}>
-          {onRename && (
-            <button onClick={requestRename}>
-              <Pencil size={14} /> Rename
-            </button>
-          )}
-          {onMove && (
-            <button onClick={onMove}>
-              <FolderInput size={14} /> Move to folder
-            </button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete}>
-              <Trash2 size={14} /> Delete
-            </button>
-          )}
-        </ActionMenu>
-      )}
+      {hasActions && <ActionMenu label={`Actions for folder ${path}`} items={items} />}
       <button
         className="wb-tree-toggle"
         aria-expanded={open}
@@ -113,21 +103,7 @@ export function ExplorerFolderRow({
           {buttons}
         </ContextMenuTrigger>
         <ContextMenuContent aria-label={`Actions for folder ${path}`}>
-          {onRename && (
-            <ContextMenuItem onClick={requestRename}>
-              <Pencil size={14} /> Rename
-            </ContextMenuItem>
-          )}
-          {onMove && (
-            <ContextMenuItem onClick={onMove}>
-              <FolderInput size={14} /> Move to folder
-            </ContextMenuItem>
-          )}
-          {onDelete && (
-            <ContextMenuItem onClick={onDelete}>
-              <Trash2 size={14} /> Delete
-            </ContextMenuItem>
-          )}
+          <MenuItems items={items} />
         </ContextMenuContent>
       </ContextMenu>
       {onRename && (

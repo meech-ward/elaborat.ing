@@ -1,9 +1,9 @@
-import { Menu } from "@base-ui/react/menu"
 import { Link } from "@tanstack/react-router"
 import { CircleUserRound } from "lucide-react"
 import { createContext, useContext, useState, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
 import { retryAuth, signOut, useAuth } from "./useAuth"
 
 export type Account = { user: User; email: string | null; connectivityError?: string }
@@ -63,37 +63,27 @@ export function AccountMenu() {
   const [error, setError] = useState<string | null>(null)
   if (!account) return null
   return (
-    <Menu.Root>
-      <Menu.Trigger render={<Button variant="ghost" size="icon" aria-label="Account" />}>
+    <Menu>
+      <MenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account" />}>
         <CircleUserRound aria-hidden="true" />
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={4} className="z-50">
-          <Menu.Popup className="min-w-48 rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-md">
-            <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{account.email}</p>
-            <Menu.Item
-              className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent"
-              render={<Link to="/agents" />}
-            >
-              Connected agents
-            </Menu.Item>
-            <Menu.Item
-              className="cursor-default rounded-md px-2 py-1.5 outline-none data-highlighted:bg-accent"
-              onClick={() => {
-                setError(null)
-                void signOut().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
-              }}
-            >
-              Sign out
-            </Menu.Item>
-            {error ? (
-              <p role="alert" className="px-2 py-1.5 text-xs text-destructive">
-                Not signed out: {error}
-              </p>
-            ) : null}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </MenuTrigger>
+      <MenuContent align="center" sideOffset={4}>
+        <p className="truncate px-2.5 py-1.5 text-xs text-[var(--muted)]">{account.email}</p>
+        <MenuItem render={<Link to="/agents" />}>Connected agents</MenuItem>
+        <MenuItem
+          onClick={() => {
+            setError(null)
+            void signOut().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+          }}
+        >
+          Sign out
+        </MenuItem>
+        {error ? (
+          <p role="alert" className="px-2.5 py-1.5 text-xs text-destructive">
+            Not signed out: {error}
+          </p>
+        ) : null}
+      </MenuContent>
+    </Menu>
   )
 }

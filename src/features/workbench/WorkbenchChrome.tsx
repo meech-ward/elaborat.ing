@@ -1,17 +1,23 @@
 import {
   Children,
+  cloneElement,
   isValidElement,
   type ReactNode,
   type ReactElement,
   type ButtonHTMLAttributes,
   type Ref,
 } from "react";
-import { Menu } from "@base-ui/react/menu";
 import { MoreHorizontal } from "lucide-react";
+import { Menu, MenuContent, MenuItem, MenuItems, MenuTrigger, type MenuEntry } from "@/components/ui/menu";
 
-/** Existing commands retain their handlers; Base UI owns keyboard/focus/dismissal. */
+/**
+ * A button that opens a menu. Existing commands retain their handlers; Base
+ * UI owns keyboard/focus/dismissal. The items come from `items`, or from
+ * `children` buttons, which take the menu's look in place of their own.
+ */
 export function ActionMenu({
   children,
+  items,
   label = "File actions",
   triggerRef,
   finalFocus,
@@ -20,7 +26,9 @@ export function ActionMenu({
   triggerClassName = "wb-icon",
   align = "end",
 }: {
-  children: ReactNode;
+  children?: ReactNode;
+  /** The menu's entries; the same list can feed a right-click menu. */
+  items?: readonly MenuEntry[];
   label?: string;
   /** What the button shows; by default a "more" icon, named by `label`. */
   trigger?: ReactNode;
@@ -33,30 +41,29 @@ export function ActionMenu({
   onClosed?: () => void;
 }) {
   return (
-    <Menu.Root
+    <Menu
       onOpenChangeComplete={(open) => {
         if (!open) onClosed?.();
       }}
     >
-      <Menu.Trigger ref={triggerRef} className={triggerClassName} aria-label={trigger ? undefined : label} title={trigger ? undefined : label}>
+      <MenuTrigger ref={triggerRef} className={triggerClassName} aria-label={trigger ? undefined : label} title={trigger ? undefined : label}>
         {trigger ?? <MoreHorizontal size={18} />}
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={5} align={align} style={{ zIndex: 10000 }}>
-          <Menu.Popup className="wb-menu" finalFocus={finalFocus}>
-            {Children.toArray(children).map((child, index) =>
-              isValidElement<ButtonHTMLAttributes<HTMLButtonElement>>(child) ? (
-                <Menu.Item
-                  key={child.key ?? index}
-                  className="wb-menu-item"
-                  disabled={child.props.disabled}
-                  render={child as ReactElement}
-                />
-              ) : null,
-            )}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </MenuTrigger>
+      <MenuContent align={align} finalFocus={finalFocus}>
+        {items ? (
+          <MenuItems items={items} />
+        ) : (
+          Children.toArray(children).map((child, index) =>
+            isValidElement<ButtonHTMLAttributes<HTMLButtonElement>>(child) ? (
+              <MenuItem
+                key={child.key ?? index}
+                disabled={child.props.disabled}
+                render={cloneElement(child as ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>, { className: undefined })}
+              />
+            ) : null,
+          )
+        )}
+      </MenuContent>
+    </Menu>
   );
 }
