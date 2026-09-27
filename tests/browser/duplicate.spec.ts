@@ -3,7 +3,7 @@ import { fakeSupabase, person, quiet, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // A file can be duplicated from its menu in the tree, from its File actions,
-// or with ⌘D / Ctrl+D. The copy is "<name> copy" in the same folder, holds
+// from the command palette or with ⌘D / Ctrl+D. The copy is "<name> copy" in the same folder, holds
 // what is on screen (unsaved edits too), is saved at once and opens in a new
 // tab. A diagram's copy takes its generated files with it. A read-only
 // project offers no Duplicate (read-only.spec.ts).
@@ -77,6 +77,15 @@ test("⌘D / Ctrl+D duplicates the active note with its unsaved edits and leaves
   expect(fake.server.paths(id)).toEqual(["a copy.md", "a.md"])
   expect(fake.server.content(id, "a.md")).toBe("# A\n")
   await expect(page.getByRole("tab", { name: "a.md", exact: true }).getByLabel("unsaved changes")).toBeVisible()
+})
+
+test("Duplicate in the command palette copies the active file", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
+  await page.keyboard.press("ControlOrMeta+k")
+  await page.getByLabel("Search commands").first().fill("Duplicate")
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("tab", { name: "a copy.md" })).toHaveAttribute("aria-selected", "true")
+  await expect.poll(() => fake.server.content(id, "a copy.md")).toBe("# A\n")
 })
 
 test("a diagram's copy, from File actions, takes its generated files with it", async ({ page }) => {

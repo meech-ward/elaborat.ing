@@ -830,6 +830,7 @@ export function WorkspaceWorkbench({
           { name: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
           { name: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
           { name: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
+          ...(state.active ? [{ name: "Duplicate", run: () => { if (state.active) void duplicateFile(state.active); } }] : []),
         ]),
     ...files.map((file) => ({
       name: `Open ${file.path}`,
