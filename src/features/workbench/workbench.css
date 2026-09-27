@@ -412,23 +412,26 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-tabs {
   position: relative;
-  height: 40px;
+  height: 46px;
   flex-shrink: 0;
   display: flex;
-  overflow-x: auto;
-  scrollbar-width: none;
+  align-items: center;
+  /* Tabs that don't fit are clipped, not scrolled by hand: "+N" lists them. */
+  overflow: hidden;
   background: var(--chrome);
   border-bottom: 1px solid var(--line);
 }
+/* One open file: 32 high, radius 9, 13px muted text after its kind badge;
+   the active tab raised, in text colour and semibold. The wrapper's 1px
+   sides space the tabs apart (the drag measures wrappers). */
 .wb-tab {
   position: relative;
   user-select: none;
   display: flex;
   flex-shrink: 0;
-  border-right: 1px solid var(--line);
-  border-top: 2px solid transparent;
-  color: var(--muted);
+  padding: 0 1px;
 }
+.wb-tab[data-clipped="true"] { opacity: 0; pointer-events: none; }
 .wb-tabs[data-reordering="true"] .wb-tab { transition: transform 160ms cubic-bezier(.2,.8,.2,1); }
 .wb-tab[data-tab-dragging="true"] { opacity: 0; }
 .wb-tab-ghost {
@@ -437,16 +440,16 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   pointer-events: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 15px;
+  gap: 7px;
+  padding: 0 10px;
   box-sizing: border-box;
   color: var(--text);
   background: var(--raised);
   border: 1px solid var(--line);
-  border-top: 2px solid var(--accent);
-  border-radius: 4px;
-  box-shadow: 0 5px 14px #0004;
-  font-size: 11px;
+  border-radius: 9px;
+  box-shadow: 0 5px 14px var(--shadow);
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .wb-tab-ghost > svg { margin-left: auto; flex-shrink: 0; }
@@ -454,30 +457,78 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 @media (prefers-reduced-motion: reduce) {
   .wb-tabs[data-reordering="true"] .wb-tab, .wb-tab-ghost[data-settling="true"] { transition: none; }
 }
-.wb-tab[data-selected="true"] {
-  background: var(--bg);
-  color: var(--text);
-  border-top-color: var(--accent);
-}
 .wb-tab > button[role="tab"] {
-  font-size: 11px;
-  padding: 0 8px 0 15px;
+  height: 32px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
+.wb-tab > button[role="tab"]:hover {
+  background: color-mix(in oklab, var(--raised) 60%, transparent);
+  color: var(--text);
+}
+.wb-tab[data-selected="true"] > button[role="tab"] {
+  background: var(--raised);
+  color: var(--text);
+  font-weight: 600;
+}
+.wb-tab .wb-kind,
+.wb-tab-ghost .wb-kind,
+.wb-tabs-menu .wb-kind {
+  margin-right: 0;
+}
+/* Unsaved: a 7px dot, ringed where its colour is faint on the tab (tokens.ts). */
+.wb-tab-dirty {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--dirty);
+  box-shadow: 0 0 0 1px var(--dirty-ring);
+}
+/* The close mark shows on the active tab, on hover and on focus. */
 .wb-tab-close {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
-  margin-left: 4px;
-  border-radius: 4px;
+  margin-right: -4px;
+  border-radius: 5px;
   cursor: pointer;
 }
 .wb-tab-close:hover {
-  background: var(--raised);
+  background: color-mix(in oklab, var(--text) 12%, transparent);
+  color: var(--text);
 }
+@media (hover: hover) {
+  .wb-tab:not([data-selected="true"], :hover, :focus-within) .wb-tab-close { opacity: 0; }
+}
+/* "+N": the open files that don't fit, in a menu. It sits in the line's
+   flow after the tab list and is moved left to just after the last tab in
+   view (TabStrip.tsx). */
+.wb-app .wb-tabs-more {
+  position: relative;
+  height: 32px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.wb-app .wb-tabs-more:hover,
+.wb-app .wb-tabs-more[data-popup-open] {
+  background: var(--raised);
+  color: var(--text);
+}
+.wb-app[data-focus="true"] .wb-tabs-more { display: none; }
 .wb-sessions,
 .wb-session-host,
 .wb-session,

@@ -84,6 +84,8 @@ function tokenEntries(
     ["--dot", tokens.dot],
     ["--warn-bg", tokens.warnBg],
     ["--danger", tokens.danger],
+    ["--dirty", tokens.dirty],
+    ["--dirty-ring", tokens.dirtyRing],
     ["--note", tokens.note],
     ["--drawing", tokens.drawing],
     ["--diagram", tokens.diagram],

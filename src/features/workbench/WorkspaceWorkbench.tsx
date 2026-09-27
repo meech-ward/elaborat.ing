@@ -10,15 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import { usePanelRef } from "react-resizable-panels";
-import { createPortal } from "react-dom";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Dialog } from "@base-ui/react/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useTabReorder } from "./useTabReorder";
+import { TabStrip } from "./TabStrip";
 import {
   SidebarProvider,
   Sidebar,
@@ -1006,51 +1006,14 @@ export function WorkspaceWorkbench({
                   <PanelLeft size={16} />
                 </button>
               )}
-              <TabsList className="wb-tabs" aria-label="Open files" activateOnFocus {...tabReorder.handlers} data-reordering={tabReorder.visual?.animateNeighbors ?? false}>
-                {state.tabs.map((tab) => (
-                  <div
-                    className="wb-tab"
-                    data-tab-path={tab.path}
-                    data-tab-dragging={tabReorder.visual?.path === tab.path}
-                    style={{ transform: `translateX(${tabReorder.visual?.offsets[tab.path] ?? 0}px)` }}
-                    data-selected={tab.path === state.active}
-                    key={tab.path}
-                  >
-                    {/* A tab list may hold only tabs, so the close mark sits inside
-                    the tab as a pointer target; from the keyboard, Delete closes
-                    the focused tab (and the phone navigation lists close buttons). */}
-                    <TabsTrigger
-                      value={tab.path}
-                      id={tabId(tab.path)}
-                      aria-label={tab.path}
-                      title={`${tab.path} · Drag to reorder; Alt+Shift+Left/Right moves the focused tab; Delete closes it`}
-                      aria-keyshortcuts="Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-                      onKeyDown={(event) => {
-                        if (event.key !== "Delete") return;
-                        event.preventDefault();
-                        closeTab(tab.path);
-                      }}
-                    >
-                      {tab.path.split("/").pop()}
-                      {tab.dirty && <span aria-label="unsaved changes">●</span>}
-                      <span
-                        aria-hidden="true"
-                        className="wb-tab-close"
-                        data-tab-close={tab.path}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          closeTab(tab.path);
-                        }}
-                      >
-                        <X size={12} />
-                      </span>
-                    </TabsTrigger>
-                  </div>
-                ))}
-              </TabsList>
+              <TabStrip
+                tabs={state.tabs}
+                active={state.active}
+                tabId={tabId}
+                reorder={tabReorder}
+                onSelect={selectTab}
+                onClose={closeTab}
+              />
               {!narrow && <div className="wb-tabline-actions" ref={setTablineSlot} />}
               {!narrow && (
                 <button type="button" className="wb-icon" aria-label="Open workspace commands" title="Commands (⌘K)" onClick={(e) => openPalette(e.currentTarget)}>
@@ -1063,14 +1026,6 @@ export function WorkspaceWorkbench({
                 </button>
               )}
               </div>
-              {tabReorder.visual && createPortal(
-                <div className="wb-tab-ghost" aria-hidden="true" data-settling={tabReorder.visual.settling}
-                  style={{ left: tabReorder.visual.left, top: tabReorder.visual.top, width: tabReorder.visual.width, height: tabReorder.visual.height }}>
-                  <span>{tabReorder.visual.path.split("/").pop()}</span>
-                  {state.tabs.find(tab => tab.path === tabReorder.visual?.path)?.dirty && <span>●</span>}
-                  <X size={12} />
-                </div>, document.body,
-              )}
               {notice && (
                 <p role="status" className="wb-notice">
                   {notice}

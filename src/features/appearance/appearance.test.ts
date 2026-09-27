@@ -3,6 +3,18 @@ import { readFileSync } from 'node:fs';
 import { getAppearanceTokens, parseAppearanceSetting, themes } from './index';
 import { palettes } from './palettes';
 
+const luminance = (hex: string) => {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
 describe('themes', () => {
   test('lists the eight palettes, Supabase Green first', () => {
     expect(themes.map((entry) => entry.label)).toEqual([
@@ -43,17 +55,6 @@ describe('getAppearanceTokens', () => {
   });
 
   test('text, links and button text are readable in every palette and scheme', () => {
-    const luminance = (hex: string) => {
-      const [r, g, b] = [1, 3, 5].map((i) => {
-        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    const contrast = (a: string, b: string) => {
-      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-      return (hi + 0.05) / (lo + 0.05);
-    };
     for (const { id } of themes) {
       for (const scheme of ['light', 'dark'] as const) {
         const t = getAppearanceTokens({ theme: id, scheme });
@@ -71,6 +72,25 @@ describe('getAppearanceTokens', () => {
     }
   });
 
+  test('the unsaved dot shows at 3:1 on a tab, or gets a muted ring that does', () => {
+    const ringed: string[] = [];
+    for (const { id } of themes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const t = getAppearanceTokens({ theme: id, scheme });
+        const where = `${id} ${scheme}`;
+        expect([where, t.dirty]).toEqual([where, palettes.find((palette) => palette.id === id)![scheme].dirty]);
+        // A tab is the panel, or the raised fill when it is active or hovered.
+        const plain = [t.bg, t.raised].every((surface) => contrast(t.dirty, surface) >= 3);
+        expect([where, t.dirtyRing]).toEqual([where, plain ? 'transparent' : t.muted]);
+        if (plain) continue;
+        ringed.push(where);
+        for (const surface of [t.bg, t.raised]) expect([where, contrast(t.dirtyRing, surface) >= 3]).toEqual([where, true]);
+      }
+    }
+    expect(ringed).toContain('lavender-ink light');
+    expect(ringed).not.toContain('supabase-green light');
+  });
+
   test('focus rings use the accent, or the link colour where the accent is too light', () => {
     expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).focus).toBe(palettes[0].light.accent);
     const volt = palettes.find((palette) => palette.id === 'ink-and-volt')!;
@@ -84,11 +104,13 @@ describe('getAppearanceTokens', () => {
     const dark = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
     const light = getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' });
     const [rootBlock, lightBlock] = [css.split(':root {')[1], css.split(':root[data-scheme=light] {')[1]].map((block) => block.split('}')[0]);
-    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection', 'danger', 'note', 'drawing', 'diagram'] as const) {
+    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection', 'danger', 'dirty', 'note', 'drawing', 'diagram'] as const) {
       expect(rootBlock).toContain(`--${key}:${dark[key]};`);
       expect(lightBlock).toContain(`--${key}:${light[key]};`);
     }
     expect(rootBlock).toContain(`--accent-text:${dark.accentText};`);
+    expect(rootBlock).toContain(`--dirty-ring:${dark.dirtyRing};`);
+    expect(lightBlock).toContain(`--dirty-ring:${light.dirtyRing};`);
     expect(lightBlock).toContain(`--link:${light.link};`);
     for (const key of ['focus', 'danger'] as const) {
       expect(rootBlock).toContain(`--${key}:${dark[key]};`);

@@ -302,6 +302,81 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   expect(serverContent(fake, id, "a.md")).toBe("a\nnote")
 })
 
+test("clicking a tab's close mark closes it", async ({ page }) => {
+  await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await openFromExplorer(page, "b.md")
+  // The mark is a pointer target only (a tab list holds only tabs); it shows on hover.
+  await page.getByRole("tab", { name: "a.md" }).hover()
+  await page.locator('[data-tab-close="a.md"]').click()
+  await expect(page.getByRole("tab", { name: "a.md" })).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
+})
+
+/** Whether a tab lies wholly inside the visible part of the tab strip. */
+const tabInView = (page: Page, name: string) =>
+  page.getByRole("tablist", { name: "Open files" }).evaluate((list, name) => {
+    const tab = [...list.querySelectorAll<HTMLElement>("[data-tab-path]")].find((node) => node.dataset.tabPath === name)
+    if (!tab) return false
+    const outer = list.getBoundingClientRect()
+    const box = tab.getBoundingClientRect()
+    return box.left >= outer.left - 1 && box.right <= outer.right + 1
+  }, name)
+
+test("twelve open tabs at 1280: +N lists the rest, and the active or focused tab stays in view", async ({ page }) => {
+  // Twelve notes load, twice.
+  test.slow()
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const names = Array.from({ length: 12 }, (_, i) => `note-${String(i + 1).padStart(2, "0")}.md`)
+  await openProject(page, Object.fromEntries(names.map((name) => [name, `# ${name}\n`])), names[0])
+  await remembered(page, names[0])
+  await page.evaluate((names) => {
+    const key = Object.keys(localStorage).find((key) => key.endsWith("elaborating.tabs.v1"))!
+    localStorage.setItem(key, JSON.stringify({ version: 1, openPaths: names, activePath: names[0] }))
+  }, names)
+  await page.reload()
+  // Every tab is still a tab, whether it fits or not.
+  for (const name of names) await expect(page.getByRole("tab", { name })).toHaveCount(1, { timeout: 15_000 })
+  await expect(page.getByRole("tab", { name: names[0] })).toHaveAttribute("aria-selected", "true")
+  expect(await tabInView(page, names[0])).toBe(true)
+  expect(await tabInView(page, names[11])).toBe(false)
+
+  // "+N" lists exactly the tabs out of view, with the last one among them.
+  const more = page.getByRole("button", { name: /^\d+ more open files?$/ })
+  await expect(more).toBeVisible()
+  const outOfView = async () => {
+    const hidden: string[] = []
+    for (const name of names) if (!(await tabInView(page, name))) hidden.push(name)
+    return hidden.length
+  }
+  await expect.poll(async () => Number((await more.getAttribute("aria-label"))!.split(" ")[0]) === (await outOfView())).toBe(true)
+  const count = await outOfView()
+  await more.click()
+  await expect(page.getByRole("menuitem")).toHaveCount(count)
+  await page.getByRole("menuitem", { name: names[11] }).click()
+  await expect(page.getByRole("tab", { name: names[11] })).toHaveAttribute("aria-selected", "true")
+  await expect.poll(() => tabInView(page, names[11])).toBe(true)
+  await expect.poll(() => tabInView(page, names[0])).toBe(false)
+
+  // ArrowRight from the last tab in view focuses the next one and brings it into view.
+  await page.getByRole("tab", { name: names[0] }).focus()
+  await expect.poll(() => tabInView(page, names[0])).toBe(true)
+  let last = 0
+  while (await tabInView(page, names[last + 1])) last++
+  await page.getByRole("tab", { name: names[last] }).focus()
+  await page.keyboard.press("ArrowRight")
+  await expect(page.getByRole("tab", { name: names[last + 1] })).toBeFocused()
+  await expect.poll(() => tabInView(page, names[last + 1])).toBe(true)
+
+  // Alt+Shift+ArrowRight moves the focused tab past one out of view, and it stays in view.
+  await page.keyboard.press("Alt+Shift+ArrowRight")
+  await expect.poll(() => page.locator("[data-tab-path]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-tab-path"))))
+    .toEqual([...names.slice(0, last + 1), names[last + 2], names[last + 1], ...names.slice(last + 3)])
+  await expect.poll(() => tabInView(page, names[last + 1])).toBe(true)
+
+  const axe = await new AxeBuilder({ page }).include(".wb-tabline").analyze()
+  expect(axe.violations).toEqual([])
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 

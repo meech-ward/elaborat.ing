@@ -44,6 +44,10 @@ export interface AppearanceTokens {
   warnBg: string;
   /** Destructive actions, such as Delete in a menu. */
   danger: string;
+  /** The unsaved-changes dot. */
+  dirty: string;
+  /** A ring around the unsaved dot: `muted` where `dirty` alone is under 3:1 on a tab, otherwise transparent. */
+  dirtyRing: string;
   /** The kind colours: notes, drawings and D2 diagrams. */
   note: string;
   drawing: string;
@@ -121,6 +125,10 @@ const contrast = (a: string, b: string) => {
 const focusColor = (colors: PaletteColors) =>
   contrast(colors.accent, colors.panel) >= 3 && contrast(colors.accent, colors.bg) >= 3 ? colors.accent : colors.accentSoftText;
 
+/** The unsaved dot sits on a tab, which is the panel or, when active or hovered, the raised fill. */
+const dirtyRing = (colors: PaletteColors) =>
+  contrast(colors.dirty, colors.panel) >= 3 && contrast(colors.dirty, colors.seg) >= 3 ? 'transparent' : colors.muted;
+
 /**
  * The palette's colours in the variables today's screens use: the document
  * sits on the palette's panel, bars and the sidebar on its background, menus
@@ -149,6 +157,8 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     dot: colors.dot,
     warnBg: colors.warnBg,
     danger: colors.danger,
+    dirty: colors.dirty,
+    dirtyRing: dirtyRing(colors),
     note: colors.note,
     drawing: colors.drawing,
     diagram: colors.diagram,
