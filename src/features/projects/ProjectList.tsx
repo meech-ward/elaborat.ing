@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { panel } from "@/components/panel"
-import { Menu, MenuContent, MenuItems, MenuTrigger, type MenuEntry } from "@/components/ui/menu"
+import { ActionMenu, type MenuEntry } from "@/features/design-system"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
@@ -38,14 +38,15 @@ function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
     ...(entry.role === "owner" ? [{ label: "Delete permanently", onSelect: onDelete, destructive: true }] : [{ label: "Leave project", onSelect: onLeave }]),
   ]
   return (
-    <Menu>
-      <MenuTrigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${entry.title}`} title={`Actions for ${entry.title}`} />}>
-        <Ellipsis aria-hidden="true" />
-      </MenuTrigger>
-      <MenuContent align="end" sideOffset={4}>
-        <MenuItems items={items} />
-      </MenuContent>
-    </Menu>
+    <ActionMenu
+      entries={items}
+      trigger={
+        <Button variant="ghost" size="icon" aria-label={`Actions for ${entry.title}`} title={`Actions for ${entry.title}`}>
+          <Ellipsis aria-hidden="true" />
+        </Button>
+      }
+      contentProps={{ align: "end" }}
+    />
   )
 }
 

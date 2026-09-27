@@ -1,5 +1,5 @@
 export { AccountHeader } from "./AccountHeader"
-export { AccountMenu, AuthGate, useAccount, type Account } from "./AuthGate"
+export { AuthGate, useAccount, type Account } from "./AuthGate"
 export { AuthPage } from "./AuthPage"
 export { withSignOutGuards, type BeforeSignOut } from "./beforeSignOut"
 export { EmailCodeStep, sendSignInEmail } from "./MagicLinkForm"

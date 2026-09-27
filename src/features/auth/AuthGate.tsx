@@ -1,10 +1,7 @@
-import { Link } from "@tanstack/react-router"
-import { CircleUserRound } from "lucide-react"
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
-import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
-import { retryAuth, signOut, useAuth } from "./useAuth"
+import { retryAuth, useAuth } from "./useAuth"
 
 export type Account = { user: User; email: string | null; connectivityError?: string }
 
@@ -54,36 +51,5 @@ export function AuthGate({ children, signedOut }: { children: ReactNode; signedO
     <AccountContext.Provider value={{ user: state.user, email: state.email, connectivityError: state.connectivityError }}>
       {children}
     </AccountContext.Provider>
-  )
-}
-
-/** The account button: who is signed in, and signing out (after every sign-out guard has run). */
-export function AccountMenu() {
-  const account = useAccount()
-  const [error, setError] = useState<string | null>(null)
-  if (!account) return null
-  return (
-    <Menu>
-      <MenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account" />}>
-        <CircleUserRound aria-hidden="true" />
-      </MenuTrigger>
-      <MenuContent align="center" sideOffset={4}>
-        <p className="truncate px-2.5 py-1.5 text-xs text-[var(--muted)]">{account.email}</p>
-        <MenuItem render={<Link to="/agents" />}>Connected agents</MenuItem>
-        <MenuItem
-          onClick={() => {
-            setError(null)
-            void signOut().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
-          }}
-        >
-          Sign out
-        </MenuItem>
-        {error ? (
-          <p role="alert" className="px-2.5 py-1.5 text-xs text-(--danger)">
-            Not signed out: {error}
-          </p>
-        ) : null}
-      </MenuContent>
-    </Menu>
   )
 }
