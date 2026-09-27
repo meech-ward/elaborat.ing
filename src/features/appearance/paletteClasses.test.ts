@@ -8,12 +8,8 @@ import { join, relative } from 'node:path';
 const fixedColour =
   /\b(?:red|amber|neutral|green|blue|gray|grey|zinc|slate|stone|emerald|sky|yellow|orange|lime|teal|cyan|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)\b/g;
 
-// Files that may still use fixed colours, each named with the reason.
-const allowed = new Set<string>([
-  // Their status lines move to the palette once Split lands in them.
-  'features/workbench/DrawingView.tsx',
-  'features/workbench/DiagramView.tsx',
-]);
+// Files that may still use fixed colours, each named with the reason. Empty now.
+const allowed = new Set<string>([]);
 
 const src = join(import.meta.dir, '..', '..');
 

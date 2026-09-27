@@ -36,11 +36,11 @@ import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
-  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800";
+  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-(--raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
 const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900";
+  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =
-  "mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -437,7 +437,7 @@ export function DrawingView({
 
       <div
         aria-live="polite"
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-neutral-200 py-1.5 font-mono text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-border py-1.5 font-mono text-xs text-muted-foreground"
       >
         <span>{dirty ? "Unsaved changes" : "Saved"}</span>
         {summary && (
@@ -446,13 +446,13 @@ export function DrawingView({
           </span>
         )}
         {saving && <span>Saving…</span>}
-        {notice && <span className="text-neutral-700 dark:text-neutral-200">{notice}</span>}
+        {notice && <span className="text-foreground">{notice}</span>}
       </div>
 
       {sourceError && (
         <p
           role="alert"
-          className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
         >
           {original
             ? `This is not a valid drawing: ${sourceError} The canvas keeps the last valid scene.`
@@ -553,7 +553,7 @@ export function DrawingView({
           readOnly={readOnly}
         />
       </div>
-      <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+      <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
         {view === "canvas" ? <Pencil className="size-3.5" aria-hidden /> : <FileJson className="size-3.5" aria-hidden />}
         {view === "canvas"
           ? "Canvas: tools, labels, arrows and freehand, with undo. Opening a drawing never rewrites it."

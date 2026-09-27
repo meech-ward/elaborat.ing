@@ -39,11 +39,11 @@ import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
-  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800";
+  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-(--raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
 const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900";
+  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =
-  "mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -539,7 +539,7 @@ export function DiagramView({
             <CompactFileIdentity navigation={navigation} path={path} />
           </div>
         )}
-        <p role="status" aria-live="polite" className="mt-2 px-3 text-sm text-neutral-500 dark:text-neutral-400">
+        <p role="status" aria-live="polite" className="mt-2 px-3 text-[13px] text-muted-foreground">
           Compiling diagram…
         </p>
       </div>
@@ -554,7 +554,7 @@ export function DiagramView({
             <CompactFileIdentity navigation={navigation} path={path} />
           </div>
         )}
-        <div role="alert" className="mt-2 rounded-lg border border-red-300 bg-red-50 px-4 py-6 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+        <div role="alert" className="mt-2 rounded-lg px-4 py-6 text-sm wb-banner-danger">
           <p className="font-medium">This diagram could not be opened, and nothing was changed.</p>
           <p className="mt-1 font-mono text-xs">{bootError ?? "No scene."}</p>
         </div>
@@ -611,21 +611,21 @@ export function DiagramView({
 
       <div
         aria-live="polite"
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-neutral-200 py-1.5 font-mono text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-border py-1.5 font-mono text-xs text-muted-foreground"
       >
         <span>{dirty ? "Unsaved changes" : "Saved"}</span>
         <span className="wb-native-detail">
           {scene.elements.length} elements · {conflicts.length} conflicts
         </span>
         {saving && <span>Saving…</span>}
-        {notice && <span className="text-neutral-700 dark:text-neutral-200">{notice}</span>}
+        {notice && <span className="text-foreground">{notice}</span>}
         {pendingLabels.length > 0 && <span role={labelError ? "alert" : "status"}>{labelError ?? "Updating the code with the canvas label…"}</span>}
       </div>
 
       {errors.length > 0 && (
         <div
           role="alert"
-          className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
         >
           {errors.map((entry, index) => (
             <p key={index} className="font-mono text-xs">
@@ -721,7 +721,7 @@ export function DiagramView({
           viewOnly={canvasViewOnly}
         />
       </div>
-      <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">
         Renaming a node on the canvas updates the code. Code changes reach the canvas on Regenerate, which keeps freehand additions and
         moved shapes. Generated files: <span className="font-mono">{nativePath}</span> and <span className="font-mono">{sidecarPath}</span>.
       </p>
