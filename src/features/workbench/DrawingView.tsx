@@ -25,7 +25,7 @@ import type { OperationSession } from "./operationSession";
 import { readProjectView, writeProjectView } from "./projectViews";
 import type { TabFile } from "./tabs";
 import { ViewSwitcher } from "./ViewSwitcher";
-import { useCanvasTheme } from "./viewTheme";
+import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { TablineActions } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
@@ -84,6 +84,7 @@ export function DrawingView({
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
+  const present = useCanvasPresentation("drawing");
   const [opened] = useState(() => tryParse(initial.content, path));
   const [original, setOriginal] = useState<ParsedDrawing | null>(opened.parsed);
   const [scene, setScene] = useState<DrawingScene | null>(opened.parsed?.scene ?? null);
@@ -413,6 +414,7 @@ export function DrawingView({
               if (!frozen.current) setScene(next);
             }}
             theme={theme}
+            present={present}
             active={active && view === "canvas"}
             viewOnly={Boolean(readOnly)}
           />

@@ -14,6 +14,10 @@ export type EmitResult = {
   diagnostics: Diagnostic[];
 };
 
+/** The colours every generated element starts with (saved as these). */
+export const GENERATED_STROKE = '#1e1e1e';
+export const GENERATED_FILL = 'transparent';
+
 const LABEL_FONT_SIZE = 16;
 const LABEL_LINE_HEIGHT = 1.25;
 const LABEL_FONT_FAMILY = 5; // Pinned native Excalifont, also supplied to D2.
@@ -53,8 +57,8 @@ function baseElement(
     width: round2(width),
     height: round2(height),
     angle: 0,
-    strokeColor: '#1e1e1e',
-    backgroundColor: 'transparent',
+    strokeColor: GENERATED_STROKE,
+    backgroundColor: GENERATED_FILL,
     fillStyle: 'solid',
     strokeWidth: 2,
     strokeStyle: 'solid',

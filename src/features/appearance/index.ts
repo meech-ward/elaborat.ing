@@ -4,6 +4,7 @@ export {
   DEFAULT_APPEARANCE,
   DEFAULT_SETTING,
   getAppearanceTokens,
+  getPaletteColors,
   parseAppearanceSetting,
   themes,
 } from "./tokens";

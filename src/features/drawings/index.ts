@@ -43,5 +43,7 @@ export {
   serializeDrawing,
 } from './serialize.ts';
 export { summarizeDrawing } from './summary.ts';
+export type { CanvasColors } from './presentation.ts';
+export { beforeDarkFilter, presentDrawing } from './presentation.ts';
 export { EXCALIDRAW_VERSION, exportDrawingPng, exportDrawingSvg } from './export.ts';
 export { DrawingCanvas } from './DrawingCanvas.tsx';

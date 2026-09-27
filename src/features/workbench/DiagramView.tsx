@@ -29,7 +29,7 @@ import type { OperationSession } from "./operationSession";
 import { readProjectView, writeProjectView } from "./projectViews";
 import type { TabFile } from "./tabs";
 import { ViewSwitcher } from "./ViewSwitcher";
-import { useCanvasTheme } from "./viewTheme";
+import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { TablineActions } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
@@ -88,6 +88,7 @@ export function DiagramView({
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
+  const present = useCanvasPresentation("diagram");
   const nativePath = useMemo(() => nativePathFor(path), [path]);
   const sidecarPath = useMemo(() => sidecarPathFor(path), [path]);
 
@@ -656,7 +657,7 @@ export function DiagramView({
         />
       </div>
       <div hidden={view !== "canvas"} className="wb-native-stage">
-        <DrawingCanvas scene={scene} onChange={changeCanvas} theme={theme} active={active && view === "canvas"} viewOnly={Boolean(readOnly)} />
+        <DrawingCanvas scene={scene} onChange={changeCanvas} theme={theme} present={present} active={active && view === "canvas"} viewOnly={Boolean(readOnly)} />
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
         Renaming a node on the canvas updates the code. Code changes reach the canvas on Regenerate, which keeps freehand additions and

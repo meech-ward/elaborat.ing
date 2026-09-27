@@ -81,7 +81,8 @@ export function parseAppearanceSetting(value: unknown): AppearanceSetting {
   return { theme: theme.success ? theme.data : DEFAULT_THEME, mode: mode.data };
 }
 
-const colorsFor = (appearance: Appearance): PaletteColors =>
+/** The palette's own colours for an appearance, for screens that take colours in code (the code editor, the canvas). */
+export const getPaletteColors = (appearance: Appearance): PaletteColors =>
   (palettes.find((palette) => palette.id === appearance.theme) ?? palettes[0])[appearance.scheme];
 
 /**
@@ -90,7 +91,7 @@ const colorsFor = (appearance: Appearance): PaletteColors =>
  * on its raised fill. The four named colours are the code and callout ones.
  */
 export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
-  const colors = colorsFor(appearance);
+  const colors = getPaletteColors(appearance);
   return {
     bg: colors.panel,
     chrome: colors.bg,

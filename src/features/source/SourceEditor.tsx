@@ -5,7 +5,8 @@ import * as prettierMarkdown from "prettier/plugins/markdown";
 import type { DocumentSnapshot, SourcePatch } from "@/features/document";
 import { createModelDocumentSync, languageForFormat } from "./modelSync";
 import { setupMonaco } from "./monacoSetup";
-import { getAppearanceTokens, useAppearance } from "@/features/appearance";
+import { getAppearanceTokens, getPaletteColors, useAppearance } from "@/features/appearance";
+import { monacoTheme } from "./monacoTheme";
 import { completeSource } from "./completions";
 import type { ComponentDefinition } from '../document/componentCatalog';
 import type {
@@ -160,7 +161,6 @@ export function SourceEditor(props: SourceEditorProps) {
         head.column,
       );
     };
-    syncTheme();
 
     // Global language registration must be torn down on unmount, and so
     // must the keybindings of the editor's actions below.
@@ -349,14 +349,6 @@ export function SourceEditor(props: SourceEditorProps) {
       },
     };
 
-    function syncTheme() {
-      editor.updateOptions({
-        theme: window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "vs-dark"
-          : "vs",
-      });
-    }
-
     return () => {
       live.current.apiRef.current = null;
       for (const item of disposables) item.dispose();
@@ -370,46 +362,9 @@ export function SourceEditor(props: SourceEditorProps) {
 
   useEffect(() => {
     const tokens = getAppearanceTokens(appearance);
+    // Themes are global: the conflict diff's editors follow this one.
     const name = `elaborating-${appearance.theme}-${appearance.scheme}`;
-    // Monaco token rules take hex without `#`; expand 3-digit to 6 digits.
-    const tokenForeground = (value: string) =>
-      value
-        .replace(/^#/, "")
-        .replace(/^([\da-f])([\da-f])([\da-f])$/i, "$1$1$2$2$3$3");
-    monaco.editor.defineTheme(name, {
-      base: appearance.scheme === "dark" ? "vs-dark" : "vs",
-      inherit: true,
-      rules:
-        appearance.scheme === "dark"
-          ? []
-          : [
-              {
-                token: "type.identifier.mdx",
-                foreground: tokenForeground(tokens.accent),
-              },
-              {
-                token: "attribute.name",
-                foreground: tokenForeground(tokens.text),
-              },
-            ],
-      colors: {
-        // CSS accepts #fff, but Monaco's token color map requires six digits.
-        "editor.background": tokens.bg.replace(
-          /^#([\da-f])([\da-f])([\da-f])$/i,
-          "#$1$1$2$2$3$3",
-        ),
-        "editor.foreground": tokens.text,
-        "editorLineNumber.foreground": tokens.muted,
-        "editor.selectionBackground": tokens.selection,
-        "editorCursor.foreground": tokens.accent,
-        "editorWidget.background": tokens.raised,
-        "editorWidget.border": tokens.line,
-        "editorSuggestWidget.background": tokens.raised,
-        "editorSuggestWidget.foreground": tokens.text,
-        "editorSuggestWidget.selectedBackground": tokens.selection,
-        "editor.lineHighlightBackground": tokens.chrome,
-      },
-    });
+    monaco.editor.defineTheme(name, monacoTheme(getPaletteColors(appearance), appearance.scheme));
     editorRef.current?.updateOptions({
       theme: name,
       fontFamily: tokens.codeFont,

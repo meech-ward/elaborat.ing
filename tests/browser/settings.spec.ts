@@ -63,3 +63,48 @@ test("Settings opens from the home page", async ({ page }) => {
   await page.getByRole("button", { name: "Settings" }).click()
   await expect(page.getByRole("dialog", { name: "Settings" }).getByRole("radio", { name: "Supabase Green" })).toBeChecked()
 })
+
+test("the code editor and the drawing canvas take the chosen palette's colours, and the drawing stays unchanged", async ({ page }) => {
+  const cherry = palettes.find((palette) => palette.id === "cherry-paper")!.light
+  const scene = `${JSON.stringify({ type: "excalidraw", version: 2, elements: [], appState: { viewBackgroundColor: "#ffffff" }, files: {} })}\n`
+  await page.emulateMedia({ colorScheme: "dark" })
+  const fake = await fakeSupabase(page)
+  const id = crypto.randomUUID()
+  const remote = fake.server.remote(person.id)
+  await remote.createProject(id, "Notes")
+  await remote.saveFiles(id, crypto.randomUUID(), [
+    { op: "put", path: "note.md", content: "# Note\n\nSome *text*.\n" },
+    { op: "put", path: "sketch.excalidraw", content: scene },
+  ])
+  await signedIn(page)
+  await page.goto(new URL(`projects/${id}/sketch.excalidraw`, APP_URL).href)
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  await page.locator(".excalidraw canvas.static:visible").waitFor()
+
+  await page.getByRole("button", { name: "Workbench menu" }).click()
+  await page.getByRole("menuitem", { name: "Settings" }).click()
+  const dialog = page.getByRole("dialog", { name: "Settings" })
+  await dialog.getByRole("radio", { name: "Cherry Paper" }).check()
+  await dialog.getByRole("radio", { name: "Light", exact: true }).check()
+  await page.keyboard.press("Escape")
+
+  // The canvas paints the palette's background; the file keeps its own.
+  const canvasBackground = () =>
+    page.evaluate(() => {
+      const canvas = [...document.querySelectorAll<HTMLCanvasElement>(".excalidraw canvas.static")].find((element) => element.width > 0)!
+      const [r, g, b] = canvas.getContext("2d")!.getImageData(2, 2, 1, 1).data
+      return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase()
+    })
+  await expect.poll(canvasBackground).toBe(cherry.bg.toUpperCase())
+  await expect(page.getByRole("tab", { name: "sketch.excalidraw" }).getByLabel("unsaved changes")).toHaveCount(0)
+  expect(fake.server.content(id, "sketch.excalidraw")).toBe(scene)
+
+  await page.goto(new URL(`projects/${id}/note.md`, APP_URL).href)
+  await page.getByRole("button", { name: "Source" }).click()
+  const editorBackground = () =>
+    page.evaluate(() => {
+      const [r, g, b] = getComputedStyle(document.querySelector(".monaco-editor .monaco-editor-background")!).backgroundColor.match(/\d+/g)!.map(Number)
+      return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase()
+    })
+  await expect.poll(editorBackground).toBe(cherry.panel.toUpperCase())
+})

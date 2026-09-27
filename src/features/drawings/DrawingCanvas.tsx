@@ -55,6 +55,7 @@ type NativeFile = NativeFiles[string];
 interface NativeUpdateScene {
   elements?: NativeElements | null;
   appState?: Partial<NativeAppState> | null;
+  captureUpdate?: 'NEVER';
 }
 
 const NativeCanvas = lazy(() =>
@@ -151,13 +152,34 @@ function pushScene(api: NativeAPI, target: DrawingScene, onError?: (message: str
   }
 }
 
+/** The scene as the canvas shows it; raw when nothing is presented over it. */
+function presented(present: DrawingCanvasProps['present'], scene: DrawingScene): DrawingScene {
+  return present ? present(scene) : scene;
+}
+
+/**
+ * Redraw with a new presentation of the same raw scene: only what the
+ * presentation changes, and never recorded for undo.
+ */
+function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene, onError?: (message: string) => void): void {
+  try {
+    (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+      ...(shown.elements === raw.elements ? {} : { elements: toNativeElements(shown.elements) }),
+      appState: toNativeAppState(shown.appState),
+      captureUpdate: 'NEVER',
+    });
+  } catch (error) {
+    onError?.(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /**
  * Controlled native drawing canvas. Same native scene powers standalone
  * and referenced drawings; the shell decides which file a scene belongs
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onError } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   // Raw authored authority: the only state ever forwarded or saved.
   const rawRef = useRef<DrawingScene>(scene);
@@ -169,6 +191,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const pushedRef = useRef<DrawingScene>(scene);
   // External scene that arrived before the vendor API was ready.
   const pendingRef = useRef<DrawingScene | null>(null);
+  // What the canvas shows over raw (palette colours); never saved.
+  const presentRef = useRef(present);
   const onChangeRef = useRef(onChange);
   const onErrorRef = useRef(onError);
   // Latest callbacks without re-subscribing the native component: effects
@@ -180,31 +204,45 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
 
   // Read by the native canvas on mount only; later scenes arrive through
   // updateScene, so this stays stable across re-renders and StrictMode.
-  const [initialData] = useState<NativeProps['initialData']>(() => ({
-    elements: toNativeElements(scene.elements),
-    appState: toNativeAppState(initialCanvasAppState(scene.appState)),
-    files: toNativeFiles(scene.files),
-    scrollToContent: true,
-  }));
+  const [initialData] = useState<NativeProps['initialData']>(() => {
+    const initial = presented(present, scene);
+    return {
+      elements: toNativeElements(initial.elements),
+      appState: toNativeAppState(initialCanvasAppState(initial.appState)),
+      files: toNativeFiles(scene.files),
+      scrollToContent: true,
+    };
+  });
 
   // External scene identities (agent edits, reloads) replace the raw
   // authority and reset the library baseline, so the vendor echo of the
   // push re-baselines quietly instead of emitting. A parent's own authored
   // echo must retain the baseline: the next native event can be the text
   // commit, with no intervening selection/paint event to re-establish it.
+  // A new presentation redraws the raw scene the same way, quietly.
   useEffect(() => {
+    const restyled = present !== presentRef.current;
+    presentRef.current = present;
     if (scene !== pushedRef.current) {
       pushedRef.current = scene;
       rawRef.current = scene;
       baselineRef.current = null;
       const api = apiRef.current;
       if (api) {
-        pushScene(api, scene, onErrorRef.current ?? undefined);
+        pushScene(api, presented(present, scene), onErrorRef.current ?? undefined);
       } else {
         pendingRef.current = scene;
       }
+    } else if (restyled) {
+      baselineRef.current = null;
+      const api = apiRef.current;
+      if (api) {
+        pushPresentation(api, rawRef.current, presented(present, rawRef.current), onErrorRef.current ?? undefined);
+      } else {
+        pendingRef.current = rawRef.current;
+      }
     }
-  }, [scene]);
+  }, [scene, present]);
 
   // Reset only when this canvas lifecycle ends, not on every controlled
   // scene echo. StrictMode's effect replay still gets a fresh baseline.
@@ -255,7 +293,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               const pending = pendingRef.current;
               if (pending !== null) {
                 pendingRef.current = null;
-                pushScene(api, pending, onErrorRef.current ?? undefined);
+                pushScene(api, presented(presentRef.current, pending), onErrorRef.current ?? undefined);
               }
             }}
             onChange={handleLibraryChange}

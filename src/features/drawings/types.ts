@@ -180,5 +180,11 @@ export interface DrawingCanvasProps {
   autoFocus?: boolean;
   /** Hides editing UI; the canvas stays pannable/zoomable. Default false. */
   viewOnly?: boolean;
+  /**
+   * What the canvas shows over the scene, such as the palette's colours.
+   * Display only: saved and emitted scenes never carry it. A new function
+   * redraws the canvas without marking anything changed.
+   */
+  present?: (scene: DrawingScene) => DrawingScene;
   onError?: (message: string) => void;
 }
