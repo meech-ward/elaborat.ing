@@ -4,7 +4,7 @@ import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcon
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_EDITOR_SCRIPT } from './cardEditorScript.ts'
-import { FILE_VIEW_URI, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY } from './fileView.ts'
+import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { renderMarkdown, renderNote } from './markdown.ts'
@@ -183,12 +183,11 @@ Deno.test('show_file reads the file as the user and returns the rendered note', 
     version: 3,
     updated_at: UPDATED,
     url,
-    html: renderMarkdown(content),
     truncated: false,
     embeds: [],
   })
-  // The note's source goes to the view for editing, never to the model.
-  assertEquals(result._meta, { [SOURCE_META_KEY]: content })
+  // The note's HTML and source go to the view, never to the model.
+  assertEquals(result._meta, { [HTML_META_KEY]: renderMarkdown(content), [SOURCE_META_KEY]: content })
   assertEquals(result.content, [{ type: 'text', text: `Showing notes/plan.md (version 3) to the user. Open it in elaborat.ing: ${url}` }])
 })
 
@@ -202,16 +201,17 @@ Deno.test('show_file shows drawings and diagrams as a card and cuts long notes',
   for (const [path, kind, encoded] of cases) {
     const { result } = await showFile(path, [{ path, content: '{}', version: 1, updated_at: UPDATED }])
     const view = result.structuredContent as Record<string, unknown>
-    assertEquals([view.kind, view.html, view.url], [kind, null, `https://elaborat.ing/projects/${PROJECT}/${encoded}`])
+    assertEquals([view.kind, view.url], [kind, `https://elaborat.ing/projects/${PROJECT}/${encoded}`])
+    assertEquals(result._meta?.[HTML_META_KEY], undefined)
   }
 
   const long = 'A line of the note.\n'.repeat(3000)
   const { result } = await showFile('long.md', [{ path: 'long.md', content: long, version: 1, updated_at: UPDATED }])
   const view = result.structuredContent as Record<string, unknown>
   assertEquals(view.truncated, true)
-  assert(String(view.html).length < long.length)
+  assert(String(result._meta?.[HTML_META_KEY]).length < long.length)
   // A note too long to show whole is not edited in the view.
-  assertEquals(result._meta, undefined)
+  assertEquals(result._meta?.[SOURCE_META_KEY], undefined)
 })
 
 Deno.test('show_file reports a missing file', async () => {
@@ -295,7 +295,7 @@ Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it
     ['eq', 'project_id', PROJECT],
     ['in', 'path', ['art/flow.excalidraw', 'flows/signup.d2', 'flows/signup.excalidraw', 'flows/new.d2', 'flows/new.excalidraw', 'art/gone.excalidraw', 'art/broken.excalidraw']],
   ])
-  const view = result.structuredContent as { embeds: { kind: string; path: string; url: string; status: string }[]; html: string }
+  const view = result.structuredContent as { embeds: { kind: string; path: string; url: string; status: string }[] }
   assertEquals(view.embeds.map((embed) => [embed.kind, embed.path, embed.status]), [
     ['drawing', 'art/flow.excalidraw', 'drawn'],
     ['diagram', 'flows/signup.d2', 'drawn'],
@@ -305,7 +305,7 @@ Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it
     ['drawing', 'art/broken.excalidraw', 'unreadable'],
   ])
   assertEquals(view.embeds[1].url, `https://elaborat.ing/projects/${PROJECT}/flows/signup.d2`)
-  assertStringIncludes(view.html, '<figure class="embed" data-embed="5"></figure>')
+  assertStringIncludes(String(result._meta?.[HTML_META_KEY]), '<figure class="embed" data-embed="5"></figure>')
   // The SVGs go in _meta, which the host passes to the view and keeps from the model.
   const svgs = (result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]
   assertEquals(Object.keys(svgs), ['art/flow.excalidraw', 'flows/signup.d2'])

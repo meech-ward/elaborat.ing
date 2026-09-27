@@ -53,11 +53,14 @@ function shown(version: number, source: string) {
       version,
       updated_at: null,
       url: URL,
-      html: `<h1>Launch plan</h1><p>Version ${version} as rendered by the server.</p><figure class="embed" data-embed="0"></figure>`,
       truncated: false,
       embeds: [{ kind: "drawing", path: "art/flow.excalidraw", url: `https://elaborat.ing/projects/${PROJECT}/art/flow.excalidraw`, status: "drawn" }],
     },
-    _meta: { "elaborat.ing/svg": { "art/flow.excalidraw": SVG }, "elaborat.ing/source": source },
+    _meta: {
+      "elaborat.ing/html": `<h1>Launch plan</h1><p>Version ${version} as rendered by the server.</p><figure class="embed" data-embed="0"></figure>`,
+      "elaborat.ing/svg": { "art/flow.excalidraw": SVG },
+      "elaborat.ing/source": source,
+    },
   }
 }
 

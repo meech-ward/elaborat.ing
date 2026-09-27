@@ -20,12 +20,13 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v4.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v5.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
   'ui://elaborating/file-view-v2.html',
   'ui://elaborating/file-view-v3.html',
+  'ui://elaborating/file-view-v4.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -41,6 +42,8 @@ export const MAX_TOTAL_SVG_CHARS = 600_000
 const MAX_SCENE_CHARS = 5_000_000
 /** The result `_meta` key holding each drawn file's SVG by path. `_meta` reaches the view, not the model. */
 export const SVG_META_KEY = 'elaborat.ing/svg'
+/** The result `_meta` key holding a note's rendered HTML, which the model doesn't need to read. */
+export const HTML_META_KEY = 'elaborat.ing/html'
 /** The result `_meta` key holding a note's source, which the view edits. */
 export const SOURCE_META_KEY = 'elaborat.ing/source'
 
@@ -194,13 +197,13 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
             version: data.version,
             updated_at: data.updated_at ?? null,
             url,
-            html: rendered?.html ?? null,
             truncated: note?.truncated ?? false,
             embeds,
           },
-          ...(Object.keys(svgs).length > 0 || (note && !note.truncated)
+          ...(rendered || Object.keys(svgs).length > 0
             ? {
                 _meta: {
+                  ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
                   ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
                   // The whole note, for editing in the view; a note too long to show whole is not edited there.
                   ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),

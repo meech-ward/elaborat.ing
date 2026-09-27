@@ -161,6 +161,7 @@ const SCRIPT = `
   }
   const SVG_KEY = 'elaborat.ing/svg'
   const SOURCE_KEY = 'elaborat.ing/source'
+  const HTML_KEY = 'elaborat.ing/html'
   const APP = 'https://elaborat.ing/'
   const pending = new Map()
   let nextId = 1
@@ -304,8 +305,9 @@ const SCRIPT = `
     $('version').textContent = typeof view.version === 'number' ? 'v' + view.version : ''
     const doc = $('doc')
     $('art').hidden = true
-    if (view.kind === 'note' && typeof view.html === 'string') {
-      doc.innerHTML = view.html
+    const html = metaOf(result)[HTML_KEY]
+    if (view.kind === 'note' && typeof html === 'string') {
+      doc.innerHTML = html
       fillFigures(doc, embeds, svgs)
       doc.hidden = false
       // The whole note shows; only a note longer than the server's limit is cut.
