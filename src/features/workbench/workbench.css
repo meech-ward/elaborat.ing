@@ -764,11 +764,7 @@ the request runs, keeping the renamed session inert. */
   font-size: 13px;
 }
 .wb-empty button {
-  margin: 15px 5px;
-  padding: 9px 14px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  font-size: 12px;
+  margin: 15px 4px 0;
 }
 /* Native wrappers fill the same stage; their document data is never styled by these rules. */
 .wb-native-view {

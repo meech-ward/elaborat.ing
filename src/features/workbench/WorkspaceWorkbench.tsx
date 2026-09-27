@@ -1113,11 +1113,13 @@ export function WorkspaceWorkbench({
                         <Diamond size={32} />
                         <h1>A place for connected ideas.</h1>
                         <p>{readOnly ? "Open a file to read it." : "Open a file or create a note to begin."}</p>
-                        <button onClick={() => setSidebar(true)}>
-                          Open explorer
-                        </button>
+                        {!sidebar && (
+                          <button type="button" className="wb-button" onClick={() => setSidebar(true)}>
+                            Open explorer
+                          </button>
+                        )}
                         {!readOnly && (
-                          <button onClick={() => startCreate("mdx")}>
+                          <button type="button" className="wb-button wb-button-primary" onClick={() => startCreate("mdx")}>
                             New note
                           </button>
                         )}
