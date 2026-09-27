@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OperationSession } from "./operationSession";
-import { Save, Download, RefreshCw } from "lucide-react";
+import { Save, Copy, Download, RefreshCw } from "lucide-react";
+import { MenuShortcut } from "@/components/ui/menu";
 import { ActionMenu } from "./WorkbenchChrome";
 import { TablineActions } from "./tabline";
 import { CompactFileIdentity, useCompactWorkbench } from "./compactWorkbench";
@@ -20,7 +21,7 @@ import { parseSourceRefs } from "./refs";
 import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { ViewSwitcher } from "./ViewSwitcher";
-import { ariaShortcut, isApplePlatform, shortcutLabel, viewShortcutDigit } from "./viewShortcuts";
+import { ariaShortcut, duplicateShortcutLabel, isApplePlatform, shortcutLabel, viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
 import { savedComponentSource } from '../document/componentModules';
 import {
@@ -65,6 +66,7 @@ export function WorkspaceSession({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  onDuplicate,
   readOnly = null,
 }: {
   client: WorkspaceStore;
@@ -82,6 +84,8 @@ export function WorkspaceSession({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Copies the file, as it is on screen, next to itself and opens the copy. Absent when read-only. */
+  onDuplicate?: () => void;
   /** Why the project cannot be changed (a viewer, or an archived project), or null. The file is then shown, never edited or kept as a draft. */
   readOnly?: string | null;
 }) {
@@ -629,6 +633,11 @@ export function WorkspaceSession({
             >
               <Save size={14} /> Save
             </button>}
+            {onDuplicate && (
+              <button onClick={onDuplicate}>
+                <Copy size={14} /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
+              </button>
+            )}
             {/* Read-only, the file follows its saved copy by itself. */}
             {!readOnly && <button
               disabled={renderedPending || !openFile.path}

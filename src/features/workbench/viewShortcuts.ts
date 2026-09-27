@@ -29,6 +29,11 @@ export function shortcutLabel(digit: number, apple: boolean): string {
   return apple ? `⌘⌥${digit}` : `Ctrl+Alt+${digit}`;
 }
 
+/** How ⌘D / Ctrl+D (duplicate the file) reads in a menu. */
+export function duplicateShortcutLabel(apple: boolean = isApplePlatform()): string {
+  return apple ? "⌘D" : "Ctrl+D";
+}
+
 /** The same shortcut as an `aria-keyshortcuts` value. */
 export function ariaShortcut(digit: number, apple: boolean): string {
   return `${apple ? "Meta" : "Control"}+Alt+${digit}`;

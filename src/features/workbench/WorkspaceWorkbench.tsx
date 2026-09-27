@@ -67,7 +67,7 @@ import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { Link } from "@tanstack/react-router";
 import { AccountMenu, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
-import { isValidProjectPath } from "@/features/project-storage/model";
+import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { parseDrawingFile } from "@/features/drawings/parse";
 import { readChosenFile } from "@/lib/fileAdapter";
@@ -82,7 +82,9 @@ import { SignUpTo } from "@/features/projects/LocalProject";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { NewEntryField } from "./NewEntryField";
-import { nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
+import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
+import { readDiagramCompanion } from "./diagramArtifact";
+import { isApplePlatform } from "./viewShortcuts";
 import { RenameDialog } from "./RenameDialog";
 import { prepareProjectLeave, type PrepareProjectLeave } from "./projectLeave";
 import type { OperationSession } from "./operationSession";
@@ -593,6 +595,35 @@ export function WorkspaceWorkbench({
     },
     [client, refreshList],
   );
+  /**
+   * Copy a file to "<name> copy" in its folder as it is on screen, unsaved
+   * edits included, saved at once and opened in a new tab. The original is
+   * not changed. A diagram's generated canvas and sidecar are copied with it,
+   * so the copy keeps its layout and canvas edits.
+   */
+  const duplicateFile = useCallback(
+    async (path: string) => {
+      try {
+        await leaveSessions.current.get(path)?.persistDraft?.();
+        await client.flushLocalDrafts();
+        const taken = takenNames();
+        const to = duplicatePath(path, [...taken.files, ...taken.dirs]);
+        const { content } = await client.read(path);
+        const generated = kindForPath(path) === "diagram" ? companionPaths(path) : [];
+        const copies = await Promise.all(generated.map(async (from, index) => ({ path: companionPaths(to)[index], file: await readDiagramCompanion(client, from) })));
+        const saved = await client.save([
+          { kind: "write", path: to, content, expectedRevision: null },
+          ...copies.flatMap((copy) => (copy.file ? [{ kind: "write" as const, path: copy.path, content: copy.file.content, expectedRevision: null }] : [])),
+        ]);
+        await refreshList();
+        addDraft({ path: to, content, revision: saved.find((file) => file.path === to)?.revision ?? saved[0].revision });
+        setNotice(`Duplicated ${path} as ${to}.`);
+      } catch (error) {
+        setNotice(`Duplicate failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [addDraft, client, refreshList, takenNames],
+  );
   const importFile = useCallback(
     async (file: File) => {
       try {
@@ -693,6 +724,26 @@ export function WorkspaceWorkbench({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [narrow, palette]);
+  // ⌘D / Ctrl+D duplicates the active file, in place of the browser's
+  // bookmark shortcut. The code editor and the canvases keep their own ⌘D
+  // (select the next match, duplicate the selection), and text fields and
+  // dialogs are left alone.
+  useEffect(() => {
+    if (readOnly) return;
+    const apple = isApplePlatform();
+    function key(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "d" || event.altKey || event.shiftKey) return;
+      if (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return;
+      const path = stateRef.current.active;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!path || target?.closest('.monaco-editor, .excalidraw, input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void duplicateFile(path);
+    }
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [duplicateFile, readOnly]);
   // Open unsaved tabs that are not server files appear in the visual
   // tree marked as drafts, without posing as saved files.
   const targetPath = target.kind === "workspace" && target.projectId === projectId ? target.path : null;
@@ -748,6 +799,7 @@ export function WorkspaceWorkbench({
           onRenameFile={readOnly ? undefined : (path, name) => (neverSaved(path) ? renameNewFile(path, name) : moves.rename(path, name))}
           isNeverSaved={neverSaved}
           onMoveFile={readOnly ? undefined : moves.open}
+          onDuplicateFile={readOnly ? undefined : (path) => void duplicateFile(path)}
           onRenameFolder={readOnly ? undefined : moves.renameFolder}
           onMoveFolder={readOnly ? undefined : moves.openFolder}
           onDeleteFile={readOnly ? undefined : deletes.deleteFile}
@@ -1108,6 +1160,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
                           />
                         ) : kindForPath(tab.path) === "drawing" ? (
@@ -1121,6 +1174,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
                           />
                         ) : (
@@ -1137,6 +1191,7 @@ export function WorkspaceWorkbench({
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
+                            onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
                           />
                         )}

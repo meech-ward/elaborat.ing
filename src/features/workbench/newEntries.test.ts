@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { nameStemLength, newFilePath, newFolderError, proposedName } from "./newEntries"
+import { duplicatePath, nameStemLength, newFilePath, newFolderError, proposedName } from "./newEntries"
 
 const taken = { files: ["a.md", "notes/untitled.md", "notes/plan.d2", "art/untitled.excalidraw"], dirs: ["notes", "art", "notes/old"] }
 
@@ -56,5 +56,24 @@ describe("newFolderError", () => {
     expect(newFolderError("notes", "drafts", taken)).toBeNull()
     expect(newFolderError("notes", "old", taken)).toBe('"old" already exists here. Choose another name.')
     expect(newFolderError("", "", taken)).toBe("Enter a folder name.")
+  })
+})
+
+describe("duplicatePath", () => {
+  test("adds copy before the extension in the same folder, then counts up past taken names", () => {
+    expect(duplicatePath("a.md", ["a.md"])).toBe("a copy.md")
+    expect(duplicatePath("notes/plan.md", ["notes/plan.md", "notes/plan copy.md", "NOTES/PLAN COPY 2.MD"])).toBe("notes/plan copy 3.md")
+    expect(duplicatePath("Notes/Plan.MDX", [])).toBe("Notes/Plan copy.MDX")
+    expect(duplicatePath("art/sketch.excalidraw", [])).toBe("art/sketch copy.excalidraw")
+    // Compound extensions stay whole.
+    expect(duplicatePath("wiki.excalidraw.md", [])).toBe("wiki copy.excalidraw.md")
+    expect(duplicatePath("flow.d2.json", [])).toBe("flow copy.d2.json")
+  })
+
+  test("a diagram's copy also needs its generated files' names free", () => {
+    expect(duplicatePath("flow.d2", ["flow.d2", "flow copy.excalidraw"])).toBe("flow copy 2.d2")
+    expect(duplicatePath("flow.d2", ["flow.d2", "flow copy.d2.json"])).toBe("flow copy 2.d2")
+    // A drawing's copy would become a diagram's generated canvas if that diagram exists.
+    expect(duplicatePath("flow.excalidraw", ["flow copy.d2"])).toBe("flow copy 2.excalidraw")
   })
 })

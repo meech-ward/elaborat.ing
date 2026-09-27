@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Download, RotateCcw, Save, WandSparkles } from "lucide-react";
+import { Copy, Download, RotateCcw, Save, WandSparkles } from "lucide-react";
+import { MenuShortcut } from "@/components/ui/menu";
 // Excalidraw's own layout, for the generated canvas.
 import "@excalidraw/excalidraw/index.css";
 import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingScene } from "@/features/drawings/index.ts";
@@ -31,6 +32,7 @@ import type { TabFile } from "./tabs";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
+import { duplicateShortcutLabel } from "./viewShortcuts";
 import { TablineActions } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
@@ -69,6 +71,7 @@ export function DiagramView({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  onDuplicate,
   readOnly = null,
 }: {
   client: WorkspaceStore;
@@ -83,6 +86,8 @@ export function DiagramView({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Copies the file, as it is on screen, next to itself and opens the copy. Absent when read-only. */
+  onDuplicate?: () => void;
   /** Why the project cannot be changed, or null. The code and canvas are then shown, never edited or kept as drafts. */
   readOnly?: string | null;
 }) {
@@ -544,6 +549,11 @@ export function DiagramView({
           {!readOnly && (
             <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
               <Save className="size-4" aria-hidden /> Save
+            </button>
+          )}
+          {onDuplicate && (
+            <button type="button" onClick={onDuplicate} className={toolbarButton}>
+              <Copy className="size-4" aria-hidden /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
             </button>
           )}
           {!readOnly && (

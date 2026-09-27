@@ -1,8 +1,8 @@
 /**
  * Explorer file row with Base UI context-menu actions.
  *
- * Each row exposes Copy filename, Copy path, Rename, Move to folder and
- * Delete through a real Base UI context menu (right-click, keyboard
+ * Each row exposes Copy filename, Copy path, Rename, Duplicate, Move to
+ * folder and Delete through a real Base UI context menu (right-click, keyboard
  * Menu/Shift+F10, long-press) on the whole row, plus an action-menu button
  * carrying the same list for touch and assistive-technology users. The
  * button shows on hover, on focus and on the active row, and always on
@@ -32,6 +32,7 @@ import {
   renameStemLength,
 } from "./explorerActions";
 import { RenameDialog } from "./RenameDialog";
+import { duplicateShortcutLabel } from "./viewShortcuts";
 
 export function ExplorerFileRow({
   path,
@@ -44,6 +45,7 @@ export function ExplorerFileRow({
   onOpen,
   onFeedback,
   onRename,
+  onDuplicate,
   onMove,
   onDelete,
 }: {
@@ -72,6 +74,8 @@ export function ExplorerFileRow({
    * until then and closes on completion.
    */
   onRename?: (newName: string) => Promise<void>;
+  /** Copies the file next to itself and opens the copy; the workbench reports the result. */
+  onDuplicate?: () => void;
   onMove?: () => void;
   /** Opens the delete confirmation; the workbench deletes and reports the result. */
   onDelete?: () => void;
@@ -128,6 +132,7 @@ export function ExplorerFileRow({
     { label: "Copy filename", onSelect: () => void copyFilename() },
     { label: "Copy path", onSelect: () => void copyPath() },
     ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
+    ...(onDuplicate ? [{ label: "Duplicate", onSelect: onDuplicate, shortcut: duplicateShortcutLabel() }] : []),
     ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
     ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
   ];

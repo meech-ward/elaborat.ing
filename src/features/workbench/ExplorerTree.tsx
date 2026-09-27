@@ -38,6 +38,8 @@ export interface ExplorerTreeProps {
   /** Rename and move arrive with roadmap phase 2 step 12; without them the row offers neither. */
   onRenameFile?: (path: string, newName: string) => Promise<void>;
   onMoveFile?: (path: string) => void;
+  /** Copy a file next to itself; read-only projects offer no Duplicate. */
+  onDuplicateFile?: (path: string) => void;
   /** A folder moves with everything in it; without these its row offers neither. */
   onRenameFolder?: (path: string, newName: string) => Promise<void>;
   onMoveFolder?: (path: string) => void;
@@ -62,6 +64,7 @@ export function ExplorerTree({
   onFeedback,
   onRenameFile,
   onMoveFile,
+  onDuplicateFile,
   onRenameFolder,
   onMoveFolder,
   onDeleteFile,
@@ -95,6 +98,7 @@ export function ExplorerTree({
         onOpen={() => onOpenFile(file.path)}
         onFeedback={onFeedback}
         onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
+        onDuplicate={onDuplicateFile ? () => onDuplicateFile(file.path) : undefined}
         onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
         onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
       />

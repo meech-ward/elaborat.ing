@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 // Excalidraw's own layout. Without it the canvas sizes itself to its content,
 // which grows without limit.
 import "@excalidraw/excalidraw/index.css";
-import { Download, FileJson, Pencil, Save } from "lucide-react";
+import { Copy, Download, FileJson, Pencil, Save } from "lucide-react";
+import { MenuShortcut } from "@/components/ui/menu";
 import {
   DrawingCanvas,
   exportDrawingPng,
@@ -27,6 +28,7 @@ import type { TabFile } from "./tabs";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
+import { duplicateShortcutLabel } from "./viewShortcuts";
 import { TablineActions } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
@@ -65,6 +67,7 @@ export function DrawingView({
   savedRevision,
   conflicted = false,
   onResolveConflict,
+  onDuplicate,
   readOnly = null,
 }: {
   client: WorkspaceStore;
@@ -79,6 +82,8 @@ export function DrawingView({
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
+  /** Copies the file, as it is on screen, next to itself and opens the copy. Absent when read-only. */
+  onDuplicate?: () => void;
   /** Why the project cannot be changed, or null. The drawing is then shown in view mode, never edited or kept as a draft. */
   readOnly?: string | null;
 }) {
@@ -322,6 +327,11 @@ export function DrawingView({
           {!readOnly && (
             <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
               <Save className="size-4" aria-hidden /> Save
+            </button>
+          )}
+          {onDuplicate && (
+            <button type="button" onClick={onDuplicate} className={toolbarButton}>
+              <Copy className="size-4" aria-hidden /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
             </button>
           )}
           <button type="button" disabled={!scene} onClick={() => void exportSvg()} className={toolbarButton}>

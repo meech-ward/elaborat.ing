@@ -103,6 +103,8 @@ interface MenuEntry {
   label: string;
   onSelect: () => void;
   disabled?: boolean;
+  /** A keyboard shortcut shown at the item's right end, such as ⌘D. */
+  shortcut?: string;
   /** Removes something: shown in the danger colour, after a separator, last. */
   destructive?: boolean;
 }
@@ -119,6 +121,7 @@ function MenuItems({ items }: { items: readonly MenuEntry[] }) {
       onClick={item.onSelect}
     >
       {item.label}
+      {item.shortcut && <MenuShortcut>{item.shortcut}</MenuShortcut>}
     </MenuItem>
   );
   return (

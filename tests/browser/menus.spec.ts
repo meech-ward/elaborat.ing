@@ -44,6 +44,10 @@ async function itemsOfOpenMenu(page: Page) {
   return items
 }
 
+/** Duplicate's text in a menu: the name, then its shortcut. */
+const duplicateItem = async (page: Page) =>
+  `Duplicate${await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘D" : "Ctrl+D"))}`
+
 /** A colour as the browser computes it, from a CSS value such as var(--link). */
 async function computed(page: Page, value: string) {
   return page.evaluate((value) => {
@@ -69,7 +73,7 @@ test("a file's menu works from the keyboard, highlights in the highlight colours
   await page.keyboard.press("Enter")
   const menu = page.getByRole("menu", { name: "Actions for b.md" })
   await expect(menu).toBeVisible()
-  expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Copy filename", "Copy path", "Rename", "Move to folder", "Delete"])
+  expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Move to folder", "Delete"])
 
   const remove = menu.getByRole("menuitem", { name: "Delete" })
   for (let step = 0; step < 6 && (await remove.getAttribute("data-highlighted")) === null; step++) await page.keyboard.press("ArrowDown")
@@ -93,7 +97,7 @@ test("the action button and a right-click on the row list the same items", async
   const fromButton = await itemsOfOpenMenu(page)
   await files.getByRole("button", { name: "a.md", exact: true }).click({ button: "right" })
   expect(await itemsOfOpenMenu(page)).toEqual(fromButton)
-  expect(fromButton).toEqual(["Copy filename", "Copy path", "Rename", "Move to folder", "Delete"])
+  expect(fromButton).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Move to folder", "Delete"])
 
   await files.getByRole("button", { name: "Actions for folder notes", exact: true }).click()
   const folderFromButton = await itemsOfOpenMenu(page)

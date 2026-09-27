@@ -2,7 +2,8 @@
  * Names for new files and folders, as the explorer's name field proposes and
  * checks them. Pure: the store checks again when the file is created.
  */
-import { basenameForPath, validateWorkspaceBasename, validateWorkspacePath } from "@/features/workspace";
+import { basenameForPath, validateWorkspaceBasename, validateWorkspacePath, workspacePathSuffix } from "@/features/workspace";
+import { companionPaths } from "@/features/project-storage/model";
 import { folderNameError, joinFolder } from "./folderTree";
 import { kindForPath } from "./session";
 
@@ -29,6 +30,22 @@ export function proposedName(kind: NewEntryKind, dir: string, taken: readonly st
   for (let n = 1; ; n++) {
     const name = `untitled${n === 1 ? "" : `-${n}`}${extension}`;
     if (!used.has(joinFolder(dir, name).toLowerCase())) return name;
+  }
+}
+
+/**
+ * Where a copy of `path` goes: "<name> copy" in the same folder, keeping the
+ * extension, then "<name> copy 2" and so on past names taken there. A
+ * diagram's generated files are copied with it, so their names must be free
+ * too.
+ */
+export function duplicatePath(path: string, taken: readonly string[]): string {
+  const used = new Set(taken.map((entry) => entry.toLowerCase()));
+  const extension = path.slice(path.length - (workspacePathSuffix(path)?.length ?? 0));
+  const stem = path.slice(0, path.length - extension.length);
+  for (let n = 1; ; n++) {
+    const copy = `${stem} copy${n === 1 ? "" : ` ${n}`}${extension}`;
+    if ([copy, ...companionPaths(copy)].every((entry) => !used.has(entry.toLowerCase()))) return copy;
   }
 }
 

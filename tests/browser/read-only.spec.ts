@@ -88,6 +88,8 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   expect(await menuItems(page, files.getByRole("button", { name: "Actions for notes/plan.md", exact: true }))).toEqual(["Copy filename", "Copy path"])
   await expect(files.getByRole("button", { name: "Actions for folder notes", exact: true })).toHaveCount(0)
   await expect(files.getByRole("button", { name: "New folder" })).toHaveCount(0)
+  // Nor does ⌘D / Ctrl+D copy the file (no save is sent, checked below).
+  await page.keyboard.press("ControlOrMeta+d")
 
   // A drawing opens in Excalidraw's view mode.
   await files.getByRole("button", { name: "sketch.excalidraw", exact: true }).click()
