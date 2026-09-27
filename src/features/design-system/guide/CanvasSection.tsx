@@ -222,10 +222,13 @@ function QuickOpenDemo() {
     <div className="flex w-full max-w-[560px] flex-col gap-3">
       <GuideLabel>Go to file</GuideLabel>
       <QuickOpenSpecimen mode="files" query="flo" />
-      <GuideValue>560 wide, padding 8, radius 12, panel shadow; field 38 high with a 2px accent border; rows 34 high, radius 8, selected in accentSoft. A diagram's generated files are not listed.</GuideValue>
+      <GuideValue>560 wide, padding 8, radius 12, panel shadow; field 38 high with a 2px accent border; rows 34 high, radius 8, selected in accentSoft.</GuideValue>
       <GuideLabel>Commands</GuideLabel>
       <QuickOpenSpecimen mode="commands" query="" />
-      <GuideValue>The same panel: a command's shortcut at the row's right end. ⌘K and ⌘P switch between the two.</GuideValue>
+      <GuideValue>
+        The same panel: a command's shortcut at the row's right end. {commandShortcut("k", isApplePlatform()).label} and{" "}
+        {commandShortcut("p", isApplePlatform()).label} switch between the two.
+      </GuideValue>
       <GuideLabel>Try it</GuideLabel>
       <div className="flex flex-wrap items-center gap-3">
         <Button ref={opener} variant="outline" className="pointer-coarse:h-10" onClick={() => show("files")}>
