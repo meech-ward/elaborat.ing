@@ -7,10 +7,17 @@ const QUEUE = 'file_passages'
 export function postgresStore(sql: postgres.Sql): PassageStore {
   return {
     async file(fileId) {
-      const [row] = await sql<Array<{ id: string; project_id: string; path: string; content: string; version: string }>>`
-        select id, project_id, path, content, version::text from public.project_files where id = ${fileId}
+      const [row] = await sql<Array<{ id: string; project_id: string; path: string; content: string; version: string; diagram_canvas: boolean }>>`
+        select f.id, f.project_id, f.path, f.content, f.version::text,
+          f.path ~* '\\.excalidraw$' and exists (
+            select 1 from public.project_files d
+            where d.project_id = f.project_id and lower(d.path) = lower(regexp_replace(f.path, '\\.excalidraw$', '.d2', 'i'))
+          ) as diagram_canvas
+        from public.project_files f where f.id = ${fileId}
       `
-      return row ? { id: row.id, projectId: row.project_id, path: row.path, content: row.content, version: row.version } : null
+      return row
+        ? { id: row.id, projectId: row.project_id, path: row.path, content: row.content, version: row.version, diagramCanvas: row.diagram_canvas }
+        : null
     },
     async replace(file: FileRow, rows: PassageRow[], jobId: number) {
       await sql.begin(async (tx) => {

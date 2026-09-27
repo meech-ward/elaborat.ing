@@ -8,8 +8,12 @@ import { extractPassages } from '../_shared/passages.ts'
 export const JobSchema = z.object({ jobId: z.number().int(), fileId: z.uuid() })
 export type Job = z.infer<typeof JobSchema>
 
-/** A file as it is now. `version` changes with every write. */
-export type FileRow = { id: string; projectId: string; path: string; content: string; version: string }
+/**
+ * A file as it is now. `version` changes with every write. `diagramCanvas`
+ * marks a D2 diagram's generated canvas (`flow.excalidraw` next to `flow.d2`),
+ * whose words are the diagram's, so search finds them once, in the diagram.
+ */
+export type FileRow = { id: string; projectId: string; path: string; content: string; version: string; diagramCanvas?: boolean }
 
 export type PassageRow = {
   ordinal: number
@@ -50,7 +54,8 @@ export async function processJob(job: Job, store: PassageStore, embed: Embed): P
   }
   // A file that is not a note, diagram or drawing (after a rename, say) gets no passages.
   const rows: PassageRow[] = []
-  for (const [ordinal, passage] of extractPassages(file.path, file.content).entries()) {
+  const passages = file.diagramCanvas ? [] : extractPassages(file.path, file.content)
+  for (const [ordinal, passage] of passages.entries()) {
     rows.push({
       ordinal,
       headings: passage.headings.join(' > '),

@@ -101,3 +101,18 @@ Deno.test('one failing job leaves the others to finish, and is reported', async 
 Deno.test('a passage before any heading is embedded as its text alone', () => {
   assertEquals(embeddingInput([], 'Intro.'), 'Intro.')
 })
+
+Deno.test("a diagram's generated canvas gets no passages: its words are the diagram's", async () => {
+  const canvas: FileRow = {
+    id: '00000000-0000-4000-8000-000000000009',
+    projectId: note.projectId,
+    path: 'flows/signup.excalidraw',
+    content: JSON.stringify({ type: 'excalidraw', elements: [{ id: 't', type: 'text', x: 0, y: 0, text: 'api', originalText: 'api' }] }),
+    version: '2',
+    diagramCanvas: true,
+  }
+  const { store, replaced } = fakeStore([canvas])
+  await processJobs([job(9, canvas.id)], store, embed)
+  // Replaced with nothing, so passages written before are removed.
+  assertEquals(replaced.map((write) => [write.fileId, write.rows.length]), [[canvas.id, 0]])
+})
