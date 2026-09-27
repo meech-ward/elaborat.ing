@@ -242,6 +242,13 @@ Re-check it against OpenAI's pages linked below.
   [quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart),
   [theming](https://claude.com/docs/connectors/building/mcp-apps/transparent-theming),
   [interactive connectors](https://support.claude.com/en/articles/13454812-use-interactive-connectors-in-claude)
+- **ChatGPT links a tool to its view with the standard `_meta.ui.resourceUri`**
+  and the `ui/*` bridge; `_meta["openai/outputTemplate"]` is only a
+  compatibility alias. OpenAI recommends putting the view on a separate render
+  tool rather than on every data tool, since a view on every call re-renders
+  too often. (Checked 2026-09-26.)
+  [MCP Apps in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt.md),
+  [reference](https://developers.openai.com/plugins/reference.md)
 - **ChatGPT** takes the standard `_meta.ui.csp`, which OpenAI's current
   examples declare. Its original Apps SDK format declared the same lists in
   `_meta["openai/widgetCSP"]` (`connect_domains`, `resource_domains`,

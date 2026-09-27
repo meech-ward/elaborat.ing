@@ -369,7 +369,11 @@ secrets.
   both for agents anyway. Search is added with hybrid search.
 - **MCP Apps:** read-only views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
-  into the app.
+  into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with
+  one self-contained `ui://` view. It renders a note's Markdown (raw HTML shown
+  as text, sanitized) and shows drawings and diagrams as a card, each with an
+  "Open in elaborat.ing" link. The view is on its own tool, not on
+  `read_file`, so agents can read files without filling the chat with views.
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local

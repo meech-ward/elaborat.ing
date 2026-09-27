@@ -211,8 +211,8 @@ Deno.test('the tests cover every tool the server lists', async () => {
   await client.connect(clientTransport)
   try {
     const { tools } = await client.listTools()
-    // search is tested in search.test.ts.
-    const tested = [...CASES.map(([name]) => name), 'create_project', 'search'].sort()
+    // search is tested in search.test.ts, show_file in fileView.test.ts.
+    const tested = [...CASES.map(([name]) => name), 'create_project', 'search', 'show_file'].sort()
     assertEquals(tools.map((tool) => tool.name).sort(), tested)
   } finally {
     await client.close()
