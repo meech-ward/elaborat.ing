@@ -77,6 +77,10 @@ import { ActionMenu } from "./WorkbenchChrome";
 import { TablineSlotProvider } from "./tabline";
 import { useCompactWorkbench, useSheetViewport } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
+import { FileSearch } from "./FileSearch";
+import { SignUpTo } from "@/features/projects/LocalProject";
+import type { FileSearchHit } from "./contentSearch";
+import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { NewEntryField } from "./NewEntryField";
 import { nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
 import { RenameDialog } from "./RenameDialog";
@@ -117,6 +121,7 @@ import {
   type PersistedTabs,
 } from "./tabPersistence";
 import "./workbench.css";
+import "./sidePanels.css";
 
 /**
  * The editor for one project: an explorer, tabs of open files, each a
@@ -132,6 +137,7 @@ export function WorkspaceWorkbench({
   projectId,
   projectHeader,
   syncStatus,
+  searchFiles = null,
   onResolveConflict,
   readOnly = null,
   local = false,
@@ -141,6 +147,8 @@ export function WorkspaceWorkbench({
   projectId: string;
   projectHeader?: ReactNode;
   syncStatus?: ReactNode;
+  /** Finds this project's files by their text (the files panel's search); null when offline or signed out. */
+  searchFiles?: ((query: string) => Promise<FileSearchHit[]>) | null;
   onResolveConflict?: (path: string, choice: ConflictChoice) => Promise<void>;
   /**
    * Why the project cannot be changed (the person is a viewer, or it is
@@ -882,12 +890,17 @@ export function WorkspaceWorkbench({
     </ActionMenu>
   );
   const unsaved = state.tabs.filter((tab) => tab.dirty).length;
+  const agentCount = useConnectedAgentCount(!local && auth.status === "ready");
   const accountPanel = (
     <section className="wb-float wb-account-panel" aria-label="Account and app">
       {syncStatus}
       {unsaved > 0 && <p className="wb-account-unsaved">{unsaved} unsaved</p>}
       <div className="wb-account-links">
-        {local ? <Link to="/sign-up">Sign up to connect agents</Link> : <Link to="/agents">Connected agents</Link>}
+        {local ? <Link to="/sign-up">Sign up to connect agents</Link> : (
+          <Link to="/agents" aria-label={agentCount ? `Connected agents, ${agentCount}` : undefined}>
+            Connected agents{agentCount ? <span className="wb-account-count">{agentCount}</span> : null}
+          </Link>
+        )}
         <button type="button" className="wb-link-button" onClick={openSettings}>Settings</button>
         <button type="button" className="wb-icon" aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`} onClick={toggleScheme}>
           <Sun size={15} />
@@ -934,19 +947,25 @@ export function WorkspaceWorkbench({
                 </header>
                 <Sidebar collapsible="none" className="wb-float wb-files-panel">
                   <nav className="wb-explorer" aria-label="Workspace files">
-                    {!readOnly && (
-                      <div className="wb-files-actions">
-                        {newFileMenu}
-                        <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
-                          <FolderPlus size={15} /> New folder
-                        </button>
-                      </div>
-                    )}
-                    <SidebarContent>
-                      <SidebarGroup>
-                        <SidebarGroupContent>{renderExplorerBody()}</SidebarGroupContent>
-                      </SidebarGroup>
-                    </SidebarContent>
+                    <FileSearch
+                      search={local ? null : searchFiles}
+                      unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
+                      onOpen={(path) => void openFromNavigation(path)}
+                      actions={!readOnly && (
+                        <div className="wb-files-actions">
+                          {newFileMenu}
+                          <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
+                            <FolderPlus size={15} /> New folder
+                          </button>
+                        </div>
+                      )}
+                    >
+                      <SidebarContent>
+                        <SidebarGroup>
+                          <SidebarGroupContent>{renderExplorerBody()}</SidebarGroupContent>
+                        </SidebarGroup>
+                      </SidebarContent>
+                    </FileSearch>
                   </nav>
                 </Sidebar>
                 {accountPanel}

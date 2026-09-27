@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
+import { UserPlus } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
@@ -7,9 +8,12 @@ import type { ConflictChoice } from "@/features/project-storage/sync"
 import { canEdit } from "@/features/project-storage/model"
 import { projectWorkspace } from "@/features/workbench/workspaceStore"
 import { loadWorkbench } from "@/features/workbench/load"
+import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
 import { LocalProjectHeader } from "./LocalProject"
+import { MembersDialog } from "./MembersDialog"
+import { ProjectSwitcher } from "./ProjectSwitcher"
 import { readOnlyReason } from "./readOnly"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
@@ -44,6 +48,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const navigate = useNavigate()
   const [opened, setOpened] = useState<"opening" | "open" | "missing">("opening")
   const [error, setError] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
   const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open")
@@ -102,6 +107,17 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     [account.online, delayedSync, library, projectId, syncNow],
   )
 
+  // The files panel's search: the server's search over every project the
+  // person can read, narrowed to this one.
+  const searchFiles = useCallback(
+    async (query: string) => {
+      const { data, error } = await createClient().functions.invoke<{ results: SearchPassage[] }>("search", { body: { query, matchCount: 30 } })
+      if (error) throw new Error(error.name === "FunctionsFetchError" ? "Search needs a connection." : `Search failed: ${error.message}`)
+      return projectHits(data?.results ?? [], projectId)
+    },
+    [projectId],
+  )
+
   const unarchive = useCallback(async () => {
     setError(null)
     try {
@@ -148,6 +164,12 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         Your projects
       </Link>
       <h1 className="truncate font-semibold">{entry?.title ?? "Project"}</h1>
+      <ProjectSwitcher entries={state.entries} current={projectId} />
+      {entry?.role === "owner" && account.online ? (
+        <button type="button" className="wb-icon wb-share-project" aria-label="Share project" title="Share project" onClick={() => setSharing(true)}>
+          <UserPlus size={15} aria-hidden="true" />
+        </button>
+      ) : null}
       {readOnly ? <p className="text-amber-800 dark:text-amber-200">{readOnly}</p> : null}
       {entry?.archived && canEdit(entry.role) ? (
         <Button variant="outline" size="sm" onClick={() => void unarchive()}>
@@ -194,11 +216,15 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         projectId={projectId}
         projectHeader={header}
         syncStatus={syncStatus}
+        searchFiles={account.online && !account.local ? searchFiles : null}
         onLeaveGuard={registerLeaveGuard}
         onResolveConflict={resolveConflict}
         readOnly={readOnly}
         local={account.local}
       />
+      {sharing && entry ? (
+        <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
+      ) : null}
     </Suspense>
   )
 }

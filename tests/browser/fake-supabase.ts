@@ -175,6 +175,20 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       }
     }
 
+    // The search Edge Function: a passage for each file, in the projects the
+    // person can read, whose text has every word of the query.
+    if (path === "/functions/v1/search") {
+      const words = String(request.postDataJSON()?.query ?? "").toLowerCase().split(/\s+/).filter(Boolean)
+      const results = [...server.projects.values()]
+        .filter((project) => project.owner === person.id || project.members.get(person.id)?.acceptedAt)
+        .flatMap((project) =>
+          [...project.files.values()]
+            .filter((file) => words.every((word) => file.content.toLowerCase().includes(word)))
+            .map((file) => ({ project_id: project.id, file_id: file.id, path: file.path, headings: "", content: file.content, score: 1 })),
+        )
+      return json(route, { results })
+    }
+
     // Table reads (everything fits in the first page here)
     if (url.searchParams.has("or") || (path.endsWith("/project_folders") && query("path", "gt") !== undefined)) return json(route, [])
     const projectId = query("project_id", "eq")
