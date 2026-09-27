@@ -9,6 +9,7 @@ import {
 } from 'npm:@supabase/server@1.6.0'
 
 import { registerTools, type ToolContext } from './tools/index.ts'
+import { limitToolCalls } from './tools/limits.ts'
 
 // An MCP server as a single Supabase Edge Function, composed as a pipeline:
 //
@@ -62,6 +63,8 @@ function createServer(context: ToolContext): McpServer {
     { instructions: SERVER_INSTRUCTIONS }
   )
 
+  // Counts each tool call against the user's limit before the tool runs.
+  limitToolCalls(server, context)
   registerTools(server, context)
   return server
 }

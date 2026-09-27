@@ -45,6 +45,8 @@ export class FakeProjectServer {
   offline = false
   /** Apply the next N calls but lose their responses, as a dropped connection would. */
   loseResponses = 0
+  /** Refuse every call with this message, as the database does when a per-account limit is reached. */
+  limited: string | null = null
   maxFiles = MAX_ENTRIES
   /** Each account's email, as `auth.users` holds it; an account without one lists as null. */
   readonly emails = new Map<string, string>()
@@ -55,6 +57,7 @@ export class FakeProjectServer {
     const call = async <T>(method: string, args: unknown[], work: () => T): Promise<T> => {
       this.calls.push({ user, method, args: structuredClone(args) })
       if (this.offline) throw new RemoteError("network", "Failed to fetch")
+      if (this.limited) throw new RemoteError("account-limit", this.limited)
       const result = work()
       if (this.loseResponses > 0) {
         this.loseResponses--

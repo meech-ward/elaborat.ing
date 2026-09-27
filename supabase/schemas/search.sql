@@ -144,6 +144,8 @@ select cron.schedule(
 -- filters out most of the nearest passages (other people's). With
 -- filter_project_id, both halves search that one project before they are
 -- limited, so its matches are not crowded out by the caller's other projects.
+-- Each call counts against the caller's searches a minute (limits.sql), which
+-- is why the function is volatile.
 create function public.hybrid_search(
   query_text text,
   query_embedding extensions.vector(384),
@@ -165,11 +167,12 @@ returns table (
   score double precision
 )
 language sql
-stable
 security invoker
 set search_path = ''
 set hnsw.iterative_scan = 'relaxed_order'
 as $$
+  select private.check_limit('searches_per_minute');
+
   with full_text as (
     select
       p.id,

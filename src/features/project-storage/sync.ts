@@ -289,6 +289,8 @@ export class ProjectSync {
 
   private async handleError(projectId: string, pending: PendingSave | null, error: RemoteError): Promise<SyncOutcome | null> {
     if (error.kind === "network") return { status: "offline", projectId, message: error.message }
+    // A per-account limit resets with time: keep the batch, with its mutation id, for the next sync.
+    if (error.kind === "account-limit") return { status: "incomplete", projectId, message: error.message }
     if (error.kind === "path-taken" && pending && (await this.markPathTaken(projectId, pending, error.detail))) return null
     const reason: NonNullable<LocalProject["syncError"]> =
       error.kind === "access" ? "access-lost" : error.kind === "archived" ? "archived" : error.kind === "limit" ? "limit" : "invalid"

@@ -62,8 +62,8 @@ export type FakeSupabase = {
   signal(projectId: string, revision: number): void
 }
 
-const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "path-taken": 409, invalid: 400, unavailable: 403 }
-const errorCode: Record<RemoteError["kind"], string> = { network: "", access: "42501", archived: "55000", limit: "54000", "path-taken": "23505", invalid: "22023", unavailable: "42501" }
+const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "account-limit": 429, "path-taken": 409, invalid: 400, unavailable: 403 }
+const errorCode: Record<RemoteError["kind"], string> = { network: "", access: "42501", archived: "55000", limit: "54000", "account-limit": "PT429", "path-taken": "23505", invalid: "22023", unavailable: "42501" }
 
 /** Answer Supabase for `page`, as `person`. */
 export async function fakeSupabase(page: Page, options: Options = {}): Promise<FakeSupabase> {
@@ -178,6 +178,8 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     // The search Edge Function: a passage for each file, in the projects the
     // person can read (or the one asked for), whose text has every word of the query.
     if (path === "/functions/v1/search") {
+      // Over a per-account limit, the function answers 429 with the database's message.
+      if (server.limited) return json(route, { error: server.limited }, 429)
       const { query: text, projectId: onlyProject } = request.postDataJSON() ?? {}
       const words = String(text ?? "").toLowerCase().split(/\s+/).filter(Boolean)
       const results = [...server.projects.values()]

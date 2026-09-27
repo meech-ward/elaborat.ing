@@ -118,7 +118,12 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       const { data, error } = await createClient().functions.invoke<{ results: SearchPassage[] }>("search", {
         body: { query, matchCount: 30, projectId },
       })
-      if (error) throw new Error(error.name === "FunctionsFetchError" ? "Search needs a connection." : `Search failed: ${error.message}`)
+      if (error) {
+        if (error.name === "FunctionsFetchError") throw new Error("Search needs a connection.")
+        // Over the searches a minute limit, the function answers 429 with a message that says when to try again.
+        const limited = error.context instanceof Response && error.context.status === 429 ? await error.context.json().catch(() => null) : null
+        throw new Error(typeof limited?.error === "string" ? limited.error : `Search failed: ${error.message}`)
+      }
       return projectHits(data?.results ?? [], projectId)
     },
     [projectId],

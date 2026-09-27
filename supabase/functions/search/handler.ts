@@ -26,7 +26,7 @@ export type SearchResult = {
 export type SearchDeps = {
   embed: (text: string) => Promise<number[]>
   /** `public.hybrid_search` as the caller. */
-  hybridSearch: (args: { query_text: string; query_embedding: string; match_count: number; filter_project_id?: string }) => Promise<{ data: SearchResult[] | null; error: { message: string } | null }>
+  hybridSearch: (args: { query_text: string; query_embedding: string; match_count: number; filter_project_id?: string }) => Promise<{ data: SearchResult[] | null; error: { message: string; code?: string } | null }>
 }
 
 export async function handleSearch(body: unknown, deps: SearchDeps): Promise<Response> {
@@ -40,6 +40,8 @@ export async function handleSearch(body: unknown, deps: SearchDeps): Promise<Res
     match_count: matchCount,
     ...(projectId ? { filter_project_id: projectId } : {}),
   })
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  // PT429: the caller reached their searches a minute (supabase/schemas/limits.sql);
+  // the message says when to try again.
+  if (error) return Response.json({ error: error.message }, { status: error.code === 'PT429' ? 429 : 500 })
   return Response.json({ results: data ?? [] })
 }

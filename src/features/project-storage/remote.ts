@@ -83,7 +83,8 @@ export type RemoteErrorKind =
   | "network" // no answer; retry later with the same request
   | "access" // not signed in, or no access to this project (42501)
   | "archived" // 55000
-  | "limit" // 54000
+  | "limit" // 54000: the project would exceed its size limits
+  | "account-limit" // PT429: a per-account limit, such as saves a minute; the message says when to try again
   | "path-taken" // 23505: a path is already used by a file or folder
   | "invalid" // 22023 and other refusals of the request itself
   | "unavailable" // create_project only: the id already belongs to someone else
@@ -108,6 +109,8 @@ function classify(error: PostgrestLikeError): RemoteError {
       return new RemoteError("archived", message)
     case "54000":
       return new RemoteError("limit", message)
+    case "PT429":
+      return new RemoteError("account-limit", message)
     case "23505":
       return new RemoteError("path-taken", message, error.details ?? null)
     case undefined:

@@ -24,6 +24,9 @@ export function errorResult(message: string): CallToolResult {
   }
 }
 
+/** The errcode the database raises when a per-user limit is reached. */
+export const LIMIT_ERROR_CODE = 'PT429'
+
 function readString(value: unknown, key: string): string | null {
   if (!value || typeof value !== 'object' || !(key in value)) return null
   const property = (value as Record<string, unknown>)[key]
@@ -40,6 +43,10 @@ export function runtimeErrorResult(error: unknown): CallToolResult {
     error instanceof Error ? error.message : (readString(error, 'message') ?? String(error))
   const code = readString(error, 'code')
   const hint = readString(error, 'hint')
+
+  // A per-user limit (supabase/schemas/limits.sql): its message already says
+  // which limit was reached and when to try again, so it goes back as is.
+  if (code === LIMIT_ERROR_CODE) return errorResult(message)
 
   return errorResult(
     [code ? `[${code}]` : null, message, hint ? `Hint: ${hint}` : null].filter(Boolean).join(' ')

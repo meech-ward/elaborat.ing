@@ -362,8 +362,57 @@ as a new, not yet created project named "Local project" and opens it, so the
 usual sync (`create_project`, then `save_files`) uploads it. The move runs once
 under a cross-tab lock; `src/features/project-storage/localProject.ts`.
 
-**Decision:** hosted limits are generous and exist only to stop abuse.
-Numbers are set when accounts ship.
+**Decision:** hosted limits are generous and exist only to stop abuse. See
+Limits below.
+
+## Limits
+
+**Decision:** per-user limits that normal use never reaches but that stop a
+runaway script or agent, enforced in the database so the app, the MCP server
+and direct API calls all get them. `supabase/schemas/limits.sql` holds the
+numbers (`private.limits()`) and one counter mechanism:
+`private.count_use(user, name, limit, window, wording)` counts one use in a
+fixed window (a minute, or a UTC day) in `private.limit_counters`, one row per
+user and limit. Its upsert locks that row until the transaction ends, so
+concurrent uses by one person are counted one after another and never slip
+past the limit together, and a refused use rolls back and does not count.
+`private.check_limit(name)` counts a limit from the list for the signed-in
+caller. A new limit is one row in `private.limits()` and one
+`check_limit` call in the function that does the work.
+
+Every refusal is errcode `PT429`, which the Data API answers as HTTP 429, with
+a plain message that says which limit was reached and when it resets ("You
+have reached the limit of 300 saves a minute. Try again in 42 seconds.") and
+the limit's name as the detail. The app's sync keeps the refused batch, with
+its mutation id, shows the message and sends it again on the next sync; the
+files panel's search shows it; the MCP server returns it to the agent as is.
+
+| Limit | Number | Where it is counted |
+| --- | --- | --- |
+| New projects | 100 a day | `create_project`, only when it creates one (a repeated call does not count) |
+| Projects owned, archived included | 1,000 | `create_project`; permanently deleting one makes room |
+| Saves | 300 a minute | `save_files` (every call, retries included; the app's save, every MCP write tool) |
+| Searches | 120 a minute | `hybrid_search` (the `search` function, which answers 429, and the MCP `search` tool) |
+| Agent tool calls | 300 a minute | the MCP server calls `count_tool_call()` before every tool runs |
+
+Limits that were there already, kept as they are:
+
+- **Per project** (`save_files`, errcode `54000`; the app stops syncing the
+  batch, since sending it again cannot succeed): at most 4,096 files and 4,096
+  folders, and 64 MiB of file content (`projects.content_bytes`).
+- **Per file:** at most 2 MiB of content (a check constraint). Paths are 1 to
+  1,024 bytes; project titles 1 to 160 characters.
+- **Per save:** 1 to 4,096 changes (`save_files`). The app's import saves at
+  most 500 files and 8 MiB at a time.
+- **Per search:** a query of 1 to 500 characters and at most 30 passages.
+- **Per API read:** at most 1,000 rows (`max_rows` in `config.toml`).
+- **MCP Apps card:** 8 drawings per note, 200,000 characters of SVG each and
+  600,000 per result, 3,000 elements per scene.
+- **Auth** (`[auth.rate_limit]` in `config.toml`): 30 emails an hour for the
+  project; per IP address, 30 sign-ups and sign-ins, 30 code and link checks
+  and 150 session refreshes every 5 minutes. A person can ask for another
+  confirmation or reset email after 60 seconds. SMS limits apply once phone
+  codes are on.
 
 ## Agents (MCP)
 

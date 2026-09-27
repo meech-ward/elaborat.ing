@@ -28,7 +28,8 @@ grant execute on function private.project_summary(public.projects, text) to auth
 -- Repeating the call with the same id returns the existing project. If the id
 -- already belongs to someone else, the call fails with 'Project unavailable':
 -- the client must then give its local project a fresh id, and must never save
--- to the refused id.
+-- to the refused id. A new project counts against the owner's limits
+-- (limits.sql); a repeated call does not.
 create function private.create_project(project_id uuid, title text)
 returns jsonb
 language plpgsql
@@ -38,6 +39,8 @@ as $$
 declare
   uid uuid := private.require_user();
   p public.projects;
+  created boolean;
+  most integer;
 begin
   if create_project.project_id is null then
     raise exception 'Project id required' using errcode = '22023';
@@ -46,10 +49,22 @@ begin
   insert into public.projects (id, owner_id, title)
   values (create_project.project_id, uid, create_project.title)
   on conflict (id) do nothing;
+  created := found;
 
   select * into p from public.projects where id = create_project.project_id;
   if p.owner_id is distinct from uid then
     raise exception 'Project unavailable' using errcode = '42501';
+  end if;
+
+  if created then
+    -- Counting first locks the owner's counter row, so two creates at once
+    -- are counted one after the other and the total below sees both.
+    perform private.check_limit('projects_per_day');
+    select l.max_count into most from private.limits() l where l.name = 'projects';
+    if (select count(*) from public.projects o where o.owner_id = uid) > most then
+      raise exception 'You have reached the limit of % projects. Permanently delete one to make room.', most
+        using errcode = 'PT429', detail = 'projects';
+    end if;
   end if;
 
   return private.project_summary(p, 'owner');

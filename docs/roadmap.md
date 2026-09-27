@@ -152,7 +152,9 @@ Also done in this phase: the comment anchoring library (see the task below).
   Turnstile. (Done in the app: the one-time code, and GitHub and Google
   buttons that show once their OAuth apps are set up and turned on in
   `config.toml`.)
-- **Generous abuse limits** per user.
+- **Generous abuse limits** per user (done: new projects a day and in total,
+  saves, searches and agent tool calls a minute, counted in the database so
+  every path gets them; see "Limits" in `architecture.md`).
 - **Component isolation on a sandbox domain**, with a custom-code notice on
   shared projects.
 - **MCP Apps views:** a read-only document with its drawings, a single drawing,

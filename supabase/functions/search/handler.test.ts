@@ -70,3 +70,11 @@ Deno.test('a database error is reported, not hidden as no results', async () => 
   assertEquals(response.status, 500)
   assertEquals(await response.json(), { error: 'permission denied for function hybrid_search' })
 })
+
+Deno.test('over the searches a minute limit, the answer is 429 with the database message', async () => {
+  const message = 'You have reached the limit of 120 searches a minute. Try again in 42 seconds.'
+  const { value } = deps({ data: null, error: { code: 'PT429', message } })
+  const response = await handleSearch({ query: 'tomato' }, value)
+  assertEquals(response.status, 429)
+  assertEquals(await response.json(), { error: message })
+})

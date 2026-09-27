@@ -69,6 +69,12 @@ test("search in the files panel finds this project's files by their text, and op
   fake.offline = true
   await field.fill("customer")
   await expect(results.getByRole("status")).toHaveText("Search needs a connection.")
+
+  // Over the searches a minute limit, the database's message shows as it is.
+  fake.offline = false
+  server.limited = "You have reached the limit of 120 searches a minute. Try again in 42 seconds."
+  await field.fill("customer model")
+  await expect(results.getByRole("status")).toHaveText(server.limited)
 })
 
 test("in the local project, search says to sign up", async ({ page }) => {

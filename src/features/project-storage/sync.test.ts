@@ -487,3 +487,38 @@ test("an interrupted download finishes on the next refresh", async () => {
   await b.sync.refresh()
   expect(await b.paths(id)).toEqual(["a.md", "b.md"])
 })
+
+test("a per-account limit keeps the batch and its mutation id, and says when to try again", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  await put(a.files(id), "a.md", "one")
+  await a.sync.sync(id)
+
+  await put(a.files(id), "a.md", "two")
+  const message = "You have reached the limit of 300 saves a minute. Try again in 42 seconds."
+  server.limited = message
+  expect(await a.sync.sync(id)).toEqual({ status: "incomplete", projectId: id, message })
+  const kept = (await a.project(id))!
+  expect(kept.syncError).toBeNull()
+  expect(kept.pending).not.toBeNull()
+
+  server.limited = null
+  expect(await a.sync.sync(id)).toEqual({ status: "synced", projectId: id })
+  expect(server.calls.filter((call) => call.method === "saveFiles").at(-1)!.args[1]).toBe(kept.pending!.mutationId)
+  expect(server.content(id, "a.md")).toBe("two")
+})
+
+test("a project refused by a per-account limit stays on the device and is created on a later sync", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  const message = "You have reached the limit of 100 new projects a day. Try again in 5 hours."
+  server.limited = message
+  expect(await a.sync.sync(id)).toEqual({ status: "incomplete", projectId: id, message })
+  expect(await a.project(id)).toMatchObject({ created: false, syncError: null })
+
+  server.limited = null
+  expect(await a.sync.sync(id)).toEqual({ status: "synced", projectId: id })
+  expect(server.projects.has(id)).toBe(true)
+})

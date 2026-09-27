@@ -1,34 +1,169 @@
--- Save a batch of file changes atomically.
---
--- `changes` is a JSON array of 1 to 4096 changes, each touching a distinct path:
---   {"op": "put",    "path": "notes/a.md", "content": "...", "base_version": 3}
---   {"op": "put",    "path": "notes/new.md", "content": "..."}        -- create: no base_version
---   {"op": "delete", "path": "notes/old.md", "base_version": 2}
---   {"op": "move",   "path": "notes/a.md", "to": "archive/a.md", "base_version": 4}
---   {"op": "move",   "path": "a.md", "to": "b.md", "content": "...", "base_version": 5}  -- move and edit
---   {"op": "mkdir",  "path": "empty/folder"}
---   {"op": "rmdir",  "path": "empty/folder"}
---
--- Every change to an existing file names the version it was based on: the
--- version the client last read. If any of them is stale, nothing is written
--- and the result lists every conflict with the file's current state.
--- Otherwise every change is applied, the project revision goes up by one, and
--- every changed file takes that revision as its new version. The result is
--- stored under `mutation_id`: repeating the same save returns that stored
--- result, and reusing the id for a different save is an error. Conflicts are
--- not stored, so a client resolves them and saves again with a new mutation id.
---
--- Errors: 22023 for a malformed request, 23505 when a path is already used by
--- a file or folder, 42501 without editor access, 55000 when the project is
--- archived, 54000 when the project would exceed its size limits, PT429 when
--- the caller has saved too often this minute (limits.sql). Every call counts,
--- retries included.
-create function private.save_files(project_id uuid, mutation_id uuid, changes jsonb)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $$
+SET local check_function_bodies = off;
+
+-- Written by hand: reading a vector loads pgvector in this session, which
+-- defines hnsw.iterative_scan, set by hybrid_search below. Until then it is an
+-- unknown parameter, and only a superuser may set one in a function, which the
+-- role running `supabase db push` is not.
+SELECT '[0]'::extensions.vector;
+
+CREATE TABLE "private"."limit_counters" (
+  "user_id"      uuid                     NOT NULL,
+  "name"         text                     NOT NULL,
+  "window_start" timestamp with time zone NOT NULL,
+  "uses"         integer                  NOT NULL,
+  CONSTRAINT "limit_counters_pkey" PRIMARY KEY (user_id, name)
+);
+
+ALTER TABLE "private"."limit_counters"
+  ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION private.check_limit (
+  name text
+)
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
+declare
+  uid uuid := private.require_user();
+  found_limit record;
+begin
+  select * into found_limit
+  from private.limits() l
+  where l.name = check_limit.name and l.window_length is not null;
+  if not found then
+    raise exception 'Unknown limit: %', check_limit.name using errcode = '22023';
+  end if;
+  perform private.count_use(uid, found_limit.name, found_limit.max_count, found_limit.window_length, found_limit.what);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION private.count_use (
+  user_id       uuid,
+  name          text,
+  max_count     integer,
+  window_length interval,
+  what          text
+)
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
+declare
+  this_window timestamptz := date_bin(count_use.window_length, now(), timestamptz '2000-01-01 00:00:00+00');
+  counted private.limit_counters;
+begin
+  insert into private.limit_counters as c (user_id, name, window_start, uses)
+  values (count_use.user_id, count_use.name, this_window, 1)
+  on conflict on constraint limit_counters_pkey do update
+    set uses = case when c.window_start >= excluded.window_start then c.uses + 1 else 1 end,
+        window_start = greatest(c.window_start, excluded.window_start)
+  returning * into counted;
+  if counted.uses > count_use.max_count then
+    raise exception 'You have reached the limit of % %. Try again in %.',
+      count_use.max_count, count_use.what,
+      private.limit_wait(counted.window_start + count_use.window_length - now())
+      using errcode = 'PT429', detail = count_use.name;
+  end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION private.create_project (
+  project_id uuid,
+  title      text
+)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
+declare
+  uid uuid := private.require_user();
+  p public.projects;
+  created boolean;
+  most integer;
+begin
+  if create_project.project_id is null then
+    raise exception 'Project id required' using errcode = '22023';
+  end if;
+
+  insert into public.projects (id, owner_id, title)
+  values (create_project.project_id, uid, create_project.title)
+  on conflict (id) do nothing;
+  created := found;
+
+  select * into p from public.projects where id = create_project.project_id;
+  if p.owner_id is distinct from uid then
+    raise exception 'Project unavailable' using errcode = '42501';
+  end if;
+
+  if created then
+    -- Counting first locks the owner's counter row, so two creates at once
+    -- are counted one after the other and the total below sees both.
+    perform private.check_limit('projects_per_day');
+    select l.max_count into most from private.limits() l where l.name = 'projects';
+    if (select count(*) from public.projects o where o.owner_id = uid) > most then
+      raise exception 'You have reached the limit of % projects. Permanently delete one to make room.', most
+        using errcode = 'PT429', detail = 'projects';
+    end if;
+  end if;
+
+  return private.project_summary(p, 'owner');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION private.limit_wait (
+  wait interval
+)
+  RETURNS text
+  LANGUAGE sql
+  IMMUTABLE
+  SET search_path TO ''
+  AS $function$
+  select n || ' ' || unit || case when n = 1 then '' else 's' end
+  from (
+    select
+      case
+        when seconds < 60 then greatest(ceil(seconds), 1)
+        when seconds < 3600 then ceil(seconds / 60)
+        else ceil(seconds / 3600)
+      end::integer as n,
+      case when seconds < 60 then 'second' when seconds < 3600 then 'minute' else 'hour' end as unit
+    from (select extract(epoch from wait) as seconds) s
+  ) w
+$function$;
+
+CREATE OR REPLACE FUNCTION private.limits()
+  RETURNS TABLE (
+    name          text,
+    max_count     integer,
+    window_length interval,
+    what          text
+  )
+  LANGUAGE sql
+  IMMUTABLE
+  SET search_path TO ''
+  AS $function$
+  values
+    ('projects_per_day', 100, interval '1 day', 'new projects a day'),
+    ('projects', 1000, null, 'projects'),
+    ('saves_per_minute', 300, interval '1 minute', 'saves a minute'),
+    ('searches_per_minute', 120, interval '1 minute', 'searches a minute'),
+    ('tool_calls_per_minute', 300, interval '1 minute', 'agent tool calls a minute')
+$function$;
+
+CREATE OR REPLACE FUNCTION private.save_files (
+  project_id  uuid,
+  mutation_id uuid,
+  changes     jsonb
+)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
 declare
   uid uuid := private.require_user();
   p public.projects;
@@ -300,19 +435,101 @@ begin
 
   return result;
 end;
-$$;
+$function$;
 
-revoke all on function private.save_files(uuid, uuid, jsonb) from public, anon;
-grant execute on function private.save_files(uuid, uuid, jsonb) to authenticated;
+CREATE OR REPLACE FUNCTION public.count_tool_call()
+  RETURNS void
+  LANGUAGE sql
+  SET search_path TO ''
+  AS $function$
+  select private.check_limit('tool_calls_per_minute')
+$function$;
 
-create function public.save_files(project_id uuid, mutation_id uuid, changes jsonb)
-returns jsonb
-language sql
-security invoker
-set search_path = ''
-as $$
-  select private.save_files(project_id, mutation_id, changes)
-$$;
+REVOKE ALL ON FUNCTION "public"."count_tool_call"() FROM PUBLIC, "anon", "service_role";
 
-revoke all on function public.save_files(uuid, uuid, jsonb) from public, anon;
-grant execute on function public.save_files(uuid, uuid, jsonb) to authenticated;
+CREATE OR REPLACE FUNCTION public.hybrid_search (
+  query_text        text,
+  query_embedding   extensions.vector,
+  match_count       integer,
+  full_text_weight  double precision  DEFAULT 1,
+  semantic_weight   double precision  DEFAULT 1,
+  rrf_k             integer           DEFAULT 50,
+  filter_project_id uuid              DEFAULT NULL::uuid
+)
+  RETURNS TABLE (
+    passage_id   bigint,
+    project_id   uuid,
+    file_id      uuid,
+    path         text,
+    headings     text,
+    content      text,
+    start_offset integer,
+    end_offset   integer,
+    score        double precision
+  )
+  LANGUAGE sql
+  SET search_path TO ''
+  SET "hnsw.iterative_scan" TO 'relaxed_order'
+  AS $function$
+  select private.check_limit('searches_per_minute');
+
+  with full_text as (
+    select
+      p.id,
+      row_number() over (order by ts_rank_cd(p.fts, websearch_to_tsquery('english', query_text)) desc) as rank_ix
+    from public.file_passages p
+    where p.fts @@ websearch_to_tsquery('english', query_text)
+      and (filter_project_id is null or p.project_id = filter_project_id)
+    order by rank_ix
+    limit least(match_count, 30) * 2
+  ),
+  semantic as (
+    select
+      p.id,
+      row_number() over (order by p.embedding operator(extensions.<#>) query_embedding) as rank_ix
+    from public.file_passages p
+    where filter_project_id is null or p.project_id = filter_project_id
+    order by rank_ix
+    limit least(match_count, 30) * 2
+  )
+  select
+    p.id,
+    p.project_id,
+    p.file_id,
+    f.path,
+    p.headings,
+    p.content,
+    p.start_offset,
+    p.end_offset,
+    coalesce(1.0 / (rrf_k + full_text.rank_ix), 0.0) * full_text_weight
+      + coalesce(1.0 / (rrf_k + semantic.rank_ix), 0.0) * semantic_weight as score
+  from full_text
+  full outer join semantic on full_text.id = semantic.id
+  join public.file_passages p on p.id = coalesce(full_text.id, semantic.id)
+  join public.project_files f on f.id = p.file_id
+  order by score desc
+  limit least(match_count, 30)
+$function$;
+
+ALTER TABLE "private"."limit_counters"
+  ADD CONSTRAINT "limit_counters_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+REVOKE ALL ON FUNCTION "private"."check_limit"(text) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION "private"."check_limit"(text) TO "authenticated", "postgres";
+
+REVOKE ALL ON FUNCTION "private"."count_use"(uuid, text, integer, interval, text) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION "private"."count_use"(uuid, text, integer, interval, text) TO "postgres";
+
+REVOKE ALL ON FUNCTION "private"."limit_wait"(interval) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION "private"."limit_wait"(interval) TO "authenticated", "postgres";
+
+REVOKE ALL ON FUNCTION "private"."limits"() FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION "private"."limits"() TO "authenticated", "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."count_tool_call"() TO "authenticated", "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "private"."limit_counters" TO "postgres";
