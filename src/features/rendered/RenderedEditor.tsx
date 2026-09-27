@@ -514,6 +514,22 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       if (message.kind === "rendered") return;
+      if (message.kind === "shortcut") {
+        // Replay it as a key press on the frame, where the app's own
+        // listeners pick it up as if it had been pressed outside.
+        frameRef.current?.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: message.key,
+            code: /^[123]$/.test(message.key) ? `Digit${message.key}` : message.key === "." ? "Period" : `Key${message.key.toUpperCase()}`,
+            metaKey: message.meta,
+            ctrlKey: message.ctrl,
+            altKey: message.alt,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        return;
+      }
       if (message.kind === 'source-draft-pending') {
         pendingOwners.current.draft = message.pending;
         onPendingChangeProp?.(message.pending || pendingOwners.current.fluid);

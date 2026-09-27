@@ -407,6 +407,15 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     kind: z.literal("ready"),
     session: z.string().min(1),
   }),
+  // An app shortcut pressed inside the frame, passed up so it works there too.
+  z.object({
+    kind: z.literal("shortcut"),
+    session: z.string().min(1),
+    key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3"]),
+    meta: z.boolean(),
+    ctrl: z.boolean(),
+    alt: z.boolean(),
+  }).strict(),
   z.object({
     kind: z.literal("rendered"),
     session: z.string().min(1),
@@ -499,6 +508,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "render-error":
     case "edit-resource":
     case "view-resource":
+    case "shortcut":
       return "drop";
     case "edit-rejected":
       return "refusal";
@@ -539,7 +549,8 @@ export function checkChildMessage(args: {
   if (message.kind !== "ready" && message.session !== args.session) {
     return { ok: false, error: "Rejected frame message for a stale session." };
   }
-  if (message.kind !== "ready" && message.revision !== args.revision) {
+  // A shortcut is a key press, not an edit: it has no revision to be stale.
+  if (message.kind !== "ready" && message.kind !== "shortcut" && message.revision !== args.revision) {
     return {
       ok: false,
       error: `Rejected stale frame message (revision ${message.revision}, current ${args.revision}).`,

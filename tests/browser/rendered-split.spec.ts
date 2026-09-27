@@ -124,3 +124,17 @@ test("Split has no accessibility problems at 1280", async ({ page }) => {
   const results = await new AxeBuilder({ page }).exclude('[data-slot="resizable-handle"]').analyze()
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
 })
+
+test("Cmd+S pressed inside the rendered note saves it", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const paragraph = frame.locator("p").first()
+  await paragraph.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" Saved from the frame.")
+  // Once the edit has reached the document (Save is enabled), Cmd+S in the frame saves it.
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled()
+  await paragraph.press("ControlOrMeta+s")
+  await expect.poll(() => fake.server.content(id, PATH)).toContain("Saved from the frame.")
+})

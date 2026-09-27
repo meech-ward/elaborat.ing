@@ -155,6 +155,7 @@ describe('staleChildMessage', () => {
       'render-error': 'drop',
       'edit-resource': 'drop',
       'view-resource': 'drop',
+      shortcut: 'drop',
       'edit-rejected': 'refusal',
       'fluid-transaction': 'lost-edit',
       'fluid-history': 'lost-edit',

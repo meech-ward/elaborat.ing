@@ -105,6 +105,23 @@ function postToParent(message: unknown): void {
   window.parent.postMessage(message, "*");
 }
 
+// The app's shortcuts (save, commands, go to file, duplicate, focus, and the
+// view switch) work while the keyboard is in the frame: the frame passes them
+// up instead of letting the frame or the browser act on them.
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (!activeSession || !(event.metaKey || event.ctrlKey) || event.shiftKey) return;
+    const digit = /^Digit([123])$/.exec(event.code)?.[1];
+    const key = event.altKey ? digit : ["s", "k", "p", "d", "."].find((candidate) => candidate === event.key.toLowerCase());
+    if (!key) return;
+    event.preventDefault();
+    event.stopPropagation();
+    postToParent({ kind: "shortcut", session: activeSession, key, meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey });
+  },
+  true,
+);
+
 /** A component's editable properties, or none while the document is read-only. */
 function slotByIndex(index: number): SlotInfo | undefined {
   if (isReadOnly()) return undefined;
