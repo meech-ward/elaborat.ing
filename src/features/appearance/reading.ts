@@ -32,26 +32,30 @@ export function resetReading(): ReadingPreferences {
   return { ...DEFAULT_READING };
 }
 
-/** Finite presentation values, never arbitrary CSS from storage or a message. */
+/**
+ * Finite presentation values, never arbitrary CSS from storage or a message.
+ * The defaults are C5's note: a 680px column, body text 15.5px (16 on a
+ * phone); headings scale with the text.
+ */
 export function readingStyle(
   preferences: ReadingPreferences,
 ): Record<string, string> {
   const size =
     preferences.textSize === "large"
-      ? 16
+      ? 17
       : preferences.textSize === "larger"
-        ? 18
-        : 14;
+        ? 19
+        : 15.5;
   return {
     "--reading-width":
       preferences.width === "full"
         ? "100%"
         : preferences.width === "wide"
           ? "1040px"
-          : "760px",
+          : "680px",
     "--reading-font-size": `${size}px`,
-    "--reading-mobile-font-size": `${size - 1}px`,
-    "--reading-scale": String(size / 14),
-    "--reading-mobile-scale": String((size - 1) / 13),
+    "--reading-mobile-font-size": `${size + 0.5}px`,
+    "--reading-scale": String(size / 15.5),
+    "--reading-mobile-scale": String((size + 0.5) / 16),
   };
 }

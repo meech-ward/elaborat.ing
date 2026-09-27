@@ -129,7 +129,7 @@ function ReadingSection() {
           value={reading.width}
           onChange={(event) => setReading(readingPreferencesSchema.parse({ ...reading, width: event.target.value }))}
         >
-          <option value="standard">Standard (760px)</option>
+          <option value="standard">Standard (680px)</option>
           <option value="wide">Wide (1040px)</option>
           <option value="full">Full width</option>
         </select>

@@ -130,12 +130,21 @@ export function SourceEditor(props: SourceEditorProps) {
 
     const editor = monaco.editor.create(container, {
       model,
+      // C5's source pane: 13/22 code, the line numbers in a 22px column
+      // at the pane's edge and the text 16px after them (the fold arrows
+      // show in that gap on hover), 14px above the first line and below
+      // the last, no line along the scroll bar.
+      // The palette's code font replaces this at once (see the appearance effect).
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: 13,
-      lineHeight: 20,
+      lineHeight: 22,
+      glyphMargin: false,
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 0,
       minimap: { enabled: false },
       wordWrap: "on",
-      padding: { top: 12 },
+      padding: { top: 14, bottom: 14 },
+      overviewRulerBorder: false,
       scrollBeyondLastLine: false,
       automaticLayout: true,
       renderWhitespace: "selection",

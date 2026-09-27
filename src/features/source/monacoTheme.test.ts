@@ -36,7 +36,8 @@ describe('monacoTheme', () => {
         expect(theme.colors['editor.background']).toBe(colors.panel);
         expect(theme.colors['editor.foreground']).toBe(colors.text);
         expect(theme.colors['editor.lineHighlightBackground']).toBe(colors.lineHi);
-        expect(theme.colors['editorLineNumber.foreground']).toBe(colors.dim);
+        expect(theme.colors['editorLineNumber.foreground']).toBe(colors.faint);
+        expect(theme.colors['editorLineNumber.activeForeground']).toBe(colors.faint);
         expect(theme.colors['editor.selectionBackground']).toBe(colors.accentSoft);
         expect([colors.accent, colors.accentSoftText]).toContain(theme.colors['editorCursor.foreground']);
 
@@ -52,6 +53,8 @@ describe('monacoTheme', () => {
         expect(color('number')).toBe(bare(colors.codeKw));
         expect(color('emphasis')).toBe(bare(colors.codeKw));
         expect(color('meta.content')).toBe(bare(colors.dim));
+        expect(color('operator.mdx')).toBe(bare(colors.text));
+        expect(color('operator')).toBe(bare(colors.codeKw));
       });
     }
   }

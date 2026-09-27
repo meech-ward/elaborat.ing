@@ -6,6 +6,7 @@
  * in the prop controls (preview frame) and the instrumentation module. No
  * component here ever reads or writes document source directly.
  */
+import { CircleAlert, Info, TriangleAlert } from 'lucide-react';
 import { useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
@@ -30,6 +31,12 @@ export function Counter(props: { initial?: number; step?: number }): ReactNode {
   );
 }
 
+/**
+ * A callout as the app's library draws one (Callout in the design system):
+ * the tone's soft fill with its own text colour, radius 10, padding 12 by
+ * 14, 15px at 1.55, the tone's icon first (not on a phone). Info is the
+ * accentSoft note; warn and error take the warning and danger colours.
+ */
 export function Callout(props: {
   tone?: 'info' | 'warn' | 'error';
   title?: string;
@@ -37,26 +44,27 @@ export function Callout(props: {
 }): ReactNode {
   const tone = props.tone === 'warn' || props.tone === 'error' ? props.tone : 'info';
   const toneClasses = {
-    info: 'border-l-primary',
-    warn: 'border-l-[var(--warn-text)]',
-    error: 'border-l-[var(--code-head)]',
+    info: 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)]',
+    warn: 'bg-[var(--warn-bg)] text-[var(--warn-text)]',
+    error: 'bg-[color-mix(in_oklab,var(--danger)_10%,var(--panel))] text-[var(--danger)]',
   }[tone];
+  const Icon = { info: Info, warn: TriangleAlert, error: CircleAlert }[tone];
   return (
     <aside
-      className={cn(
-        'not-prose my-5 border border-border border-l-4 bg-card px-4 py-3 text-sm leading-6 text-card-foreground shadow-sm',
-        toneClasses,
-      )}
+      className={cn('not-prose m-0 flex gap-3 rounded-[10px] px-3.5 py-3 text-[15px] leading-[1.55]', toneClasses)}
       data-component="Callout"
       data-tone={tone}
     >
-      {props.title != null && props.title !== '' ? (
-        <p className="m-0 mb-1 font-medium text-foreground" data-callout-title>
-          {props.title}
-        </p>
-      ) : null}
-      <div className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p+_p]:mt-3">
-        {props.children}
+      <Icon aria-hidden="true" className="mt-[3px] size-4 shrink-0 max-[500px]:hidden" />
+      <div className="min-w-0 flex-1">
+        {props.title != null && props.title !== '' ? (
+          <p className="m-0 mb-1 font-semibold" data-callout-title>
+            {props.title}
+          </p>
+        ) : null}
+        <div className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p+_p]:mt-3">
+          {props.children}
+        </div>
       </div>
     </aside>
   );

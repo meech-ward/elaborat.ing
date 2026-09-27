@@ -393,22 +393,14 @@ function ResourceEmbed(props: {
     });
   };
   const label = props.kind === "drawing" ? "drawing" : "diagram";
+  // reading.css draws the box, and shows the caption over its top on hover and focus.
   return (
     <figure
       className="not-prose"
       data-resource={props.kind}
       data-src={src}
-      style={{
-        border: "1px solid currentColor",
-        borderRadius: "0.5rem",
-        padding: "0.5rem",
-        margin: "0.5rem 0",
-      }}
+      data-pixels={svg ? "true" : "false"}
     >
-      <figcaption style={{ fontSize: "0.8rem", opacity: 0.75 }}>
-        {props.kind === "drawing" ? "Drawing" : "Diagram"}:{" "}
-        {src || "(missing src)"}
-      </figcaption>
       {svg ? (
         <button
           type="button"
@@ -418,6 +410,7 @@ function ResourceEmbed(props: {
           style={{
             display: "block",
             width: "100%",
+            minHeight: 0,
             padding: 0,
             border: 0,
             background: "none",
@@ -440,11 +433,17 @@ function ResourceEmbed(props: {
           </small>
         </p>
       )}
-      {src ? (
-        <button type="button" onClick={edit}>
-          Edit {props.kind === "drawing" ? "drawing" : "diagram"}
-        </button>
-      ) : null}
+      <figcaption>
+        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+          {props.kind === "drawing" ? "Drawing" : "Diagram"}:{" "}
+          {src || "(missing src)"}
+        </span>
+        {src ? (
+          <button type="button" onClick={edit}>
+            Edit {label}
+          </button>
+        ) : null}
+      </figcaption>
     </figure>
   );
 }
@@ -732,6 +731,7 @@ window.addEventListener("message", (event: MessageEvent) => {
         String(value),
       );
     document.documentElement.style.colorScheme = message.scheme;
+    document.documentElement.dataset.scheme = message.scheme;
     return;
   }
   if (message.kind === "resources") {

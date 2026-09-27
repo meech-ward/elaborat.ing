@@ -4,6 +4,7 @@ import {
   READING_STORAGE_KEY,
   parseReading,
   readReading,
+  readingStyle,
   resetReading,
 } from "./reading";
 import { APPEARANCE_STORAGE_KEY, parseAppearanceSetting } from "./tokens";
@@ -91,4 +92,15 @@ test("frame reading input rejects unknown enums and stale sessions without accep
       activeSession: "reading-session",
     }).ok,
   ).toBe(false);
+});
+
+test("the default reading is C5's note: a 680px column of 15.5px text, 16px on a phone", () => {
+  expect(readingStyle(DEFAULT_READING)).toMatchObject({
+    "--reading-width": "680px",
+    "--reading-font-size": "15.5px",
+    "--reading-mobile-font-size": "16px",
+    "--reading-scale": "1",
+    "--reading-mobile-scale": "1",
+  });
+  expect(readingStyle({ ...DEFAULT_READING, textSize: "larger" })["--reading-font-size"]).toBe("19px");
 });

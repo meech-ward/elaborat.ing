@@ -46,12 +46,12 @@
   /* Typography's 1rem must not replace the reader's body-size preference. */
   font-size: inherit;
   line-height: inherit;
-  --tw-prose-body: var(--text);
+  --tw-prose-body: var(--body);
   --tw-prose-headings: var(--text);
   --tw-prose-lead: var(--muted);
   --tw-prose-links: var(--accent);
   --tw-prose-bold: var(--text);
-  --tw-prose-counters: var(--muted);
+  --tw-prose-counters: var(--body);
   --tw-prose-bullets: var(--panel-border);
   --tw-prose-hr: var(--panel-border);
   --tw-prose-quotes: var(--text);
@@ -64,14 +64,11 @@
   --tw-prose-td-borders: var(--panel-border);
 }
 
-/* Document typography cadence, translated to the editor's existing
- * theme tokens. These rules remain inside document flow and leave `not-prose`
- * component roots, authoring controls, and embedded Drawing/Diagram pixels
- * untouched. */
+/* Document typography details, translated to the editor's theme tokens
+ * (reading.css sets the sizes and the spacing between blocks). These rules
+ * remain inside document flow and leave `not-prose` component roots,
+ * authoring controls, and embedded Drawing/Diagram pixels untouched. */
 .preview-prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  border-top: 1px solid var(--panel-border);
-  margin-top: 2.5em;
-  padding-top: 1.25rem;
   scroll-margin-top: 1rem;
 }
 .preview-prose :where(h3):not(:where([class~="not-prose"], [class~="not-prose"] *)) {

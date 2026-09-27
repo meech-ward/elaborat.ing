@@ -1,12 +1,17 @@
+/* A note as C5 draws it: a 680px column of 15.5px body text at 1.6 in the
+   body colour, h1 32/700, h2 21/600, every block 14px apart; on a phone
+   16px text, h1 30. The reader's width and text size preferences
+   (appearance/reading.ts) set the variables. */
 :root {
-  --reading-width: 760px;
-  --reading-font-size: 14px;
-  --reading-mobile-font-size: 13px;
+  --reading-width: 680px;
+  --reading-font-size: 15.5px;
+  --reading-mobile-font-size: 16px;
   --reading-scale: 1;
   --reading-mobile-scale: 1;
 }
 body {
   font-size: var(--reading-font-size);
+  line-height: 1.6;
 }
 #root {
   max-width: none;
@@ -21,19 +26,35 @@ body {
 .reading-document > * {
   grid-column: 2;
   min-width: 0;
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+.reading-document > :last-child {
+  margin-bottom: 0;
 }
 .reading-document h1 {
-  font-size: calc(38px * var(--reading-scale));
+  font-size: calc(32px * var(--reading-scale));
+  line-height: 1.15;
+  font-weight: 700;
 }
 .reading-document h2 {
-  font-size: calc(23px * var(--reading-scale));
+  font-size: calc(21px * var(--reading-scale));
+  line-height: 1.3;
+  font-weight: 600;
+}
+.reading-document > h2 {
+  margin-top: 6px;
+}
+.reading-document :is(ol, ul) {
+  padding-inline-start: 22px;
+}
+.reading-document li {
+  margin-block: 0;
+  padding-inline-start: 0;
 }
 .reading-document img {
   max-width: 100%;
   height: auto;
-}
-.reading-document > figure[data-resource] {
-  margin-inline: 0;
 }
 .reading-table {
   max-width: 100%;
@@ -57,14 +78,100 @@ body {
   max-width: var(--reading-width);
   margin-inline: auto;
 }
+
+/* A drawing or diagram in a note: its picture centred in a bordered,
+   rounded box on the page's dotted background, with no background of its
+   own (and the canvas's dark look in dark mode). Its name and Edit action
+   show over the box's top when it is pointed at or focused; on touch
+   screens, and when there is no picture, they sit below it. */
+figure[data-resource] {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 150px;
+  padding: 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+/* No specificity: as a block of the note, the figure keeps the 14px below it. */
+:where(figure[data-resource], figure[data-resource] p) {
+  margin: 0;
+}
+/* A tall picture shows at most 320px high here; View opens it full size. */
+[data-resource-pixels] > svg {
+  width: auto;
+  max-height: 320px;
+  margin-inline: auto;
+}
+[data-resource-pixels] > svg > rect:first-of-type {
+  fill: transparent;
+}
+:root[data-scheme="dark"] [data-resource-pixels] > svg {
+  filter: invert(93%) hue-rotate(180deg);
+}
+figure[data-resource] > figcaption {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dim);
+  opacity: 0;
+}
+figure[data-resource]:is(:hover, :focus-within) > figcaption {
+  opacity: 1;
+}
+figure[data-resource] > figcaption button {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 600;
+}
+figure[data-resource] > figcaption button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+figure[data-resource][data-pixels="false"] > figcaption {
+  position: static;
+  opacity: 1;
+  margin-top: 8px;
+}
+@media (pointer: coarse) {
+  figure[data-resource] > figcaption {
+    position: static;
+    opacity: 1;
+    margin-top: 8px;
+  }
+  figure[data-resource] > figcaption button {
+    min-height: 40px;
+  }
+}
+
 @media (max-width: 500px) {
   body {
     font-size: var(--reading-mobile-font-size);
   }
   .reading-document h1 {
-    font-size: calc(29px * var(--reading-mobile-scale));
+    font-size: calc(30px * var(--reading-mobile-scale));
   }
   .reading-document h2 {
-    font-size: calc(20px * var(--reading-mobile-scale));
+    font-size: calc(21px * var(--reading-mobile-scale));
+  }
+  .reading-document li {
+    line-height: 1.8;
+  }
+  figure[data-resource] {
+    min-height: 130px;
   }
 }

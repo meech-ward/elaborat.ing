@@ -158,7 +158,6 @@
   flex: 1 1 0;
 }
 .wb-editor-stage[data-view="split"] > .wb-source-stage {
-  padding: 14px 0;
   border-right: 1px solid var(--panel-border);
 }
 .wb-status {

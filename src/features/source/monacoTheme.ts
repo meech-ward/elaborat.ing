@@ -2,9 +2,10 @@ import type { editor } from "monaco-editor";
 import type { PaletteColors } from "../appearance/palettes";
 
 /**
- * The code editor's colours from a palette: the panel as the page, the
- * palette's four code colours for Markdown, MDX, D2 and JSON, its current
- * line, selection and line-number colours.
+ * The code editor's colours from a palette, as C5's source pane draws them:
+ * the panel as the page, the palette's four code colours for Markdown, MDX,
+ * D2 and JSON, the current line in lineHi, faint line numbers, the
+ * selection in accentSoft.
  *
  * Monaco's Markdown and MDX grammars give headings, list bullets and
  * `import`/`export` one token (`keyword`), so all three take the heading
@@ -44,14 +45,16 @@ export function monacoTheme(colors: PaletteColors, scheme: "light" | "dark"): ed
       rule("meta.separator", colors.dim),
       rule("comment", colors.dim),
       rule("attribute.name", colors.text),
+      // A JSX attribute's = reads as plain text (D2's arrows keep the keyword colour).
+      rule("operator.mdx", colors.text),
       rule("delimiter", colors.text),
     ],
     colors: {
       "editor.background": sixDigits(colors.panel),
       "editor.foreground": sixDigits(colors.text),
       "editorGutter.background": sixDigits(colors.panel),
-      "editorLineNumber.foreground": sixDigits(colors.dim),
-      "editorLineNumber.activeForeground": sixDigits(colors.text),
+      "editorLineNumber.foreground": sixDigits(colors.faint),
+      "editorLineNumber.activeForeground": sixDigits(colors.faint),
       "editor.lineHighlightBackground": sixDigits(colors.lineHi),
       "editor.lineHighlightBorder": sixDigits(colors.lineHi),
       "editor.selectionBackground": sixDigits(colors.accentSoft),
