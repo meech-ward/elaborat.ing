@@ -14,13 +14,15 @@ import {
   toolEntries,
   type IslandSize,
 } from "../ui/CanvasIsland"
-import { QuickOpen, type QuickOpenFile } from "../ui/QuickOpen"
+import { QuickOpen, type QuickOpenCommand, type QuickOpenFile, type QuickOpenMode } from "../ui/QuickOpen"
+import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { C5FocusHeader, DiagramInNote, phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
 
 // The Canvas group: the tool and zoom islands that float on a drawing or a
 // diagram (desktop and phone), the canvas colours in the drawing font, and
-// Go to file, then put together as C5's full-screen drawing and diagram.
+// Go to file and Commands, then put together as C5's full-screen drawing and
+// diagram.
 
 // Hover and focus drawn on purpose, so the page shows those states at rest.
 const hover = "bg-seg"
@@ -169,23 +171,35 @@ function CanvasColours() {
   )
 }
 
+/** A few of the editor's commands, for the Commands samples. */
+const commands: QuickOpenCommand[] = [
+  { label: "Toggle explorer", shortcut: commandShortcut("b", isApplePlatform()), run: noop },
+  { label: "Focus", shortcut: commandShortcut(".", isApplePlatform()), run: noop },
+  { label: "New note", run: noop },
+  { label: "New drawing", run: noop },
+  { label: "New diagram", run: noop },
+  { label: "Duplicate", shortcut: commandShortcut("d", isApplePlatform()), run: noop },
+  { label: "Settings", run: noop },
+]
+
 /**
- * Go to file held open as C5 draws it, typed "flo": the real QuickOpen,
- * laid out in place (its portal renders here and the popup is static) and
- * inert, so it neither takes focus nor reacts to the pointer. "Try it" has
- * the live one.
+ * The palette held open as C5 draws it: the real QuickOpen, laid out in
+ * place (its portal renders here and the popup is static) and inert, so it
+ * neither takes focus nor reacts to the pointer. "Try it" has the live one.
  */
-function QuickOpenSpecimen() {
+function QuickOpenSpecimen({ mode, query }: { mode: QuickOpenMode; query: string }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   return (
-    <div inert ref={setContainer} data-specimen="quick-open" className="w-full max-w-[560px]">
+    <div inert ref={setContainer} data-specimen={`quick-open-${mode}`} className="w-full max-w-[560px]">
       {container && (
         <QuickOpen
           open
           modal={false}
           container={container}
           files={files}
-          defaultQuery="flo"
+          commands={commands}
+          mode={mode}
+          defaultQuery={query}
           onOpenChange={noop}
           onOpen={noop}
           className="static! max-w-none! translate-none!"
@@ -197,20 +211,31 @@ function QuickOpenSpecimen() {
 
 function QuickOpenDemo() {
   const [open, setOpen] = useState(false)
-  const [opened, setOpened] = useState<string | null>(null)
+  const [mode, setMode] = useState<QuickOpenMode>("files")
+  const [chosen, setChosen] = useState<string | null>(null)
   const opener = useRef<HTMLButtonElement>(null)
+  const show = (next: QuickOpenMode) => {
+    setMode(next)
+    setOpen(true)
+  }
   return (
     <div className="flex w-full max-w-[560px] flex-col gap-3">
       <GuideLabel>Go to file</GuideLabel>
-      <QuickOpenSpecimen />
-      <GuideValue>560 wide, padding 8, radius 12, panel shadow; field 38 high with a 2px accent border; rows 34 high, radius 8, selected in accentSoft.</GuideValue>
+      <QuickOpenSpecimen mode="files" query="flo" />
+      <GuideValue>560 wide, padding 8, radius 12, panel shadow; field 38 high with a 2px accent border; rows 34 high, radius 8, selected in accentSoft. A diagram's generated files are not listed.</GuideValue>
+      <GuideLabel>Commands</GuideLabel>
+      <QuickOpenSpecimen mode="commands" query="" />
+      <GuideValue>The same panel: a command's shortcut at the row's right end. ⌘K and ⌘P switch between the two.</GuideValue>
       <GuideLabel>Try it</GuideLabel>
       <div className="flex flex-wrap items-center gap-3">
-        <Button ref={opener} variant="outline" className="pointer-coarse:h-10" onClick={() => setOpen(true)}>
+        <Button ref={opener} variant="outline" className="pointer-coarse:h-10" onClick={() => show("files")}>
           Open Go to file
         </Button>
+        <Button variant="outline" className="pointer-coarse:h-10" onClick={() => show("commands")}>
+          Open Commands
+        </Button>
         <p aria-live="polite" className="leading-none">
-          <GuideValue>{opened ? `Opened ${opened}` : "Choose a file to see it here"}</GuideValue>
+          <GuideValue>{chosen ?? "Choose a file or a command to see it here"}</GuideValue>
         </p>
       </div>
       <QuickOpen
@@ -218,7 +243,10 @@ function QuickOpenDemo() {
         onOpenChange={setOpen}
         finalFocus={opener}
         files={files}
-        onOpen={(path, { toSide }) => setOpened(toSide ? `${path} to the side` : path)}
+        commands={commands.map((command) => ({ ...command, run: () => setChosen(`Ran ${command.label}`) }))}
+        mode={mode}
+        onModeChange={setMode}
+        onOpen={(path) => setChosen(`Opened ${path}`)}
       />
     </div>
   )

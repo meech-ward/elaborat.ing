@@ -15,19 +15,10 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { Dialog } from "@base-ui/react/dialog";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useTabReorder } from "./useTabReorder";
 import { TabStrip } from "./TabStrip";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from "@/components/ui/command";
 import {
   ChevronLeft,
   Diamond,
@@ -35,7 +26,7 @@ import {
   Minimize2,
   X,
 } from "lucide-react";
-import { Banner, BannerAction, FloatingPanel, type ActionMenuProps, type MenuEntry, type PanelRowSize } from "@/features/design-system";
+import { Banner, BannerAction, FloatingPanel, QuickOpen, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
 import { DottedPage } from "@/components/panel";
 import { cn } from "@/lib/utils";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
@@ -192,7 +183,7 @@ export function WorkspaceWorkbench({
   const projectPanel = useRef<HTMLElement>(null);
   const openPalette = (invoker: HTMLElement | null) => {
     paletteInvoker.current = invoker;
-    setPaletteFiles(false);
+    setPaletteMode("commands");
     setPalette(true);
   };
   const explorerPanel = usePanelRef();
@@ -204,9 +195,8 @@ export function WorkspaceWorkbench({
   const [tablineSlot, setTablineSlot] = useState<HTMLElement | null>(null);
   const [bottomHeight, setBottomHeight] = useState(190);
   const [palette, setPalette] = useState(false);
-  // Cmd+P finds a file; Cmd+K (and the commands button) runs a command.
-  const [paletteFiles, setPaletteFiles] = useState(false);
-  const [query, setQuery] = useState("");
+  // Cmd+P finds a file; Cmd+K (and the project menu's Command palette) runs a command.
+  const [paletteMode, setPaletteMode] = useState<QuickOpenMode>("files");
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const openSettings = useOpenSettings();
   const auth = useAuth();
@@ -705,17 +695,19 @@ export function WorkspaceWorkbench({
         event.stopPropagation();
         if (key === "b") setSidebar((v) => !v);
         else if (key === "k" || key === "p") {
+          // Opens that list; switches to it from the other one; closes it when it shows.
+          const mode = key === "p" ? "files" : "commands";
           if (!palette && document.activeElement instanceof HTMLElement)
             paletteInvoker.current = document.activeElement;
-          setPaletteFiles(key === "p");
-          setPalette((v) => !v);
+          setPalette(!palette || paletteMode !== mode);
+          setPaletteMode(mode);
         }
         else { setPanel((v) => !v); if (narrow) setSidebar(true); }
       }
     }
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [narrow, palette]);
+  }, [narrow, palette, paletteMode]);
   // ⌘D / Ctrl+D duplicates the active file, in place of the browser's
   // bookmark shortcut. The code editor and the canvases keep their own ⌘D
   // (select the next match, duplicate the selection), and text fields and
@@ -825,25 +817,25 @@ export function WorkspaceWorkbench({
       )}
     </>
   );
-  const commands = [
-    { name: "Toggle explorer", run: () => setSidebar((v) => !v) },
-    { name: "Toggle bottom panel", run: () => setPanel((v) => !v) },
-    { name: "Settings", run: () => { afterClose.current = openSettings; } },
-    ...(narrow ? [] : [{ name: focus ? "Exit full screen" : "Focus", run: () => setFocus((v) => !v) }]),
+  // Cmd+K's commands, with the shortcuts that also run them. Files open from Cmd+P.
+  const apple = isApplePlatform();
+  const commands: QuickOpenCommand[] = [
+    { label: "Toggle explorer", shortcut: commandShortcut("b", apple), run: () => setSidebar((v) => !v) },
+    { label: "Toggle bottom panel", shortcut: commandShortcut("j", apple), run: () => setPanel((v) => !v) },
+    { label: "Settings", run: () => { afterClose.current = openSettings; } },
+    ...(narrow ? [] : [{ label: focus ? "Exit full screen" : "Focus", shortcut: commandShortcut(".", apple), run: () => setFocus((v) => !v) }]),
     ...(readOnly
       ? []
       : [
-          { name: "New note", run: () => { afterClose.current = () => startCreate("mdx"); } },
-          { name: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
-          { name: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
-          { name: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
-          ...(state.active ? [{ name: "Duplicate", run: () => { if (state.active) void duplicateFile(state.active); } }] : []),
+          { label: "New note", run: () => { afterClose.current = () => startCreate("mdx"); } },
+          { label: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
+          { label: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
+          { label: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
+          ...(state.active ? [{ label: "Duplicate", shortcut: commandShortcut("d", apple), run: () => { if (state.active) void duplicateFile(state.active); } }] : []),
         ]),
-    ...files.map((file) => ({
-      name: `Open ${file.path}`,
-      run: () => void openFromNavigation(file.path),
-    })),
   ];
+  // Cmd+P's files: those in the tree, so a diagram's generated files stay out.
+  const paletteFiles = hideGeneratedFiles(files.map((file) => file.path)).map((path) => ({ path, kind: kindForPath(path) }));
   // The menus below close before what they chose moves focus (a name
   // field, a dialog): it runs from afterClose, and keepMenuFocus stops the
   // menu taking focus back to its button.
@@ -1180,51 +1172,19 @@ export function WorkspaceWorkbench({
         </DottedPage>
         </section>
       )}
-      <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className="wb-backdrop" />
-          <Dialog.Popup className="wb-palette" finalFocus={() => { if (afterClose.current === null) paletteInvoker.current?.focus({ preventScroll: true }); return false; }}>
-            <Dialog.Title>{paletteFiles ? "Go to file" : "Commands"}</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              {paletteFiles ? "Find a file in this project." : "Run a command or open a file."}
-            </Dialog.Description>
-            {/* cmdk always pins the input's aria-labelledby to its label
-              element (shadowing aria-label), so the label itself carries the
-              established "Search commands" name; the dialog title keeps
-              naming the palette. */}
-            <Command label={paletteFiles ? "Search files" : "Search commands"}>
-              <CommandInput
-                autoFocus
-                aria-label={paletteFiles ? "Search files" : "Search commands"}
-                placeholder={paletteFiles ? "Go to file…" : "Run a command…"}
-                value={query}
-                onValueChange={setQuery}
-              />
-              <CommandList>
-                <CommandEmpty>{paletteFiles ? "No matching files." : "No matching commands."}</CommandEmpty>
-                <CommandGroup>
-                  {/* Command callbacks access refs only when invoked by onSelect. */}
-                  {/* eslint-disable-next-line react-hooks/refs */}
-                  {(paletteFiles ? files.map((file) => ({ name: file.path, run: () => void openFromNavigation(file.path) })) : commands).map((command) => (
-                    <CommandItem
-                      key={command.name}
-                      value={command.name}
-                      onSelect={() => {
-                        command.run();
-                        setPalette(false);
-                        setQuery("");
-                      }}
-                    >
-                      {command.name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-            <Dialog.Close>Close</Dialog.Close>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <QuickOpen
+        open={palette}
+        onOpenChange={setPalette}
+        onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}
+        mode={paletteMode}
+        onModeChange={setPaletteMode}
+        files={paletteFiles}
+        onOpen={(path) => void openFromNavigation(path)}
+        commands={commands}
+        finalFocus={() => { if (afterClose.current === null) paletteInvoker.current?.focus({ preventScroll: true }); return false; }}
+        // Beside the side panels, it sits a little right of centre, over the editor.
+        className={sidebar && !focus && !narrow ? "sm:-translate-x-[40%]" : undefined}
+      />
       {creating && narrow && (
         <RenameDialog
           key={creating.key}

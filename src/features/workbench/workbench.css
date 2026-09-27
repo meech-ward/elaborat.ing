@@ -10,8 +10,7 @@
 .project-hub .wb-app { height: 100%; }
 /* Buttons built on the design system's components (they carry data-slot),
    and the tabs, keep their type. */
-.wb-app button:where(:not([data-slot], [role="tab"])),
-.wb-palette button {
+.wb-app button:where(:not([data-slot], [role="tab"])) {
   cursor: pointer;
   font: inherit;
 }
@@ -42,25 +41,6 @@
   border-radius: 4px;
   height: 28px;
   padding: 0 7px;
-}
-.wb-command {
-  /* In the flow, so a project header on the left never slides under it. */
-  flex: 0 1 430px;
-  min-width: 120px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 11px !important;
-  border: 1px solid var(--panel-border);
-  background: var(--seg);
-  color: var(--muted);
-  border-radius: 5px;
-  height: 27px;
-  padding: 0 10px;
-}
-.wb-command kbd {
-  margin-left: auto;
 }
 .wb-layout-actions {
   display: flex;
@@ -219,14 +199,6 @@
 .wb-panel p {
   margin: 6px 0;
 }
-.wb-palette {
-  background: var(--seg);
-  color: var(--text);
-  font-family: var(--ui-font);
-  border: 1px solid var(--panel-border);
-  box-shadow: 0 15px 45px var(--shadow);
-  border-radius: 6px;
-}
 /* Problems that block a dialog's action, under the field. The dialogs
 themselves are the shared dialog shell (components/ui/dialog.tsx). */
 .wb-rename-error {
@@ -241,61 +213,6 @@ the request runs, keeping the renamed session inert. */
   margin: 0;
   font-size: 12px;
   color: var(--muted);
-}
-.wb-backdrop {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--bg) 65%, transparent);
-  z-index: 20000;
-}
-.wb-palette {
-  position: fixed;
-  left: 50%;
-  top: 15%;
-  transform: translateX(-50%);
-  width: min(540px, calc(100vw - 24px));
-  z-index: 20001;
-  padding: 15px;
-}
-.wb-palette h2 {
-  font-size: 12px;
-  margin: 0 0 12px;
-}
-.wb-palette input {
-  padding: 12px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
-  color: var(--text);
-  width: 100%;
-  border-radius: 4px;
-  font-size: 13px;
-}
-.wb-palette [data-slot="command-list"] {
-  max-height: 50dvh;
-  overflow: auto;
-  padding-top: 8px;
-}
-.wb-palette [data-slot="command-item"] {
-  display: flex;
-  width: 100%;
-  padding: 11px;
-  text-align: left;
-  font-size: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.wb-palette [data-slot="command-item"][aria-selected="true"] {
-  background: var(--accent-soft);
-}
-.wb-palette [data-slot="command-empty"] {
-  color: var(--muted);
-}
-.wb-palette button:hover {
-  background: var(--accent-soft);
-}
-.wb-palette > button {
-  font-size: 11px;
-  padding: 8px;
 }
 .wb-empty {
   margin: auto;
@@ -356,8 +273,7 @@ the request runs, keeping the renamed session inert. */
   --color-on-surface: var(--text);
   --color-border: var(--panel-border);
 }
-.wb-app :focus-visible:where(:not([data-slot])),
-.wb-palette :focus-visible {
+.wb-app :focus-visible:where(:not([data-slot])) {
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: -2px;
 }
@@ -476,25 +392,6 @@ above the choices. */
 .wb-app[data-compact="true"] .wb-native-view > [aria-live] + :not(.wb-native-stage) { margin-top: 64px; }
 /* Excalidraw's own toolbar sits below the floating controls. */
 .wb-app[data-compact="true"] .excalidraw .App-top-bar { transform: translateY(56px); }
-.wb-palette {
-  transition: opacity 100ms ease, transform 100ms ease;
-}
-.wb-palette[data-starting-style],
-.wb-palette[data-ending-style] {
-  opacity: 0;
-  transform: translateX(-50%) translateY(4px);
-}
-@media (prefers-reduced-motion: reduce) {
-  .wb-palette {
-    transition: none;
-  }
-  .wb-palette[data-starting-style],
-  .wb-palette[data-ending-style] {
-    transform: none;
-    opacity: 1;
-  }
-}
-
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {

@@ -59,6 +59,6 @@ export {
   type CanvasTool,
   type IslandSize,
 } from "./ui/CanvasIsland"
-export { QuickOpen, type QuickOpenFile, type QuickOpenProps } from "./ui/QuickOpen"
+export { QuickOpen, type QuickOpenCommand, type QuickOpenFile, type QuickOpenMode, type QuickOpenProps } from "./ui/QuickOpen"
 export { quickOpenMatches, type QuickOpenMatch } from "./ui/quickOpenMatch"
 // --- end Canvas ---
