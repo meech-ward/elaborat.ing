@@ -25,6 +25,10 @@ export interface AppearanceTokens {
   text: string;
   muted: string;
   accent: string;
+  /** Text on an accent fill, such as a primary button. */
+  accentText: string;
+  /** Links and other accent-coloured text, readable on every surface. */
+  link: string;
   blue: string;
   purple: string;
   amber: string;
@@ -78,6 +82,8 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     text: colors.text,
     muted: colors.muted,
     accent: colors.accent,
+    accentText: colors.accentText,
+    link: colors.accentSoftText,
     blue: colors.codeKey,
     purple: colors.codeHead,
     amber: colors.warnText,

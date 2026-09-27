@@ -67,6 +67,8 @@ function tokenEntries(
     ["--text", tokens.text],
     ["--muted", tokens.muted],
     ["--accent", tokens.accent],
+    ["--accent-text", tokens.accentText],
+    ["--link", tokens.link],
     ["--blue", tokens.blue],
     ["--purple", tokens.purple],
     ["--amber", tokens.amber],

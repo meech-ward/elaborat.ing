@@ -39,6 +39,30 @@ describe('getAppearanceTokens', () => {
     }
   });
 
+  test('text, links and button text are readable in every palette and scheme', () => {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: string, b: string) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (const { id } of themes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const t = getAppearanceTokens({ theme: id, scheme });
+        const where = `${id} ${scheme}`;
+        expect([where, contrast(t.accentText, t.accent) >= 4.5]).toEqual([where, true]);
+        for (const surface of [t.bg, t.chrome, t.raised]) {
+          for (const ink of [t.text, t.muted, t.link]) expect([where, contrast(ink, surface) >= 4.5]).toEqual([where, true]);
+        }
+      }
+    }
+  });
+
   test('the first-paint stylesheet matches the default palette', () => {
     const css = readFileSync(new URL('./themes.css', import.meta.url), 'utf8');
     const dark = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
@@ -48,6 +72,8 @@ describe('getAppearanceTokens', () => {
       expect(rootBlock).toContain(`--${key}:${dark[key]};`);
       expect(lightBlock).toContain(`--${key}:${light[key]};`);
     }
+    expect(rootBlock).toContain(`--accent-text:${dark.accentText};`);
+    expect(lightBlock).toContain(`--link:${light.link};`);
   });
 });
 

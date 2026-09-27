@@ -4,7 +4,7 @@
 
 /* shadcn Base UI token map. Component utilities (bg-popover, bg-sidebar,
    text-muted-foreground, ...) resolve through these to the appearance themes
-   (studio/paper/circuit, dark/light), whose tokens AppearanceProvider sets on
+   (the colour palettes, dark/light), whose tokens AppearanceProvider sets on
    the root element. `inline` keeps the var() references live, so switching
    theme or scheme repaints every surface. */
 @theme inline {
@@ -22,7 +22,7 @@
   --color-accent: var(--selection);
   --color-accent-foreground: var(--text);
   --color-primary: var(--accent);
-  --color-primary-foreground: var(--bg);
+  --color-primary-foreground: var(--accent-text);
   --color-secondary: var(--chrome);
   --color-secondary-foreground: var(--text);
   --color-sidebar: var(--chrome);

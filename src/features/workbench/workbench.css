@@ -342,7 +342,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   }
 }
 .wb-explorer-draft {
-  color: var(--accent);
+  color: var(--link);
 }
 /* Failed list: visible error with retry, never a silent empty tree. */
 .wb-explorer-error {
