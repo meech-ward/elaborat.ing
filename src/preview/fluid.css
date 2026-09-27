@@ -44,7 +44,11 @@
 }
 /* Source-backed custom component controls use semantic inputs inside the sandbox. */
 /* The app's 30px control look (40 on touch screens and phones). */
-.custom-component-controls { font-size: 13px; line-height: 1.5; }
+.custom-component { display: block; max-width: 100%; }
+.custom-component[data-inline] { display: inline-block; }
+.custom-component-controls { display: flex; flex-wrap: wrap; gap: .6rem; min-width: 0; max-width: 100%; margin: .5rem 0; padding: .5rem; border: 1px solid var(--panel-border); border-radius: var(--radius-tile); font-size: 13px; line-height: 1.5; }
+.custom-component-control { display: inline-flex; align-items: center; max-width: 100%; }
+.custom-component-check { display: inline-flex; align-items: center; gap: .3rem; }
 .custom-component-controls label { flex-wrap: wrap; max-width: 100%; min-height: 30px; }
 .custom-component-controls input:not([type=checkbox]), .custom-component-controls select { min-height: 30px; min-width: 0; max-width: 100%; padding: 0 8px; border-radius: var(--radius-button); font-size: 13px; }
 .custom-component-controls button { min-height: 30px; padding: 0 12px; border-radius: var(--radius-button); font-size: 13px; font-weight: 600; }
