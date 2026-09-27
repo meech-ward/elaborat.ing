@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import { UserPlus } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { PanelPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
@@ -34,9 +35,15 @@ export function ProjectPage({ account }: { account: ProjectAccount }) {
   const location = parseProjectLocation(href)
   if (location.kind === "invalid") {
     return (
-      <p role="alert" className="p-6 text-sm">
-        {location.message} <Link to="/">Go to your projects</Link>.
-      </p>
+      <PanelPage>
+        <p role="alert">
+          {location.message}{" "}
+          <Link to="/" className="text-(--link) underline underline-offset-4">
+            Go to your projects
+          </Link>
+          .
+        </p>
+      </PanelPage>
     )
   }
   return <OpenProject key={location.projectId} account={account} projectId={location.projectId} />
@@ -137,23 +144,25 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
 
   if (opened === "missing") {
     return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="text-2xl font-semibold">Project not found</h1>
-        <p className="mt-2 text-sm">
+      <PanelPage>
+        <h1 className="text-[21px] leading-tight font-semibold">Project not found</h1>
+        <p>
           This project is not on this device, and {account.online ? "you do not have access to it on the server" : "you are offline"}.{" "}
-          <Link to="/" className="underline underline-offset-4">
+          <Link to="/" className="text-(--link) underline underline-offset-4">
             Go to your projects
           </Link>
           .
         </p>
-      </main>
+      </PanelPage>
     )
   }
   if (opened === "opening") {
     return (
-      <p role="status" className="p-6 text-sm text-muted-foreground">
-        Opening project...
-      </p>
+      <PanelPage>
+        <p role="status" className="text-muted-foreground">
+          Opening project...
+        </p>
+      </PanelPage>
     )
   }
 
@@ -206,9 +215,11 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   return (
     <Suspense
       fallback={
-        <p role="status" className="p-6 text-sm text-muted-foreground">
-          Loading the editor...
-        </p>
+        <PanelPage>
+          <p role="status" className="text-muted-foreground">
+            Loading the editor...
+          </p>
+        </PanelPage>
       }
     >
       <WorkspaceWorkbench

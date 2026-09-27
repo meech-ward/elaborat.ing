@@ -20,6 +20,15 @@ export function DottedPage({ className, ...props }: React.ComponentProps<"div">)
 /** A floating panel: the palette's panel colour, a 1px border, radius 14 and the panel shadow. */
 export const panel = "rounded-[14px] border border-border bg-background shadow-[0_10px_30px_var(--shadow)]"
 
+/** A short message on its own page: one small panel in the middle of the dotted background. */
+export function PanelPage({ className, ...props }: React.ComponentProps<"main">) {
+  return (
+    <DottedPage className="flex items-center justify-center px-4 py-10">
+      <main className={cn(panel, "flex w-full max-w-[400px] flex-col gap-2 p-5 text-sm", className)} {...props} />
+    </DottedPage>
+  )
+}
+
 /** The diamond mark and the name. */
 export function Brand({ className }: { className?: string }) {
   return (

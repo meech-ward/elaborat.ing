@@ -1,4 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
+import { PanelPage } from "@/components/panel"
 import { parseProjectLocation } from "@/features/navigation"
 import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { ProjectList } from "./ProjectList"
@@ -19,25 +20,29 @@ export function ProjectRoute({ children }: { children: (account: import("./accou
   if (result.kind === "signed-out" && location.kind === "project" && location.projectId === LOCAL_PROJECT_ID) return <>{children(LOCAL_ACCOUNT)}</>
   if (result.kind === "loading") {
     return (
-      <p role="status" className="p-6 text-sm text-muted-foreground">
-        Checking your session...
-      </p>
+      <PanelPage>
+        <p role="status" className="text-muted-foreground">
+          Checking your session...
+        </p>
+      </PanelPage>
     )
   }
   if (result.kind === "unconfigured") {
     return (
-      <p role="alert" className="p-6 text-sm">
-        This copy of elaborat.ing is not connected to a Supabase project yet.
-      </p>
+      <PanelPage>
+        <p role="alert">This copy of elaborat.ing is not connected to a Supabase project yet.</p>
+      </PanelPage>
     )
   }
   const next = typeof window === "undefined" ? "/" : `${window.location.pathname}${window.location.search}`
   return (
-    <p className="p-6 text-sm">
-      <Link to="/sign-in" search={{ next }} className="underline underline-offset-4">
-        Sign in
-      </Link>{" "}
-      to open this project.
-    </p>
+    <PanelPage>
+      <p>
+        <Link to="/sign-in" search={{ next }} className="text-(--link) underline underline-offset-4">
+          Sign in
+        </Link>{" "}
+        to open this project.
+      </p>
+    </PanelPage>
   )
 }
