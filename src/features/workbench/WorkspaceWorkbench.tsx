@@ -450,12 +450,11 @@ export function WorkspaceWorkbench({
       }));
       if (cancelled) return;
       const successes: TabFile[] = [];
-      const missing: string[] = [];
       const transient: string[] = [];
       for (const result of results) {
         if (closedDuringRestore.current.has(result.path)) continue;
         if (result.ok) successes.push(result);
-        else if (isMissingFileError(result.error)) missing.push(result.path);
+        else if (isMissingFileError(result.error)) continue;
         else transient.push(result.path);
       }
       unresolvedRestore.current = transient;
@@ -464,8 +463,10 @@ export function WorkspaceWorkbench({
         activate: !interacted.current && current.kind === "workspace" && current.path === null });
       restoreDone.current = true;
       setPersistReady(true);
+      // A remembered tab whose file is gone (deleted or renamed elsewhere, for
+      // example by an agent) had nothing unsaved, since a draft would still
+      // read: it just closes, without a warning.
       if (transient.length) setNotice(`Could not restore ${transient.length} tab(s) due to a temporary error; remembered tabs kept. Refresh to retry.`);
-      else if (missing.length) setNotice(`Skipped ${missing.length} missing file(s): ${missing.join(", ")}.`);
     })();
     return () => { cancelled = true; };
   }, [client, stored, initialTarget, refreshList]);
