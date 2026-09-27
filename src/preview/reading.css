@@ -109,7 +109,7 @@ body {
   gap: 8px;
   padding: 0 3px 0 8px;
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius-tool);
   background: var(--panel);
   box-shadow: 0 1px 4px var(--shadow);
   font-size: 12px;
@@ -132,7 +132,7 @@ body {
   min-width: 0;
   padding: 0 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-chip);
   background: var(--seg);
   color: var(--text);
   font-size: 12px;
@@ -174,7 +174,7 @@ figure[data-resource] {
   min-height: 150px;
   padding: 16px;
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: var(--radius-tile);
   background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1px);
   background-size: 22px 22px;
@@ -215,7 +215,7 @@ figure[data-resource]:is(:hover, :focus-within) > figcaption {
 figure[data-resource] > figcaption button {
   min-height: 26px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-row);
   background: var(--panel);
   font-size: 12px;
   font-weight: 600;

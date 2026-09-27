@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { SidebarMenu } from "@/components/ui/sidebar";
-import { SearchField, SearchHitRow, type PanelRowSize } from "@/features/design-system";
-import { cn } from "@/lib/utils";
+import { PanelMessage, SearchField, SearchHitRow, type PanelRowSize } from "@/features/design-system";
 import { snippet, type FileSearchHit } from "./contentSearch";
 import { kindForPath } from "./session";
 
@@ -86,9 +85,9 @@ export function FileSearch({ search, unavailable = "Search needs a connection.",
       {trimmed ? (
         <section aria-label="Search results" className="min-h-0 flex-1 overflow-y-auto">
           {status && (
-            <p role="status" className={cn("px-2 py-1.5 text-muted-foreground", size === "touch" ? "text-[15px]" : "text-[13px]")}>
+            <PanelMessage role="status" size={size} className="px-2 py-1.5">
               {status}
-            </p>
+            </PanelMessage>
           )}
           {hits.length > 0 && (
             <SidebarMenu>

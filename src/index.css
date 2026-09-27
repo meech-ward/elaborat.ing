@@ -159,10 +159,10 @@ kbd:not([data-slot]) {
    on the panel shadow, rows at radius 7 inset from the edge. Its colours
    come from the editor theme (monacoTheme.ts). */
 .monaco-editor .suggest-widget {
-  border-radius: 12px;
+  border-radius: var(--radius-menu);
   overflow: hidden;
   box-shadow: 0 10px 30px var(--shadow);
 }
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row {
-  border-radius: 7px;
+  border-radius: var(--radius-row);
 }

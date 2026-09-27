@@ -46,8 +46,8 @@
 /* The app's 30px control look (40 on touch screens and phones). */
 .custom-component-controls { font-size: 13px; line-height: 1.5; }
 .custom-component-controls label { flex-wrap: wrap; max-width: 100%; min-height: 30px; }
-.custom-component-controls input:not([type=checkbox]), .custom-component-controls select { min-height: 30px; min-width: 0; max-width: 100%; padding: 0 8px; border-radius: 8px; font-size: 13px; }
-.custom-component-controls button { min-height: 30px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; }
+.custom-component-controls input:not([type=checkbox]), .custom-component-controls select { min-height: 30px; min-width: 0; max-width: 100%; padding: 0 8px; border-radius: var(--radius-button); font-size: 13px; }
+.custom-component-controls button { min-height: 30px; padding: 0 12px; border-radius: var(--radius-button); font-size: 13px; font-weight: 600; }
 .custom-component-controls :is(button, select):hover { background: var(--accent-soft); color: var(--accent-soft-text); }
 @media (pointer: coarse), (max-width: 500px) {
   .custom-component-controls :is(label, input:not([type=checkbox]), select, button) { min-height: 40px; }

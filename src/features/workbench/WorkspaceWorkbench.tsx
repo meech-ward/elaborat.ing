@@ -26,9 +26,8 @@ import {
   Minimize2,
   X,
 } from "lucide-react";
-import { Banner, BannerAction, FloatingPanel, QuickOpen, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
+import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
 import { DottedPage } from "@/components/panel";
-import { cn } from "@/lib/utils";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { useNavigate } from "@tanstack/react-router";
 import { signOut, useAuth } from "@/features/auth";
@@ -762,7 +761,7 @@ export function WorkspaceWorkbench({
   // phone files screen: loading, error-with-retry, tree, and empty states.
   const explorerBody = (
     <>
-      {!listed && !listError && <p role="status" className={cn("px-2 py-1.5 text-muted-foreground", narrow ? "text-[15px]" : "text-[13px]")}>Loading files…</p>}
+      {!listed && !listError && <PanelMessage role="status" size={narrow ? "touch" : "default"} className="px-2 py-1.5">Loading files…</PanelMessage>}
       {listError && (
         <Banner tone="danger" className="mb-2" action={<BannerAction onClick={() => void refreshList()}>Retry</BannerAction>}>
           File list failed: {listError}
@@ -814,7 +813,7 @@ export function WorkspaceWorkbench({
         />
       )}
       {listed && !listError && treeIsEmpty && (
-        <p className={cn("px-2 py-1.5 text-muted-foreground", narrow ? "text-[15px]" : "text-[13px]")}>{readOnly ? "No files yet." : "No files yet. Create a note to start."}</p>
+        <PanelMessage size={narrow ? "touch" : "default"} className="px-2 py-1.5">{readOnly ? "No files yet." : "No files yet. Create a note to start."}</PanelMessage>
       )}
     </>
   );

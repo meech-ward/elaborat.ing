@@ -14,6 +14,7 @@ import {
   ActionMenu,
   FloatingPanel,
   IconRow,
+  PanelMessage,
   PersonRow,
   ProjectHeader,
   StatusDot,
@@ -180,7 +181,7 @@ export function AccountPanel({
   // it instead.
   const status = sync ? (
     touch ? (
-      <StatusDot status={sync.status} className="text-[13px] leading-[normal] text-dim">
+      <StatusDot status={sync.status} size="touch">
         {sync.text}
       </StatusDot>
     ) : (
@@ -233,12 +234,12 @@ function LocalNote({ size }: { size: PanelRowSize }) {
   const touch = size === "touch";
   return (
     <div className={cn("flex flex-col gap-2", touch ? "px-2.5 pt-2" : "px-2 pt-2 pb-0.5")}>
-      <p className={cn("leading-snug text-muted-foreground", touch ? "text-[13px]" : "text-xs")}>
+      <PanelMessage size={size}>
         <span role="status" className="font-semibold text-foreground">
           Saved in this browser only.
         </span>{" "}
         It is lost if the browser clears this site's data.
-      </p>
+      </PanelMessage>
       <Link to="/sign-up" className={cn(buttonVariants({ size: touch ? "touch" : "sm" }), !touch && "rounded-tool")}>
         Sign up to create projects
       </Link>
