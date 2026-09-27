@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { countElementChanges } from "@/features/drawings/serialize.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import type { ConflictCopies } from "@/features/project-storage/fileStore";
@@ -132,55 +133,52 @@ function CompareDialog({ name, path, copies, compareAs, unsaved, resolving, erro
   const close = useRef<HTMLButtonElement>(null);
   const { mine, theirs } = copies;
   return (
-    <Dialog.Root
+    <Dialog
       open
       onOpenChange={(open) => {
         if (!open && !resolving) onClose();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="wb-backdrop" />
-        <Dialog.Popup className="wb-palette wb-rename wb-compare" aria-busy={resolving} initialFocus={close}>
-          <Dialog.Title className="wb-rename-title">Compare {name}</Dialog.Title>
-          <Dialog.Description>
-            {theirs === null
-              ? `The server no longer has ${name}: it was deleted there. Your copy is still on this device.`
-              : mine === null
-                ? `${name} was deleted on this device, and changed on the server.`
-                : compareAs.kind === "text"
-                  ? "What changed on the server and on this device. Choose which version to keep."
-                  : "The drawing on the server and on this device. Choose which version to keep."}
-          </Dialog.Description>
-          {theirs !== null && mine !== null ? (
-            compareAs.kind === "text" ? (
-              <ConflictDiff theirs={theirs} mine={mine} language={compareAs.language} />
-            ) : (
-              <DrawingComparison theirs={theirs} mine={mine} path={path} />
-            )
-          ) : null}
-          {unsaved ? <p className="wb-compare-note">Your unsaved edits are not shown here. Keep mine keeps them; the other choices replace them.</p> : null}
-          {error ? (
-            <p role="alert" className="wb-rename-error">
-              {error}
-            </p>
-          ) : null}
-          <div className="wb-rename-actions">
-            <button ref={close} type="button" disabled={resolving} onClick={onClose}>
-              Close
-            </button>
-            <button type="button" disabled={resolving} onClick={() => onChoose("mine")}>
-              Keep mine
-            </button>
-            <button type="button" disabled={resolving} onClick={() => onChoose("theirs")}>
-              Keep theirs
-            </button>
-            <button type="button" disabled={resolving} onClick={() => onChoose("both")}>
-              Keep both
-            </button>
-          </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <DialogContent className="wb-rename wb-compare" aria-busy={resolving} initialFocus={close} showCloseButton={false}>
+        <DialogTitle>Compare {name}</DialogTitle>
+        <DialogDescription>
+          {theirs === null
+            ? `The server no longer has ${name}: it was deleted there. Your copy is still on this device.`
+            : mine === null
+              ? `${name} was deleted on this device, and changed on the server.`
+              : compareAs.kind === "text"
+                ? "What changed on the server and on this device. Choose which version to keep."
+                : "The drawing on the server and on this device. Choose which version to keep."}
+        </DialogDescription>
+        {theirs !== null && mine !== null ? (
+          compareAs.kind === "text" ? (
+            <ConflictDiff theirs={theirs} mine={mine} language={compareAs.language} />
+          ) : (
+            <DrawingComparison theirs={theirs} mine={mine} path={path} />
+          )
+        ) : null}
+        {unsaved ? <p className="wb-compare-note">Your unsaved edits are not shown here. Keep mine keeps them; the other choices replace them.</p> : null}
+        {error ? (
+          <p role="alert" className="wb-rename-error">
+            {error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button ref={close} variant="outline" disabled={resolving} onClick={onClose}>
+            Close
+          </Button>
+          <Button variant="secondary" disabled={resolving} onClick={() => onChoose("mine")}>
+            Keep mine
+          </Button>
+          <Button variant="secondary" disabled={resolving} onClick={() => onChoose("theirs")}>
+            Keep theirs
+          </Button>
+          <Button variant="secondary" disabled={resolving} onClick={() => onChoose("both")}>
+            Keep both
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

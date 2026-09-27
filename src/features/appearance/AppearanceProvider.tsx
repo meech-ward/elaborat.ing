@@ -73,6 +73,7 @@ function tokenEntries(
     ["--accent", tokens.accent],
     ["--accent-text", tokens.accentText],
     ["--link", tokens.link],
+    ["--focus", tokens.focus],
     ["--blue", tokens.blue],
     ["--purple", tokens.purple],
     ["--amber", tokens.amber],

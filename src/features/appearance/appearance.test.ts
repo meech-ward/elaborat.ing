@@ -60,10 +60,21 @@ describe('getAppearanceTokens', () => {
         for (const surface of [t.bg, t.chrome, t.raised]) {
           for (const ink of [t.text, t.muted, t.link]) expect([where, contrast(ink, surface) >= 4.5]).toEqual([where, true]);
         }
-        // Destructive menu items sit on the panel.
-        expect([where, contrast(t.danger, t.bg) >= 4.5]).toEqual([where, true]);
+        // Dialogs sit on the panel over the background: their problems are danger text, their focus rings 3:1.
+        for (const surface of [t.bg, t.chrome]) {
+          expect([where, contrast(t.danger, surface) >= 4.5]).toEqual([where, true]);
+          expect([where, contrast(t.focus, surface) >= 3]).toEqual([where, true]);
+        }
       }
     }
+  });
+
+  test('focus rings use the accent, or the link colour where the accent is too light', () => {
+    expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).focus).toBe(palettes[0].light.accent);
+    const volt = palettes.find((palette) => palette.id === 'ink-and-volt')!;
+    expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'light' }).focus).toBe(volt.light.accentSoftText);
+    expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'dark' }).focus).toBe(volt.dark.accent);
+    expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'light' }).danger).toBe(volt.light.danger);
   });
 
   test('the first-paint stylesheet matches the default palette', () => {
@@ -77,6 +88,10 @@ describe('getAppearanceTokens', () => {
     }
     expect(rootBlock).toContain(`--accent-text:${dark.accentText};`);
     expect(lightBlock).toContain(`--link:${light.link};`);
+    for (const key of ['focus', 'danger'] as const) {
+      expect(rootBlock).toContain(`--${key}:${dark[key]};`);
+      expect(lightBlock).toContain(`--${key}:${light[key]};`);
+    }
   });
 });
 

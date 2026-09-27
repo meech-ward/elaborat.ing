@@ -9,7 +9,10 @@
  * new `key` for each opening, so it starts from `initial`.
  */
 import { useEffect, useId, useRef, useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function RenameDialog({
   open,
@@ -90,7 +93,7 @@ export function RenameDialog({
   };
 
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(next) => {
         // While the rename is in flight the dialog is not dismissable
@@ -100,13 +103,12 @@ export function RenameDialog({
         if (!renaming) onOpenChange(next);
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="wb-backdrop" />
-        <Dialog.Popup className="wb-palette wb-rename" aria-busy={renaming}>
-          <Dialog.Title className="wb-rename-title">{title}</Dialog.Title>
-          <Dialog.Description className="sr-only">{description}</Dialog.Description>
-          <label htmlFor={inputId}>{label}</label>
-          <input
+      <DialogContent className="wb-rename" aria-busy={renaming} showCloseButton={false}>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription className="sr-only">{description}</DialogDescription>
+        <div className="grid gap-2">
+          <Label htmlFor={inputId}>{label}</Label>
+          <Input
             id={inputId}
             ref={inputRef}
             value={draft}
@@ -137,25 +139,25 @@ export function RenameDialog({
               {error}
             </p>
           )}
-          {renaming && (
-            <p role="status" className="wb-rename-pending">
-              {pendingLabel}
-            </p>
+        </div>
+        {renaming && (
+          <p role="status" className="wb-rename-pending">
+            {pendingLabel}
+          </p>
+        )}
+        <DialogFooter>
+          {renaming ? (
+            <Button variant="outline" disabled>
+              Cancel
+            </Button>
+          ) : (
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
           )}
-          <div className="wb-rename-actions">
-            {renaming ? (
-              <button className="wb-rename-cancel" disabled>
-                Cancel
-              </button>
-            ) : (
-              <Dialog.Close className="wb-rename-cancel">Cancel</Dialog.Close>
-            )}
-            <button onClick={submit} disabled={renaming}>
-              {renaming ? pendingLabel : submitLabel}
-            </button>
-          </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <Button onClick={submit} disabled={renaming}>
+            {renaming ? pendingLabel : submitLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

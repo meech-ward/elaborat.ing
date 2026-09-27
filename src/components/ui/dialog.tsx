@@ -22,8 +22,13 @@
  */
 // shadcn Dialog generated with shadcn@4.21.0, base-nova.
 // https://ui.shadcn.com/docs/components/base/dialog
-// Adaptation: resolve cn through the existing app alias.
+// Adaptation: resolve cn through the existing app alias. Restyled as the
+// app's one dialog shell: the panel colour with radius 12, padding 20 and
+// the menu shadow over the background at 70%; the title at 15/600; the
+// actions at the bottom right, Cancel first. It stacks above the phone
+// navigation sheet, which can open a dialog.
 import * as React from "react"
+import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 
@@ -32,6 +37,11 @@ import { XIcon } from "lucide-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
+}
+
+/** A dialog that asks to confirm, announced as an alert dialog. It takes the same parts as `Dialog`. */
+function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
+  return <AlertDialogPrimitive.Root {...props} />
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -54,7 +64,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[20000] bg-[color-mix(in_srgb,var(--chrome)_70%,transparent)] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -76,7 +86,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-[20001] grid grid-cols-[minmax(0,1fr)] max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-[12px] border border-border bg-background p-5 text-sm text-foreground shadow-[0_16px_40px_var(--shadow)] duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -88,8 +98,8 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
+                className="absolute top-3.5 right-3.5"
+                size="icon"
               />
             }
           >
@@ -125,7 +135,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "flex flex-wrap items-center justify-end gap-2",
         className
       )}
       {...props}
@@ -145,7 +155,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "text-base leading-none font-medium",
+        "text-[15px] leading-5 font-semibold wrap-anywhere",
         className
       )}
       {...props}
@@ -170,6 +180,7 @@ function DialogDescription({
 }
 
 export {
+  AlertDialog,
   Dialog,
   DialogClose,
   DialogContent,

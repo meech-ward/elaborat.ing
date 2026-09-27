@@ -18,7 +18,7 @@
   --color-popover-foreground: var(--text);
   --color-border: var(--line);
   --color-input: var(--line);
-  --color-ring: var(--accent);
+  --color-ring: var(--focus);
   --color-accent: var(--selection);
   --color-accent-foreground: var(--text);
   --color-primary: var(--accent);
@@ -30,7 +30,8 @@
   --color-sidebar-border: var(--line);
   --color-sidebar-accent: var(--selection);
   --color-sidebar-accent-foreground: var(--text);
-  --color-sidebar-ring: var(--accent);
+  --color-sidebar-ring: var(--focus);
+  --color-danger: var(--danger);
 }
 :root {
   --color-destructive: #f0837f;

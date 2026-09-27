@@ -29,6 +29,8 @@ export interface AppearanceTokens {
   accentText: string;
   /** Links and other accent-coloured text, readable on every surface. */
   link: string;
+  /** Keyboard focus rings: the accent, or the link colour where the accent is too light to see. */
+  focus: string;
   blue: string;
   purple: string;
   amber: string;
@@ -91,6 +93,24 @@ export function parseAppearanceSetting(value: unknown): AppearanceSetting {
 export const getPaletteColors = (appearance: Appearance): PaletteColors =>
   (palettes.find((palette) => palette.id === appearance.theme) ?? palettes[0])[appearance.scheme];
 
+const luminance = (hex: string) => {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+/** WCAG contrast ratio of two six-digit hex colours. */
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+/** The accent where it shows at 3:1 on the panel and the background, otherwise the link colour. */
+const focusColor = (colors: PaletteColors) =>
+  contrast(colors.accent, colors.panel) >= 3 && contrast(colors.accent, colors.bg) >= 3 ? colors.accent : colors.accentSoftText;
+
 /**
  * The palette's colours in the variables today's screens use: the document
  * sits on the palette's panel, bars and the sidebar on its background, menus
@@ -108,6 +128,7 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     accent: colors.accent,
     accentText: colors.accentText,
     link: colors.accentSoftText,
+    focus: focusColor(colors),
     blue: colors.codeKey,
     purple: colors.codeHead,
     amber: colors.warnText,
