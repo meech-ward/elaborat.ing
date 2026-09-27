@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -53,6 +53,12 @@ async function fileAction(page: Page, path: string, action: "Rename" | "Move to 
   }
   await files.getByRole("button", { name: `Actions for ${path}`, exact: true }).click()
   await page.getByRole("menuitem", { name: action }).click()
+}
+
+/** Choose the move's destination folder in its list (the shadcn select). */
+async function chooseFolder(dialog: Locator, folder: string) {
+  await dialog.getByLabel("Destination folder").click()
+  await dialog.page().getByRole("option", { name: folder, exact: true }).click()
 }
 
 /** The explorer (shown on a desktop). */
@@ -124,9 +130,9 @@ test("moving a folder into another one previews the folder and its files, and ca
   )
   await folderAction(page, "docs", "Move to folder")
   const dialog = page.getByRole("dialog", { name: "Move folder" })
-  const destination = dialog.getByLabel("Destination folder")
-  await expect(destination.locator("option")).toHaveText(["Top level", "archive"])
-  await destination.selectOption("archive")
+  await dialog.getByLabel("Destination folder").click()
+  await expect(page.getByRole("option")).toHaveText(["Top level", "archive"])
+  await page.getByRole("option", { name: "archive", exact: true }).click()
   await dialog.getByRole("button", { name: "Preview move" }).click()
   const preview = dialog.getByRole("region", { name: "Affected files" })
   await expect(preview.getByText("docs → archive/docs", { exact: true })).toBeVisible()
@@ -185,7 +191,7 @@ test("a D2 diagram moves with its generated files, after a preview that lists wh
   await fileAction(page, "flow.d2", "Move to folder")
   let dialog = page.getByRole("dialog", { name: "Move to folder" })
   await expect(dialog.getByLabel("Destination folder")).toBeFocused()
-  await dialog.getByLabel("Destination folder").selectOption("diagrams")
+  await chooseFolder(dialog, "diagrams")
   await dialog.getByRole("button", { name: "Preview move" }).click()
   const preview = dialog.getByRole("region", { name: "Affected files" })
   await expect(preview.getByText("flow.d2 → diagrams/flow.d2", { exact: true })).toBeVisible()
@@ -201,7 +207,7 @@ test("a D2 diagram moves with its generated files, after a preview that lists wh
 
   await fileAction(page, "flow.d2", "Move to folder")
   dialog = page.getByRole("dialog", { name: "Move to folder" })
-  await dialog.getByLabel("Destination folder").selectOption("diagrams")
+  await chooseFolder(dialog, "diagrams")
   await dialog.getByRole("button", { name: "Preview move" }).click()
   await dialog.getByRole("button", { name: "Move", exact: true }).click()
   await expect(dialog).toBeHidden()
@@ -223,7 +229,7 @@ test("unsaved edits stop a move until they are saved, then the open tab follows 
 
   await fileAction(page, "a.md", "Move to folder")
   const dialog = page.getByRole("dialog", { name: "Move to folder" })
-  await dialog.getByLabel("Destination folder").selectOption("folder")
+  await chooseFolder(dialog, "folder")
   await dialog.getByRole("button", { name: "Preview move" }).click()
   // Either the kept draft or the open editor reports it, whichever the move sees first.
   await expect(dialog.getByRole("alert")).toHaveText(/^a\.md(:| has) .*unsaved (edits|changes)\. Save or discard them/)
@@ -234,7 +240,7 @@ test("unsaved edits stop a move until they are saved, then the open tab follows 
   await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await fileAction(page, "a.md", "Move to folder")
-  await dialog.getByLabel("Destination folder").selectOption("folder")
+  await chooseFolder(dialog, "folder")
   await dialog.getByRole("button", { name: "Preview move" }).click()
   await dialog.getByRole("button", { name: "Move", exact: true }).click()
   await expect(dialog).toBeHidden()
@@ -261,7 +267,7 @@ test("a new folder reaches the server, is still there after a reload, and takes 
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
   await fileAction(page, "a.md", "Move to folder")
   const move = page.getByRole("dialog", { name: "Move to folder" })
-  await move.getByLabel("Destination folder").selectOption("plans")
+  await chooseFolder(move, "plans")
   await move.getByRole("button", { name: "Preview move" }).click()
   await move.getByRole("button", { name: "Move", exact: true }).click()
   await expect.poll(() => fake.server.content(id, "plans/a.md")).toBe("# A\n")
@@ -291,11 +297,12 @@ test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
   test("the move dialog fits, and axe finds nothing in it", async ({ page }) => {
-    await openProject(page, { "notes/a.md": "# A\n", "index.md": "[a](notes/a.md)\n" }, ["archive"], undefined, true)
+    // Opened, so its row shows the actions button (a phone's tree shows it on the open file only).
+    await openProject(page, { "notes/a.md": "# A\n", "index.md": "[a](notes/a.md)\n" }, ["archive"], "notes/a.md", true)
     await page.getByRole("button", { name: "Back to files and projects" }).click()
     await fileAction(page, "notes/a.md", "Move to folder")
     const dialog = page.getByRole("dialog", { name: "Move to folder" })
-    await dialog.getByLabel("Destination folder").selectOption("archive")
+    await chooseFolder(dialog, "archive")
     await dialog.getByRole("button", { name: "Preview move" }).click()
     await expect(dialog.getByRole("region", { name: "Affected files" })).toBeVisible()
     const results = await new AxeBuilder({ page }).include(".wb-move").analyze()

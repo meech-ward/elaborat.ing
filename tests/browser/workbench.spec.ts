@@ -443,7 +443,7 @@ test.describe("on a phone", () => {
       expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
       await screen.getByRole("button", { name: "Look and theme" }).click()
       const settings = page.getByRole("dialog", { name: "Settings" })
-      await settings.getByRole("radio", { name: next, exact: true }).check()
+      await settings.getByRole("button", { name: next, exact: true }).click()
       await page.keyboard.press("Escape")
       await expect(settings).toBeHidden()
     }

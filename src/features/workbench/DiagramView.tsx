@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { PhoneHeader, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, PhoneHeader, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
 // Excalidraw's own layout, for the generated canvas.
 import "@excalidraw/excalidraw/index.css";
 import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingScene } from "@/features/drawings/index.ts";
@@ -33,11 +33,6 @@ import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
-
-const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
-const banner =
-  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -559,10 +554,10 @@ export function DiagramView({
     return (
       <div className="wb-native-view">
         {navigation && <PhoneHeader back={navigation} className="relative" />}
-        <div role="alert" className="mt-2 rounded-lg px-4 py-6 text-sm wb-banner-danger">
+        <Banner tone="danger" className="mt-2">
           <p className="font-medium">This diagram could not be opened, and nothing was changed.</p>
           <p className="mt-1 font-mono text-xs">{bootError ?? "No scene."}</p>
-        </div>
+        </Banner>
       </div>
     );
   }
@@ -604,29 +599,26 @@ export function DiagramView({
       </div>
 
       {errors.length > 0 && (
-        <div
-          role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
-        >
+        <Banner tone="danger" className="mt-2">
           {errors.map((entry, index) => (
             <p key={index} className="font-mono text-xs">
               [{entry.code}] {entry.message}
             </p>
           ))}
           <p className="mt-1">The last valid canvas is kept, and saved files are untouched.</p>
-        </div>
+        </Banner>
       )}
       {warnings.length > 0 && (
-        <div className={banner}>
+        <Banner className="mt-2">
           {warnings.map((entry, index) => (
             <p key={index} className="font-mono text-xs">
               [{entry.code}] {entry.message}
             </p>
           ))}
-        </div>
+        </Banner>
       )}
       {conflicts.length > 0 && (
-        <div role="alert" className={banner}>
+        <Banner role="alert" className="mt-2">
           <p className="font-medium">Where the code and your canvas changes disagree, your version was kept:</p>
           <ul className="mt-1 list-disc pl-5 font-mono text-xs">
             {conflicts.map((entry, index) => (
@@ -636,7 +628,7 @@ export function DiagramView({
             ))}
           </ul>
           <p className="mt-1">Reset layout takes the generated version instead.</p>
-        </div>
+        </Banner>
       )}
 
       {conflicted && onResolveConflict && (
@@ -653,25 +645,24 @@ export function DiagramView({
       )}
 
       {(conflict || changedElsewhere) && (
-        <div role="alert" className={banner}>
-          <p>
-            {conflict ? conflict.path : path} changed after you started editing this diagram, so nothing was saved. Your edits are still here.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (!dirty || window.confirm("Load the saved version and discard your unsaved edits?")) void reopen();
-              }}
-              className={bannerButton}
-            >
-              Load the saved version
-            </button>
-            <button type="button" onClick={() => void save(true)} className={bannerButton}>
-              Save mine over it
-            </button>
-          </div>
-        </div>
+        <Banner
+          role="alert"
+          className="mt-2"
+          action={
+            <span className="inline-flex flex-wrap gap-x-3">
+              <BannerAction
+                onClick={() => {
+                  if (!dirty || window.confirm("Load the saved version and discard your unsaved edits?")) void reopen();
+                }}
+              >
+                Load the saved version
+              </BannerAction>
+              <BannerAction onClick={() => void save(true)}>Save mine over it</BannerAction>
+            </span>
+          }
+        >
+          {conflict ? conflict.path : path} changed after you started editing this diagram, so nothing was saved. Your edits are still here.
+        </Banner>
       )}
 
       <div hidden={view === "canvas"} className="wb-native-stage wb-native-source">
@@ -702,10 +693,6 @@ export function DiagramView({
           viewOnly={canvasViewOnly}
         />
       </div>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-        Renaming a node on the canvas updates the code. Code changes reach the canvas on Regenerate, which keeps freehand additions and
-        moved shapes. Generated files: <span className="font-mono">{nativePath}</span> and <span className="font-mono">{sidecarPath}</span>.
-      </p>
     </div>
   );
 }

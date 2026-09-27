@@ -1,5 +1,6 @@
 import { exportDrawingSvg } from "@/features/drawings/export.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
+import type { DrawingScene } from "@/features/drawings/types.ts";
 import { compileD2Diagram } from "@/features/structured/compiler";
 import { sidecarPathFor } from "@/features/structured/structuredClient";
 import { nativePathFor, projectDiagramArtifact, readDiagramCompanion } from "./diagramArtifact";
@@ -28,8 +29,17 @@ export async function drawingSvgForContent(content: string, filename: string): P
   return sanitizeSvg(await exportDrawingSvg(parseDrawingFile(content, filename).scene));
 }
 
-/** SVG for a saved diagram, from the same saved artifact the diagram view shows. */
-export async function diagramSvgForWorkspace(source: string, path: string, client: Pick<WorkspaceStore, "read">): Promise<string> {
+/**
+ * SVG for a saved diagram, from the same saved artifact the diagram view
+ * shows, in the colours `present` gives it (the palette's diagram fills,
+ * as the canvas shows them: useCanvasPresentation).
+ */
+export async function diagramSvgForWorkspace(
+  source: string,
+  path: string,
+  client: Pick<WorkspaceStore, "read">,
+  present: (scene: DrawingScene) => DrawingScene = (scene) => scene,
+): Promise<string> {
   const nativePath = nativePathFor(path);
   const [native, sidecar] = await Promise.all([readDiagramCompanion(client, nativePath), readDiagramCompanion(client, sidecarPathFor(path))]);
   const result = await projectDiagramArtifact({
@@ -43,5 +53,5 @@ export async function diagramSvgForWorkspace(source: string, path: string, clien
     },
   });
   if (!result.ok && !result.persistedScene) throw new Error(result.diagnostics[0]?.message ?? "Diagram unavailable");
-  return sanitizeSvg(await exportDrawingSvg(result.scene));
+  return sanitizeSvg(await exportDrawingSvg(present(result.scene)));
 }

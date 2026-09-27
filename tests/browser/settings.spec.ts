@@ -23,6 +23,12 @@ const background = (page: Page) => page.evaluate(() => {
 })
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`
 
+/** Choose a palette in Settings' palette list (the library's select). */
+async function choosePalette(page: Page, name: string) {
+  await page.getByRole("dialog", { name: "Settings" }).getByRole("combobox", { name: "Palette" }).click()
+  await page.getByRole("option", { name, exact: true }).click()
+}
+
 async function openProject(page: Page) {
   const fake = await fakeSupabase(page)
   const id = crypto.randomUUID()
@@ -36,8 +42,8 @@ test("a palette and dark mode chosen in Settings apply at once and survive a rel
   await openProject(page)
   await page.getByRole("button", { name: "Look and theme" }).click()
   const dialog = page.getByRole("dialog", { name: "Settings" })
-  await dialog.getByRole("radio", { name: "Glacier Cyan" }).check()
-  await dialog.getByRole("radio", { name: "Dark" }).check()
+  await choosePalette(page, "Glacier Cyan")
+  await dialog.getByRole("button", { name: "Dark", exact: true }).click()
   await expect.poll(() => background(page)).toBe(rgb(glacier.dark.panel))
   // Check contrast once the dialog has finished fading in.
   // A colour change can replace a running transition, which cancels it, so wait for none to be running.
@@ -52,7 +58,7 @@ test("System follows the device while the page is open", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" })
   await openProject(page)
   await page.getByRole("button", { name: "Look and theme" }).click()
-  await page.getByRole("dialog", { name: "Settings" }).getByRole("radio", { name: "System" }).check()
+  await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "System", exact: true }).click()
   await expect.poll(() => background(page)).toBe(rgb(supabase.light.panel))
   await page.emulateMedia({ colorScheme: "dark" })
   await expect.poll(() => background(page)).toBe(rgb(supabase.dark.panel))
@@ -69,7 +75,7 @@ test("Settings opens from the home page", async ({ page }) => {
   await fakeSupabase(page)
   await page.goto(APP_URL)
   await page.getByRole("button", { name: "Settings" }).click()
-  await expect(page.getByRole("dialog", { name: "Settings" }).getByRole("radio", { name: "Supabase Green" })).toBeChecked()
+  await expect(page.getByRole("dialog", { name: "Settings" }).getByRole("combobox", { name: "Palette" })).toContainText("Supabase Green")
 })
 
 test("the code editor and the drawing canvas take the chosen palette's colours, and the drawing stays unchanged", async ({ page }) => {
@@ -91,8 +97,8 @@ test("the code editor and the drawing canvas take the chosen palette's colours, 
 
   await page.getByRole("button", { name: "Look and theme" }).click()
   const dialog = page.getByRole("dialog", { name: "Settings" })
-  await dialog.getByRole("radio", { name: "Cherry Paper" }).check()
-  await dialog.getByRole("radio", { name: "Light", exact: true }).check()
+  await choosePalette(page, "Cherry Paper")
+  await dialog.getByRole("button", { name: "Light", exact: true }).click()
   await page.keyboard.press("Escape")
 
   // The canvas shows the palette's background (on a desktop it is clear over

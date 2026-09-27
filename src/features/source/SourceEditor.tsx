@@ -145,6 +145,9 @@ export function SourceEditor(props: SourceEditorProps) {
       wordWrap: "on",
       padding: { top: 14, bottom: 14 },
       overviewRulerBorder: false,
+      // No overview ruler: C5's source pane has no marks along the scroll bar.
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
       scrollBeyondLastLine: false,
       automaticLayout: true,
       renderWhitespace: "selection",
@@ -153,6 +156,10 @@ export function SourceEditor(props: SourceEditorProps) {
       // Keep word suggestions local to this model, like our own providers.
       wordBasedSuggestions: "currentDocument",
       quickSuggestions: { other: true, comments: false, strings: true },
+      // The suggestions list reads as the library's menus: rows of names
+      // (no kind icons) at a menu row's height (index.css rounds the list).
+      suggest: { showIcons: false },
+      suggestLineHeight: 28,
       // Explicit formatting only: never format on type, paste, or save.
       formatOnType: false,
       formatOnPaste: false,

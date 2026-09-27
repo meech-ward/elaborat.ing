@@ -201,7 +201,8 @@ test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
   test("the delete confirmation fits, and axe finds nothing in it", async ({ page }) => {
-    await openProject(page, { "notes/a.md": "# A\n", "index.md": "[a](notes/a.md)\n" }, [], undefined, true)
+    // Opened, so its row shows the actions button (a phone's tree shows it on the open file only).
+    await openProject(page, { "notes/a.md": "# A\n", "index.md": "[a](notes/a.md)\n" }, [], "notes/a.md", true)
     await page.getByRole("button", { name: "Back to files and projects" }).click()
     await deleteFrom(page, "notes/a.md")
     const dialog = page.getByRole("alertdialog", { name: "Delete notes/a.md" })

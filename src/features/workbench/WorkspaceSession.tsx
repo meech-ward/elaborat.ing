@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OperationSession } from "./operationSession";
-import { EDITOR_VIEWS, commandShortcut, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
@@ -17,6 +17,7 @@ import { formatForFilename, saveSourceText } from "@/lib/fileAdapter";
 import { diagnoseSource } from "@/lib/sourceDiagnostics";
 import { parseSourceRefs } from "./refs";
 import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
+import { useCanvasPresentation } from "./viewTheme";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
@@ -209,6 +210,9 @@ export function WorkspaceSession({
       .map(({ kind, path }) => ({ kind, path })),
   );
   const [resourcePixels, setResourcePixels] = useState<Record<string, string>>({});
+  // A diagram shows in the palette's diagram fills, as on its canvas (the
+  // note frame's dark filter turns them into the dark ones).
+  const presentDiagram = useCanvasPresentation("diagram");
   useEffect(() => {
     if (!active || !isNote) return;
     const targets: Array<{ kind: string; path: string }> = JSON.parse(resourceTargetsKey);
@@ -223,7 +227,7 @@ export function WorkspaceSession({
           pixels[target.path] =
             target.kind === "drawing"
               ? await drawingSvgForContent(read.savedContent, target.path)
-              : await diagramSvgForWorkspace(read.savedContent, target.path, client);
+              : await diagramSvgForWorkspace(read.savedContent, target.path, client, presentDiagram);
         } catch {
           // A file that cannot be pictured shows as a placeholder in the note.
         }
@@ -234,7 +238,7 @@ export function WorkspaceSession({
     return () => {
       alive = false;
     };
-  }, [active, client, isNote, resourceTargetsKey, snapshot.docId]);
+  }, [active, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId]);
 
   const handleSourceChange = useCallback(
     (text: string) => {
@@ -601,113 +605,81 @@ export function WorkspaceSession({
         </div>
       )}
       {renderError && (
-        <p
-          role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
-        >
+        <Banner tone="danger" className="mt-2">
           Render error: {renderError} Source is unchanged and remains editable.
-        </p>
+        </Banner>
       )}
       {inSource && isNote && sourceError && !renderError && (
-        <p
-          role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
-        >
+        <Banner tone="danger" className="mt-2">
           Source check: {sourceError} Source is unchanged and remains editable.
-        </p>
+        </Banner>
       )}
       {patchError && (
-        <div
+        <Banner
           role="alert"
-          className="mt-2 flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
+          className="mt-2"
+          action={<BannerAction onClick={() => setPatchError(null)}>Dismiss</BannerAction>}
         >
-          <span>Patch rejected: {patchError}</span>
-          <button
-            type="button"
-            onClick={() => setPatchError(null)}
-            className="min-h-10 shrink-0 rounded px-2 underline"
-          >
-            Dismiss
-          </button>
-        </div>
+          Patch rejected: {patchError}
+        </Banner>
       )}
       {conflict && (
-        <div
+        <Banner
           role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
+          className="mt-2"
+          action={
+            <span className="inline-flex flex-wrap gap-x-3">
+              <BannerAction
+                onClick={() =>
+                  adoptServerText(
+                    conflict.currentContent,
+                    conflict.currentRevision,
+                    `Loaded the saved version of ${displayName}.`,
+                  )
+                }
+              >
+                Load the saved version
+              </BannerAction>
+              <BannerAction
+                onClick={() => {
+                  const t = saveTarget(openFile);
+                  if (t) void doWrite(t, conflict.currentRevision, "Overwrote");
+                }}
+              >
+                Overwrite with my version
+              </BannerAction>
+              <BannerAction onClick={() => setOpenFile((f) => clearSave(f))}>Keep editing</BannerAction>
+            </span>
+          }
         >
-          <p>
-            Save conflict on {displayName}: it was saved elsewhere since you
-            opened it. Your edits are intact; nothing was overwritten.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                adoptServerText(
-                  conflict.currentContent,
-                  conflict.currentRevision,
-                  `Loaded the saved version of ${displayName}.`,
-                )
-              }
-              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
-            >
-              Load the saved version
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const t = saveTarget(openFile);
-                if (t) void doWrite(t, conflict.currentRevision, "Overwrote");
-              }}
-              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
-            >
-              Overwrite with my version
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpenFile((f) => clearSave(f))}
-              className="inline-flex min-h-10 items-center rounded-lg px-3 underline"
-            >
-              Keep editing
-            </button>
-          </div>
-        </div>
+          Save conflict on {displayName}: it was saved elsewhere since you
+          opened it. Your edits are intact; nothing was overwritten.
+        </Banner>
       )}
       {openFile.serverChanged && (
-        <div
+        <Banner
           role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
+          className="mt-2"
+          action={
+            <span className="inline-flex flex-wrap gap-x-3">
+              <BannerAction
+                onClick={() =>
+                  adoptServerText(
+                    openFile.serverChanged?.currentContent ?? "",
+                    openFile.serverChanged?.currentRevision ?? "",
+                    `Loaded the saved version of ${displayName}.`,
+                  )
+                }
+              >
+                Load the saved version
+              </BannerAction>
+              <BannerAction onClick={() => setOpenFile((f) => ({ ...f, serverChanged: null }))}>Keep editing mine</BannerAction>
+            </span>
+          }
         >
-          <p>
-            {displayName} was changed elsewhere while you were editing. Your
-            edits are intact.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                adoptServerText(
-                  openFile.serverChanged?.currentContent ?? "",
-                  openFile.serverChanged?.currentRevision ?? "",
-                  `Loaded the saved version of ${displayName}.`,
-                )
-              }
-              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
-            >
-              Load the saved version
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setOpenFile((f) => ({ ...f, serverChanged: null }))
-              }
-              className="inline-flex min-h-10 items-center rounded-lg px-3 underline"
-            >
-              Keep editing mine
-            </button>
-          </div>
-        </div>
+          {displayName} was changed elsewhere while you were editing. Your
+          edits are intact.
+        </Banner>
       )}
 
       {conflicted && onResolveConflict && (
@@ -723,7 +695,14 @@ export function WorkspaceSession({
         />
       )}
 
-        <div className="wb-editor-stage" data-view={isNote ? view : undefined}>
+        {/* Source, Split or Rendered: both panes stay mounted, so the editor
+        and the note keep their state when the view changes. */}
+        <SplitPanes
+          className="min-h-0 flex-1"
+          show={!inRendered ? "start" : !inSource ? "end" : "both"}
+          startSize="46.45%"
+          aria-label="Resize the source and the rendered note"
+          start={
           <div hidden={!inSource} className="wb-source-stage">
             <SourceEditor
               initialText={initial.content}
@@ -756,7 +735,8 @@ export function WorkspaceSession({
               apiRef={editorApi}
             />
           </div>
-          {isNote && renderedEver && (
+          }
+          end={isNote && renderedEver && (
             <div hidden={!inRendered} className="wb-rendered-stage">
               <RenderedEditor
                 document={snapshot}
@@ -779,7 +759,7 @@ export function WorkspaceSession({
               />
             </div>
           )}
-        </div>
+        />
     </div>
   );
 }

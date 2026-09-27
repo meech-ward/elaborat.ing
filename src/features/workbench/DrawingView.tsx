@@ -2,8 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 // Excalidraw's own layout. Without it the canvas sizes itself to its content,
 // which grows without limit.
 import "@excalidraw/excalidraw/index.css";
-import { FileJson, Pencil } from "lucide-react";
-import { commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
 import {
   DrawingCanvas,
   exportDrawingPng,
@@ -31,11 +30,6 @@ import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
-
-const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
-const banner =
-  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -427,14 +421,11 @@ export function DrawingView({
       </div>
 
       {sourceError && (
-        <p
-          role="alert"
-          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
-        >
+        <Banner tone="danger" className="mt-2">
           {original
             ? `This is not a valid drawing: ${sourceError} The canvas keeps the last valid scene.`
             : `This file is not a valid drawing, so it opened as text: ${sourceError} Nothing was changed.`}
-        </p>
+        </Banner>
       )}
 
       {conflicted && onResolveConflict && (
@@ -451,39 +442,41 @@ export function DrawingView({
       )}
 
       {conflict && (
-        <div role="alert" className={banner}>
-          <p>{path} changed after you started editing it, so nothing was saved. Your edits are still here.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {conflict.content !== null && (
-              <button type="button" onClick={() => adopt(conflict.content!, conflict.revision)} className={bannerButton}>
-                Load the saved version
-              </button>
-            )}
-            <button type="button" onClick={() => void save(conflict.revision)} className={bannerButton}>
-              Save mine over it
-            </button>
-          </div>
-        </div>
+        <Banner
+          role="alert"
+          className="mt-2"
+          action={
+            <span className="inline-flex flex-wrap gap-x-3">
+              {conflict.content !== null && (
+                <BannerAction onClick={() => adopt(conflict.content!, conflict.revision)}>Load the saved version</BannerAction>
+              )}
+              <BannerAction onClick={() => void save(conflict.revision)}>Save mine over it</BannerAction>
+            </span>
+          }
+        >
+          {path} changed after you started editing it, so nothing was saved. Your edits are still here.
+        </Banner>
       )}
 
       {changedElsewhere && (
-        <div role="alert" className={banner}>
-          <p>{path} was saved somewhere else while you were editing it. Your edits are still here.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm("Load the saved version and discard your unsaved edits?")) adopt(changedElsewhere.content, changedElsewhere.revision);
-              }}
-              className={bannerButton}
-            >
-              Load the saved version
-            </button>
-            <button type="button" onClick={() => void save(changedElsewhere.revision)} className={bannerButton}>
-              Save mine over it
-            </button>
-          </div>
-        </div>
+        <Banner
+          role="alert"
+          className="mt-2"
+          action={
+            <span className="inline-flex flex-wrap gap-x-3">
+              <BannerAction
+                onClick={() => {
+                  if (window.confirm("Load the saved version and discard your unsaved edits?")) adopt(changedElsewhere.content, changedElsewhere.revision);
+                }}
+              >
+                Load the saved version
+              </BannerAction>
+              <BannerAction onClick={() => void save(changedElsewhere.revision)}>Save mine over it</BannerAction>
+            </span>
+          }
+        >
+          {path} was saved somewhere else while you were editing it. Your edits are still here.
+        </Banner>
       )}
 
       {scene && (
@@ -530,12 +523,6 @@ export function DrawingView({
           readOnly={readOnly}
         />
       </div>
-      <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
-        {view === "canvas" ? <Pencil className="size-3.5" aria-hidden /> : <FileJson className="size-3.5" aria-hidden />}
-        {view === "canvas"
-          ? "Canvas: tools, labels, arrows and freehand, with undo. Opening a drawing never rewrites it."
-          : "The file as text. Switch to Rendered to check it; if it does not parse, the canvas keeps the last valid scene."}
-      </p>
     </div>
   );
 }

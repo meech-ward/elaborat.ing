@@ -174,15 +174,17 @@ export function AccountPanel({
 }) {
   const touch = size === "touch";
   // On a desktop the status sits on the person's first line and announces
-  // changes. On a phone it takes the gear's place inside the person's button,
-  // where a live region is not heard, so a hidden one says it instead.
+  // changes; while all is synced only screen readers have it, as C5 draws the
+  // person with no status. On a phone it takes the gear's place inside the
+  // person's button, where a live region is not heard, so a hidden one says
+  // it instead.
   const status = sync ? (
     touch ? (
       <StatusDot status={sync.status} className="text-[13px] leading-[normal] text-dim">
         {sync.text}
       </StatusDot>
     ) : (
-      <StatusDot role="status" status={sync.status} title={sync.label}>
+      <StatusDot role="status" status={sync.status} title={sync.label} className={cn(sync.status === "synced" && "sr-only")}>
         <span aria-hidden="true">{sync.text}</span>
         <span className="sr-only">{sync.label}</span>
       </StatusDot>

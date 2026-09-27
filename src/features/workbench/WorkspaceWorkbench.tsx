@@ -40,7 +40,8 @@ import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { TablineProvider } from "./tabline";
-import { EditorHeader, IconButton, PhoneHeader, RoundIconButton, commandShortcut, isApplePlatform } from "@/features/design-system";
+import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, isApplePlatform } from "@/features/design-system";
+import { Button } from "@/components/ui/button";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
@@ -935,6 +936,15 @@ export function WorkspaceWorkbench({
   // On a phone: the open file's floating Back button, and the files screen,
   // which shows when it is asked for or when no file is open.
   const navigation = narrow ? <RoundIconButton label="Back to files and projects" onClick={() => setSidebar(true)}><ChevronLeft /></RoundIconButton> : null;
+  // The bottom panel's lines (Ctrl+J): the project's files, the active file's state and its last message.
+  const diagnostics = (
+    <div className="flex flex-col gap-1.5 text-[13px] leading-normal text-muted-foreground">
+      <p>Project files · {files.length} files · {state.tabs.length} open</p>
+      <p>{state.active ? `${state.active}: ${state.tabs.find((tab) => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
+      {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
+      <p>File saves use revision checks. This panel does not execute commands.</p>
+    </div>
+  );
   const focusKey = commandShortcut(".", isApplePlatform());
   const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
@@ -1007,17 +1017,23 @@ export function WorkspaceWorkbench({
                 </IconButton>
               )}
               </EditorHeader>
-              {notice && (
-                <p role="status" className="wb-notice">
-                  {notice}
-                </p>
+              {notice && <Banner tone="info" className="wb-notice">{notice}</Banner>}
+              {(linkProblem || awaitingTarget) && (
+                <Banner
+                  tone={linkProblem ? "warn" : "info"}
+                  role={linkProblem ? "alert" : "status"}
+                  className="wb-notice"
+                  action={
+                    <span className="inline-flex flex-wrap gap-x-3">
+                      {linkProblem && !invalidLink && <BannerAction onClick={() => setRetryLocation(n => n + 1)}>Retry file</BannerAction>}
+                      <BannerAction onClick={() => setSidebar(true)}>Open explorer</BannerAction>
+                      {state.active && <BannerAction onClick={() => void navigate(projectId, state.tabs.find(tab => tab.path === state.active)?.revision ? state.active : null, true)}>Return to current file</BannerAction>}
+                    </span>
+                  }
+                >
+                  {linkProblem ?? `Opening ${targetPath}…`}
+                </Banner>
               )}
-              {(linkProblem || awaitingTarget) && <div className="wb-notice" role={linkProblem ? "alert" : "status"}>
-                <p>{linkProblem ?? `Opening ${targetPath}…`}</p>
-                {linkProblem && !invalidLink && <button type="button" className="min-h-10 px-3" onClick={() => setRetryLocation(n => n + 1)}>Retry file</button>}
-                <button type="button" className="min-h-10 px-3" onClick={() => setSidebar(true)}>Open explorer</button>
-                {state.active && <button type="button" className="min-h-10 px-3" onClick={() => void navigate(projectId, state.tabs.find(tab => tab.path === state.active)?.revision ? state.active : null, true)}>Return to current file</button>}
-              </div>}
               <ResizablePanelGroup
                 orientation="vertical"
                 className="wb-vertical-panels"
@@ -1090,21 +1106,17 @@ export function WorkspaceWorkbench({
                       </TabsContent>
                     ))}
                     {!state.tabs.length && !hideSessions && (
-                      <div className="wb-empty">
-                        <Diamond size={32} />
-                        <h1>A place for connected ideas.</h1>
-                        <p>{readOnly ? "Open a file to read it." : "Open a file or create a note to begin."}</p>
-                        {!sidebar && (
-                          <button type="button" className="wb-button" onClick={() => setSidebar(true)}>
-                            Open explorer
-                          </button>
+                      <EmptyState
+                        icon={<Diamond />}
+                        title="A place for connected ideas."
+                        description={readOnly ? "Open a file to read it." : "Open a file or create a note to begin."}
+                        actions={(!sidebar || !readOnly) && (
+                          <>
+                            {!sidebar && <Button variant="secondary" onClick={() => setSidebar(true)}>Open explorer</Button>}
+                            {!readOnly && <Button onClick={() => startCreate("mdx")}>New note</Button>}
+                          </>
                         )}
-                        {!readOnly && (
-                          <button type="button" className="wb-button wb-button-primary" onClick={() => startCreate("mdx")}>
-                            New note
-                          </button>
-                        )}
-                      </div>
+                      />
                     )}
                   </div>
                 </ResizablePanel>
@@ -1119,33 +1131,14 @@ export function WorkspaceWorkbench({
                     groupResizeBehavior="preserve-pixel-size"
                     className="wb-diagnostics-panel"
                   >
-                    <section aria-label="Bottom panel" className="wb-panel">
-                      <div>
-                        <span>DIAGNOSTICS</span>
-                        <button
-                          className="wb-icon"
-                          aria-label="Close bottom panel"
-                          onClick={() => setPanel(false)}
-                        >
-                          <X size={16} />
-                        </button>
+                    <section aria-labelledby={`${tabListId}-diagnostics`} className="h-full overflow-auto border-t border-border bg-panel px-4 pb-3 [overflow-wrap:anywhere]">
+                      <div className="flex h-10 items-center justify-between">
+                        <h2 id={`${tabListId}-diagnostics`} className="text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">Diagnostics</h2>
+                        <IconButton label="Close bottom panel" tooltipSide="top" onClick={() => setPanel(false)}>
+                          <X />
+                        </IconButton>
                       </div>
-                      <p>
-                        Project files · {files.length} files ·{" "}
-                        {state.tabs.length} open
-                      </p>
-                      <p>
-                        {state.active
-                          ? `${state.active}: ${state.tabs.find((tab) => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}`
-                          : "No active file"}
-                      </p>
-                      {state.active && messages[state.active] && (
-                        <p>{messages[state.active]}</p>
-                      )}
-                      <p>
-                        File saves use revision checks. This panel does not
-                        execute commands.
-                      </p>
+                      {diagnostics}
                     </section>
                   </ResizablePanel>
                 )}
@@ -1161,14 +1154,11 @@ export function WorkspaceWorkbench({
         <DottedPage className="flex min-h-full flex-col gap-2.5 pt-[calc(12px+env(safe-area-inset-top))] pr-[calc(12px+env(safe-area-inset-right))] pb-[calc(12px+env(safe-area-inset-bottom))] pl-[calc(12px+env(safe-area-inset-left))]">
           {sidePanels}
           {panel && (
-            <FloatingPanel variant="flat" render={<section aria-label="Bottom panel" />} className="shrink-0 px-3 py-2 text-xs [overflow-wrap:anywhere]">
-              <p>Project files · {files.length} files · {state.tabs.length} open</p>
-              <p>{state.active ? `${state.active}: ${state.tabs.find(tab => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
-              {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
-              <p>File saves use revision checks. This panel does not execute commands.</p>
+            <FloatingPanel variant="flat" render={<section aria-label="Diagnostics" />} className="shrink-0 px-3 py-2 [overflow-wrap:anywhere]">
+              {diagnostics}
             </FloatingPanel>
           )}
-          {notice && <p role="status" className="wb-notice">{notice}</p>}
+          {notice && <Banner tone="info">{notice}</Banner>}
         </DottedPage>
         </section>
       )}
@@ -1215,13 +1205,14 @@ export function WorkspaceWorkbench({
   );
 }
 
-/** The signed-in person as the account panel shows them: a name from their profile, else their email's first part. */
+/** The signed-in person as the account panel shows them: a name from their profile, else their email's first part, capitalised as a name. */
 function personOf(user: { user_metadata?: Record<string, unknown> }, email: string | null): PanelPerson {
   const meta = user.user_metadata ?? {};
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
   const address = email ?? "";
+  const local = address.split("@")[0] ?? "";
   return {
-    name: text(meta.full_name) ?? text(meta.name) ?? (address.split("@")[0] || "Signed in"),
+    name: text(meta.full_name) ?? text(meta.name) ?? (local ? local.charAt(0).toLocaleUpperCase() + local.slice(1) : "Signed in"),
     email: address,
     image: text(meta.avatar_url),
   };

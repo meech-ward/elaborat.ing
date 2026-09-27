@@ -42,7 +42,7 @@ type TabExtras = Omit<ComponentProps<typeof EditorTab>, "value" | "name" | "badg
  * With `actions`, each tab has a menu of its file's actions: on right-click
  * (a long press on touch screens), and from "..." at the active tab's right
  * end, shown while the pointer is over the tab or the keyboard is on it (and
- * always on touch screens). A tab may hold nothing interactive, so "..." is
+ * always on touch screens); the tab then grows to make room for it. A tab may hold nothing interactive, so "..." is
  * the next stop after the tab list. The entries are read when a menu opens.
  *
  * TabLine is only the tab list: tab panels, if any, belong to the caller.
@@ -190,6 +190,10 @@ export function TabLine({
         style={offset ? { ...extras.style, transform: `translateX(${offset}px)` } : extras.style}
         className={cn(
           "data-clipped:pointer-events-none data-clipped:opacity-0 data-dragging:opacity-0",
+          // While "..." shows, the active tab makes room for it at its end,
+          // so it never covers the name.
+          actions &&
+            "data-active:hover:pr-[34px] data-active:focus-visible:pr-[34px] data-active:pointer-coarse:pr-[34px] data-active:group-has-[[data-tab-actions]:is(:hover,:focus-visible,[data-popup-open])]/tabline:pr-[34px]",
           drag?.slide && "transition-transform duration-160 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none",
           extras.className,
         )}
@@ -232,6 +236,7 @@ export function TabLine({
               variant="ghost"
               size="icon-xs"
               aria-label={actionsLabel}
+              data-tab-actions=""
               style={{ left: activeEnd }}
               // Over the active tab's right end, 5 in, on its seg fill; seen
               // with the pointer on the tab or on it, with keyboard focus,

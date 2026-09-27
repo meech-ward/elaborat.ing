@@ -46,12 +46,17 @@ for (const { width, phone } of [
 
     test("Tab stays in the rename dialog, Escape returns to its opener, and axe finds nothing in rename or delete", async ({ page }) => {
       const explorer = await openProject(page, { "index.md": "See [the plan](notes/plan.md).\n", "notes/plan.md": "# Plan\n" }, phone)
+      // A phone's tree shows the actions button on the open file's row only: open the plan first.
+      if (phone) {
+        await explorer.getByRole("button", { name: "notes/plan.md", exact: true }).click()
+        await page.getByRole("button", { name: "Back to files and projects" }).click()
+      }
       const opener = explorer.getByRole("button", { name: "Actions for notes/plan.md", exact: true })
       await opener.click()
       await page.getByRole("menuitem", { name: "Rename" }).click()
       const dialog = page.getByRole("dialog", { name: "Rename in notes" })
       await expect(dialog.getByLabel("New file name")).toBeFocused()
-      await expectNoAxeViolations(page, ".wb-rename")
+      await expectNoAxeViolations(page, "[role=\"dialog\"]")
 
       // The field, Cancel and Rename: Tab and Shift+Tab go round them and never leave.
       for (const key of ["Tab", "Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {

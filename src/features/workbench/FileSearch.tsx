@@ -69,6 +69,7 @@ export function FileSearch({ search, unavailable = "Search needs a connection.",
           placeholder="Search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onClear={() => setQuery("")}
           onKeyDown={(event) => {
             if (event.key === "Escape" && query) {
               event.preventDefault();

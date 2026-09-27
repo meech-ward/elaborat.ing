@@ -9,6 +9,7 @@ export { StyleGuidePage } from "./guide/StyleGuidePage"
 
 // --- Controls (guide/ControlsSection.tsx) ---
 export { ActionContextMenu, ActionMenu, type ActionMenuProps, type MenuEntry } from "./ui/ActionMenu"
+export { ColorModeToggle, PaletteSelect } from "./ui/AppearanceControls"
 export { Banner, BannerAction, Callout, type BannerTone } from "./ui/Banner"
 export { ButtonShortcut } from "./ui/ButtonShortcut"
 export { EmptyState } from "./ui/EmptyState"

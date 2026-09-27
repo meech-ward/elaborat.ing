@@ -250,9 +250,9 @@ test.describe("MDX documents", () => {
     await press(page, "Home")
     await press(page, "ArrowRight")
     await page.keyboard.type(" ")
-    const notice = page.getByText(/Selection crosses a protected object/).first()
+    // The notice is the library's banner, a status.
+    const notice = page.getByRole("status").filter({ hasText: /Selection crosses a protected object/ }).first()
     await expect(notice).toBeVisible()
-    await expect(notice).toHaveAttribute("role", "status")
     await expect(notice).toHaveText(/^Edit not applied:/)
     expect(await source(page)).toBe(heading)
 

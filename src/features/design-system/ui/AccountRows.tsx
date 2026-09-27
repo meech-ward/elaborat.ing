@@ -182,7 +182,8 @@ export function PersonRow({
           <ActionMenu
             {...menuProps}
             entries={menu}
-            contentProps={{ align: "end", side: "top", ...menuProps?.contentProps }}
+            // Narrower than a menu's usual 254, so it opens inside the account panel.
+            contentProps={{ align: "end", side: "top", className: "min-w-56", ...menuProps?.contentProps }}
             trigger={
               <Button variant="ghost" size={size === "touch" ? "icon-lg" : "icon"} aria-label={menuLabel} title={menuLabel}>
                 <Settings aria-hidden="true" />

@@ -148,8 +148,9 @@ for (const [width, scheme] of [
       await openProject(page, { "a.md": "# A\n", "b.md": "# B\n" }, "a.md", phone)
       if (phone) await page.getByRole("button", { name: "Back to files and projects" }).click()
       const files = await explorer(page)
-      await files.getByRole("button", { name: "Actions for b.md", exact: true }).click()
-      const menu = page.getByRole("menu", { name: "Actions for b.md" })
+      // The open file's row (a phone's tree shows the actions button there only).
+      await files.getByRole("button", { name: "Actions for a.md", exact: true }).click()
+      const menu = page.getByRole("menu", { name: "Actions for a.md" })
       await expect(menu).toBeVisible()
       await menu.getByRole("menuitem", { name: "Rename" }).hover()
       const results = await new AxeBuilder({ page }).include('[role="menu"]').analyze()

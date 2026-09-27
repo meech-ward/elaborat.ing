@@ -19,7 +19,12 @@ type TreeRowProps = Omit<PanelRowProps, "children" | "isActive" | "contextMenu">
   /** How deep the row sits: 0 at the top of the project. */
   depth?: number
   selected?: boolean
-  /** Shown at the end of the row on hover and focus: a TreeRowMenu. */
+  /**
+   * Shown at the end of the row on hover and focus: a TreeRowMenu. On a
+   * phone's rows (`touch`) only the selected row shows it, as C5's files
+   * screen draws the tree; every row opens the same entries on a long
+   * press (`rowMenu`).
+   */
   actions?: ReactNode
   /**
    * The same entries as a right-click menu on the row (a long press on
@@ -51,7 +56,8 @@ const fileIndent: Record<PanelRowSize, string> = {
 // From the md breakpoint up, SidebarMenuAction shows a row's actions only on
 // hover or focus, so the row keeps the design's padding and the actions
 // cover its end; on narrower screens they always show, and the row makes
-// room for them (a phone row's 32 wide button, 40 with its gap).
+// room for them (a phone row's 32 wide button, 40 with its gap). A phone's
+// rows have them only while selected (TreeRowProps.actions).
 const roomForActions: Record<PanelRowSize, string> = {
   default: "md:group-has-data-[sidebar=menu-action]/menu-item:pr-2",
   touch: "group-has-data-[sidebar=menu-action]/menu-item:pr-10 md:group-has-data-[sidebar=menu-action]/menu-item:pr-2.5",
@@ -87,7 +93,7 @@ export function TreeFolderRow({
         </PanelRow>,
         rowMenu,
       )}
-      {actions}
+      {(size !== "touch" || selected) && actions}
     </SidebarMenuItem>
   )
 }
@@ -130,7 +136,7 @@ export function TreeFileRow({
         </PanelRow>,
         rowMenu,
       )}
-      {actions}
+      {(size !== "touch" || selected) && actions}
     </SidebarMenuItem>
   )
 }

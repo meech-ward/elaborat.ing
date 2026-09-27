@@ -18,6 +18,11 @@ const COLOR_KEYS = [
   'editorSuggestWidget.border',
   'editorSuggestWidget.foreground',
   'editorSuggestWidget.selectedBackground',
+  'editorSuggestWidget.selectedForeground',
+  'editorSuggestWidget.selectedIconForeground',
+  'editorSuggestWidget.highlightForeground',
+  'editorSuggestWidget.focusHighlightForeground',
+  'editorSuggestWidget.hoverBackground',
 ];
 
 const bare = (color: string) => color.slice(1).toUpperCase();
@@ -39,6 +44,9 @@ describe('monacoTheme', () => {
         expect(theme.colors['editorLineNumber.foreground']).toBe(colors.faint);
         expect(theme.colors['editorLineNumber.activeForeground']).toBe(colors.faint);
         expect(theme.colors['editor.selectionBackground']).toBe(colors.accentSoft);
+        // The chosen suggestion reads as a menu's chosen row: accentSoftText on accentSoft.
+        expect(theme.colors['editorSuggestWidget.selectedBackground']).toBe(colors.accentSoft);
+        expect(theme.colors['editorSuggestWidget.selectedForeground']).toBe(colors.accentSoftText);
         expect([colors.accent, colors.accentSoftText]).toContain(theme.colors['editorCursor.foreground']);
 
         const color = (token: string) => theme.rules.find((rule) => rule.token === token)?.foreground?.toUpperCase();

@@ -153,7 +153,7 @@ test.describe("on a phone", () => {
     const dialog = page.getByRole("dialog", { name: "New note in Workspace root" })
     await expect(dialog.getByLabel("Name")).toBeFocused()
     await expect(dialog.getByLabel("Name")).toHaveValue("untitled.mdx")
-    await expectNoAxeViolations(page, ".wb-rename")
+    await expectNoAxeViolations(page, "[role=\"dialog\"]")
     await page.keyboard.type("a")
     await page.keyboard.press("Enter")
     await expect(dialog.getByRole("alert")).toHaveText("a.mdx already exists here. Choose another name.")

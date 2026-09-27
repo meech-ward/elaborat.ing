@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Banner, BannerAction } from "@/features/design-system";
 import { countElementChanges } from "@/features/drawings/serialize.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import type { ConflictCopies } from "@/features/project-storage/fileStore";
@@ -8,11 +9,7 @@ import type { ConflictChoice } from "@/features/project-storage/sync";
 import { ConflictDiff } from "./ConflictDiff";
 import { drawingSvgForContent } from "./resources";
 import type { WorkspaceStore } from "./workspaceStore";
-
-const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
-const banner =
-  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
+import { dialogError } from "./dialogMessages";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -85,22 +82,19 @@ export function ConflictBanner({ name, path, client, compareAs, noun, hasUnsaved
   };
 
   return (
-    <div role="alert" className={banner}>
-      <p>{name} was changed on another device too, so its sync stopped. Choose which version to keep.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button type="button" disabled={resolving} onClick={() => void compare()} className={bannerButton}>
-          Compare
-        </button>
-        <button type="button" disabled={resolving} onClick={() => void resolve("mine")} className={bannerButton}>
-          Keep mine
-        </button>
-        <button type="button" disabled={resolving} onClick={() => void resolve("theirs")} className={bannerButton}>
-          Keep theirs
-        </button>
-        <button type="button" disabled={resolving} onClick={() => void resolve("both")} className={bannerButton}>
-          Keep both
-        </button>
-      </div>
+    <Banner
+      role="alert"
+      className="mt-2"
+      action={
+        <span className="inline-flex flex-wrap gap-x-3">
+          <BannerAction disabled={resolving} onClick={() => void compare()}>Compare</BannerAction>
+          <BannerAction disabled={resolving} onClick={() => void resolve("mine")}>Keep mine</BannerAction>
+          <BannerAction disabled={resolving} onClick={() => void resolve("theirs")}>Keep theirs</BannerAction>
+          <BannerAction disabled={resolving} onClick={() => void resolve("both")}>Keep both</BannerAction>
+        </span>
+      }
+    >
+      {name} was changed on another device too, so its sync stopped. Choose which version to keep.
       {copies ? (
         <CompareDialog
           name={name}
@@ -114,7 +108,7 @@ export function ConflictBanner({ name, path, client, compareAs, noun, hasUnsaved
           onClose={() => setCopies(null)}
         />
       ) : null}
-    </div>
+    </Banner>
   );
 }
 
@@ -139,7 +133,7 @@ function CompareDialog({ name, path, copies, compareAs, unsaved, resolving, erro
         if (!open && !resolving) onClose();
       }}
     >
-      <DialogContent className="wb-rename wb-compare" aria-busy={resolving} initialFocus={close} showCloseButton={false}>
+      <DialogContent className="wb-compare" aria-busy={resolving} initialFocus={close} showCloseButton={false}>
         <DialogTitle>Compare {name}</DialogTitle>
         <DialogDescription>
           {theirs === null
@@ -159,7 +153,7 @@ function CompareDialog({ name, path, copies, compareAs, unsaved, resolving, erro
         ) : null}
         {unsaved ? <p className="wb-compare-note">Your unsaved edits are not shown here. Keep mine keeps them; the other choices replace them.</p> : null}
         {error ? (
-          <p role="alert" className="wb-rename-error">
+          <p role="alert" className={dialogError}>
             {error}
           </p>
         ) : null}
@@ -220,7 +214,7 @@ function DrawingComparison({ theirs, mine, path }: { theirs: string; mine: strin
       {"svg" in picture ? (
         <img alt={alt} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(picture.svg)}`} />
       ) : (
-        <p className="wb-rename-error">This version could not be drawn: {picture.error}</p>
+        <p className={dialogError}>This version could not be drawn: {picture.error}</p>
       )}
     </figure>
   );

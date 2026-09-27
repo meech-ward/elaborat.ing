@@ -78,6 +78,88 @@ body {
   max-width: var(--reading-width);
   margin-inline: auto;
 }
+/* Insert block waits at the end of the note, out of sight until the note is
+   pointed at or it has focus (C5 draws a note without it). Touch screens,
+   which cannot point, show it while the note is being edited. */
+@media (hover: hover) {
+  body:not(:hover) #root > .authoring-insert:not(:focus-within) {
+    opacity: 0;
+  }
+}
+@media (hover: none) {
+  body:not(:focus-within) #root > .authoring-insert {
+    display: none;
+  }
+}
+
+/* A callout's controls (its title and tone) float on its top edge at the
+   right while it is pointed at or has focus, over the space above it and
+   its padding, never its text. Touch screens show them under the callout
+   while it has focus (a tap in its text). C5 draws a note without them. */
+.callout-block {
+  position: relative;
+}
+.callout-controls {
+  position: absolute;
+  top: -13px;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 3px 0 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 1px 4px var(--shadow);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--dim);
+  opacity: 0;
+  pointer-events: none;
+}
+.callout-block:is(:hover, :focus-within) > .callout-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+.callout-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.callout-controls :is(select, input) {
+  height: 24px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--seg);
+  color: var(--text);
+  font-size: 12px;
+}
+.callout-controls :is(select, input):hover {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+@media (pointer: coarse) {
+  .callout-controls {
+    position: static;
+    width: fit-content;
+    max-width: 100%;
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    font-size: 13px;
+  }
+  .callout-block:not(:focus-within) > .callout-controls {
+    display: none;
+  }
+  .callout-controls :is(select, input) {
+    height: 40px;
+  }
+}
 
 /* A drawing or diagram in a note: its picture centred in a bordered,
    rounded box on the page's dotted background, with no background of its
@@ -147,11 +229,16 @@ figure[data-resource][data-pixels="false"] > figcaption {
   opacity: 1;
   margin-top: 8px;
 }
+/* Touch screens show the name and Edit under the box while it has focus
+   (a tap on the picture views it and leaves focus there). */
 @media (pointer: coarse) {
   figure[data-resource] > figcaption {
     position: static;
     opacity: 1;
     margin-top: 8px;
+  }
+  figure[data-resource][data-pixels="true"]:not(:focus-within) > figcaption {
+    display: none;
   }
   figure[data-resource] > figcaption button {
     min-height: 40px;

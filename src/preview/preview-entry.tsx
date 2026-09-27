@@ -289,9 +289,11 @@ function CounterWithControls(props: {
   );
 }
 
+const CALLOUT_TONES = ["info", "warn", "error"];
+
 function CalloutWithControls(props: {
   __slot?: number;
-  tone?: "info" | "warn" | "error";
+  tone?: string;
   title?: string;
   children?: ReactNode;
 }): ReactNode {
@@ -300,48 +302,54 @@ function CalloutWithControls(props: {
   const editable = slot?.supported === true;
   const titleProp = slot?.props.find((entry) => entry.name === "title");
   const toneProp = slot?.props.find((entry) => entry.name === "tone");
+  const slotIndex = typeof props.__slot === "number" ? props.__slot : null;
+  // The control shows the file's own tone, even one the callout draws as
+  // info (such as "note"); choosing another rewrites it.
+  const tone = typeof props.tone === "string" && props.tone ? props.tone : "info";
+  const tones = CALLOUT_TONES.includes(tone) ? CALLOUT_TONES : [tone, ...CALLOUT_TONES];
+  const titleControl = editable && titleProp?.kind === "string" && slotIndex !== null;
+  const toneControl = editable && toneProp?.kind === "string" && slotIndex !== null;
+  const commit = (name: string, next: string) => {
+    if (slotIndex !== null) commitProp(slotIndex, name, next);
+  };
+  // reading.css keeps the controls out of the note until the callout is
+  // pointed at or has focus, as a drawing's name and Edit.
   return (
-    <span className="not-prose" style={{ display: "block" }}>
-      <Callout tone={props.tone} title={props.title}>
+    <span className="not-prose callout-block" style={{ display: "block" }}>
+      <Callout tone={props.tone as "info" | "warn" | "error" | undefined} title={props.title}>
         {props.children}
       </Callout>
-      {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
+      {slotIndex !== null && !editable && !isReadOnly() ? (
         <small title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
       ) : null}
-      {editable &&
-      titleProp?.kind === "string" &&
-      typeof props.__slot === "number" ? (
-        <StringControl
-          label="title"
-          value={typeof props.title === "string" ? props.title : ""}
-          onCommit={(next) => commitProp(props.__slot as number, "title", next)}
-        />
-      ) : null}
-      {editable &&
-      toneProp?.kind === "string" &&
-      typeof props.__slot === "number" ? (
-        <label
-          style={{
-            display: "inline-flex",
-            gap: "0.25rem",
-            alignItems: "center",
-          }}
-        >
-          tone
-          <select
-            aria-label="tone"
-            value={props.tone ?? "info"}
-            onChange={(event) =>
-              commitProp(props.__slot as number, "tone", event.target.value)
-            }
-          >
-            <option value="info">info</option>
-            <option value="warn">warn</option>
-            <option value="error">error</option>
-          </select>
-        </label>
+      {titleControl || toneControl ? (
+        <span className="callout-controls">
+          {titleControl ? (
+            <StringControl
+              label="title"
+              value={typeof props.title === "string" ? props.title : ""}
+              onCommit={(next) => commit("title", next)}
+            />
+          ) : null}
+          {toneControl ? (
+            <label>
+              tone
+              <select
+                aria-label="tone"
+                value={tone}
+                onChange={(event) => commit("tone", event.target.value)}
+              >
+                {tones.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </span>
       ) : null}
     </span>
   );

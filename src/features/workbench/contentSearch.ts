@@ -19,11 +19,14 @@ export function projectHits(passages: SearchPassage[], projectId: string): FileS
 }
 
 /**
- * Markdown or MDX as the words a reader sees: headings, list and quote marks,
- * emphasis, code marks, links, tags and table rules are dropped.
+ * Markdown or MDX as the words a reader sees: frontmatter at the start, MDX
+ * import and export lines, headings, list and quote marks, emphasis, code
+ * marks, links, tags and table rules are dropped.
  */
 export function plainText(markdown: string): string {
   return markdown
+    .replace(/^\s*---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "")
+    .replace(/^(?:import|export)\s.*$/gm, "")
     .replace(/^\s*(```|~~~).*$/gm, "")
     .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/gm, "")
     .replace(/^\s*([-*_])(\s*\1){2,}\s*$/gm, "")

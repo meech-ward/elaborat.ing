@@ -64,7 +64,14 @@ export function monacoTheme(colors: PaletteColors, scheme: "light" | "dark"): ed
       "editorSuggestWidget.background": sixDigits(colors.panel),
       "editorSuggestWidget.border": sixDigits(colors.panelBorder),
       "editorSuggestWidget.foreground": sixDigits(colors.text),
+      // The suggestions list as the library's menus draw theirs: the chosen
+      // row in accentSoft with its own text colour, matches in accentSoftText.
       "editorSuggestWidget.selectedBackground": sixDigits(colors.accentSoft),
+      "editorSuggestWidget.selectedForeground": sixDigits(colors.accentSoftText),
+      "editorSuggestWidget.selectedIconForeground": sixDigits(colors.accentSoftText),
+      "editorSuggestWidget.highlightForeground": sixDigits(colors.accentSoftText),
+      "editorSuggestWidget.focusHighlightForeground": sixDigits(colors.accentSoftText),
+      "editorSuggestWidget.hoverBackground": sixDigits(colors.seg),
     },
   };
 }

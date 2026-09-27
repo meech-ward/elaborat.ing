@@ -61,4 +61,9 @@ describe("plainText", () => {
       "The plan A quote with old text Done, see the docs and a chart Call save() first Careful name role Ada owner const snake_case_name = 2 * 3 * 4",
     )
   })
+
+  test("drops the frontmatter at the start and MDX imports, and keeps the words after a later rule", () => {
+    const note = '---\ntitle: Customer model\n---\nimport { Callout } from "./callout.mdx"\n\n# Customer model\n\nHow a customer moves.\n\n---\n\nAfter the rule.\n'
+    expect(plainText(note).replace(/\s+/g, " ").trim()).toBe("Customer model How a customer moves. After the rule.")
+  })
 })

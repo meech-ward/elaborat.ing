@@ -54,6 +54,7 @@ import type {
 } from "../source/renderedHistory";
 import { acceptSourceTransaction } from "./sourceTransaction";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Banner, LoadingLine } from "@/features/design-system";
 import {
   checkChildMessage,
   childMessageSchema,
@@ -876,12 +877,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const displayedError = componentError ?? compileError;
   return (
     <div data-rendered-editor={document.format} style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {editNotice ? <p role="status">Edit not applied: {editNotice}</p> : null}
-      {componentPending ? <p role="status">Loading components…</p> : null}
+      {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
+      {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError ? (
-        <p role="alert" id={errorId}>
+        <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
           {displayedError} Source is unchanged and remains editable.
-        </p>
+        </Banner>
       ) : null}
       <iframe
         ref={frameRef}

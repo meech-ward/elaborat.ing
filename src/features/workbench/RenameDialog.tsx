@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { dialogError, dialogPending } from "./dialogMessages";
 
 export function RenameDialog({
   open,
@@ -103,7 +104,7 @@ export function RenameDialog({
         if (!renaming) onOpenChange(next);
       }}
     >
-      <DialogContent className="wb-rename" aria-busy={renaming} showCloseButton={false}>
+      <DialogContent aria-busy={renaming} showCloseButton={false}>
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
         <div className="grid gap-2">
@@ -135,13 +136,13 @@ export function RenameDialog({
             }}
           />
           {error && (
-            <p id={errorId} role="alert" className="wb-rename-error">
+            <p id={errorId} role="alert" className={dialogError}>
               {error}
             </p>
           )}
         </div>
         {renaming && (
-          <p role="status" className="wb-rename-pending">
+          <p role="status" className={dialogPending}>
             {pendingLabel}
           </p>
         )}

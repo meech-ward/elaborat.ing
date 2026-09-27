@@ -78,11 +78,12 @@ function States() {
         </SidebarMenu>
         <GuideValue>Where the new file will appear, at its depth; a name that cannot be used says why under it.</GuideValue>
         <GuideLabel>Search results</GuideLabel>
+        <SearchField value="customer" readOnly onClear={() => {}} aria-label="Search sample with text" />
         <SidebarMenu aria-label="Search result sample">
           <SearchHitRow path="docs/customer-model.mdx" kind="note" before="How a " match="customer" after=" moves from sign-up to their first project, and where agents help." />
           <SearchHitRow path="flows/billing.d2" kind="diagram" before="" match="customer" after=" -> invoice" />
         </SidebarMenu>
-        <GuideValue>A hit replaces the tree while the field has text: the path, and the words around the match.</GuideValue>
+        <GuideValue>A hit replaces the tree while the field has text: the path, and the words around the match. Clear search (the x) or Escape empties the field.</GuideValue>
         <GuideLabel>Kind badges</GuideLabel>
         <div className="flex items-center gap-4">
           {(

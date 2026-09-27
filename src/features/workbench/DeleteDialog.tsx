@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import type { DeletePlan, DeleteRequest } from "./deletePlan";
+import { dialogError } from "./dialogMessages";
 
 /** Confirm a delete: what goes, which files still refer to it, and anything that has to be settled first. */
 export function DeleteDialog({ request, plan, pending, deleting, error, stale, onCommit, onClose }: {
@@ -17,7 +18,7 @@ export function DeleteDialog({ request, plan, pending, deleting, error, stale, o
   const folder = "folder" in request;
   const path = folder ? request.folder : request.path;
   return <AlertDialog open onOpenChange={open => { if (!open && !deleting) onClose(); }}>
-    <DialogContent className="wb-rename wb-move" aria-busy={pending} initialFocus={cancel} showCloseButton={false}
+    <DialogContent className="wb-move" aria-busy={pending} initialFocus={cancel} showCloseButton={false}
       finalFocus={() => [...document.querySelectorAll<HTMLElement>(`[data-tree-row="${folder ? "folder" : "file"}"] > [data-path]`)].find(row => row.dataset.path === path)
         ?? document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')}>
       <DialogTitle>{folder ? `Delete folder ${path}` : `Delete ${path}`}</DialogTitle>
@@ -33,9 +34,9 @@ export function DeleteDialog({ request, plan, pending, deleting, error, stale, o
           <ul>{plan.references.map(entry => <li key={entry.path}>
             {entry.path}<ul>{entry.references.map((reference, index) => <li key={index}>Line {reference.line}: {reference.to}</li>)}</ul>
           </li>)}</ul></>}
-        {plan.blockers.map((blocker, index) => <p role="alert" className="wb-rename-error" key={index}>{blocker.path}: {blocker.reason}</p>)}
+        {plan.blockers.map((blocker, index) => <p role="alert" className={dialogError} key={index}>{blocker.path}: {blocker.reason}</p>)}
       </section>}
-      {error && <p role="alert" className="wb-rename-error">{error}</p>}
+      {error && <p role="alert" className={dialogError}>{error}</p>}
       {pending && <p role="status">Working…</p>}
       <DialogFooter>
         <Button ref={cancel} variant="outline" disabled={deleting} onClick={onClose}>Cancel</Button>

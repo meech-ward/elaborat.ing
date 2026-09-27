@@ -160,3 +160,14 @@ kbd:not([data-slot]) {
 .monaco-editor {
   max-width: 100%;
 }
+/* Monaco's suggestions list as the library's menus (ActionMenu): radius 12
+   on the panel shadow, rows at radius 7 inset from the edge. Its colours
+   come from the editor theme (monacoTheme.ts). */
+.monaco-editor .suggest-widget {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px var(--shadow);
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  border-radius: 7px;
+}

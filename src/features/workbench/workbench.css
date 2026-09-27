@@ -1,88 +1,18 @@
 .wb-app {
   height: 100dvh;
   display: grid;
-  grid-template-rows: 42px minmax(0, 1fr) 25px;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background: var(--panel);
   color: var(--text);
   font-family: var(--ui-font);
 }
 .project-hub .wb-app { height: 100%; }
-/* Buttons built on the design system's components (they carry data-slot),
-   and the tabs, keep their type. */
-.wb-app button:where(:not([data-slot], [role="tab"])) {
-  cursor: pointer;
-  font: inherit;
-}
-.wb-titlebar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--panel-border);
-  background: var(--bg);
-}
-.wb-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.wb-brand svg {
-  color: var(--accent);
-}
-.wb-titlebar select {
-  font: inherit;
-  font-size: 11px;
-  border: 1px solid var(--panel-border);
-  background: var(--seg);
-  color: var(--text);
-  border-radius: 4px;
-  height: 28px;
-  padding: 0 7px;
-}
-.wb-layout-actions {
-  display: flex;
-}
-.wb-icon {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-.wb-icon:hover,
-.wb-icon[aria-pressed="true"] {
-  background: var(--seg);
-  color: var(--text);
-}
 .wb-body {
   display: flex;
   min-width: 0;
   min-height: 0;
   position: relative;
-}
-.wb-rail {
-  width: 46px;
-  flex-shrink: 0;
-  background: var(--bg);
-  border-right: 1px solid var(--panel-border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 0;
-}
-.wb-rail > .wb-icon {
-  width: 42px;
-  height: 42px;
-}
-.wb-rail > span {
-  flex: 1;
 }
 /* The SidebarProvider wrapper must not disturb the workbench flex layout;
    the provider owns sidebar state only, never layout. */
@@ -101,32 +31,22 @@
 .wb-tabs-root {
   display: contents;
 }
-/* Unsaved: the tree row's 7px dot, ringed where its colour is faint (tokens.ts). */
-.wb-tab-dirty {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--dirty);
-  box-shadow: 0 0 0 1px var(--dirty-ring);
-}
 .wb-sessions,
 .wb-session-host,
-.wb-session,
-.wb-editor-stage,
-.wb-source-stage,
-.wb-rendered-stage {
+.wb-session {
   min-width: 0;
   min-height: 0;
   flex: 1;
-}
-.wb-sessions,
-.wb-session-host,
-.wb-session,
-.wb-editor-stage {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+/* A note's panes, in SplitPanes (WorkspaceSession.tsx). */
+.wb-source-stage,
+.wb-rendered-stage {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 .wb-app [hidden] {
   display: none !important;
@@ -150,89 +70,11 @@
   height: 100% !important;
   min-height: 0 !important;
 }
-/* Split: the source and the rendered note side by side, each scrolling on its own. */
-.wb-editor-stage[data-view="split"] {
-  flex-direction: row;
-}
-.wb-editor-stage[data-view="split"] > * {
-  flex: 1 1 0;
-}
-.wb-editor-stage[data-view="split"] > .wb-source-stage {
-  border-right: 1px solid var(--panel-border);
-}
-.wb-status {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 12px;
-  background: var(--bg);
-  border-top: 1px solid var(--panel-border);
-  color: var(--muted);
-  font-size: 9px;
-}
+/* A notice over the editor (a Banner): a little in from the panel's edges. */
 .wb-notice {
-  padding: 5px 12px;
-  font-size: 11px;
-  color: var(--muted);
-  margin: 0;
-}
-.wb-panel {
-  height: 100%;
   flex-shrink: 0;
-  padding: 0 18px 10px;
-  background: var(--bg);
-  border-top: 1px solid var(--panel-border);
-  overflow: auto;
-  font-family: var(--code-font);
-  font-size: 11px;
-  color: var(--muted);
-}
-.wb-panel > div {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font: 10px var(--ui-font);
-  letter-spacing: 1px;
-}
-.wb-panel p {
-  margin: 6px 0;
-}
-/* Problems that block a dialog's action, under the field. The dialogs
-themselves are the shared dialog shell (components/ui/dialog.tsx). */
-.wb-rename-error {
-  margin: 0;
-  color: var(--danger);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-/* Pending rename status: the dialog stays open and non-dismissable while
-the request runs, keeping the renamed session inert. */
-.wb-rename-pending {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.wb-empty {
-  margin: auto;
-  text-align: center;
-  color: var(--muted);
-  padding: 30px;
-}
-.wb-empty svg {
-  margin: auto;
-}
-.wb-empty h1 {
-  font-family: var(--heading-font);
-  font-size: 24px;
-  margin: 20px 0 10px;
-  color: var(--text);
-}
-.wb-empty p {
-  font-size: 13px;
-}
-.wb-empty button {
-  margin: 15px 4px 0;
+  width: auto;
+  margin: 8px 12px 0;
 }
 /* Native wrappers fill the same stage; their document data is never styled by these rules. */
 .wb-native-view {
@@ -252,9 +94,6 @@ the request runs, keeping the renamed session inert. */
   border: 0 !important;
   border-radius: 0 !important;
   overflow: hidden;
-}
-.wb-native-view > p:last-child {
-  display: none;
 }
 .wb-native-view > [role="alert"] {
   flex-shrink: 0;
@@ -310,17 +149,6 @@ the request runs, keeping the renamed session inert. */
   width: min(38rem, calc(100vw - 24px));
   max-width: none;
   overflow-wrap: anywhere;
-}
-.wb-move select {
-  width: 100%;
-  min-width: 0;
-  height: 32px;
-  padding: 0 8px;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  font: inherit;
 }
 .wb-move-preview { min-width: 0; }
 .wb-move-preview ul { padding-left: 1.2rem; }
@@ -380,8 +208,6 @@ above the choices. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .wb-app[data-compact="true"] > .wb-body { flex: 1; min-height: 0; }
-.wb-app[data-compact="true"] :is(.wb-rail, .wb-status) { display: none; }
-.wb-app[data-compact="true"] .wb-icon { width: 40px; height: 40px; flex-shrink: 0; }
 /* The open file: its header floats over it (FileHeader.tsx), and a note starts below the header. */
 .wb-app[data-compact="true"] :is(.wb-session, .wb-native-view) { position: relative; }
 .wb-app[data-compact="true"] .wb-session { padding-top: 64px; }
@@ -394,7 +220,6 @@ above the choices. */
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {
-  grid-template-rows: minmax(0, 1fr);
   background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: 22px 22px;
@@ -421,41 +246,6 @@ above the choices. */
   background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
   outline: none;
 }
-.wb-app .wb-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 9px;
-  border: 1px solid var(--panel-border);
-  background: var(--seg);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.wb-app .wb-button-primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-text);
-}
-/* Banners and their buttons, in the palette's warning and danger colours. */
-.wb-banner-warn {
-  border: 1px solid color-mix(in oklab, var(--warn-text) 35%, transparent);
-  background: var(--warn-bg);
-  color: var(--warn-text);
-}
-.wb-banner-danger {
-  border: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
-  background: var(--panel);
-  color: var(--danger);
-}
-.wb-app .wb-banner-button {
-  border: 1px solid color-mix(in oklab, var(--warn-text) 50%, transparent);
-  background: var(--panel);
-  color: var(--text);
-}
 
 /* Full-bleed canvases (desktop): a drawing or diagram on its canvas fills the
    window behind the panels, over dots that pan and zoom with the scene
@@ -472,7 +262,7 @@ above the choices. */
   position: relative;
   z-index: 1;
 }
-.wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) :is(.wb-diagnostics-panel, .wb-notice) {
+.wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-diagnostics-panel {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
