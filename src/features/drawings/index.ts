@@ -47,3 +47,4 @@ export type { CanvasColors } from './presentation.ts';
 export { beforeDarkFilter, presentDrawing } from './presentation.ts';
 export { EXCALIDRAW_VERSION, exportDrawingPng, exportDrawingSvg } from './export.ts';
 export { DrawingCanvas } from './DrawingCanvas.tsx';
+export { ensureGeneratedNativeFont } from './nativeFontReady.ts';

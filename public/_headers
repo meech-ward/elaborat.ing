@@ -9,3 +9,7 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+
+# The style guide is for the people building the app, not for search.
+/style-guide
+  X-Robots-Tag: noindex
