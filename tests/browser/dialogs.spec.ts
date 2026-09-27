@@ -23,8 +23,7 @@ async function openProject(page: Page, files: Record<string, string>, phone: boo
   } else {
     await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
     // A desktop opens with the explorer shown.
-    const toggle = page.getByRole("button", { name: "Toggle explorer" })
-    if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+    await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   }
   const explorer = page.getByRole("navigation", { name: "Workspace files" }).first()
   await explorer.getByRole("button", { name: "Expand notes", exact: true }).click()

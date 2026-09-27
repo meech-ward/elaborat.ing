@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Minimize2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { FloatingPanel } from "../ui/FloatingPanel"
+import { EditorHeader } from "../ui/EditorHeader"
 import { IconButton } from "../ui/IconButton"
 import { SaveButton } from "../ui/SaveButton"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
@@ -28,13 +28,13 @@ export function C5FocusHeader({ names = "note", className }: { names?: ViewNames
   const [view, setView] = useState<EditorView>("rendered")
   const focus = commandShortcut(".", isApplePlatform())
   return (
-    <FloatingPanel className={cn("flex h-11 items-center gap-1.5 rounded-menu px-1.5 pointer-coarse:h-[52px]", className)}>
+    <EditorHeader variant="floating" className={className}>
       <ViewSwitch value={view} onValueChange={setView} names={names} />
       <SaveButton />
       <IconButton label="Exit full screen" shortcut={focus.label} keyShortcuts={focus.aria}>
         <Minimize2 />
       </IconButton>
-    </FloatingPanel>
+    </EditorHeader>
   )
 }
 

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OperationSession } from "./operationSession";
-import { Save, Copy, Download, RefreshCw } from "lucide-react";
-import { MenuShortcut } from "@/components/ui/menu";
-import { ActionMenu } from "./WorkbenchChrome";
-import { TablineActions } from "./tabline";
-import { CompactFileIdentity, useCompactWorkbench } from "./compactWorkbench";
+import { EDITOR_VIEWS, commandShortcut, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
+import { FileHeader } from "./FileHeader";
+import { useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
 import type { SourcePatch } from "@/features/document";
@@ -20,8 +18,7 @@ import { diagnoseSource } from "@/lib/sourceDiagnostics";
 import { parseSourceRefs } from "./refs";
 import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
 import { readProjectView, writeProjectView } from "./projectViews";
-import { ViewSwitcher } from "./ViewSwitcher";
-import { ariaShortcut, duplicateShortcutLabel, isApplePlatform, shortcutLabel, viewShortcutDigit } from "./viewShortcuts";
+import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
 import { savedComponentSource } from '../document/componentModules';
 import {
@@ -39,13 +36,7 @@ import {
   type OpenFile,
 } from "./session";
 
-type Mode = "source" | "split" | "rendered";
-/** A note's views, in switch and shortcut order (⌘⌥1 to 3, Ctrl+Alt+1 to 3). */
-const NOTE_VIEWS = [
-  { value: "source", label: "Source" },
-  { value: "split", label: "Split" },
-  { value: "rendered", label: "Rendered" },
-] as const;
+type Mode = EditorView;
 
 /**
  * One open file: its document, undo history and the revision its edits are
@@ -116,7 +107,6 @@ export function WorkspaceSession({
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [componentGeneration, setComponentGeneration] = useState(0);
   const loadComponentSource = useCallback(async (path: string) => {
     const file = await client.read(path);
@@ -256,10 +246,6 @@ export function WorkspaceSession({
     [store],
   );
 
-  const handleCursor = useCallback((line: number, column: number) => {
-    setCursor({ line, column });
-  }, []);
-
   const handlePatch = useCallback(
     (
       revision: number,
@@ -331,22 +317,15 @@ export function WorkspaceSession({
   }, []);
 
   const apple = useMemo(() => isApplePlatform(), []);
-  const viewOptions = useMemo(
-    () =>
-      NOTE_VIEWS.map((option, index) => ({
-        ...option,
-        title: `${option.label} (${shortcutLabel(index + 1, apple)})`,
-        keyShortcuts: ariaShortcut(index + 1, apple),
-      })).filter((option) => !compact || option.value !== "split"),
-    [apple, compact],
-  );
+  // A phone has no room to split.
+  const views = useMemo<EditorView[]>(() => (compact ? ["source", "rendered"] : ["source", "split", "rendered"]), [compact]);
   useEffect(() => {
     if (!active || !isNote) return;
     const onKey = (event: KeyboardEvent) => {
       const digit = viewShortcutDigit(event, apple);
       if (digit === null) return;
-      const next = NOTE_VIEWS[digit - 1].value;
-      if (!viewOptions.some((option) => option.value === next)) return;
+      const next = EDITOR_VIEWS[digit - 1].value;
+      if (!views.includes(next)) return;
       event.preventDefault();
       event.stopPropagation();
       switchMode(next);
@@ -354,7 +333,7 @@ export function WorkspaceSession({
     // Capture, so a focused source editor cannot keep the keys for itself.
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [active, apple, isNote, switchMode, viewOptions]);
+  }, [active, apple, isNote, switchMode, views]);
 
   const doWrite = useCallback(
     async (target: string, expectedRevision: string | null, verb: string) => {
@@ -586,100 +565,41 @@ export function WorkspaceSession({
   const inRendered = isNote && view !== "source";
   const conflict = openFile.save.stage === "conflict" ? openFile.save : null;
 
+  const save = () => {
+    const t = saveTarget(openFile);
+    if (t) void doWrite(t, openFile.baseRevision, openFile.path ? "Saved" : "Created");
+  };
+  const saveDisabled = renderedPending || !hasFile || openFile.save.stage === "saving";
+  const duplicateKey = commandShortcut("D", apple);
+  // The file's actions: its tab's menu on a desktop, "..." on a phone.
+  const fileActions: MenuEntry[] = [
+    ...(readOnly ? [] : [{ label: "Save", disabled: saveDisabled, onSelect: save }]),
+    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, onSelect: onDuplicate }] : []),
+    // Read-only, the file follows its saved copy by itself.
+    ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
+    { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },
+    ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending, onSelect: () => void handleFormat() }] : []),
+    ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
+  ];
+
   return (
     <div className="wb-session">
-        <TablineActions active={active}>
-        <div className="wb-view-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
-          <CompactFileIdentity navigation={navigation} path={displayName} />
-          {isNote && (
-            <ViewSwitcher
-              ariaLabel="Editor mode"
-              options={viewOptions}
-              active={view}
-              onSelect={switchMode}
-            />
-          )}
-          {!navigation && <span className="wb-breadcrumb">{displayName}</span>}
-          {/* Save shows only while there is something to save. */}
-          {!readOnly && overallDirty && (
-            <button
-              type="button"
-              className="wb-button wb-button-primary wb-save"
-              aria-keyshortcuts="Meta+S Control+S"
-              title="Save (Cmd+S)"
-              disabled={renderedPending || !hasFile || openFile.save.stage === "saving"}
-              onClick={() => {
-                const t = saveTarget(openFile);
-                if (t) void doWrite(t, openFile.baseRevision, openFile.path ? "Saved" : "Created");
-              }}
-            >
-              Save
-            </button>
-          )}
-          <ActionMenu>
-            {!readOnly && <button
-              disabled={
-                renderedPending || !hasFile || openFile.save.stage === "saving"
-              }
-              onClick={() => {
-                const t = saveTarget(openFile);
-                if (t)
-                  void doWrite(
-                    t,
-                    openFile.baseRevision,
-                    openFile.path ? "Saved" : "Created",
-                  );
-              }}
-            >
-              <Save size={14} /> Save
-            </button>}
-            {onDuplicate && (
-              <button onClick={onDuplicate}>
-                <Copy size={14} /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
-              </button>
-            )}
-            {/* Read-only, the file follows its saved copy by itself. */}
-            {!readOnly && <button
-              disabled={renderedPending || !openFile.path}
-              onClick={() => void doReload(openFile)}
-            >
-              <RefreshCw size={14} /> Reload
-            </button>}
-            <button
-              disabled={renderedPending}
-              onClick={() => void handleExport()}
-            >
-              <Download size={14} /> Export
-            </button>
-            {isNote && !readOnly && (
-              <button
-                disabled={renderedPending}
-                onClick={() => void handleFormat()}
-              >
-                Format
-              </button>
-            )}
-            {visibleRefs.map((ref) => (
-              <button key={ref.path} onClick={() => openPath(ref.path)}>
-                {ref.label} → {ref.path}
-              </button>
-            ))}
-          </ActionMenu>
-        </div>
-        <div className="wb-session-status" aria-live="polite">
-          <span data-state={renderedPending ? "pending" : overallDirty ? "unsaved" : "saved"}>
-            {renderedPending
-              ? "Finishing edit…"
-              : overallDirty
-                ? "Unsaved changes"
-                : "Saved"}
-          </span>
-          <span aria-label="cursor position">
-            Ln {cursor.line}, Col {cursor.column}
-          </span>
+      <FileHeader
+        path={initial.path}
+        active={active}
+        navigation={navigation}
+        view={isNote ? { value: view, views, names: "note", label: "Editor mode", onChange: switchMode } : undefined}
+        save={!readOnly && overallDirty ? { disabled: saveDisabled, onSave: save } : null}
+        actions={fileActions}
+      />
+      {/* The saved state and the last notice, for screen readers: Save and
+          the tab's unsaved dot show it on screen. */}
+      {active && (
+        <div className="sr-only" aria-live="polite">
+          <span>{renderedPending ? "Finishing edit…" : overallDirty ? "Unsaved changes" : "Saved"}</span>
           {notice && <span>{notice}</span>}
         </div>
-        </TablineActions>
+      )}
       {renderError && (
         <p
           role="alert"
@@ -818,7 +738,7 @@ export function WorkspaceSession({
               visible={active && inSource}
               renderError={renderError ?? sourceError}
               onChange={handleSourceChange}
-              onCursor={handleCursor}
+              onCursor={() => {}}
               readOnly={readOnly}
               onSave={() => {
                 if (readOnly) {

@@ -18,10 +18,9 @@ const NOTE = "# Plan\n\nThe first paragraph."
 const editorText = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
 const saves = (fake: { requests: { url(): string }[] }) => fake.requests.filter((request) => request.url().endsWith("/rpc/save_files"))
 
-/** Show the explorer (hidden at first on a desktop) and return it. */
+/** The explorer (shown on a desktop). */
 async function explorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   return page.getByRole("navigation", { name: "Workspace files" }).first()
 }
 

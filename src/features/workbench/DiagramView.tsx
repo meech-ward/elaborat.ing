@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Copy, Download, RotateCcw, Save, WandSparkles } from "lucide-react";
-import { MenuShortcut } from "@/components/ui/menu";
+import { PhoneHeader, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
 // Excalidraw's own layout, for the generated canvas.
 import "@excalidraw/excalidraw/index.css";
 import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingScene } from "@/features/drawings/index.ts";
@@ -22,24 +21,19 @@ import {
   writeSidecarFile,
 } from "@/features/structured/structuredClient";
 import type { Diagnostic, GeneratedBaseline, MergeConflict } from "@/features/structured/types.ts";
-import { CompactFileIdentity } from "./compactWorkbench";
 import { ConflictBanner } from "./ConflictBanner";
 import { nativePathFor, projectDiagramArtifact, readDiagramCompanion } from "./diagramArtifact";
 import { downloadBlob, downloadText } from "./download";
 import type { OperationSession } from "./operationSession";
 import { readProjectView, writeProjectView } from "./projectViews";
 import type { TabFile } from "./tabs";
-import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
-import { ActionMenu } from "./WorkbenchChrome";
-import { duplicateShortcutLabel } from "./viewShortcuts";
+import { FileHeader } from "./FileHeader";
 import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
-import { TablineActions, useDesktopFrame } from "./tabline";
+import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
-const toolbarButton =
-  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-panel px-3 text-sm font-medium text-foreground hover:bg-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
 const bannerButton =
   "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =
@@ -125,7 +119,7 @@ export function DiagramView({
   useEffect(() => {
     writeProjectView(client.persistenceKey, path, mode);
   }, [client.persistenceKey, path, mode]);
-  const { view, options: viewOptions } = useCanvasViews(mode, active, setMode);
+  const { view, header: viewHeader } = useCanvasViews(mode, active, setMode, "Diagram view");
   /** The code the canvas was last generated from. */
   const generatedFrom = useRef<string | null>(null);
   // Set at open when the canvas had to be generated (none saved, or the code changed since).
@@ -553,11 +547,7 @@ export function DiagramView({
   if (!booted) {
     return (
       <div className="wb-native-view">
-        {navigation && (
-          <div className="wb-compact-empty-toolbar">
-            <CompactFileIdentity navigation={navigation} path={path} />
-          </div>
-        )}
+        {navigation && <PhoneHeader back={navigation} className="relative" />}
         <p role="status" aria-live="polite" className="mt-2 px-3 text-[13px] text-muted-foreground">
           Compiling diagram…
         </p>
@@ -568,11 +558,7 @@ export function DiagramView({
   if (bootError || !scene) {
     return (
       <div className="wb-native-view">
-        {navigation && (
-          <div className="wb-compact-empty-toolbar">
-            <CompactFileIdentity navigation={navigation} path={path} />
-          </div>
-        )}
+        {navigation && <PhoneHeader back={navigation} className="relative" />}
         <div role="alert" className="mt-2 rounded-lg px-4 py-6 text-sm wb-banner-danger">
           <p className="font-medium">This diagram could not be opened, and nothing was changed.</p>
           <p className="mt-1 font-mono text-xs">{bootError ?? "No scene."}</p>
@@ -581,6 +567,7 @@ export function DiagramView({
     );
   }
 
+  const duplicateKey = commandShortcut("D", isApplePlatform());
   const errors = diagnostics.filter((entry) => entry.severity === "error");
   const warnings = diagnostics.filter((entry) => entry.severity !== "error");
   // In Split the canvas is view-only while the code does not compile.
@@ -588,56 +575,31 @@ export function DiagramView({
 
   return (
     <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined} data-view={view}>
-      <TablineActions active={active}>
-      <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
-        <CompactFileIdentity navigation={navigation} path={path} />
-        <ViewSwitcher ariaLabel="Diagram view" options={viewOptions} active={view} onSelect={setMode} />
-        {!readOnly && dirty && (
-          <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
-            Save
-          </button>
-        )}
-        <ActionMenu>
-          {!readOnly && (
-            <button type="button" disabled={regenerating} onClick={() => void regenerate()} className={toolbarButton}>
-              <WandSparkles className="size-4" aria-hidden /> {regenerating ? "Regenerating…" : "Regenerate"}
-            </button>
-          )}
-          {!readOnly && (
-            <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
-              <Save className="size-4" aria-hidden /> Save
-            </button>
-          )}
-          {onDuplicate && (
-            <button type="button" onClick={onDuplicate} className={toolbarButton}>
-              <Copy className="size-4" aria-hidden /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
-            </button>
-          )}
-          {!readOnly && (
-            <button type="button" onClick={() => void resetLayout()} className={toolbarButton}>
-              <RotateCcw className="size-4" aria-hidden /> Reset layout
-            </button>
-          )}
-          <button type="button" onClick={() => void exportSvg()} className={toolbarButton}>
-            <Download className="size-4" aria-hidden /> SVG
-          </button>
-          <button type="button" onClick={() => void exportPng()} className={toolbarButton}>
-            <Download className="size-4" aria-hidden /> PNG
-          </button>
-        </ActionMenu>
-      </div>
-      </TablineActions>
+      <FileHeader
+        path={path}
+        active={active}
+        navigation={navigation}
+        view={viewHeader}
+        save={!readOnly && dirty ? { disabled: saving, onSave: () => void save() } : null}
+        actions={[
+          ...(readOnly ? [] : [{ label: regenerating ? "Regenerating…" : "Regenerate", disabled: regenerating, onSelect: () => void regenerate() }]),
+          ...(readOnly ? [] : [{ label: "Save", disabled: saving, onSelect: () => void save() }]),
+          ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, onSelect: onDuplicate }] : []),
+          ...(readOnly ? [] : [{ label: "Reset layout", onSelect: () => void resetLayout() }]),
+          { label: "SVG", onSelect: () => void exportSvg() },
+          { label: "PNG", onSelect: () => void exportPng() },
+        ] satisfies MenuEntry[]}
+      />
 
-      <div
-        aria-live="polite"
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-border py-1.5 font-mono text-xs text-muted-foreground"
-      >
+      {/* The saved state, the diagram's counts and the last notice, for
+          screen readers: Save and the tab's unsaved dot show it on screen. */}
+      <div aria-live="polite" className="sr-only">
         <span>{dirty ? "Unsaved changes" : "Saved"}</span>
-        <span className="wb-native-detail">
+        <span>
           {scene.elements.length} elements · {conflicts.length} conflicts
         </span>
         {saving && <span>Saving…</span>}
-        {notice && <span className="text-foreground">{notice}</span>}
+        {notice && <span>{notice}</span>}
         {pendingLabels.length > 0 && <span role={labelError ? "alert" : "status"}>{labelError ?? "Updating the code with the canvas label…"}</span>}
       </div>
 

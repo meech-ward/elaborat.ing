@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 // Excalidraw's own layout. Without it the canvas sizes itself to its content,
 // which grows without limit.
 import "@excalidraw/excalidraw/index.css";
-import { Copy, Download, FileJson, Pencil, Save } from "lucide-react";
-import { MenuShortcut } from "@/components/ui/menu";
+import { FileJson, Pencil } from "lucide-react";
+import { commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
 import {
   DrawingCanvas,
   exportDrawingPng,
@@ -19,24 +19,19 @@ import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
 import type { SourcePatch } from "@/features/document";
-import { CompactFileIdentity } from "./compactWorkbench";
 import { ConflictBanner } from "./ConflictBanner";
 import { downloadBlob, downloadText } from "./download";
 import { buildNativeDownload } from "./nativeDownload";
 import type { OperationSession } from "./operationSession";
 import { readProjectView, writeProjectView } from "./projectViews";
 import type { TabFile } from "./tabs";
-import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
-import { ActionMenu } from "./WorkbenchChrome";
-import { duplicateShortcutLabel } from "./viewShortcuts";
+import { FileHeader } from "./FileHeader";
 import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
-import { TablineActions, useDesktopFrame } from "./tabline";
+import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
-const toolbarButton =
-  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-panel px-3 text-sm font-medium text-foreground hover:bg-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
 const bannerButton =
   "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =
@@ -130,7 +125,7 @@ export function DrawingView({
     writeProjectView(client.persistenceKey, path, mode);
   }, [client.persistenceKey, path, mode]);
   const selectRef = useRef<(next: CanvasView) => void>(() => {});
-  const { view, options: viewOptions } = useCanvasViews(mode, active, (next) => selectRef.current(next));
+  const { view, header: viewHeader } = useCanvasViews(mode, active, (next) => selectRef.current(next), "Drawing view");
   const [sourceDraft, setSourceDraft] = useState(initial.content);
   const [sourceError, setSourceError] = useState<string | null>(opened.error);
   const [notice, setNotice] = useState<string | null>(null);
@@ -395,6 +390,7 @@ export function DrawingView({
     setNotice(`Exported ${result.filename}.`);
   }, [view, scene, sourceDraft, path]);
 
+  const duplicateKey = commandShortcut("D", isApplePlatform());
   const fullBleed = desktop && active && view !== "source" && scene !== null;
   const [stageRef, onStageScroll, coveredLeft] = useCanvasStage(fullBleed, view === "split");
   // In Split the canvas is view-only while the source does not parse.
@@ -402,51 +398,32 @@ export function DrawingView({
 
   return (
     <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined} data-view={view}>
-      <TablineActions active={active}>
-      <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
-        <CompactFileIdentity navigation={navigation} path={path} />
-        <ViewSwitcher ariaLabel="Drawing view" options={viewOptions} active={view} onSelect={selectView} />
-        {!readOnly && dirty && (
-          <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
-            Save
-          </button>
-        )}
-        <ActionMenu>
-          {!readOnly && (
-            <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>
-              <Save className="size-4" aria-hidden /> Save
-            </button>
-          )}
-          {onDuplicate && (
-            <button type="button" onClick={onDuplicate} className={toolbarButton}>
-              <Copy className="size-4" aria-hidden /> Duplicate <MenuShortcut>{duplicateShortcutLabel()}</MenuShortcut>
-            </button>
-          )}
-          <button type="button" disabled={!scene} onClick={() => void exportSvg()} className={toolbarButton}>
-            <Download className="size-4" aria-hidden /> SVG
-          </button>
-          <button type="button" disabled={!scene} onClick={() => void exportPng()} className={toolbarButton}>
-            <Download className="size-4" aria-hidden /> PNG
-          </button>
-          <button type="button" onClick={exportNative} className={toolbarButton}>
-            <FileJson className="size-4" aria-hidden /> Excalidraw
-          </button>
-        </ActionMenu>
-      </div>
-      </TablineActions>
+      <FileHeader
+        path={path}
+        active={active}
+        navigation={navigation}
+        view={viewHeader}
+        save={!readOnly && dirty ? { disabled: saving, onSave: () => void save() } : null}
+        actions={[
+          ...(readOnly ? [] : [{ label: "Save", disabled: saving, onSelect: () => void save() }]),
+          ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, onSelect: onDuplicate }] : []),
+          { label: "SVG", disabled: !scene, onSelect: () => void exportSvg() },
+          { label: "PNG", disabled: !scene, onSelect: () => void exportPng() },
+          { label: "Excalidraw", onSelect: exportNative },
+        ] satisfies MenuEntry[]}
+      />
 
-      <div
-        aria-live="polite"
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-border py-1.5 font-mono text-xs text-muted-foreground"
-      >
+      {/* The saved state, the drawing's counts and the last notice, for
+          screen readers: Save and the tab's unsaved dot show it on screen. */}
+      <div aria-live="polite" className="sr-only">
         <span>{dirty ? "Unsaved changes" : "Saved"}</span>
         {summary && (
-          <span className="wb-native-detail">
+          <span>
             {summary.activeCount} elements · {summary.texts.length} text · {summary.looseArrows.length} loose arrows
           </span>
         )}
         {saving && <span>Saving…</span>}
-        {notice && <span className="text-foreground">{notice}</span>}
+        {notice && <span>{notice}</span>}
       </div>
 
       {sourceError && (

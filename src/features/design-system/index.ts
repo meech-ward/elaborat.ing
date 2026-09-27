@@ -29,14 +29,16 @@ export { TreeFileRow, TreeFolderRow, TreeRowMenu } from "./ui/TreeRows"
 // --- end Navigation ---
 
 // --- Editor chrome (guide/EditorChromeSection.tsx) ---
-export { EditorTab } from "./ui/EditorTab"
+export { EditorHeader, editorHeaderVariants } from "./ui/EditorHeader"
+export { EditorTab, EditorTabGhost } from "./ui/EditorTab"
 export { IconButton, RoundIconButton } from "./ui/IconButton"
 export { NoteProse } from "./ui/NoteProse"
+export { PhoneHeader } from "./ui/PhoneHeader"
 export { SaveButton } from "./ui/SaveButton"
 export { commandShortcut, isApplePlatform, viewShortcut, type Shortcut } from "./ui/shortcuts"
 export { SourceLines, type SourcePart, type SourceTone } from "./ui/SourceLines"
 export { SplitPanes } from "./ui/SplitPanes"
-export { TabLine, type TabLineItem } from "./ui/TabLine"
+export { TabLine, type TabLineDrag, type TabLineItem } from "./ui/TabLine"
 export { ViewSwitch } from "./ui/ViewSwitch"
 export { EDITOR_VIEWS, viewLabel, type EditorView, type ViewNames } from "./ui/views"
 // --- end Editor chrome ---

@@ -44,8 +44,6 @@ import {
   Maximize2,
   Minimize2,
   Plus,
-  Search,
-  PanelLeft,
   Sun,
   X,
   FolderPlus,
@@ -67,7 +65,8 @@ import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { ActionMenu } from "./WorkbenchChrome";
-import { TablineSlotProvider } from "./tabline";
+import { TablineProvider } from "./tabline";
+import { EditorHeader, IconButton, PhoneHeader, RoundIconButton, commandShortcut, isApplePlatform } from "@/features/design-system";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
@@ -77,7 +76,6 @@ import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
 import { readDiagramCompanion } from "./diagramArtifact";
-import { isApplePlatform } from "./viewShortcuts";
 import { RenameDialog } from "./RenameDialog";
 import { prepareProjectLeave, type PrepareProjectLeave } from "./projectLeave";
 import type { OperationSession } from "./operationSession";
@@ -922,7 +920,8 @@ export function WorkspaceWorkbench({
   );
   // On a phone: the open file's floating Back button, and the files screen,
   // which shows when it is asked for or when no file is open.
-  const navigation = narrow ? <button type="button" className="wb-icon" data-compact-nav="" aria-label="Back to files and projects" onClick={() => setSidebar(true)}><ChevronLeft size={20} /></button> : null;
+  const navigation = narrow ? <RoundIconButton label="Back to files and projects" onClick={() => setSidebar(true)}><ChevronLeft /></RoundIconButton> : null;
+  const focusKey = commandShortcut(".", isApplePlatform());
   const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
@@ -989,23 +988,25 @@ export function WorkspaceWorkbench({
             className="wb-main-panel"
           >
             <main className="wb-main">
-              {narrow && navigationOutsideSession && <div className="wb-compact-empty-toolbar">{navigation}</div>}
-              {/* Close buttons are sibling commands, not tabs. Explicit ownership
-              groups only the file tabs without changing the mixed-control strip.
-              Sessions stay mounted below inside TabsContent keepMounted panels. */}
-              <TablineSlotProvider value={narrow ? null : tablineSlot}>
+              {narrow && navigationOutsideSession && <PhoneHeader back={navigation} className="relative" />}
+              {/* One Tabs root for the tab line and the files' panels; sessions
+              stay mounted in keepMounted panels. */}
+              <TablineProvider slot={narrow ? null : tablineSlot}>
               <Tabs
                 value={hideSessions ? "" : (state.active ?? "")}
                 onValueChange={(value) => {
                   if (typeof value === "string" && value) selectTab(value);
                 }}
               >
-              <div className="wb-tabline">
-              {!narrow && (
-                <button type="button" className="wb-icon" aria-label="Toggle explorer" aria-pressed={sidebar} onClick={() => setSidebar(!sidebar)}>
-                  <PanelLeft size={16} />
-                </button>
-              )}
+              {/* The top line: the open files, then the open file's view
+              switch and Save (its view puts them in the slot), then Focus.
+              In focus mode it floats at the top right with only the file's
+              controls and the way out. (wb-tabline: the full-bleed canvas
+              rules float it as a panel of its own.) */}
+              <EditorHeader
+                variant={focus && !narrow ? "floating" : "line"}
+                className={narrow ? "hidden" : focus ? "fixed top-4 right-4 z-30" : "wb-tabline"}
+              >
               <TabStrip
                 tabs={state.tabs}
                 active={state.active}
@@ -1013,19 +1014,15 @@ export function WorkspaceWorkbench({
                 reorder={tabReorder}
                 onSelect={selectTab}
                 onClose={closeTab}
+                className={focus ? "hidden" : undefined}
               />
-              {!narrow && <div className="wb-tabline-actions" ref={setTablineSlot} />}
+              {!narrow && <div className="contents" ref={setTablineSlot} />}
               {!narrow && (
-                <button type="button" className="wb-icon" aria-label="Open workspace commands" title="Commands (⌘K)" onClick={(e) => openPalette(e.currentTarget)}>
-                  <Search size={15} />
-                </button>
+                <IconButton label={focus ? "Exit full screen" : "Focus"} shortcut={focusKey.label} keyShortcuts={focusKey.aria} onClick={() => setFocus((v) => !v)}>
+                  {focus ? <Minimize2 /> : <Maximize2 />}
+                </IconButton>
               )}
-              {!narrow && (
-                <button type="button" className="wb-icon wb-focus-toggle" aria-label={focus ? "Exit full screen" : "Focus"} title={focus ? "Exit full screen (⌘.)" : "Focus (⌘.)"} aria-keyshortcuts="Meta+Period Control+Period" onClick={() => setFocus((v) => !v)}>
-                  {focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                </button>
-              )}
-              </div>
+              </EditorHeader>
               {notice && (
                 <p role="status" className="wb-notice">
                   {notice}
@@ -1170,7 +1167,7 @@ export function WorkspaceWorkbench({
                 )}
               </ResizablePanelGroup>
               </Tabs>
-              </TablineSlotProvider>
+              </TablineProvider>
             </main>
           </ResizablePanel>
         </ResizablePanelGroup>

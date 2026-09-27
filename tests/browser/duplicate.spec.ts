@@ -26,10 +26,9 @@ async function openProject(page: Page, files: Record<string, string>, path: stri
   return { fake, id }
 }
 
-/** Show the explorer (hidden at first on a desktop) and return it. */
+/** The explorer (shown on a desktop). */
 async function explorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   return page.getByRole("navigation", { name: "Workspace files" }).first()
 }
 
@@ -60,7 +59,7 @@ test("⌘D / Ctrl+D duplicates the active note with its unsaved edits and leaves
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("Edited.")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
   // In the code editor ⌘D keeps its own meaning (select the next match).
   await page.keyboard.press("ControlOrMeta+d")
 
@@ -76,7 +75,7 @@ test("⌘D / Ctrl+D duplicates the active note with its unsaved edits and leaves
   await quiet(fake)
   expect(fake.server.paths(id)).toEqual(["a copy.md", "a.md"])
   expect(fake.server.content(id, "a.md")).toBe("# A\n")
-  await expect(page.getByRole("tab", { name: "a.md", exact: true }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes", exact: true })).toBeVisible()
 })
 
 test("Duplicate in the command palette copies the active file", async ({ page }) => {
@@ -95,7 +94,7 @@ test("a diagram's copy, from File actions, takes its generated files with it", a
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => fake.server.content(id, "flow.d2.json")).toBeDefined()
 
-  await page.locator(".wb-native-toolbar").getByRole("button", { name: "File actions" }).click()
+  await page.getByRole("button", { name: "File actions" }).click()
   await page.getByRole("menuitem", { name: "Duplicate" }).click()
   await expect(page.getByRole("tab", { name: "flow copy.d2" })).toHaveAttribute("aria-selected", "true")
   await expect.poll(() => fake.server.paths(id)).toEqual(["flow copy.d2", "flow copy.d2.json", "flow copy.excalidraw", "flow.d2", "flow.d2.json", "flow.excalidraw"])

@@ -3,10 +3,9 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
-/** Show the explorer if it is hidden (a desktop opens with it shown). */
+/** Wait for the explorer (a desktop opens with it shown). */
 async function showExplorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
 }
 
 
@@ -46,8 +45,6 @@ function saves(fake: FakeSupabase) {
 
 /** Open a file's action menu in the explorer (shown first on a desktop) and pick an action. */
 async function fileAction(page: Page, path: string, action: "Rename" | "Move to folder") {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
   const files = page.getByRole("navigation", { name: "Workspace files" }).first()
   const parts = path.split("/").slice(0, -1)
   for (let i = 1; i <= parts.length; i++) {
@@ -58,10 +55,8 @@ async function fileAction(page: Page, path: string, action: "Rename" | "Move to 
   await page.getByRole("menuitem", { name: action }).click()
 }
 
-/** Show the explorer (hidden at first on a desktop) and return it. */
+/** The explorer (shown on a desktop). */
 async function explorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
   return page.getByRole("navigation", { name: "Workspace files" }).first()
 }
 
@@ -237,7 +232,7 @@ test("unsaved edits stop a move until they are saved, then the open tab follows 
 
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await fileAction(page, "a.md", "Move to folder")
   await dialog.getByLabel("Destination folder").selectOption("folder")
   await dialog.getByRole("button", { name: "Preview move" }).click()

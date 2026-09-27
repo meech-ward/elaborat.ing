@@ -8,8 +8,8 @@
   font-family: var(--ui-font);
 }
 .project-hub .wb-app { height: 100%; }
-/* Buttons built on the shared button component keep its type. */
-.wb-app button:where(:not([data-slot="button"])),
+/* Buttons built on the shared button component, and the tabs, keep their type. */
+.wb-app button:where(:not([data-slot="button"], [role="tab"])),
 .wb-palette button {
   cursor: pointer;
   font: inherit;
@@ -416,80 +416,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 .wb-tabs-root {
   display: contents;
 }
-.wb-tabs {
-  position: relative;
-  height: 46px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  /* Tabs that don't fit are clipped, not scrolled by hand: "+N" lists them. */
-  overflow: hidden;
-  background: var(--bg);
-  border-bottom: 1px solid var(--panel-border);
-}
-/* One open file: 32 high, radius 9, 13px muted text after its kind badge;
-   the active tab raised, in text colour and semibold. The wrapper's 1px
-   sides space the tabs apart (the drag measures wrappers). */
-.wb-tab {
-  position: relative;
-  user-select: none;
-  display: flex;
-  flex-shrink: 0;
-  padding: 0 1px;
-}
-.wb-tab[data-clipped="true"] { opacity: 0; pointer-events: none; }
-.wb-tabs[data-reordering="true"] .wb-tab { transition: transform 160ms cubic-bezier(.2,.8,.2,1); }
-.wb-tab[data-tab-dragging="true"] { opacity: 0; }
-.wb-tab-ghost {
-  position: fixed;
-  z-index: 100;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  box-sizing: border-box;
-  color: var(--text);
-  background: var(--seg);
-  border: 1px solid var(--panel-border);
-  border-radius: 9px;
-  box-shadow: 0 5px 14px var(--shadow);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.wb-tab-ghost > svg { margin-left: auto; flex-shrink: 0; }
-.wb-tab-ghost[data-settling="true"] { transition: left 160ms cubic-bezier(.2,.8,.2,1); }
-@media (prefers-reduced-motion: reduce) {
-  .wb-tabs[data-reordering="true"] .wb-tab, .wb-tab-ghost[data-settling="true"] { transition: none; }
-}
-.wb-tab > button[role="tab"] {
-  height: 32px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: 9px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.wb-tab > button[role="tab"]:hover {
-  background: color-mix(in oklab, var(--seg) 60%, transparent);
-  color: var(--text);
-}
-.wb-tab[data-selected="true"] > button[role="tab"] {
-  background: var(--seg);
-  color: var(--text);
-  font-weight: 600;
-}
-.wb-tab .wb-kind,
-.wb-tab-ghost .wb-kind,
-.wb-tabs-menu .wb-kind {
-  margin-right: 0;
-}
-/* Unsaved: a 7px dot, ringed where its colour is faint on the tab (tokens.ts). */
+/* Unsaved: the tree row's 7px dot, ringed where its colour is faint (tokens.ts). */
 .wb-tab-dirty {
   width: 7px;
   height: 7px;
@@ -498,43 +425,6 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   background: var(--dirty);
   box-shadow: 0 0 0 1px var(--dirty-ring);
 }
-/* The close mark shows on the active tab, on hover and on focus. */
-.wb-tab-close {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  margin-right: -4px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.wb-tab-close:hover {
-  background: color-mix(in oklab, var(--text) 12%, transparent);
-  color: var(--text);
-}
-@media (hover: hover) {
-  .wb-tab:not([data-selected="true"], :hover, :focus-within) .wb-tab-close { opacity: 0; }
-}
-/* "+N": the open files that don't fit, in a menu. It sits in the line's
-   flow after the tab list and is moved left to just after the last tab in
-   view (TabStrip.tsx). */
-.wb-app .wb-tabs-more {
-  position: relative;
-  height: 32px;
-  padding: 0 10px;
-  flex-shrink: 0;
-  border-radius: 9px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.wb-app .wb-tabs-more:hover,
-.wb-app .wb-tabs-more[data-popup-open] {
-  background: var(--seg);
-  color: var(--text);
-}
-.wb-app[data-focus="true"] .wb-tabs-more { display: none; }
 .wb-sessions,
 .wb-session-host,
 .wb-session,
@@ -555,55 +445,6 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-app [hidden] {
   display: none !important;
-}
-.wb-view-toolbar {
-  height: 43px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--panel-border);
-}
-.wb-breadcrumb {
-  font-size: 10px;
-  color: var(--muted);
-  margin-right: auto;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wb-mode {
-  display: flex;
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  padding: 3px;
-  flex-shrink: 0;
-}
-.wb-mode button {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 3px;
-  color: var(--muted);
-}
-.wb-mode button[aria-pressed="true"] {
-  color: var(--text);
-  background: var(--seg);
-}
-.wb-session-status {
-  display: flex;
-  gap: 12px;
-  padding: 4px 12px;
-  font-size: 10px;
-  line-height: 1.6;
-  color: var(--muted);
-  flex-shrink: 0;
-  max-height: 65px;
-  overflow: auto;
-}
-.wb-session-status > span:last-child {
-  overflow-wrap: anywhere;
 }
 .wb-session > [role="alert"] {
   flex-shrink: 0;
@@ -782,20 +623,6 @@ the request runs, keeping the renamed session inert. */
   overflow: hidden;
   margin: 0 !important;
 }
-.wb-native-toolbar {
-  height: 43px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--panel-border);
-}
-/* Native headers have no breadcrumb, so the shared switcher keeps the
-file-actions menu right-aligned exactly as the MDX breadcrumb does. */
-.wb-native-toolbar > [role="group"] {
-  margin-right: auto;
-}
 .wb-native-stage {
   flex: 1;
   min-height: 0 !important;
@@ -807,14 +634,6 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
 }
 .wb-native-view > p:last-child {
   display: none;
-}
-.wb-native-view > [aria-live] {
-  padding: 4px 12px;
-  font-size: 10px;
-  max-height: 70px;
-  overflow: auto;
-  color: var(--muted);
-  border-color: var(--panel-border);
 }
 .wb-native-view > [role="alert"] {
   flex-shrink: 0;
@@ -944,115 +763,11 @@ above the choices. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .wb-app[data-compact="true"] > .wb-body { flex: 1; min-height: 0; }
-.wb-app[data-compact="true"] :is(.wb-rail, .wb-tabs, .wb-status) { display: none; }
+.wb-app[data-compact="true"] :is(.wb-rail, .wb-status) { display: none; }
 .wb-app[data-compact="true"] .wb-icon { width: 40px; height: 40px; flex-shrink: 0; }
-.wb-compact-empty-toolbar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8px;
-  padding: 12px 14px;
-}
-.wb-compact-filename { display: none; }
-/* The open file: Back at the top left; the view switch, File actions and
-   Save (only with unsaved edits) at the top right, floating over it. */
+/* The open file: its header floats over it (FileHeader.tsx), and a note starts below the header. */
 .wb-app[data-compact="true"] :is(.wb-session, .wb-native-view) { position: relative; }
 .wb-app[data-compact="true"] .wb-session { padding-top: 64px; }
-.wb-app[data-compact="true"] [data-compact-toolbar] {
-  position: absolute;
-  z-index: 30;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: auto;
-  padding: 12px 14px;
-  border: 0;
-  background: none;
-  pointer-events: none;
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > * { pointer-events: auto; }
-.wb-app[data-compact="true"] [data-compact-toolbar] > [data-compact-nav] { margin-right: auto; }
-.wb-app[data-compact="true"] [data-compact-toolbar] > [role="group"] { margin-right: 0; }
-.wb-app[data-compact="true"] :is([data-compact-toolbar], .wb-compact-empty-toolbar) > :is(.wb-icon, .wb-mode) {
-  position: relative;
-  height: 40px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: 0 6px 18px var(--shadow);
-}
-.wb-app[data-compact="true"] :is([data-compact-toolbar], .wb-compact-empty-toolbar) > .wb-icon {
-  width: 40px;
-  border-radius: 20px;
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin: 0;
-  padding: 3px;
-  border-radius: 20px;
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode button {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 16px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode button[aria-pressed="true"] {
-  background: var(--seg);
-  color: var(--text);
-}
-/* Save (shown only with unsaved edits) is a round save icon with a dot, at the far right. */
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save {
-  order: 1;
-  position: relative;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid var(--panel-border);
-  border-radius: 20px;
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: 0 6px 18px var(--shadow);
-  gap: 0;
-  font-size: 0;
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save::before {
-  content: "";
-  width: 20px;
-  height: 20px;
-  background: currentColor;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'/%3E%3Cpath d='M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7'/%3E%3Cpath d='M7 3v4a1 1 0 0 0 1 1h7'/%3E%3C/svg%3E") center / 20px no-repeat;
-}
-.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save::after {
-  content: "";
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 8px;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--accent);
-}
-/* The saved state stays as a live region for screen readers only. */
-.wb-app[data-compact="true"] :is(.wb-session-status, .wb-native-view > [aria-live]) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  min-height: 0;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
 /* Code starts below the floating controls, a canvas fills the screen, and a
    banner above a canvas sits below the controls. */
 .wb-app[data-compact="true"] .wb-native-stage:not(:has(.excalidraw)) { padding-top: 64px; }
@@ -1273,29 +988,6 @@ above the choices. */
   white-space: nowrap;
   color: var(--muted);
 }
-/* One line at the top of the editor: the explorer toggle, the open files and commands. */
-.wb-tabline {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  min-width: 0;
-  min-height: 46px;
-  padding: 0 6px;
-  gap: 6px;
-  border-bottom: 1px solid var(--panel-border);
-  background: var(--panel);
-}
-.wb-tabline > .wb-icon {
-  width: 32px;
-  height: 32px;
-}
-.wb-tabline > .wb-tabs {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border-bottom: 0;
-}
-.wb-app[data-compact="true"] .wb-tabline { display: none; }
 /* File names stay on one line in the side panel; the full path is the title. */
 .wb-files-panel .wb-explorer-open {
   overflow: hidden;
@@ -1303,78 +995,6 @@ above the choices. */
   white-space: nowrap;
   overflow-wrap: normal;
 }
-/* The active file's controls in the editor's top line (desktop). */
-.wb-tabline-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  min-width: 0;
-  padding: 0 4px;
-}
-.wb-tabline-actions:empty { display: none; }
-.wb-tabline-actions :is(.wb-view-toolbar, .wb-native-toolbar) {
-  height: auto;
-  padding: 0;
-  border: 0;
-  gap: 6px;
-}
-.wb-tabline-actions .wb-breadcrumb { display: none; }
-.wb-tabline-actions .wb-session-status {
-  padding: 0;
-  gap: 10px;
-  font-size: 11px;
-  white-space: nowrap;
-  max-width: 280px;
-  overflow: hidden;
-}
-.wb-tabline-actions .wb-session-status [aria-label="cursor position"] {
-  font-family: var(--code-font);
-  color: var(--muted);
-}
-.wb-tabline-actions .wb-mode {
-  background: var(--seg);
-  border: 0;
-  border-radius: 9px;
-  padding: 2px;
-}
-.wb-tabline-actions .wb-mode button {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 7px;
-}
-.wb-tabline-actions .wb-mode button[aria-pressed="true"] {
-  background: var(--panel);
-  box-shadow: 0 0 0 1px var(--panel-border);
-}
-.wb-tabline-actions .wb-icon {
-  width: 30px;
-  height: 30px;
-}
-/* In the top line: view switch, then the saved state, then the file menu. */
-.wb-tabline-actions .wb-view-toolbar { display: contents; }
-.wb-tabline-actions .wb-session-status { order: 1; }
-.wb-tabline-actions .wb-view-toolbar > .wb-icon { order: 2; }
-/* Focus mode: the editor fills the window; only the file's controls and the
-   way out stay, in the top line's right-hand end. */
-.wb-app[data-focus="true"] .wb-tabline {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 30;
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px var(--shadow);
-  padding: 0 6px;
-  height: 44px;
-}
-.wb-app[data-focus="true"] .wb-tabline > :is(.wb-tabs, [aria-label="Toggle explorer"], [aria-label="Open workspace commands"]) {
-  display: none;
-}
-.wb-app[data-focus="true"] .wb-main-panel { position: relative; }
-/* Save, shown only while the open file has unsaved edits. */
-.wb-app .wb-save { height: 28px; padding: 0 12px; font-weight: 600; }
-.wb-tabline-actions .wb-save { order: 1; }
 /* Banners and their buttons, in the palette's warning and danger colours. */
 .wb-banner-warn {
   border: 1px solid color-mix(in oklab, var(--warn-text) 35%, transparent);
@@ -1433,26 +1053,13 @@ above the choices. */
   background-size: var(--canvas-dot-size, 22px) var(--canvas-dot-size, 22px);
   background-position: var(--canvas-dot-x, 0) var(--canvas-dot-y, 0);
 }
-/* Banners and conflicts sit under the tool island; the saved state floats
-   at the bottom right, beside Excalidraw's help button. */
+/* Banners and conflicts sit under the tool island (the saved state is for
+   screen readers only). */
 .wb-native-view[data-canvas-bleed] > :not([data-canvas-stage], [aria-live]) {
   position: relative;
   z-index: 1;
   width: min(640px, calc(100% - 32px));
   margin: 8px auto 0;
-}
-.wb-native-view[data-canvas-bleed] > [aria-live] {
-  position: fixed;
-  right: 64px;
-  bottom: 16px;
-  z-index: 1;
-  max-width: 480px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--island);
-  box-shadow: 0 1px 4px var(--island-shadow), 0 0 0 1px var(--island-ring);
-  font-size: 11px;
 }
 /* Split: the source is an opaque panel over the left half of the canvas
    area, under the top line. The canvas stays behind it and shows to its
@@ -1476,10 +1083,6 @@ above the choices. */
 .wb-native-view[data-canvas-bleed][data-view="split"] > :not([data-canvas-stage], [aria-live], .wb-native-source) {
   width: auto;
   margin: 8px 16px 0 calc(50% + 16px);
-}
-/* The saved state wraps rather than run under the zoom and undo islands. */
-.wb-native-view[data-canvas-bleed][data-view="split"] > [aria-live] {
-  max-width: max(120px, calc(100vw - var(--canvas-split, 50vw) - 290px));
 }
 /* Excalidraw's own controls keep to the canvas area: right of the side
    panels and below the top line (the tool island's top is 76). In focus
@@ -1558,15 +1161,4 @@ above the choices. */
   font-family: var(--code-font);
   font-size: 13px !important;
   color: var(--tool-ink);
-}
-/* The top line keeps room for tabs: a saved file and the cursor position say
-   nothing there (Save shows while there are edits), so they are read out but
-   not shown. */
-.wb-tabline-actions .wb-session-status :is([data-state="saved"], [aria-label="cursor position"]) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }

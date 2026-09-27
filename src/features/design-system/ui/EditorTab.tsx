@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react"
+import type { ComponentProps, CSSProperties, ReactNode } from "react"
 import { X } from "lucide-react"
 import { TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
@@ -83,5 +83,47 @@ export function EditorTab({
         </span>
       )}
     </TabsTrigger>
+  )
+}
+
+/**
+ * A tab being dragged to a new place: a copy of the active tab (the seg fill,
+ * the text colour at 600) with a 1px panel-border ring and the panel shadow,
+ * which follows the pointer while the tab's own place stays empty. Fixed to
+ * the viewport: give it `left`, `top`, `width` and `height` in `style`, and
+ * render it into the body with a portal so the tab line's clipping does not
+ * cut it. `settling` slides it into the tab's new place (instantly when
+ * motion is reduced). Decoration only: screen readers skip it.
+ */
+export function EditorTabGhost({
+  name,
+  badge,
+  dirty = false,
+  settling = false,
+  className,
+  style,
+}: {
+  name: string
+  badge?: ReactNode
+  dirty?: boolean
+  settling?: boolean
+  className?: string
+  style?: CSSProperties
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      data-slot="tab-ghost"
+      data-settling={settling || undefined}
+      style={style}
+      className={cn(
+        "pointer-events-none fixed z-100 box-border flex items-center gap-[7px] rounded-button border border-border bg-seg px-2.5 text-[13px] font-semibold whitespace-nowrap text-foreground shadow-panel data-settling:transition-[left] data-settling:duration-160 data-settling:ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none",
+        className,
+      )}
+    >
+      {badge}
+      <span className="min-w-0 truncate">{name}</span>
+      {dirty && <DirtyDot />}
+    </div>
   )
 }

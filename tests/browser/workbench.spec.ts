@@ -70,9 +70,9 @@ async function typeInTab(page: Page, path: string, text: string) {
 test("typing in the source view saves on this device and reaches the server", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# Title\n" }, "a.md")
   await typeAtEnd(page, "Typed here.")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\nTyped here.")
 })
 
@@ -93,11 +93,11 @@ test("an edit in the rendered view saves to the same file", async ({ page }) => 
 test("unsaved edits survive a reload, and are not sent to the server", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
   await typeAtEnd(page, "draft")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
   await page.waitForTimeout(300)
   await page.reload()
   // The reload loads the editor again, as slowly as the first open.
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible({ timeout: 15_000 })
   await expect(editorText(page)).toContainText("saveddraft")
   expect(serverContent(fake, id, "a.md")).toBe("saved\n")
 })
@@ -112,7 +112,7 @@ const warnsOnLeave = (page: Page) =>
 
 test("undoing back to the saved text clears the unsaved state, and a reload restores no draft", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
-  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  const mark = page.getByRole("tab", { name: "a.md, unsaved changes" })
   await typeAtEnd(page, "draft")
   await expect(mark).toBeVisible()
   await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
@@ -137,7 +137,7 @@ test("undoing back to the saved text clears the unsaved state, and a reload rest
 
 test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved state, and a reload restores no draft", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
-  const mark = page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")
+  const mark = page.getByRole("tab", { name: "a.md, unsaved changes" })
   await page.getByRole("button", { name: "Rendered" }).click()
   const frame = page.frameLocator('iframe[title="Isolated document preview"]')
   const paragraph = frame.locator("p").filter({ hasText: /^First paragraph\./ })
@@ -167,7 +167,7 @@ test("leaving the project keeps unsaved edits, and they are there on return", as
   await page.getByRole("link", { name: "Your projects" }).click()
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
   await page.getByRole("link", { name: "Notes" }).click()
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
   await expect(editorText(page)).toContainText("saveddraft")
   expect(serverContent(fake, id, "a.md")).toBe("saved\n")
 })
@@ -255,8 +255,7 @@ test("closing a tab from the keyboard works, and an unsaved one asks first", asy
 
 /** Open a file from the explorer, in a new tab, without reloading the page. */
 async function openFromExplorer(page: Page, path: string) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   await page.getByRole("button", { name: path, exact: true }).click()
   await expect(page.getByRole("tab", { name: path })).toHaveAttribute("aria-selected", "true")
 }
@@ -268,7 +267,7 @@ test("Ctrl+S saves the note whose editor has focus, with two notes open", async 
   await page.getByRole("tab", { name: "a.md" }).click()
   await typeAtEnd(page, "first")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("a\nfirst")
 
   await page.getByRole("tab", { name: "b.md" }).click()
@@ -285,7 +284,7 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   await openFromExplorer(page, "flow.d2")
   await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
   // The code editor is created after the note's.
-  await page.getByRole("button", { name: "Source", exact: true }).click()
+  await page.getByRole("group", { name: "Diagram view" }).getByRole("button", { name: "Code", exact: true }).click()
   await expect(page.locator(".monaco-editor:visible")).toBeVisible()
 
   // No Enter after a name: the suggestions it opens could take the key.
@@ -308,15 +307,37 @@ test("clicking a tab's close mark closes it", async ({ page }) => {
   await openFromExplorer(page, "b.md")
   // The mark is a pointer target only (a tab list holds only tabs); it shows on hover.
   await page.getByRole("tab", { name: "a.md" }).hover()
-  await page.locator('[data-tab-close="a.md"]').click()
+  await page.getByRole("tab", { name: "a.md" }).locator('[data-slot="tab-close"]').click()
   await expect(page.getByRole("tab", { name: "a.md" })).toHaveCount(0)
   await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
+})
+
+test("a tab's file actions open from ... on the active tab, and on right-click on any tab", async ({ page }) => {
+  await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await openFromExplorer(page, "b.md")
+  const items = ["Save", "Duplicate", "Reload", "Export", "Format"]
+  const menu = page.getByRole("menu", { name: "File actions" })
+  // "..." sits on the active tab, shown under the pointer and with keyboard focus.
+  await page.getByRole("tab", { name: "b.md" }).hover()
+  await page.getByRole("button", { name: "File actions" }).click()
+  for (const name of items) await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  await expect(menu.getByRole("menuitem")).toHaveCount(items.length)
+  await page.keyboard.press("Escape")
+  await expect(menu).toHaveCount(0)
+  await page.getByRole("tab", { name: "b.md" }).focus()
+  await page.keyboard.press("Tab")
+  await expect(page.getByRole("button", { name: "File actions" })).toBeFocused()
+  // Right-click opens the same menu for that tab's file.
+  await page.getByRole("tab", { name: "a.md" }).click({ button: "right" })
+  for (const name of items) await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(menu).toHaveCount(0)
 })
 
 /** Whether a tab lies wholly inside the visible part of the tab strip. */
 const tabInView = (page: Page, name: string) =>
   page.getByRole("tablist", { name: "Open files" }).evaluate((list, name) => {
-    const tab = [...list.querySelectorAll<HTMLElement>("[data-tab-path]")].find((node) => node.dataset.tabPath === name)
+    const tab = [...list.querySelectorAll<HTMLElement>("[data-tab-value]")].find((node) => node.dataset.tabValue === name)
     if (!tab) return false
     const outer = list.getBoundingClientRect()
     const box = tab.getBoundingClientRect()
@@ -370,11 +391,11 @@ test("twelve open tabs at 1280: +N lists the rest, and the active or focused tab
 
   // Alt+Shift+ArrowRight moves the focused tab past one out of view, and it stays in view.
   await page.keyboard.press("Alt+Shift+ArrowRight")
-  await expect.poll(() => page.locator("[data-tab-path]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-tab-path"))))
+  await expect.poll(() => page.locator("[data-tab-value]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-tab-value"))))
     .toEqual([...names.slice(0, last + 1), names[last + 2], names[last + 1], ...names.slice(last + 3)])
   await expect.poll(() => tabInView(page, names[last + 1])).toBe(true)
 
-  const axe = await new AxeBuilder({ page }).include(".wb-tabline").analyze()
+  const axe = await new AxeBuilder({ page }).include('[data-slot="editor-header"]').analyze()
   expect(axe.violations).toEqual([])
 })
 
@@ -397,7 +418,7 @@ test.describe("on a phone", () => {
 
   test("Save shows only with unsaved edits and saves, and Back keeps the file open", async ({ page }) => {
     const { fake, id } = await openProject(page, { "a.md": "# Title\n" }, "a.md", true)
-    const save = page.getByRole("button", { name: "Save", exact: true })
+    const save = page.getByRole("button", { name: "Save, unsaved changes", exact: true })
     await expect(save).toHaveCount(0)
     await typeAtEnd(page, "Typed on a phone.")
     await save.click()

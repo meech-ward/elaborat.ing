@@ -20,7 +20,7 @@ const NEXT = path.join(import.meta.dirname, "..", "..", "dist-next")
 
 const projectUrl = (id: string, file?: string) => new URL(`projects/${id}${file ? `/${file}` : ""}`, APP_URL).href
 const editorText = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
-const unsaved = (page: Page, file: string) => page.getByRole("tab", { name: file }).getByLabel("unsaved changes")
+const unsaved = (page: Page, file: string) => page.getByRole("tab", { name: `${file}, unsaved changes` })
 
 /** The files a build's service worker caches, read from its generated sw.js. */
 function precached(dist: string): Set<string> {

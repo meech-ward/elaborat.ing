@@ -27,10 +27,8 @@ async function openProject(page: Page, files: Record<string, string>, path?: str
   return { fake, id }
 }
 
-/** Show the explorer (hidden at first on a desktop) and return it. */
+/** The explorer (shown on a desktop). */
 async function explorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
   return page.getByRole("navigation", { name: "Workspace files" }).first()
 }
 

@@ -89,7 +89,9 @@ test("in Split, undo works in each pane and both panes follow it", async ({ page
 test("the view shortcuts switch views, and the buttons show them", async ({ page }) => {
   await openNote(page)
   await expect(view(page, "Split")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+2")
-  await expect(view(page, "Split")).toHaveAttribute("title", "Split (Ctrl+Alt+2)")
+  // The tooltip names the view and its key.
+  await view(page, "Split").hover()
+  await expect(page.getByRole("tooltip")).toHaveText(/^Split\s*Ctrl\+Alt\+2$/)
   await expect(view(page, "Source")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+1")
   await expect(view(page, "Rendered")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+3")
 

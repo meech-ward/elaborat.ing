@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ariaShortcut, isApplePlatform, shortcutLabel, viewShortcutDigit } from "./viewShortcuts";
+import { duplicateShortcutLabel, viewShortcutDigit } from "./viewShortcuts";
 
 const key = (overrides: Partial<Pick<KeyboardEvent, "code" | "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">>) => ({
   code: "Digit1",
@@ -32,17 +32,9 @@ describe("viewShortcutDigit", () => {
   });
 });
 
-describe("shortcut labels", () => {
-  test("read per platform", () => {
-    expect(shortcutLabel(2, true)).toBe("⌘⌥2");
-    expect(shortcutLabel(2, false)).toBe("Ctrl+Alt+2");
-    expect(ariaShortcut(3, true)).toBe("Meta+Alt+3");
-    expect(ariaShortcut(3, false)).toBe("Control+Alt+3");
-  });
-  test("Apple platforms are recognised", () => {
-    expect(isApplePlatform("MacIntel")).toBe(true);
-    expect(isApplePlatform("iPad")).toBe(true);
-    expect(isApplePlatform("Win32")).toBe(false);
-    expect(isApplePlatform("Linux x86_64")).toBe(false);
+describe("duplicateShortcutLabel", () => {
+  test("reads per platform", () => {
+    expect(duplicateShortcutLabel(true)).toBe("⌘D");
+    expect(duplicateShortcutLabel(false)).toBe("Ctrl+D");
   });
 });

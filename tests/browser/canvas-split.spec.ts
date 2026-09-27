@@ -28,7 +28,7 @@ ${JSON.stringify(BOX)}
 ]}`
 
 const projectUrl = (id: string, file?: string) => new URL(`projects/${id}${file ? `/${file}` : ""}`, APP_URL).href
-const view = (page: Page, name: string) => page.locator(".wb-native-toolbar").getByRole("button", { name, exact: true })
+const view = (page: Page, name: string) => page.getByRole("group", { name: /^(Drawing|Diagram) view$/ }).getByRole("button", { name, exact: true })
 const status = (page: Page) => page.locator(".wb-native-view [aria-live]").first()
 const sourcePanel = (page: Page) => page.locator(".wb-native-source")
 const sourceText = (page: Page) => page.locator(".wb-native-source .monaco-editor:visible .view-lines")
@@ -114,23 +114,23 @@ test("invalid JSON in a drawing's Split leaves the canvas view-only with the err
   await expect(viewMode(page)).toBeVisible()
   // The canvas keeps its last valid scene, and Split stays until the text parses.
   await expect(status(page)).toContainText("1 elements")
-  await view(page, "Rendered").click()
+  await view(page, "Canvas").click()
   await expect(view(page, "Split")).toHaveAttribute("aria-pressed", "true")
 
   await atEndOfElements(page)
   await page.keyboard.press("Delete")
   await expect(page.getByRole("alert").filter({ hasText: "This is not a valid drawing" })).toHaveCount(0)
   await expect(viewMode(page)).toHaveCount(0)
-  await view(page, "Rendered").click()
-  await expect(view(page, "Rendered")).toHaveAttribute("aria-pressed", "true")
+  await view(page, "Canvas").click()
+  await expect(view(page, "Canvas")).toHaveAttribute("aria-pressed", "true")
   await expect(sourcePanel(page)).toBeHidden()
 })
 
 test("the view shortcuts switch a drawing's views, and the buttons show them", async ({ page }) => {
   await openProject(page, { "sketch.excalidraw": DRAWING }, "sketch.excalidraw")
-  await expect(view(page, "Source")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+1")
-  await expect(view(page, "Split")).toHaveAttribute("title", "Split (Ctrl+Alt+2)")
-  await expect(view(page, "Rendered")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+3")
+  await expect(view(page, "Code")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+1")
+  await expect(view(page, "Split")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+2")
+  await expect(view(page, "Canvas")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+3")
 
   await page.keyboard.press("Control+Alt+Digit2")
   await expect(view(page, "Split")).toHaveAttribute("aria-pressed", "true")
@@ -138,10 +138,10 @@ test("the view shortcuts switch a drawing's views, and the buttons show them", a
   // The keys still switch while the source editor has the keyboard.
   await sourceText(page).click()
   await page.keyboard.press("Control+Alt+Digit1")
-  await expect(view(page, "Source")).toHaveAttribute("aria-pressed", "true")
+  await expect(view(page, "Code")).toHaveAttribute("aria-pressed", "true")
   await expect(page.locator(".excalidraw canvas").first()).toBeHidden()
   await page.keyboard.press("Control+Alt+Digit3")
-  await expect(view(page, "Rendered")).toHaveAttribute("aria-pressed", "true")
+  await expect(view(page, "Canvas")).toHaveAttribute("aria-pressed", "true")
   await expect(sourcePanel(page)).toBeHidden()
 })
 
@@ -150,7 +150,7 @@ test("a diagram in Split updates its canvas as the code changes, and is view-onl
   await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
   const count = async () => Number(/(\d+) elements/.exec(await status(page).innerText())?.[1] ?? "0")
   const first = await count()
-  await expect(view(page, "Source")).toHaveAttribute("title", "Source (Ctrl+Alt+1)")
+  await expect(view(page, "Code")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+1")
   await page.keyboard.press("Control+Alt+Digit2")
   await expect(view(page, "Split")).toHaveAttribute("aria-pressed", "true")
 
@@ -175,7 +175,7 @@ test("a diagram in Split updates its canvas as the code changes, and is view-onl
 test("axe finds nothing in Split for a drawing and a diagram at 1280", async ({ page }) => {
   await openProject(page, { "sketch.excalidraw": DRAWING, "flow.d2": "a -> b\n" }, "sketch.excalidraw")
   const check = async () => {
-    const results = await new AxeBuilder({ page }).include(".wb-native-toolbar").include(".wb-native-source").analyze()
+    const results = await new AxeBuilder({ page }).include('[data-slot="editor-header"]').include(".wb-native-source").analyze()
     expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
   }
   await toSplit(page)
@@ -192,7 +192,7 @@ test("a drawing left in Split opens on its canvas on a phone", async ({ page }) 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole("button", { name: "Rendered", exact: true })).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("button", { name: "Canvas", exact: true })).toHaveAttribute("aria-pressed", "true")
   await expect(page.getByRole("button", { name: "Split", exact: true })).toHaveCount(0)
   await expect(sourcePanel(page)).toBeHidden()
 })

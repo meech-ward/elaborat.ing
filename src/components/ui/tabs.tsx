@@ -24,8 +24,7 @@
 // base-nova) over @base-ui/react/tabs.
 // Upstream: https://ui.shadcn.com/docs/components/base/tabs
 // Adaptations: `cn` via @/lib/utils; no cva list/trigger variants here — the
-// workbench wb-tab rules own the strip look across all six appearances, and
-// the unlayered wb-* stylesheet wins over layered utilities where they meet.
+// design system's EditorTab and TabLine own the tab line's look.
 // Keyboard focus, roving tabindex, arrow-key activation and tab/panel
 // association stay with Base UI. Upstream `orientation` plumbing kept.
 "use client"

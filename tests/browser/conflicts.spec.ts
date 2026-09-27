@@ -81,7 +81,7 @@ async function saveMyLine(page: Page, fake: FakeSupabase) {
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("My line")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
 }
 
 async function expectNoAxeViolations(page: Page) {

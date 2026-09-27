@@ -66,7 +66,7 @@ async function drawRectangle(page: Page) {
 }
 
 async function menuAction(page: Page, name: string) {
-  await page.locator(".wb-native-toolbar").getByRole("button", { name: "File actions" }).click()
+  await page.getByRole("button", { name: "File actions" }).click()
   await page.getByRole("menuitem", { name }).click()
 }
 
@@ -81,10 +81,10 @@ test("a drawing opens on the canvas without being rewritten, and a shape drawn o
   expect(fake.server.content(id, "art/sketch.excalidraw")).toBe(SCENE)
 
   await drawRectangle(page)
-  await expect(page.getByRole("tab", { name: "art/sketch.excalidraw" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "art/sketch.excalidraw, unsaved changes" })).toBeVisible()
   await page.keyboard.press("ControlOrMeta+s")
   await expect(status(page)).toContainText("Saved art/sketch.excalidraw.")
-  await expect(page.getByRole("tab", { name: "art/sketch.excalidraw" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "art/sketch.excalidraw, unsaved changes" })).toHaveCount(0)
   await expect.poll(() => elements(fake.server.content(id, "art/sketch.excalidraw")).length).toBe(2)
   expect(JSON.parse(fake.server.content(id, "art/sketch.excalidraw")!).elements[0]).toMatchObject({ id: "box-1", x: 0, y: 0, width: 160 })
 })
@@ -106,22 +106,22 @@ test("an Obsidian drawing opens without being rewritten, and its text can be edi
   const { fake, id } = await openProject(page, { "obsidian/system.excalidraw.md": OBSIDIAN }, "obsidian/system.excalidraw.md")
   await expect(canvas(page)).toBeVisible()
   await expect(status(page)).toContainText("Saved")
-  await page.getByRole("button", { name: "Source" }).click()
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Code", exact: true }).click()
   const source = page.locator(".monaco-editor:visible .view-lines").first()
   await expect(source).toContainText("excalidraw-plugin: parsed")
-  await page.getByRole("button", { name: "Rendered", exact: true }).click()
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Canvas", exact: true }).click()
   await expect(status(page)).toContainText("Saved")
   await page.waitForTimeout(1_000)
   expect(fake.server.content(id, "obsidian/system.excalidraw.md")).toBe(OBSIDIAN)
 
   // Breaking the file in the source view keeps the canvas's last valid scene.
-  await page.getByRole("button", { name: "Source" }).click()
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Code", exact: true }).click()
   await source.click()
   await page.keyboard.press("ControlOrMeta+a")
   await page.keyboard.type("not a drawing")
-  await page.getByRole("button", { name: "Rendered", exact: true }).click()
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Canvas", exact: true }).click()
   await expect(page.getByRole("alert").filter({ hasText: "This is not a valid drawing" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Source" })).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-pressed", "true")
   await page.keyboard.press("ControlOrMeta+s")
   await expect(status(page)).toContainText("Not saved: the file is not a valid drawing.")
   expect(fake.server.content(id, "obsidian/system.excalidraw.md")).toBe(OBSIDIAN)
@@ -228,8 +228,8 @@ test.describe("on a phone", () => {
     await signedIn(page)
     await page.goto(projectUrl(id, "sketch.excalidraw"))
     await expect(canvas(page)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toBeVisible()
-    const results = await new AxeBuilder({ page }).include(".wb-native-toolbar").analyze()
+    await expect(page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Canvas", exact: true })).toBeVisible()
+    const results = await new AxeBuilder({ page }).include('[data-slot="phone-header"]').analyze()
     expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
     const box = await canvas(page).boundingBox()

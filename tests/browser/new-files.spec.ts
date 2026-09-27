@@ -3,10 +3,9 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
-/** Show the explorer if it is hidden (a desktop opens with it shown). */
+/** Wait for the explorer (a desktop opens with it shown). */
 async function showExplorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
 }
 
 
@@ -98,7 +97,7 @@ test("a new folder from the palette is named in the selected folder, and Enter c
   const { fake, id } = await openProject(page, { "notes/a.md": "a\n" })
   await showExplorer(page)
   await page.getByRole("button", { name: "Select folder notes for creation" }).click()
-  await page.getByRole("button", { name: "Open workspace commands" }).click()
+  await page.keyboard.press("ControlOrMeta+k")
   await page.getByLabel("Search commands").first().fill("New folder")
   await page.keyboard.press("Enter")
   const field = nameField(page, "folder")
@@ -119,7 +118,7 @@ test("a new note that was never saved can be renamed, and is saved under the new
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("Kept.")
-  await expect(page.getByRole("tab", { name: "imported.md" }).getByLabel("unsaved changes")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "imported.md, unsaved changes" })).toBeVisible()
   await page.waitForTimeout(500)
   await page.reload()
   await expect(page.getByRole("tab", { name: "imported.md" })).toBeVisible({ timeout: 15_000 })

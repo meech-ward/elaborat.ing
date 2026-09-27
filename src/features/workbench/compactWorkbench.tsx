@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 
 export const compactWorkbenchQuery = "(max-width: 650px), (pointer: coarse) and (max-width: 950px) and (max-height: 500px)";
 
@@ -32,8 +32,3 @@ export function useWorkbenchOnline() {
   return useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 }
 
-/** Only the toolbar identity is composed here. Each view retains its handlers. */
-export function CompactFileIdentity({ navigation, path }: { navigation?: ReactNode; path: string }) {
-  if (!navigation) return null;
-  return <>{navigation}<span className="wb-compact-filename" title={path} aria-label={path}>{path.split("/").pop()}</span></>;
-}

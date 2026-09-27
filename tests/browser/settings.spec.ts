@@ -109,7 +109,7 @@ test("the code editor and the drawing canvas take the chosen palette's colours, 
       return hex(getComputedStyle(canvas.closest(".wb-native-stage")!).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number))
     })
   await expect.poll(canvasBackground).toBe(cherry.bg.toUpperCase())
-  await expect(page.getByRole("tab", { name: "sketch.excalidraw" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "sketch.excalidraw, unsaved changes" })).toHaveCount(0)
   expect(fake.server.content(id, "sketch.excalidraw")).toBe(scene)
 
   await page.goto(new URL(`projects/${id}/note.md`, APP_URL).href)

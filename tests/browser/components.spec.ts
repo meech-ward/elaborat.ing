@@ -3,10 +3,9 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
-/** Show the explorer if it is hidden (a desktop opens with it shown). */
+/** Wait for the explorer (a desktop opens with it shown). */
 async function showExplorer(page: Page) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
 }
 
 // Components in rendered notes: defined in the note, or imported from other
@@ -38,7 +37,7 @@ const PREVIEW = 'iframe[title="Isolated document preview"]'
 const projectUrl = (id: string, path?: string) => new URL(`projects/${id}${path ? `/${path}` : ""}`, APP_URL).href
 const frameOf = (page: Page) => page.frameLocator(PREVIEW)
 const editorText = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
-const unsaved = (page: Page, path: string) => page.getByRole("tab", { name: path }).getByLabel("unsaved changes")
+const unsaved = (page: Page, path: string) => page.getByRole("tab", { name: `${path}, unsaved changes` })
 
 async function openProject(page: Page, files: Record<string, string>, path: string, phone = false) {
   const fake = await fakeSupabase(page)

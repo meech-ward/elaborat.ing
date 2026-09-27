@@ -1,15 +1,18 @@
 import { useState } from "react"
-import { ChevronLeft, Info, Maximize2, Minimize2, Save } from "lucide-react"
+import { ChevronLeft, Info, Maximize2, Minimize2, MoreHorizontal, Save } from "lucide-react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { ActionMenu, type MenuEntry } from "../ui/ActionMenu"
 import { Callout } from "../ui/Banner"
-import { EditorTab } from "../ui/EditorTab"
+import { EditorHeader } from "../ui/EditorHeader"
+import { EditorTab, EditorTabGhost } from "../ui/EditorTab"
 import { FloatingPanel } from "../ui/FloatingPanel"
 import { IconButton, RoundIconButton } from "../ui/IconButton"
 import { KindBadge, type FileKind } from "../ui/KindBadge"
 import { NoteProse } from "../ui/NoteProse"
+import { PhoneHeader } from "../ui/PhoneHeader"
 import { SaveButton } from "../ui/SaveButton"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { SourceLines, type SourcePart } from "../ui/SourceLines"
@@ -43,6 +46,21 @@ function tabItem(path: string, dirty: ReadonlySet<string>): TabLineItem {
     label: path,
     detail: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : undefined,
   }
+}
+
+/**
+ * A tab's file actions, as the editor offers them: Save while it has unsaved
+ * edits, Duplicate with this platform's key, Reload, Export and Format.
+ */
+function tabActions(dirty: boolean, save: () => void): MenuEntry[] {
+  const duplicate = commandShortcut("D", isApplePlatform())
+  return [
+    { label: "Save", disabled: !dirty, onSelect: save },
+    { label: "Duplicate", shortcut: duplicate.label, keyShortcuts: duplicate.aria, onSelect: () => {} },
+    { label: "Reload", onSelect: () => {} },
+    { label: "Export", onSelect: () => {} },
+    { label: "Format", onSelect: () => {} },
+  ]
 }
 
 // The C5 screen's open files: six fit the desktop line, "+4" lists the rest.
@@ -108,7 +126,7 @@ export function EditorChromeSection() {
             <FocusHeader />
           </div>
           <div className="flex min-w-0 flex-col gap-3">
-            <PhoneHeader />
+            <PhoneHeaderDemo />
           </div>
         </div>
       </div>
@@ -136,6 +154,11 @@ function TabsDemo() {
       </div>
       <GuideValue>Active and unsaved · open · pointer over it, with close · keyboard focus</GuideValue>
       <GuideValue>32 high, radius 9, 13px 500 muted; active on seg at 600; Delete closes the focused tab</GuideValue>
+      <GuideLabel>Dragged</GuideLabel>
+      <div className="flex">
+        <EditorTabGhost name="flow" badge={<KindBadge kind="drawing" />} className="static" />
+      </div>
+      <GuideValue>A tab on its way to a new place follows the pointer, raised with the panel shadow</GuideValue>
       <GuideLabel>Overflow</GuideLabel>
       <div className="max-w-[340px] rounded-button border border-dashed border-panel-border px-1.5 py-[7px]">
         <TabLine
@@ -174,6 +197,10 @@ function ViewSwitchDemo() {
         <ViewSwitch aria-label="View, phone" views={["source", "rendered"]} value={phoneView} onValueChange={setPhoneView} />
         <ViewSwitch aria-label="View, disabled" value="rendered" onValueChange={() => {}} disabled />
         <GuideValue>and disabled</GuideValue>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-button bg-(--bg) p-3">
+        <ViewSwitch aria-label="View, floating" floating views={["source", "rendered"]} value={phoneView} onValueChange={setPhoneView} />
+        <GuideValue>floating over the file, beside the round buttons</GuideValue>
       </div>
     </>
   )
@@ -266,10 +293,9 @@ function DesktopTopLine() {
     setOpen(next)
     if (path === active) setActive(next[Math.min(index, next.length - 1)] ?? null)
   }
-  const save = () => {
-    if (!active) return
+  const saveFile = (path: string) => {
     const next = new Set(dirty)
-    next.delete(active)
+    next.delete(path)
     setDirty(next)
   }
 
@@ -279,15 +305,21 @@ function DesktopTopLine() {
       {/* A desktop screen: narrower pages scroll it sideways rather than squeeze it. */}
       <div className="-m-1 overflow-x-auto p-1">
         <FloatingPanel className="max-w-[1128px] min-w-[900px] overflow-hidden">
-          <div className="flex h-[46px] items-center gap-1.5 px-1.5 pointer-coarse:h-[52px]">
-            <TabLine items={open.map((path) => tabItem(path, dirty))} value={active} onValueChange={setActive} onClose={close} />
+          <EditorHeader>
+            <TabLine
+              items={open.map((path) => tabItem(path, dirty))}
+              value={active}
+              onValueChange={setActive}
+              onClose={close}
+              actions={(path) => tabActions(dirty.has(path), () => saveFile(path))}
+            />
             <ViewSwitch value={view} onValueChange={setView} />
-            <SaveButton disabled={!active || !dirty.has(active)} onClick={save} />
+            {active && dirty.has(active) && <SaveButton onClick={() => saveFile(active)} />}
             <IconButton label="Focus" shortcut={focus.label} keyShortcuts={focus.aria}>
               <Maximize2 />
             </IconButton>
-          </div>
-          <div className="h-[580px] border-t border-border">
+          </EditorHeader>
+          <div className="h-[580px]">
             <NoteBody view={view} />
           </div>
         </FloatingPanel>
@@ -296,7 +328,9 @@ function DesktopTopLine() {
         Source: 13 on 22 in the code font, numbers in faint, the current line in lineHi. Split: a 1px divider that turns accent under the pointer or with focus (arrow keys move it). Rendered: H1 32, body 15.5 on 1.6 in a 680 column, the callout with its icon.
       </GuideValue>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <GuideValue>Live: pick, close (point at a tab, or Delete) and save tabs, and switch the view; the body stays customer-model.mdx. 1128 wide, as on the 1440 screen</GuideValue>
+        <GuideValue>
+          Live: pick, close (point at a tab, or Delete) and save tabs, and switch the view; the body stays customer-model.mdx. Save shows while the file has unsaved edits. A tab's file actions open on right-click, or from ... at the active tab's end (point at it, or Tab from it). 1128 wide, as on the 1440 screen
+        </GuideValue>
         {open.length < OPEN_FILES.length && (
           <Button
             variant="link"
@@ -328,23 +362,46 @@ function FocusHeader() {
   )
 }
 
-/** The phone note: Back at the top left, Save with its unsaved dot at the top right. */
-function PhoneHeader() {
+/**
+ * The phone note's header: Back at the top left; the view switch, the file's
+ * actions and, while there are unsaved edits, Save with its dot at the top
+ * right. (C5 draws Back and Save; the switch and the actions keep the
+ * desktop's controls in reach.)
+ */
+function PhoneHeaderDemo() {
   const [dirty, setDirty] = useState(true)
+  const [view, setView] = useState<EditorView>("rendered")
   return (
     <>
       <GuideLabel>Phone header</GuideLabel>
       <div className={cn("relative h-[124px] w-full max-w-[390px] overflow-hidden rounded-panel border border-border bg-panel", phoneBleed)}>
-        <RoundIconButton label="Back to files and projects" className="absolute top-3.5 left-3.5">
-          <ChevronLeft />
-        </RoundIconButton>
-        <RoundIconButton label="Save" dirty={dirty} className="absolute top-3.5 right-3.5" onClick={() => setDirty(false)}>
-          <Save />
-        </RoundIconButton>
+        <PhoneHeader
+          back={
+            <RoundIconButton label="Back to files and projects">
+              <ChevronLeft />
+            </RoundIconButton>
+          }
+        >
+          <ViewSwitch aria-label="View, phone header" floating views={["source", "rendered"]} value={view} onValueChange={setView} />
+          <ActionMenu
+            entries={tabActions(dirty, () => setDirty(false))}
+            contentProps={{ align: "end", "aria-label": "File actions" }}
+            trigger={
+              <RoundIconButton label="File actions">
+                <MoreHorizontal />
+              </RoundIconButton>
+            }
+          />
+          {dirty && (
+            <RoundIconButton label="Save" dirty onClick={() => setDirty(false)}>
+              <Save />
+            </RoundIconButton>
+          )}
+        </PhoneHeader>
         <p className="absolute top-16 left-[22px] text-[30px] leading-[1.15] font-bold">Customer model</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <GuideValue>40 round, 14 from the edges; Save shows the dot until saved</GuideValue>
+        <GuideValue>40 round, 14 from the edges, 8 apart; Save and its dot show until saved</GuideValue>
         {!dirty && (
           <Button variant="link" size="xs" className="px-0" onClick={() => setDirty(true)}>
             Make a change

@@ -27,11 +27,9 @@
 // Restyled: variant="segment" is the style guide's view switch, a seg
 // track with padding 2 around segment toggles (use spacing={0.5} for its 2px
 // gap and size="icon" for its 32 by 28 buttons).
-// Adaptations: `cn` via @/lib/utils; no wb-mode look change — the unlayered
-// workbench wb-mode rules (keyed on button + aria-pressed) win over the
-// layered toggle utilities where they meet. The caller keeps mandatory
-// single selection by ignoring empty group changes (see ViewSwitcher
-// resolveMandatorySelection).
+// Adaptations: `cn` via @/lib/utils. The caller keeps mandatory single
+// selection by ignoring empty group changes (see the design system's
+// ViewSwitch and mandatoryView).
 "use client"
 
 import * as React from "react"

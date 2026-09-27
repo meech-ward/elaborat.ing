@@ -49,19 +49,19 @@ export function useTabReorder(paths: string[], reorder: (drop: Drop) => void) {
     onPointerDownCapture(event: PointerEvent<HTMLDivElement>) {
       suppressClick.current = false;
       if (event.button !== 0 || event.pointerType === "touch") return;
-      const tab = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
-      const path = tab?.closest<HTMLElement>('[data-tab-path]')?.dataset.tabPath;
-      if (!path) return;
+      const tab = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"][data-tab-value]');
+      const path = tab?.dataset.tabValue;
+      if (!tab || !path) return;
       if (settleTimer.current) clearTimeout(settleTimer.current);
       setVisual(null);
       // Do not activate an inactive tab merely because it is being dragged.
       // A normal click still reaches the tab's own click handler.
       event.preventDefault();
       const list = event.currentTarget;
-      const items = [...list.querySelectorAll<HTMLElement>('[data-tab-path]')].map(node => ({
-        path: node.dataset.tabPath!, left: node.offsetLeft, width: node.offsetWidth,
+      const items = [...list.querySelectorAll<HTMLElement>('[data-tab-value]')].map(node => ({
+        path: node.dataset.tabValue!, left: node.offsetLeft, width: node.offsetWidth,
       }));
-      const box = tab!.closest<HTMLElement>('[data-tab-path]')!.getBoundingClientRect();
+      const box = tab.getBoundingClientRect();
       gesture.current = {
         path, x: event.clientX, y: event.clientY, dragging: false, list, items,
         grabX: event.clientX - box.left, top: box.top, height: box.height,
@@ -88,12 +88,14 @@ export function useTabReorder(paths: string[], reorder: (drop: Drop) => void) {
         ? { path: g.path, target: target.path, side: index < remaining.length ? "before" : "after" } : null;
       const projected = [...remaining];
       projected.splice(g.drop ? index : g.items.indexOf(item), 0, item);
+      // Tabs keep the gap the line puts between them.
+      const gap = g.items.length > 1 ? g.items[1].left - g.items[0].left - g.items[0].width : 0;
       let left = g.items[0].left;
       const offsets: Record<string, number> = {};
       for (const entry of projected) {
         offsets[entry.path] = left - entry.left;
         if (entry === item) g.destination = left;
-        left += entry.width;
+        left += entry.width + gap;
       }
       setVisual({ path: g.path, left: event.clientX - g.grabX, top: g.top,
         width: item.width, height: g.height, settling: false, animateNeighbors: true, offsets });
@@ -111,8 +113,8 @@ export function useTabReorder(paths: string[], reorder: (drop: Drop) => void) {
     },
     onKeyDownCapture(event: KeyboardEvent<HTMLDivElement>) {
       if (!event.altKey || !event.shiftKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-      const tab = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
-      const path = tab?.closest<HTMLElement>('[data-tab-path]')?.dataset.tabPath;
+      const tab = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"][data-tab-value]');
+      const path = tab?.dataset.tabValue;
       if (!path) return;
       event.preventDefault(); event.stopPropagation();
       const direction = event.key === "ArrowLeft" ? -1 : 1;

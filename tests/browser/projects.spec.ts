@@ -24,8 +24,7 @@ const addFile = async (server: FakeProjectServer, id: string, path: string, cont
 
 /** Show the explorer and expand the folders on the way to `path`. */
 async function explorer(page: Page, path?: string) {
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   const parts = path?.split("/").slice(0, -1) ?? []
   for (let i = 1; i <= parts.length; i++) {
     const folder = parts.slice(0, i).join("/")
@@ -193,7 +192,7 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and me")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("link", { name: "Your projects" }).click()
   const row = page.getByRole("listitem").filter({ hasText: "Their notes" })
   await expect(row).toContainText("Saved on this device, waiting to sync")
@@ -282,7 +281,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and more")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: "a.md" }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("link", { name: "Your projects" }).click()
   await expect(page.getByRole("listitem").filter({ hasText: "Notes" })).toContainText("Saved on this device, waiting to sync")
 

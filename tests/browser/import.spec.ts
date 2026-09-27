@@ -64,8 +64,7 @@ test("an export becomes a new project with every byte, and paths this app cannot
   // Open the imported note.
   await report.getByRole("link", { name: "From the prototype" }).click()
   await expect(page.getByRole("heading", { level: 1, name: "From the prototype" })).toBeVisible()
-  const toggle = page.getByRole("button", { name: "Toggle explorer" })
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   await page.getByRole("button", { name: "Expand notes", exact: true }).click()
   await page.getByRole("button", { name: "notes/intro.mdx", exact: true }).click()
   await expect(page.getByRole("tab", { name: "notes/intro.mdx" })).toHaveAttribute("aria-selected", "true")

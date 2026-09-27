@@ -27,7 +27,7 @@ async function writeNote(page: Page, name: string, text: string) {
   await editorText(page).click()
   await page.keyboard.type(text)
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: `${name}.md` }).getByLabel("unsaved changes")).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: `${name}.md, unsaved changes` })).toHaveCount(0)
 }
 
 async function signIn(page: Page) {

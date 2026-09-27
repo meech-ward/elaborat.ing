@@ -66,16 +66,25 @@ export function ActionMenu({
   )
 }
 
-/** The same entries as a right-click menu on its children (a long press on touch screens). */
+type ContextRootProps = Pick<ComponentProps<typeof ContextMenu>, "open" | "onOpenChange">
+
+/**
+ * The same entries as a right-click menu on its children (a long press on
+ * touch screens), or on `render`, an element that becomes the trigger itself
+ * (such as a tab, which may not sit inside another element).
+ */
 export function ActionContextMenu({
   entries,
   children,
+  render,
   className,
   "aria-label": ariaLabel,
   contentProps,
-}: {
+  ...root
+}: ContextRootProps & {
   entries: readonly MenuEntry[]
-  children: ReactNode
+  children?: ReactNode
+  render?: ReactElement
   className?: string
   /** A name for the menu popup, such as "File actions". */
   "aria-label"?: string
@@ -83,8 +92,12 @@ export function ActionContextMenu({
   contentProps?: Omit<ComponentProps<typeof ContextMenuContent>, "children">
 }) {
   return (
-    <ContextMenu>
-      <ContextMenuTrigger className={className}>{children}</ContextMenuTrigger>
+    <ContextMenu {...root}>
+      {render ? (
+        <ContextMenuTrigger render={render} className={className} />
+      ) : (
+        <ContextMenuTrigger className={className}>{children}</ContextMenuTrigger>
+      )}
       <ContextMenuContent aria-label={ariaLabel} {...contentProps}>
         {menuRows(entries).map((row) =>
           row.kind === "separator" ? (
