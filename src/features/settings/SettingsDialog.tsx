@@ -6,6 +6,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { themes, useAppearance, type ColorMode } from "@/features/appearance"
+import { readingPreferencesSchema } from "@/features/appearance/reading"
 import { palettes } from "@/features/appearance/palettes"
 import { cn } from "@/lib/utils"
 
@@ -31,6 +32,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             <DialogDescription>Kept on this device.</DialogDescription>
           </DialogHeader>
           <AppearanceSection />
+          <ReadingSection />
         </DialogContent>
       </Dialog>
     </SettingsContext.Provider>
@@ -106,6 +108,58 @@ function AppearanceSection() {
           ))}
         </div>
       </fieldset>
+    </section>
+  )
+}
+
+const field = "h-8 rounded-lg border border-border bg-background px-2 text-sm"
+
+/** How rendered notes read in this browser; files are unchanged. */
+function ReadingSection() {
+  const { reading, setReading, resetReading } = useAppearance()
+  return (
+    <section aria-labelledby="settings-reading" className="grid gap-3">
+      <h3 id="settings-reading" className="text-sm font-semibold">
+        Reading
+      </h3>
+      <label className="grid gap-1 text-sm">
+        Document width
+        <select
+          className={field}
+          value={reading.width}
+          onChange={(event) => setReading(readingPreferencesSchema.parse({ ...reading, width: event.target.value }))}
+        >
+          <option value="standard">Standard (760px)</option>
+          <option value="wide">Wide (1040px)</option>
+          <option value="full">Full width</option>
+        </select>
+      </label>
+      <label className="grid gap-1 text-sm">
+        Text size
+        <select
+          className={field}
+          value={reading.textSize}
+          onChange={(event) => setReading(readingPreferencesSchema.parse({ ...reading, textSize: event.target.value }))}
+        >
+          <option value="default">Default</option>
+          <option value="large">Large</option>
+          <option value="larger">Larger</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={reading.wideMedia} onChange={(event) => setReading({ ...reading, wideMedia: event.target.checked })} />
+        Wide media
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={reading.wideTables} onChange={(event) => setReading({ ...reading, wideTables: event.target.checked })} />
+        Wide tables
+      </label>
+      <p className="text-xs text-muted-foreground">Wide media and tables can extend beyond the text column, never beyond the window.</p>
+      <div>
+        <button type="button" className="text-sm underline underline-offset-4" onClick={resetReading}>
+          Reset reading defaults
+        </button>
+      </div>
     </section>
   )
 }

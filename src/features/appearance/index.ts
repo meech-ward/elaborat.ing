@@ -1,5 +1,4 @@
 export { AppearanceProvider, useAppearance } from "./AppearanceProvider";
-export { ReadingSettings } from "./ReadingSettings";
 export {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE,

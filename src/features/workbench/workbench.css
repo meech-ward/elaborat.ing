@@ -1398,3 +1398,20 @@ body:has(.wb-app[data-compact="true"]) .wb-menu { max-height: min(70dvh, var(--a
 .wb-tabline-actions .wb-view-toolbar { display: contents; }
 .wb-tabline-actions .wb-session-status { order: 1; }
 .wb-tabline-actions .wb-view-toolbar > .wb-icon { order: 2; }
+/* Focus mode: the editor fills the window; only the file's controls and the
+   way out stay, in the top line's right-hand end. */
+.wb-app[data-focus="true"] .wb-tabline {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 30;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px var(--shadow);
+  padding: 0 6px;
+  height: 44px;
+}
+.wb-app[data-focus="true"] .wb-tabline > :is(.wb-tabs, [aria-label="Toggle explorer"], [aria-label="Open workspace commands"]) {
+  display: none;
+}
+.wb-app[data-focus="true"] .wb-main-panel { position: relative; }

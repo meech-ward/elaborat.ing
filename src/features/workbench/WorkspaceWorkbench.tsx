@@ -11,7 +11,6 @@ import {
 } from "react";
 import { usePanelRef } from "react-resizable-panels";
 import { createPortal } from "react-dom";
-import { ReadingSettings } from "../appearance";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -48,6 +47,8 @@ import {
 } from "@/components/ui/command";
 import {
   Diamond,
+  Maximize2,
+  Minimize2,
   Plus,
   Search,
   PanelLeft,
@@ -193,11 +194,12 @@ export function WorkspaceWorkbench({
   const explorerPanel = usePanelRef();
   const bottomPanel = usePanelRef();
   const [explorerWidth, setExplorerWidth] = useState(264);
+  // Focus mode (desktop): only the file and its controls; not kept across reloads.
+  const [focus, setFocus] = useState(false);
   // Where the active file's controls go in the editor's top line (desktop).
   const [tablineSlot, setTablineSlot] = useState<HTMLElement | null>(null);
   const [bottomHeight, setBottomHeight] = useState(190);
   const [palette, setPalette] = useState(false);
-  const [readingSettings, setReadingSettings] = useState(false);
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const { appearance, toggleScheme } = useAppearance();
@@ -656,6 +658,11 @@ export function WorkspaceWorkbench({
     function key(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
+      if (key === "." && !narrow) {
+        event.preventDefault();
+        setFocus((v) => !v);
+        return;
+      }
       if (key === "b" || key === "j" || key === "`" || key === "k") {
         event.preventDefault();
         event.stopPropagation();
@@ -755,6 +762,7 @@ export function WorkspaceWorkbench({
     { name: "Toggle explorer", run: () => setSidebar((v) => !v) },
     { name: "Toggle bottom panel", run: () => setPanel((v) => !v) },
     { name: "Settings", run: () => { afterClose.current = openSettings; } },
+    ...(narrow ? [] : [{ name: focus ? "Exit full screen" : "Focus", run: () => setFocus((v) => !v) }]),
     ...(readOnly
       ? []
       : [
@@ -798,9 +806,7 @@ export function WorkspaceWorkbench({
       </button>
       <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
       <button onClick={() => afterMenu(openSettings)}>Settings</button>
-      <button onClick={() => setReadingSettings(true)}>
-        Reading preferences
-      </button>
+      <button onClick={() => afterMenu(openSettings)}>Reading preferences</button>
     </ActionMenu>
   );
   const importInput = (
@@ -892,7 +898,7 @@ export function WorkspaceWorkbench({
   const navigation = narrow ? <button type="button" ref={navigationButton} className="wb-icon" data-compact-nav="" aria-label="Navigation" aria-haspopup="dialog" aria-expanded={sidebar} onClick={() => setSidebar(true)}><PanelLeft size={20} /></button> : null;
   return (
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
-    <div className="wb-app" data-compact={narrow} ref={shell}>
+    <div className="wb-app" data-compact={narrow} data-focus={focus && !narrow} ref={shell}>
       <div className="wb-body">
         <ResizablePanelGroup
           orientation="horizontal"
@@ -903,7 +909,7 @@ export function WorkspaceWorkbench({
               setExplorerWidth(explorerPanel.current.getSize().inPixels);
           }}
         >
-          {sidebar && !narrow && (
+          {sidebar && !narrow && !focus && (
             <ResizablePanel
               id="explorer"
               panelRef={explorerPanel}
@@ -940,7 +946,7 @@ export function WorkspaceWorkbench({
               </div>
             </ResizablePanel>
           )}
-          {sidebar && !narrow && (
+          {sidebar && !narrow && !focus && (
             <ResizableHandle aria-label="Resize explorer" />
           )}
           <ResizablePanel
@@ -1015,6 +1021,11 @@ export function WorkspaceWorkbench({
               {!narrow && (
                 <button type="button" className="wb-icon" aria-label="Open workspace commands" title="Commands (⌘K)" onClick={(e) => openPalette(e.currentTarget)}>
                   <Search size={15} />
+                </button>
+              )}
+              {!narrow && (
+                <button type="button" className="wb-icon wb-focus-toggle" aria-label={focus ? "Exit full screen" : "Focus"} title={focus ? "Exit full screen (⌘.)" : "Focus (⌘.)"} aria-keyshortcuts="Meta+Period Control+Period" onClick={() => setFocus((v) => !v)}>
+                  {focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
               )}
               </div>
@@ -1283,10 +1294,7 @@ export function WorkspaceWorkbench({
         onCommit={() => void moves.commit()} onClose={moves.close} />}
       {deletes.request && <DeleteDialog request={deletes.request} plan={deletes.plan} pending={deletes.pending} deleting={deletes.deleting}
         error={deletes.error} stale={deletes.stale} onCommit={deletes.commit} onClose={deletes.close} />}
-      <ReadingSettings
-        open={readingSettings}
-        onOpenChange={setReadingSettings}
-      />
+
     </div>
     </SidebarProvider>
   );
