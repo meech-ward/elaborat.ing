@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router"
+import { FileUp } from "lucide-react"
 import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { buttonVariants } from "@/components/ui/button"
 import type { ProjectLibrary } from "@/features/project-storage/library"
 import { projectHref } from "@/features/navigation"
+import { cn } from "@/lib/utils"
 import { fileStoreFor } from "./account"
 import { importPrototype, planImport, readPrototypeExport, type ImportPlan } from "./prototypeImport"
 
@@ -52,16 +53,27 @@ export function ImportProject({ library }: { library: ProjectLibrary }) {
   }
 
   return (
-    <div className="grid gap-2">
-      <Label htmlFor="import-project">Import a project</Label>
-      <Input
+    <div className="grid justify-items-start gap-2">
+      {/* The file field is hidden behind its label, shown as a button. */}
+      <input
         id="import-project"
         type="file"
         accept=".json,application/json"
         aria-describedby="import-project-hint"
         disabled={state.kind === "importing"}
         onChange={(event) => void choose(event.currentTarget)}
+        className="peer sr-only"
       />
+      <label
+        htmlFor="import-project"
+        className={cn(
+          buttonVariants({ variant: "secondary" }),
+          "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-focus-visible:outline-solid peer-disabled:pointer-events-none peer-disabled:opacity-45",
+        )}
+      >
+        <FileUp aria-hidden="true" />
+        Import a project
+      </label>
       <p id="import-project-hint" className="text-sm text-muted-foreground">
         A .json file exported from the prototype.
       </p>
