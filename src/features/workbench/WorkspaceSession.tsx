@@ -3,7 +3,7 @@ import type { OperationSession } from "./operationSession";
 import { Save, Download, RefreshCw } from "lucide-react";
 import { ActionMenu } from "./WorkbenchChrome";
 import { TablineActions } from "./tabline";
-import { CompactFileIdentity } from "./compactWorkbench";
+import { CompactFileIdentity, useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
 import type { SourcePatch } from "@/features/document";
@@ -20,6 +20,7 @@ import { parseSourceRefs } from "./refs";
 import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { ViewSwitcher } from "./ViewSwitcher";
+import { ariaShortcut, isApplePlatform, shortcutLabel, viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
 import { savedComponentSource } from '../document/componentModules';
 import {
@@ -37,7 +38,13 @@ import {
   type OpenFile,
 } from "./session";
 
-type Mode = "source" | "rendered";
+type Mode = "source" | "split" | "rendered";
+/** A note's views, in switch and shortcut order (⌘⌥1 to 3, Ctrl+Alt+1 to 3). */
+const NOTE_VIEWS = [
+  { value: "source", label: "Source" },
+  { value: "split", label: "Split" },
+  { value: "rendered", label: "Rendered" },
+] as const;
 
 /**
  * One open file: its document, undo history and the revision its edits are
@@ -92,8 +99,14 @@ export function WorkspaceSession({
       ? openWorkspaceFile(initial.path, initial.revision)
       : { ...newUntitledNote(initial.path), kind: kindForPath(initial.path) },
   );
-  const [mode, setMode] = useState<Mode>(() => readProjectView(client.persistenceKey, initial.path) === "rendered" ? "rendered" : "source");
-  const [renderedEver, setRenderedEver] = useState(mode === "rendered");
+  const [mode, setMode] = useState<Mode>(() => {
+    const stored = readProjectView(client.persistenceKey, initial.path);
+    return stored === "rendered" || stored === "split" ? stored : "source";
+  });
+  // Split is desktop only: at compact widths a stored Split shows Rendered.
+  const compact = useCompactWorkbench();
+  const view: Mode = mode === "split" && compact ? "rendered" : mode;
+  const [renderedEver, setRenderedEver] = useState(mode !== "source");
   useEffect(() => { writeProjectView(client.persistenceKey, initial.path, mode); }, [client.persistenceKey, initial.path, mode]);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -127,7 +140,7 @@ export function WorkspaceSession({
       const next = pendingMode.current;
       pendingMode.current = null;
       setMode(next);
-      if (next === 'rendered') setRenderedEver(true);
+      if (next !== 'source') setRenderedEver(true);
       setNotice(current => current === 'Finishing edit…' ? null : current);
     }
   }, []);
@@ -310,8 +323,34 @@ export function WorkspaceSession({
     }
     pendingMode.current = null;
     setMode(next);
-    if (next === "rendered") setRenderedEver(true);
+    if (next !== "source") setRenderedEver(true);
   }, []);
+
+  const apple = useMemo(() => isApplePlatform(), []);
+  const viewOptions = useMemo(
+    () =>
+      NOTE_VIEWS.map((option, index) => ({
+        ...option,
+        title: `${option.label} (${shortcutLabel(index + 1, apple)})`,
+        keyShortcuts: ariaShortcut(index + 1, apple),
+      })).filter((option) => !compact || option.value !== "split"),
+    [apple, compact],
+  );
+  useEffect(() => {
+    if (!active || !isNote) return;
+    const onKey = (event: KeyboardEvent) => {
+      const digit = viewShortcutDigit(event, apple);
+      if (digit === null) return;
+      const next = NOTE_VIEWS[digit - 1].value;
+      if (!viewOptions.some((option) => option.value === next)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      switchMode(next);
+    };
+    // Capture, so a focused source editor cannot keep the keys for itself.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [active, apple, isNote, switchMode, viewOptions]);
 
   const doWrite = useCallback(
     async (target: string, expectedRevision: string | null, verb: string) => {
@@ -539,7 +578,8 @@ export function WorkspaceSession({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, doWrite, openFile]);
 
-  const inSource = mode === "source" || !isNote;
+  const inSource = view !== "rendered" || !isNote;
+  const inRendered = isNote && view !== "source";
   const conflict = openFile.save.stage === "conflict" ? openFile.save : null;
 
   return (
@@ -550,11 +590,8 @@ export function WorkspaceSession({
           {isNote && (
             <ViewSwitcher
               ariaLabel="Editor mode"
-              options={[
-                { value: "source" as const, label: "Source" },
-                { value: "rendered" as const, label: "Rendered" },
-              ]}
-              active={mode}
+              options={viewOptions}
+              active={view}
               onSelect={switchMode}
             />
           )}
@@ -741,7 +778,7 @@ export function WorkspaceSession({
         />
       )}
 
-        <div className="wb-editor-stage">
+        <div className="wb-editor-stage" data-view={isNote ? view : undefined}>
           <div hidden={!inSource} className="wb-source-stage">
             <SourceEditor
               initialText={initial.content}
@@ -775,10 +812,10 @@ export function WorkspaceSession({
             />
           </div>
           {isNote && renderedEver && (
-            <div hidden={inSource} className="wb-rendered-stage">
+            <div hidden={!inRendered} className="wb-rendered-stage">
               <RenderedEditor
                 document={snapshot}
-                active={active && !inSource}
+                active={active && inRendered}
                 documentId={snapshot.docId}
                 componentEnvironment={componentState.environment}
                 componentError={componentState.error}

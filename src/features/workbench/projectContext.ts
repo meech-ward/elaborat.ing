@@ -25,10 +25,10 @@ export type ProjectContext = {
   version: 1;
   openPaths: string[];
   activePath: string | null;
-  views: Record<string, "source" | "rendered" | "code" | "canvas">;
+  views: Record<string, "source" | "split" | "rendered" | "code" | "canvas">;
 };
 
-const projectViewSchema = z.enum(["source", "rendered", "code", "canvas"]);
+const projectViewSchema = z.enum(["source", "split", "rendered", "code", "canvas"]);
 
 const projectContextSchema = z.object({
   version: z.literal(PROJECT_CONTEXT_VERSION),
@@ -75,11 +75,11 @@ function resolveActive(
 }
 
 function sanitizeViews(
-  views: Readonly<Record<string, "source" | "rendered" | "code" | "canvas">>,
+  views: Readonly<Record<string, "source" | "split" | "rendered" | "code" | "canvas">>,
   openPaths: readonly string[],
-): Record<string, "source" | "rendered" | "code" | "canvas"> {
+): Record<string, "source" | "split" | "rendered" | "code" | "canvas"> {
   const open = new Set(openPaths);
-  const clean: Record<string, "source" | "rendered" | "code" | "canvas"> = {};
+  const clean: Record<string, "source" | "split" | "rendered" | "code" | "canvas"> = {};
   for (const [path, view] of Object.entries(views)) {
     // Membership in the cleaned open set implies a canonical path.
     if (open.has(path)) clean[path] = view;
@@ -116,7 +116,7 @@ export function createProjectContext(
   openPaths: readonly string[],
   activePath: string | null,
   views: Readonly<
-    Record<string, "source" | "rendered" | "code" | "canvas">
+    Record<string, "source" | "split" | "rendered" | "code" | "canvas">
   >,
 ): ProjectContext {
   const clean = sanitizePaths(openPaths);

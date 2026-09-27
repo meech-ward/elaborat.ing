@@ -19,6 +19,10 @@ export type ViewSwitchOption<T extends string> = {
   value: T;
   label: string;
   disabled?: boolean;
+  /** Tooltip, for example the name with its shortcut. */
+  title?: string;
+  /** The `aria-keyshortcuts` value. */
+  keyShortcuts?: string;
 };
 
 /** Mandatory single selection: an empty pressed set keeps the current mode. */
@@ -63,6 +67,8 @@ export function ViewSwitcher<T extends string>({
           key={option.value}
           value={option.value}
           disabled={option.disabled}
+          title={option.title}
+          aria-keyshortcuts={option.keyShortcuts}
         >
           {option.label}
         </ToggleGroupItem>

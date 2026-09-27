@@ -332,7 +332,11 @@ export function SourceEditor(props: SourceEditorProps) {
       history(direction) {
         renderedGroup = undefined;
         editor.pushUndoStop();
-        editor.trigger("elaborating.rendered-history", direction, null);
+        // This model's own history. Monaco's "undo" command would instead
+        // focus and undo whichever editor was last focused, which steals the
+        // keyboard in Split and can reach another open file's editor.
+        if (!editor.getOption(monaco.editor.EditorOption.readOnly))
+          void (direction === "undo" ? model.undo() : model.redo());
         const selection = editor.getSelection();
         return {
           text: model.getValue(),

@@ -17,13 +17,13 @@ describe("parseProjectContext", () => {
         version: PROJECT_CONTEXT_VERSION,
         openPaths: [A, B, C],
         activePath: B,
-        views: { [A]: "source", [B]: "rendered", [C]: "canvas" },
+        views: { [A]: "split", [B]: "rendered", [C]: "canvas" },
       }),
     ).toEqual({
       version: PROJECT_CONTEXT_VERSION,
       openPaths: [A, B, C],
       activePath: B,
-      views: { [A]: "source", [B]: "rendered", [C]: "canvas" },
+      views: { [A]: "split", [B]: "rendered", [C]: "canvas" },
     });
   });
 

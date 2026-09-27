@@ -534,6 +534,17 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   height: 100% !important;
   min-height: 0 !important;
 }
+/* Split: the source and the rendered note side by side, each scrolling on its own. */
+.wb-editor-stage[data-view="split"] {
+  flex-direction: row;
+}
+.wb-editor-stage[data-view="split"] > * {
+  flex: 1 1 0;
+}
+.wb-editor-stage[data-view="split"] > .wb-source-stage {
+  padding: 14px 0;
+  border-right: 1px solid var(--line);
+}
 .wb-status {
   display: flex;
   justify-content: space-between;
