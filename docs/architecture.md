@@ -227,10 +227,13 @@ makes edits to different files conflict. It is not carried forward.)
 **Decision:** agents archive, people delete. Archive and unarchive are available
 to any editor, including agents. Permanent delete is for the project owner
 only, in a normal user session: the database refuses it when the token came
-from an OAuth client (the JWT carries a `client_id` claim). Changing a password
-requires recent sign-in (`secure_password_change`), so an OAuth client token
-cannot be turned into a normal session that way. Phase 1 confirms on real
-clients that Auth refuses account changes from OAuth client tokens.
+from an OAuth client (the JWT carries a `client_id` claim).
+
+Account settings are for people. The database refuses a password change
+made by an OAuth session: a deferred trigger on `auth.users`
+(`supabase/schemas/auth_guards.sql`) checks at commit whether only OAuth
+sessions are left. People, the admin API and recovery links still change
+passwords. TOTP is off in `config.toml`, since the app has no MFA screens.
 
 **Decision: change signals use Realtime Broadcast from the database.** Clients
 learn that a project changed from a private Broadcast channel per project,

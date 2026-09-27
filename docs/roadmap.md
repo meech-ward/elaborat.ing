@@ -36,8 +36,7 @@ user's files through MCP, on the hosted Supabase project.
    shows a file in the chat as an MCP Apps view.
 5. **Prove it with real clients.** Done with ChatGPT: it registered itself,
    the person consented, its Auth session carries its OAuth client id, and it
-   created and edited a project's notes and a drawing. Still to do: Claude, and
-   a check that Auth refuses account changes made with an OAuth token.
+   created and edited a project's notes and a drawing. Still to do: Claude.
 6. **Hybrid search (built).** Passages per heading, the documented
    `hybrid_search` function, automatic embeddings with the built-in `gte-small`
    model, a `search` function for query embeddings, and an MCP search tool.
