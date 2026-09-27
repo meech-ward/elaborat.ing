@@ -14,9 +14,33 @@ export type EmitResult = {
   diagnostics: Diagnostic[];
 };
 
-/** The colours every generated element starts with (saved as these). */
+/**
+ * The colours every generated element starts with (saved as these), unless
+ * the D2 source sets its own. The canvas shows these in the palette's colours.
+ */
 export const GENERATED_STROKE = '#1e1e1e';
 export const GENERATED_FILL = 'transparent';
+/** A fill the author set to transparent, stored so the palette leaves it clear. */
+const CLEAR_FILL = '#00000000';
+
+/**
+ * A colour the author wrote in D2 (a hex code or a named colour), or null
+ * for a theme colour code such as `B6` or `N1`, which D2 gives everything the
+ * source leaves unstyled. Gradients have no native counterpart and count as unset.
+ */
+function authorColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const color = value.trim();
+  return /^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(color) ? color : null;
+}
+
+/** Use the author's colours from D2 in place of the generated ones. */
+function paint(element: ExcalidrawElementSkeleton, stroke: unknown, fill?: unknown): void {
+  const strokeColor = authorColor(stroke);
+  if (strokeColor) element.strokeColor = strokeColor;
+  const backgroundColor = authorColor(fill);
+  if (backgroundColor) element.backgroundColor = backgroundColor.toLowerCase() === 'transparent' ? CLEAR_FILL : backgroundColor;
+}
 
 const LABEL_FONT_SIZE = 16;
 const LABEL_LINE_HEIGHT = 1.25;
@@ -192,6 +216,7 @@ function emitLabel(
   text: string,
   measured: { labelWidth?: number; labelHeight?: number; fontSize?: number },
   maxWidth: number,
+  color?: string,
 ): void {
   const labelId = elementIdForLabel(ownerId);
   const box = labelBox(text, measured, maxWidth);
@@ -207,6 +232,7 @@ function emitLabel(
     'center',
     box.fontSize,
   );
+  paint(label, color);
   ctx.elements.push(label);
   pushBound(owner, 'text', labelId);
 }
@@ -236,6 +262,7 @@ function emitTable(
   const columns = Array.isArray(shape.columns) ? shape.columns : [];
   const rows = columns.map(columnRowText).filter((r): r is string => r !== null);
   const box = baseElement(id, 'rectangle', posX, posY, width, height, takeIndex(ctx));
+  paint(box, shape.stroke, shape.fill);
   if (frameId) box.frameId = frameId;
   ctx.elements.push(box);
   ctx.shapeIndex.set(shape.id, box);
@@ -255,6 +282,7 @@ function emitTable(
     'center',
     headerBox.fontSize,
   );
+  paint(headerEl, shape.color);
   ctx.elements.push(headerEl);
   pushBound(box, 'text', headerEl.id);
 
@@ -333,6 +361,7 @@ function emitShape(shape: D2Shape, ctx: EmitContext, frameId: string | null): vo
         'center',
         box.fontSize,
       );
+      paint(label, shape.color);
       ctx.elements.push(label);
     }
     return;
@@ -352,6 +381,7 @@ function emitShape(shape: D2Shape, ctx: EmitContext, frameId: string | null): vo
     const label = shape.label ?? shape.id;
     const box = labelBox(label, shape, Math.max(width, 40));
     const el = textElement(id, label, posX + width / 2, posY + height / 2, box.width, box.height, null, takeIndex(ctx), 'center', box.fontSize);
+    paint(el, shape.color);
     ctx.elements.push(el);
     ctx.shapeIndex.set(shape.id, el);
     return;
@@ -369,12 +399,13 @@ function emitShape(shape: D2Shape, ctx: EmitContext, frameId: string | null): vo
   }
 
   const node = baseElement(id, type, posX, posY, width, height, takeIndex(ctx));
+  paint(node, shape.stroke, shape.fill);
   if (frameId) node.frameId = frameId;
   ctx.elements.push(node);
   ctx.shapeIndex.set(shape.id, node);
 
   if (shape.label) {
-    emitLabel(ctx, id, node, shape.label, shape, Math.max(40, width - 16));
+    emitLabel(ctx, id, node, shape.label, shape, Math.max(40, width - 16), shape.color);
   }
 }
 
@@ -534,6 +565,7 @@ function emitConnection(conn: D2Connection, ctx: EmitContext): void {
     elbowed,
     ...(elbowed ? { fixedSegments: null, startIsSpecial: null, endIsSpecial: null, roughness: 0 } : {}),
   };
+  paint(arrowEl, conn.stroke);
   ctx.elements.push(arrowEl);
 
   if (srcId) {
@@ -549,6 +581,7 @@ function emitConnection(conn: D2Connection, ctx: EmitContext): void {
     const mid = midpoint(route);
     const box = labelBox(conn.label, conn, 160);
     const label = textElement(elementIdForLabel(id), conn.label, mid.x, mid.y, box.width, box.height, id, takeIndex(ctx), 'center', box.fontSize);
+    paint(label, conn.color);
     ctx.elements.push(label);
     pushBound(arrowEl, 'text', label.id);
   }

@@ -19,7 +19,7 @@ import {
   disposeSharedD2,
   getSharedD2,
 } from '../compiler.ts';
-import { emitNativeScene } from '../emitter.ts';
+import { emitNativeScene, GENERATED_FILL, GENERATED_STROKE } from '../emitter.ts';
 import { CLOUD_D2_EXAMPLE, ERD_D2_EXAMPLE, FLOW_D2_EXAMPLE } from '../examples.ts';
 
 const LIVE = process.env['STRUCTURED_D2_LIVE'] === '1';
@@ -115,6 +115,24 @@ describe('live D2 compile + emission', () => {
     expect(missing.ok).toBe(false);
     expect(missing.diagnostics[0]?.code).toBe('d2/syntax');
     expect(missing.scene.elements).toEqual([]);
+  }, 90000);
+
+  live('colours set in the source are the author\'s; the rest are theme codes', async () => {
+    const source = 'a: {style.fill: "#ffd6d6"; style.stroke: red; style.font-color: "#123456"}\nb\na -> b: hi {style.stroke: blue; style.font-color: green}\nb -> a';
+    const diagram = await createD2CompilePort()({ source });
+    const shape = (id: string) => diagram.shapes?.find((s) => s.id === id);
+    const conn = (id: string) => diagram.connections?.find((c) => c.id === id);
+    expect(shape('a')).toMatchObject({ fill: '#ffd6d6', stroke: 'red', color: '#123456' });
+    expect(shape('b')).toMatchObject({ fill: 'B6', stroke: 'B1', color: 'N1' });
+    expect(conn('(a -> b)[0]')).toMatchObject({ stroke: 'blue', color: 'green' });
+    expect(conn('(b -> a)[0]')).toMatchObject({ stroke: 'B1', color: 'N2' });
+    const { elements } = emitNativeScene(diagram);
+    const el = (id: string) => elements.find((e) => e.id === id);
+    expect(el('d2:a')).toMatchObject({ backgroundColor: '#ffd6d6', strokeColor: 'red' });
+    expect(el('d2:a:label')).toMatchObject({ strokeColor: '#123456' });
+    expect(el('d2:b')).toMatchObject({ backgroundColor: GENERATED_FILL, strokeColor: GENERATED_STROKE });
+    expect(el('d2:(a -> b)[0]')).toMatchObject({ strokeColor: 'blue' });
+    expect(el('d2:(b -> a)[0]')).toMatchObject({ strokeColor: GENERATED_STROKE });
   }, 90000);
 
   live('broken source never destroys the prior scene', async () => {

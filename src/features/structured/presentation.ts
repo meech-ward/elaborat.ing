@@ -18,8 +18,9 @@ const FILLED = new Set(['rectangle', 'ellipse', 'diamond']);
 /**
  * Generated shapes, arrows and labels in the palette's diagram colours,
  * for display only, where they still have the colours the generator gave
- * them. A colour the author set on the canvas, and anything drawn by hand,
- * keeps its own. Returns the same array when nothing changes.
+ * them. A colour the author set in the D2 source or on the canvas, and
+ * anything drawn by hand, keeps its own. Returns the same array when nothing
+ * changes.
  */
 export function presentDiagramElements<T extends { id: string; type: string }>(elements: T[], colors: DiagramColors): T[] {
   const byId = new Map(elements.map((element) => [element.id, element]));

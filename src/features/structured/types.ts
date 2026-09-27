@@ -45,6 +45,14 @@ export type D2Shape = {
   labelHeight?: number;
   /** Column data for `sql_table` shapes; absent on other types. */
   columns?: D2TableColumn[];
+  /**
+   * Colours. D2 gives a theme colour code (`B6`, `N1`, `AA4`) unless the
+   * source sets one (`style.fill`, `style.stroke`, `style.font-color`): a hex
+   * code, a named colour or a gradient. `color` is the label text.
+   */
+  fill?: string;
+  stroke?: string;
+  color?: string;
 };
 
 /** Measured subset of one D2 connection. */
@@ -62,6 +70,9 @@ export type D2Connection = {
   route?: AngularPoint[];
   /** True means route contains Bezier control points, not elbow waypoints. */
   isCurve?: boolean;
+  /** Line and label text colours, as on {@link D2Shape}. */
+  stroke?: string;
+  color?: string;
 };
 
 /** Measured subset of `result.diagram` from `@terrastruct/d2`. */
