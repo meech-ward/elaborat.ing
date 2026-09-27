@@ -1349,3 +1349,6 @@ above the choices. */
   display: none;
 }
 .wb-app[data-focus="true"] .wb-main-panel { position: relative; }
+/* Save, shown only while the open file has unsaved edits. */
+.wb-app .wb-save { height: 28px; padding: 0 12px; font-weight: 600; }
+.wb-tabline-actions .wb-save { order: 1; }

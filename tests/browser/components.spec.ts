@@ -61,7 +61,7 @@ async function rendered(page: Page) {
 
 async function save(page: Page) {
   await page.getByRole("button", { name: "File actions" }).click()
-  await page.getByRole("menuitem", { name: "Save" }).or(page.getByRole("button", { name: "Save" })).first().click()
+  await page.getByRole("menuitem", { name: "Save" }).click()
 }
 
 /** Put the caret at the end of the visible source editor. */

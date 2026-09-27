@@ -44,7 +44,7 @@ const proseFocused = (page: Page) =>
 
 async function save(page: Page) {
   await page.getByRole("button", { name: "File actions" }).click()
-  await page.getByRole("menuitem", { name: "Save" }).or(page.getByRole("button", { name: "Save" })).first().click()
+  await page.getByRole("menuitem", { name: "Save" }).click()
 }
 
 /** The middle of paragraph `n` in the frame, in page coordinates. */

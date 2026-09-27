@@ -530,6 +530,11 @@ export function DiagramView({
           active={view}
           onSelect={setView}
         />
+        {!readOnly && dirty && (
+          <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
+            Save
+          </button>
+        )}
         <ActionMenu>
           {!readOnly && (
             <button type="button" disabled={regenerating} onClick={() => void regenerate()} className={toolbarButton}>

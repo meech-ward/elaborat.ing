@@ -313,6 +313,11 @@ export function DrawingView({
           active={view}
           onSelect={(value) => (value === "canvas" ? switchToCanvas() : switchToSource())}
         />
+        {!readOnly && dirty && (
+          <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
+            Save
+          </button>
+        )}
         <ActionMenu>
           {!readOnly && (
             <button type="button" disabled={saving} onClick={() => void save()} className={toolbarButton}>

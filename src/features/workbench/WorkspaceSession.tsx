@@ -596,6 +596,22 @@ export function WorkspaceSession({
             />
           )}
           {!navigation && <span className="wb-breadcrumb">{displayName}</span>}
+          {/* Save shows only while there is something to save. */}
+          {!readOnly && overallDirty && (
+            <button
+              type="button"
+              className="wb-button wb-button-primary wb-save"
+              aria-keyshortcuts="Meta+S Control+S"
+              title="Save (Cmd+S)"
+              disabled={renderedPending || !hasFile || openFile.save.stage === "saving"}
+              onClick={() => {
+                const t = saveTarget(openFile);
+                if (t) void doWrite(t, openFile.baseRevision, openFile.path ? "Saved" : "Created");
+              }}
+            >
+              Save
+            </button>
+          )}
           <ActionMenu>
             {!readOnly && <button
               disabled={

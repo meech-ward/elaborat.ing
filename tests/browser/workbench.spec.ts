@@ -85,7 +85,7 @@ test("an edit in the rendered view saves to the same file", async ({ page }) => 
   await page.keyboard.type(" More.")
   await expect(frame.locator("p").filter({ hasText: /^First paragraph\. More\.$/ })).toBeVisible()
   await page.getByRole("button", { name: "File actions" }).click()
-  await page.getByRole("menuitem", { name: "Save" }).or(page.getByRole("button", { name: "Save" })).first().click()
+  await page.getByRole("menuitem", { name: "Save" }).click()
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph. More.\n")
 })
 

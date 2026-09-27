@@ -57,7 +57,7 @@ test("in Split, typing in Source shows in Rendered and the reverse, and one save
 
   const before = saves(fake)
   await page.getByRole("button", { name: "File actions" }).click()
-  await page.getByRole("menuitem", { name: "Save" }).or(page.getByRole("button", { name: "Save" })).first().click()
+  await page.getByRole("menuitem", { name: "Save" }).click()
   await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   await quiet(fake, 1_500)
   expect(saves(fake) - before).toBe(1)
