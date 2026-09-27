@@ -92,6 +92,9 @@ class CanvasErrorBoundary extends Component<
         <div role="alert">
           <p>Drawing canvas failed to load.</p>
           <p>{this.state.failed}</p>
+          <button type="button" className="wb-button" onClick={() => this.setState({ failed: null })}>
+            Try again
+          </button>
         </div>
       );
     }
