@@ -1,6 +1,12 @@
 SET local check_function_bodies = off;
 
-DROP FUNCTION "public"."hybrid_search"(text, extensions.vector, integer, double precision, double precision, integer);
+-- Written by hand: reading a vector loads pgvector in this session, which
+-- defines hnsw.iterative_scan. Until then it is an unknown parameter, and only
+-- a superuser may set one in a function, which the role running
+-- `supabase db push` is not.
+SELECT '[0]'::extensions.vector;
+
+DROP FUNCTION IF EXISTS "public"."hybrid_search"(text, extensions.vector, integer, double precision, double precision, integer);
 
 CREATE OR REPLACE FUNCTION public.hybrid_search (
   query_text        text,

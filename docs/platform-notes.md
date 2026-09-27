@@ -36,6 +36,13 @@ before relying on it for something new, and update this page when it moves.
 - **Branch deploys run each migration in one transaction** and ignore pg-delta's
   `transaction=false` marker, so `create index concurrently` fails there.
   [Branching with GitHub](https://supabase.com/docs/guides/deployment/branching/github-integration)
+- **`supabase db push` does not run as a superuser.** A function that sets an
+  extension's parameter (`set hnsw.iterative_scan`) fails there with "permission
+  denied to set parameter" unless the extension is loaded in that session:
+  until then the parameter is an unknown placeholder, which only a superuser may
+  set. pg-delta does not add the load, so a generated migration that creates
+  such a function needs `select '[0]'::extensions.vector;` before it, by hand.
+  Checked on CLI 2.118.0.
 - **Tables are no longer exposed to the Data API automatically.** New projects
   since 2026-05-30, all projects from 2026-10-30. Grant explicitly.
   [Changelog](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically)
