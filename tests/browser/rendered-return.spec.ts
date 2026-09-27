@@ -17,7 +17,8 @@ const projectUrl = (id: string, path?: string) => new URL(`projects/${id}${path 
 const frameOf = (page: Page) => page.frameLocator(FRAME)
 // The open file's panel, in the desktop and phone layouts alike.
 const panel = (page: Page) => page.getByRole("tabpanel", { name: PATH })
-const unsaved = (page: Page) => panel(page).getByText("Unsaved changes", { exact: true })
+// On a desktop the saved state of the open file is in the editor's top line.
+const unsaved = (page: Page) => page.getByText("Unsaved changes", { exact: true })
 const saves = (fake: FakeSupabase) => fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length
 
 async function openNote(page: Page) {

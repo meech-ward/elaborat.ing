@@ -73,6 +73,7 @@ import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { ActionMenu } from "./WorkbenchChrome";
+import { TablineSlotProvider } from "./tabline";
 import { useCompactWorkbench, useSheetViewport } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { NewEntryField } from "./NewEntryField";
@@ -192,6 +193,8 @@ export function WorkspaceWorkbench({
   const explorerPanel = usePanelRef();
   const bottomPanel = usePanelRef();
   const [explorerWidth, setExplorerWidth] = useState(264);
+  // Where the active file's controls go in the editor's top line (desktop).
+  const [tablineSlot, setTablineSlot] = useState<HTMLElement | null>(null);
   const [bottomHeight, setBottomHeight] = useState(190);
   const [palette, setPalette] = useState(false);
   const [readingSettings, setReadingSettings] = useState(false);
@@ -950,6 +953,7 @@ export function WorkspaceWorkbench({
               {/* Close buttons are sibling commands, not tabs. Explicit ownership
               groups only the file tabs without changing the mixed-control strip.
               Sessions stay mounted below inside TabsContent keepMounted panels. */}
+              <TablineSlotProvider value={narrow ? null : tablineSlot}>
               <Tabs
                 value={hideSessions ? "" : (state.active ?? "")}
                 onValueChange={(value) => {
@@ -1007,6 +1011,7 @@ export function WorkspaceWorkbench({
                   </div>
                 ))}
               </TabsList>
+              {!narrow && <div className="wb-tabline-actions" ref={setTablineSlot} />}
               {!narrow && (
                 <button type="button" className="wb-icon" aria-label="Open workspace commands" title="Commands (⌘K)" onClick={(e) => openPalette(e.currentTarget)}>
                   <Search size={15} />
@@ -1161,6 +1166,7 @@ export function WorkspaceWorkbench({
                 )}
               </ResizablePanelGroup>
               </Tabs>
+              </TablineSlotProvider>
             </main>
           </ResizablePanel>
         </ResizablePanelGroup>

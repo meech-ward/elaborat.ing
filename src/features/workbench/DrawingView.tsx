@@ -27,6 +27,7 @@ import type { TabFile } from "./tabs";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
+import { TablineActions } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
@@ -299,6 +300,7 @@ export function DrawingView({
 
   return (
     <div className="wb-native-view">
+      <TablineActions active={active}>
       <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
         <CompactFileIdentity navigation={navigation} path={path} />
         <ViewSwitcher
@@ -327,6 +329,7 @@ export function DrawingView({
           </button>
         </ActionMenu>
       </div>
+      </TablineActions>
 
       <div
         aria-live="polite"

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { OperationSession } from "./operationSession";
 import { Save, Download, RefreshCw } from "lucide-react";
 import { ActionMenu } from "./WorkbenchChrome";
+import { TablineActions } from "./tabline";
 import { CompactFileIdentity } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
@@ -543,6 +544,7 @@ export function WorkspaceSession({
 
   return (
     <div className="wb-session">
+        <TablineActions active={active}>
         <div className="wb-view-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
           <CompactFileIdentity navigation={navigation} path={displayName} />
           {isNote && (
@@ -615,6 +617,7 @@ export function WorkspaceSession({
           </span>
           {notice && <span>{notice}</span>}
         </div>
+        </TablineActions>
       {renderError && (
         <p
           role="alert"

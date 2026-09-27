@@ -1346,3 +1346,55 @@ body:has(.wb-app[data-compact="true"]) .wb-menu { max-height: min(70dvh, var(--a
   white-space: nowrap;
   overflow-wrap: normal;
 }
+/* The active file's controls in the editor's top line (desktop). */
+.wb-tabline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 0 4px;
+}
+.wb-tabline-actions:empty { display: none; }
+.wb-tabline-actions :is(.wb-view-toolbar, .wb-native-toolbar) {
+  height: auto;
+  padding: 0;
+  border: 0;
+  gap: 6px;
+}
+.wb-tabline-actions .wb-breadcrumb { display: none; }
+.wb-tabline-actions .wb-session-status {
+  padding: 0;
+  gap: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+}
+.wb-tabline-actions .wb-session-status [aria-label="cursor position"] {
+  font-family: var(--code-font);
+  color: var(--muted);
+}
+.wb-tabline-actions .wb-mode {
+  background: var(--raised);
+  border: 0;
+  border-radius: 9px;
+  padding: 2px;
+}
+.wb-tabline-actions .wb-mode button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+}
+.wb-tabline-actions .wb-mode button[aria-pressed="true"] {
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.wb-tabline-actions .wb-icon {
+  width: 30px;
+  height: 30px;
+}
+/* In the top line: view switch, then the saved state, then the file menu. */
+.wb-tabline-actions .wb-view-toolbar { display: contents; }
+.wb-tabline-actions .wb-session-status { order: 1; }
+.wb-tabline-actions .wb-view-toolbar > .wb-icon { order: 2; }
