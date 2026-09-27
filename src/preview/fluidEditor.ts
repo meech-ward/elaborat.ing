@@ -133,9 +133,19 @@ export class FluidEditor {
   private historyPending: "undo" | "redo" | null = null;
   private keysSinceFocus = false;
   private notifyIslands: () => void;
+  private send: (message: object) => void;
 
-  constructor(mount: HTMLElement, notifyIslands: () => void) {
+  /**
+   * `send` delivers the editor's messages to whatever checks its edits: the
+   * parent page by default, or a checker in the same page (the chat card).
+   */
+  constructor(
+    mount: HTMLElement,
+    notifyIslands: () => void,
+    send: (message: object) => void = (message) => parent.postMessage(message, "*"),
+  ) {
     this.notifyIslands = notifyIslands;
+    this.send = send;
     const requestHistory =
       (direction: "undo" | "redo"): Command =>
       () => {
@@ -348,10 +358,7 @@ export class FluidEditor {
   }
 
   private post(message: object) {
-    parent.postMessage(
-      { session: this.session, revision: this.revision, ...message },
-      "*",
-    );
+    this.send({ session: this.session, revision: this.revision, ...message });
   }
 
   private objectView(node: PMNode, inline: boolean): NodeView {

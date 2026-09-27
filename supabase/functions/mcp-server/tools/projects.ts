@@ -24,6 +24,13 @@ const mutationId = z
   .optional()
   .describe('Optional id for this change. Repeat it when retrying, so the change is never applied twice.')
 
+/**
+ * Lets the show_file view call a tool through the host (MCP Apps
+ * `tools/call`): the spec's visibility, which is also its default, and
+ * ChatGPT's older flag for the same thing.
+ */
+export const VIEW_CALLABLE = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true }
+
 type Rpc = (name: string, args?: Record<string, unknown>, listKey?: string) => Promise<CallToolResult>
 
 // MCP structured results must be objects, so list results are wrapped under a key.
@@ -150,6 +157,8 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         mutation_id: mutationId,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // The show_file card saves an edited note with this tool.
+      _meta: VIEW_CALLABLE,
     },
     ({ project_id, path, content, base_version, mutation_id }) =>
       save(project_id, [{ op: 'put', path, content, base_version }], mutation_id)

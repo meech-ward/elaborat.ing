@@ -259,6 +259,17 @@ Re-check it against OpenAI's pages linked below.
   [MCP Apps in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt/),
   [security and privacy](https://developers.openai.com/apps-sdk/guides/security-privacy)
 
+- **A view calls the server's tools with `tools/call`** through the host,
+  which proxies it when it lists `serverTools` in its capabilities. A tool's
+  `_meta.ui.visibility` says who may call it (default `["model", "app"]`;
+  hosts must refuse app calls to a tool without `"app"`). ChatGPT also reads
+  its older `_meta["openai/widgetAccessible"]` and offers
+  `window.openai.callTool`. `ui/update-model-context` gives the model context
+  for its next turn without starting one; `ui/message` posts a user message
+  and does start one. (Checked 2026-09-27.)
+  [Spec](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx),
+  [Apps SDK reference](https://developers.openai.com/apps-sdk/reference),
+  [MCP Apps in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt.md)
 - **Data only for the view goes in the tool result's `_meta`.** The spec passes
   `content`, `structuredContent` and `_meta` to the view in
   `ui/notifications/tool-result` and says only `content` is for the model, but

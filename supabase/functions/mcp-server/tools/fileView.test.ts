@@ -3,7 +3,8 @@ import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
-import { FILE_VIEW_URI, MAX_EMBEDS, MCP_APP_MIME_TYPE, SVG_META_KEY } from './fileView.ts'
+import { CARD_EDITOR_SCRIPT } from './cardEditorScript.ts'
+import { FILE_VIEW_URI, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { renderMarkdown, renderNote } from './markdown.ts'
@@ -18,10 +19,28 @@ type Row = { path: string; content: string; version: number; updated_at: string 
 
 const file = (path: string, content: string): Row => ({ path, content, version: 1, updated_at: UPDATED })
 
-/** A stand-in for the project's files: one row by path, or the rows whose paths are listed. */
+/**
+ * A stand-in for the project's files: one row by path, or the rows whose
+ * paths are listed. save_files puts files with the database's version check:
+ * a put whose base_version is not the file's version is a conflict.
+ */
 async function withClient<T>(files: Row[], use: (client: Client, queries: unknown[][][]) => Promise<T>): Promise<T> {
   const queries: unknown[][][] = []
+  let revision = Math.max(0, ...files.map((row) => row.version))
   const supabase = {
+    rpc(name: string, args: { changes: { op: string; path: string; content: string; base_version?: number }[] }) {
+      queries.push([['rpc', name, JSON.parse(JSON.stringify(args))]])
+      const [change] = args.changes
+      const row = files.find((entry) => entry.path === change.path)
+      if (change.op !== 'put' || (row?.version ?? undefined) !== change.base_version) {
+        const current = row ? { version: row.version, content: row.content } : null
+        return Promise.resolve({ data: { status: 'conflict', conflicts: [{ path: change.path, base_version: change.base_version ?? null, current }] }, error: null })
+      }
+      revision++
+      if (row) Object.assign(row, { content: change.content, version: revision })
+      else files.push({ path: change.path, content: change.content, version: revision, updated_at: UPDATED })
+      return Promise.resolve({ data: { status: 'saved', changes: [{ op: 'put', path: change.path, version: revision }] }, error: null })
+    },
     from(table: string) {
       const query: unknown[][] = [['from', table]]
       queries.push(query)
@@ -84,20 +103,35 @@ Deno.test('show_file advertises the view and read_file stays text only', async (
   await withClient([], async (client) => {
     const { tools } = await client.listTools()
     const show = tools.find((tool) => tool.name === 'show_file')
-    assertEquals(show?._meta, { ui: { resourceUri: FILE_VIEW_URI } })
+    // The view can call show_file again, to show the note as saved.
+    assertEquals(show?._meta, { ui: { visibility: ['model', 'app'], resourceUri: FILE_VIEW_URI }, 'openai/widgetAccessible': true })
     assertEquals(show?.annotations?.readOnlyHint, true)
     assertEquals(tools.find((tool) => tool.name === 'read_file')?._meta, undefined)
+    // The view saves an edited note with write_file, which renders no view of its own.
+    assertEquals(tools.find((tool) => tool.name === 'write_file')?._meta, { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true })
   })
 })
 
 Deno.test('the view is self-contained: no URL but elaborat.ing, nothing loaded from outside', () => {
-  const urls = FILE_VIEW_HTML.match(/https?:\/\/[^\s"'`)<>]+/gi) ?? []
+  // The editor script is checked on its own below: its libraries' error messages name their docs.
+  assert(CARD_EDITOR_SCRIPT.length > 0 && FILE_VIEW_HTML.includes(CARD_EDITOR_SCRIPT))
+  const view = FILE_VIEW_HTML.replace(CARD_EDITOR_SCRIPT, '')
+  const urls = view.match(/https?:\/\/[^\s"'`)<>]+/gi) ?? []
   assert(urls.length > 0)
   for (const url of urls) assertEquals(new URL(url).origin, 'https://elaborat.ing', url)
   for (const pattern of [/\bsrc\s*=/i, /<link\b/i, /@import/i, /url\(/, /\/\/[a-z0-9.-]+\.[a-z]{2,}/i, /\bfetch\(|XMLHttpRequest|WebSocket|EventSource/]) {
-    assertFalse(pattern.test(FILE_VIEW_HTML.replaceAll(/https:\/\/elaborat\.ing\/?/g, '')), `view matches ${pattern}`)
+    assertFalse(pattern.test(view.replaceAll(/https:\/\/elaborat\.ing\/?/g, '')), `view matches ${pattern}`)
   }
-  assertFalse(FILE_VIEW_HTML.includes('\u2014'), 'no em dashes in the view copy')
+  // The editor script's only em dashes are in its HTML entity tables.
+  assertFalse(view.includes('\u2014'), 'no em dashes in the view copy')
+})
+
+Deno.test('the note editor script makes no requests, runs no code from strings, and stays inside its script element', () => {
+  for (const pattern of [/\bfetch\(|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon|new Worker/, /\beval\(|new Function\b/, /<\/script|<!--/i]) {
+    assertFalse(pattern.test(CARD_EDITOR_SCRIPT), `editor script matches ${pattern}`)
+  }
+  // What hosts load for the view, the editor included.
+  assert(FILE_VIEW_HTML.length < 1_200_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 
 Deno.test('rendered Markdown shows raw HTML as text and drops unsafe links and images', () => {
@@ -153,7 +187,8 @@ Deno.test('show_file reads the file as the user and returns the rendered note', 
     truncated: false,
     embeds: [],
   })
-  assertEquals(result._meta, undefined)
+  // The note's source goes to the view for editing, never to the model.
+  assertEquals(result._meta, { [SOURCE_META_KEY]: content })
   assertEquals(result.content, [{ type: 'text', text: `Showing notes/plan.md (version 3) to the user. Open it in elaborat.ing: ${url}` }])
 })
 
@@ -175,6 +210,8 @@ Deno.test('show_file shows drawings and diagrams as a card and cuts long notes',
   const view = result.structuredContent as Record<string, unknown>
   assertEquals(view.truncated, true)
   assert(String(view.html).length < long.length)
+  // A note too long to show whole is not edited in the view.
+  assertEquals(result._meta, undefined)
 })
 
 Deno.test('show_file reports a missing file', async () => {
@@ -292,6 +329,8 @@ Deno.test('show_file draws a drawing or diagram shown on its own', async () => {
   const fresh = await showFile('flows/new.d2', [file('flows/new.d2', 'a -> b')])
   assertEquals((fresh.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'not_drawn')
   assertEquals(fresh.result._meta, undefined)
+  // Only notes are edited in the view.
+  assertFalse(SOURCE_META_KEY in (drawing.result._meta ?? {}))
 })
 
 Deno.test(`show_file draws at most ${MAX_EMBEDS} different files for a note`, async () => {
@@ -310,4 +349,40 @@ Deno.test('a note drops MDX import and export lines but keeps prose that starts 
   assertFalse(html.includes('export const'))
   assertStringIncludes(html, 'Plan')
   assertStringIncludes(html, 'Import the data first.')
+})
+
+Deno.test('the card saves with the version it showed, and a note changed since then is a conflict', async () => {
+  const source = '---\ntitle: Plan\n---\n# Plan\n\nShip it *soon*.\n\n<Drawing src="art/flow.excalidraw" />\n'
+  const edited = source.replace('Ship it', 'Ship it this week,')
+  const files = [file('notes/plan.mdx', source), file('art/flow.excalidraw', SCENE)]
+  files[0].version = 4
+  await withClient(files, async (client, queries) => {
+    const call = async (name: string, args: Record<string, unknown>) =>
+      (await client.callTool({ name, arguments: args })) as CallToolResult
+    const shown = await call('show_file', { project_id: PROJECT, path: 'notes/plan.mdx' })
+    const view = shown.structuredContent as { version: number }
+    assertEquals(view.version, 4)
+    assertEquals((shown._meta as Record<string, string>)[SOURCE_META_KEY], source)
+
+    // What the card sends on Save: the whole edited source and the version it showed.
+    const saved = await call('write_file', { project_id: PROJECT, path: 'notes/plan.mdx', content: edited, base_version: view.version })
+    assertEquals(queries.at(-1), [['rpc', 'save_files', {
+      project_id: PROJECT,
+      mutation_id: (queries.at(-1)![0][2] as { mutation_id: string }).mutation_id,
+      changes: [{ op: 'put', path: 'notes/plan.mdx', content: edited, base_version: 4 }],
+    }]])
+    assertEquals(saved.structuredContent, { status: 'saved', changes: [{ op: 'put', path: 'notes/plan.mdx', version: 5 }] })
+
+    // The card reloads itself and shows the saved version.
+    const reloaded = await call('show_file', { project_id: PROJECT, path: 'notes/plan.mdx' })
+    assertEquals((reloaded.structuredContent as { version: number }).version, 5)
+    assertEquals((reloaded._meta as Record<string, string>)[SOURCE_META_KEY], edited)
+
+    // A second card still showing version 4 cannot overwrite version 5.
+    const stale = await call('write_file', { project_id: PROJECT, path: 'notes/plan.mdx', content: source, base_version: 4 })
+    const conflict = stale.structuredContent as { status: string; conflicts: { current: { version: number; content: string } }[] }
+    assertEquals(conflict.status, 'conflict')
+    assertEquals(conflict.conflicts[0].current, { version: 5, content: edited })
+    assertEquals(files[0].content, edited)
+  })
 })

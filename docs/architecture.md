@@ -375,7 +375,7 @@ secrets.
   batch saves carry the MCP destructive annotation. There is no tool to
   permanently delete a project or accept an invitation; the database refuses
   both for agents anyway. Search is added with hybrid search.
-- **MCP Apps:** read-only views inside the client: a rendered document with its
+- **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with
   one self-contained `ui://` view. It renders a note's Markdown (raw HTML and
@@ -388,6 +388,20 @@ secrets.
   drawn per note, 200,000 characters of SVG each and 600,000 per result, 3,000
   elements per scene. The view is on its own tool, not on `read_file`, so
   agents can read files without filling the chat with views.
+- **Notes are edited in the card.** Where the host lets views call tools, a
+  note's card has Edit: it runs the app's own rendered editor
+  (`FluidEditor` and `prepareFluidTransaction`, so each edit is an exact
+  source patch and every other byte stays), with embeds and other MDX as
+  islands that cannot be edited. The note's source reaches the view in the
+  result's `_meta`. Save calls `write_file` through the bridge with the
+  version the card showed, so a note changed since is a conflict, never
+  overwritten; the card then reloads with `show_file` and tells the model
+  with `ui/update-model-context`. `src/chat-card/cardEditor.ts` is built
+  into one script by `bun run build:chat-card`, which writes
+  `tools/cardEditorScript.ts`; it is committed because the functions deploy
+  without building the app, so rebuild it after changing the editor
+  modules. The view is about 0.85 MB with it, and runs under the spec's
+  default policy (Zod runs jitless).
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local

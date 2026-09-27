@@ -5,7 +5,7 @@ import { z } from 'npm:zod@4.4.3'
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
-import { path, projectId } from './projects.ts'
+import { path, projectId, VIEW_CALLABLE } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
@@ -20,9 +20,13 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v3.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v4.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
-const OLD_FILE_VIEW_URIS = ['ui://elaborating/file-view-v1.html', 'ui://elaborating/file-view-v2.html']
+const OLD_FILE_VIEW_URIS = [
+  'ui://elaborating/file-view-v1.html',
+  'ui://elaborating/file-view-v2.html',
+  'ui://elaborating/file-view-v3.html',
+]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
 const APP_ORIGIN = 'https://elaborat.ing'
@@ -37,6 +41,8 @@ export const MAX_TOTAL_SVG_CHARS = 600_000
 const MAX_SCENE_CHARS = 5_000_000
 /** The result `_meta` key holding each drawn file's SVG by path. `_meta` reaches the view, not the model. */
 export const SVG_META_KEY = 'elaborat.ing/svg'
+/** The result `_meta` key holding a note's source, which the view edits. */
+export const SOURCE_META_KEY = 'elaborat.ing/source'
 
 export type FileKind = 'note' | 'drawing' | 'diagram' | 'file'
 
@@ -130,7 +136,7 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
       uri,
       {
         title: 'File view',
-        description: 'A read-only view of one file with a link to open it in elaborat.ing. Used by show_file.',
+        description: 'A view of one file with a link to open it in elaborat.ing; notes can be edited in it. Used by show_file.',
         mimeType: MCP_APP_MIME_TYPE,
       },
       () => ({
@@ -152,12 +158,13 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
     {
       title: 'Show file',
       description:
-        'Show one file to the user in the chat as a read-only card with a link to open it in elaborat.ing. ' +
+        'Show one file to the user in the chat as a card with a link to open it in elaborat.ing. ' +
         'Notes are rendered, and drawings and diagrams are drawn, also where a note embeds them. ' +
-        'Use this when the user wants to see a file. To read a file yourself, use read_file.',
+        'Where the chat allows it, the user can edit a note in the card and save it; read the file again after that. ' +
+        'Use this when the user wants to see or edit a file. To read a file yourself, use read_file.',
       inputSchema: z.object({ project_id: projectId, path }),
       annotations: { readOnlyHint: true, openWorldHint: false },
-      _meta: { ui: { resourceUri: FILE_VIEW_URI } },
+      _meta: { ...VIEW_CALLABLE, ui: { ...VIEW_CALLABLE.ui, resourceUri: FILE_VIEW_URI } },
     },
     async ({ project_id, path }) => {
       try {
@@ -191,7 +198,15 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
             truncated: note?.truncated ?? false,
             embeds,
           },
-          ...(Object.keys(svgs).length > 0 ? { _meta: { [SVG_META_KEY]: svgs } } : {}),
+          ...(Object.keys(svgs).length > 0 || (note && !note.truncated)
+            ? {
+                _meta: {
+                  ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
+                  // The whole note, for editing in the view; a note too long to show whole is not edited there.
+                  ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
+                },
+              }
+            : {}),
         }
       } catch (error) {
         return runtimeErrorResult(error)
