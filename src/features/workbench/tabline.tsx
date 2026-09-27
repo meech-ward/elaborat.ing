@@ -16,3 +16,8 @@ export function TablineActions({ active, children }: { active: boolean; children
   if (!slot) return <>{children}</>;
   return active ? createPortal(children, slot) : null;
 }
+
+/** True inside the desktop frame (the editor has a top line), false on a phone. */
+export function useDesktopFrame(): boolean {
+  return useContext(TablineSlot) !== null;
+}

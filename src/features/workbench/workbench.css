@@ -1368,3 +1368,114 @@ above the choices. */
   background: var(--bg);
   color: var(--text);
 }
+
+/* Full-bleed canvases (desktop): a drawing or diagram on its canvas fills the
+   window behind the panels, over dots that pan and zoom with the scene
+   (canvasStage.ts). The side panels and the top line float above it and keep
+   their pointer events; everywhere else reaches the canvas. The editor panel
+   shows only its top line. */
+.wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-main-panel {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) :is(.wb-explorer-panel, .wb-resize-handle, .wb-diagnostics-panel, .wb-notice) {
+  position: relative;
+  z-index: 1;
+}
+.wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) :is(.wb-diagnostics-panel, .wb-notice) {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.wb-app:not([data-compact="true"]):not([data-focus="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-tabline {
+  position: relative;
+  z-index: 1;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px var(--shadow);
+}
+.wb-native-view[data-canvas-bleed] {
+  overflow: visible;
+  padding-top: 68px;
+}
+.wb-native-view[data-canvas-bleed] > [data-canvas-stage] {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: var(--chrome);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+  background-size: var(--canvas-dot-size, 22px) var(--canvas-dot-size, 22px);
+  background-position: var(--canvas-dot-x, 0) var(--canvas-dot-y, 0);
+}
+/* Banners and conflicts sit under the tool island; the saved state floats
+   at the bottom right, beside Excalidraw's help button. */
+.wb-native-view[data-canvas-bleed] > :not([data-canvas-stage], [aria-live]) {
+  position: relative;
+  z-index: 1;
+  width: min(640px, calc(100% - 32px));
+  margin: 8px auto 0;
+}
+.wb-native-view[data-canvas-bleed] > [aria-live] {
+  position: fixed;
+  right: 64px;
+  bottom: 16px;
+  z-index: 1;
+  max-width: 480px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--island);
+  box-shadow: 0 1px 4px var(--island-shadow), 0 0 0 1px var(--island-ring);
+  font-size: 11px;
+}
+/* Excalidraw's own controls keep to the canvas area: right of the side
+   panels and below the top line (the tool island's top is 76). In focus
+   mode they use the whole window, clear of the top-right panel. */
+.wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper {
+  top: 60px;
+  left: var(--canvas-left, 0px);
+  width: calc(100% - var(--canvas-left, 0px));
+  height: calc(100% - 60px);
+}
+.wb-native-view[data-canvas-bleed] .excalidraw .sidebar {
+  top: 76px;
+  right: 16px;
+  bottom: 16px;
+  border-radius: 12px;
+}
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper {
+  top: 0;
+  height: 100%;
+}
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper__top-right {
+  margin-top: 60px;
+}
+/* The tool and zoom islands in the palette's island colours. */
+.wb-native-view[data-canvas-bleed] .excalidraw {
+  --island-bg-color: var(--island);
+  --shadow-island: 0 1px 4px var(--island-shadow), 0 0 0 1px var(--island-ring);
+  --icon-fill-color: var(--tool-ink);
+  --color-surface-primary-container: var(--tool-on);
+  --color-on-primary-container: var(--tool-on-ink);
+  --color-surface-low: var(--island);
+  --lg-button-size: 34px;
+}
+.wb-native-view[data-canvas-bleed] .excalidraw .App-toolbar.Island {
+  border-radius: 10px;
+}
+.wb-native-view[data-canvas-bleed] .excalidraw .App-toolbar-container .ToolIcon__icon {
+  border-radius: 8px;
+}
+.wb-native-view[data-canvas-bleed] .excalidraw :is(.zoom-actions, .undo-redo-buttons) {
+  border-radius: 10px;
+  box-shadow: var(--shadow-island);
+}
+.wb-native-view[data-canvas-bleed] .excalidraw .reset-zoom-button {
+  width: 52px !important;
+  font-family: var(--code-font);
+  font-size: 13px !important;
+  color: var(--tool-ink);
+}

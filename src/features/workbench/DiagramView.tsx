@@ -33,7 +33,8 @@ import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { duplicateShortcutLabel } from "./viewShortcuts";
-import { TablineActions } from "./tabline";
+import { useCanvasStage } from "./canvasStage";
+import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
@@ -93,7 +94,8 @@ export function DiagramView({
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
-  const present = useCanvasPresentation("diagram");
+  const desktop = useDesktopFrame();
+  const present = useCanvasPresentation("diagram", desktop);
   const nativePath = useMemo(() => nativePathFor(path), [path]);
   const sidecarPath = useMemo(() => sidecarPathFor(path), [path]);
 
@@ -487,6 +489,9 @@ export function DiagramView({
     }
   }, [scene, baseName]);
 
+  const fullBleed = desktop && active && view === "canvas" && booted && !bootError && scene !== null;
+  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
+
   if (!booted) {
     return (
       <div className="wb-native-view">
@@ -522,7 +527,7 @@ export function DiagramView({
   const warnings = diagnostics.filter((entry) => entry.severity !== "error");
 
   return (
-    <div className="wb-native-view">
+    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined}>
       <TablineActions active={active}>
       <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
         <CompactFileIdentity navigation={navigation} path={path} />
@@ -671,8 +676,16 @@ export function DiagramView({
           readOnly={readOnly}
         />
       </div>
-      <div hidden={view !== "canvas"} className="wb-native-stage">
-        <DrawingCanvas scene={scene} onChange={changeCanvas} theme={theme} present={present} active={active && view === "canvas"} viewOnly={Boolean(readOnly)} />
+      <div hidden={view !== "canvas"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
+        <DrawingCanvas
+          scene={scene}
+          onChange={changeCanvas}
+          theme={theme}
+          present={present}
+          onScrollChange={onStageScroll}
+          active={active && view === "canvas"}
+          viewOnly={Boolean(readOnly)}
+        />
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
         Renaming a node on the canvas updates the code. Code changes reach the canvas on Regenerate, which keeps freehand additions and

@@ -89,12 +89,15 @@ test("the code editor and the drawing canvas take the chosen palette's colours, 
   await dialog.getByRole("radio", { name: "Light", exact: true }).check()
   await page.keyboard.press("Escape")
 
-  // The canvas paints the palette's background; the file keeps its own.
+  // The canvas shows the palette's background (on a desktop it is clear over
+  // the window's dotted background, which paints it); the file keeps its own.
   const canvasBackground = () =>
     page.evaluate(() => {
+      const hex = (rgb: number[]) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase()
       const canvas = [...document.querySelectorAll<HTMLCanvasElement>(".excalidraw canvas.static")].find((element) => element.width > 0)!
-      const [r, g, b] = canvas.getContext("2d")!.getImageData(2, 2, 1, 1).data
-      return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase()
+      const [r, g, b, a] = canvas.getContext("2d")!.getImageData(2, 2, 1, 1).data
+      if (a > 0) return hex([r, g, b])
+      return hex(getComputedStyle(canvas.closest(".wb-native-stage")!).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number))
     })
   await expect.poll(canvasBackground).toBe(cherry.bg.toUpperCase())
   await expect(page.getByRole("tab", { name: "sketch.excalidraw" }).getByLabel("unsaved changes")).toHaveCount(0)

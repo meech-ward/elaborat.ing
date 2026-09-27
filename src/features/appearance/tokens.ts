@@ -48,6 +48,14 @@ export interface AppearanceTokens {
   note: string;
   drawing: string;
   diagram: string;
+  /** Floating tool islands over a canvas: fill, ring and shadow. */
+  island: string;
+  islandRing: string;
+  islandShadow: string;
+  /** Tool icons on an island, and the selected tool's fill and icon. */
+  toolInk: string;
+  toolOn: string;
+  toolOnInk: string;
   uiFont: string;
   headingFont: string;
   codeFont: string;
@@ -144,6 +152,12 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     note: colors.note,
     drawing: colors.drawing,
     diagram: colors.diagram,
+    island: colors.island,
+    islandRing: colors.islandRing,
+    islandShadow: colors.islandShadow,
+    toolInk: colors.toolInk,
+    toolOn: colors.toolOn,
+    toolOnInk: colors.toolOnInk,
     uiFont: "'Space Grotesk Variable', sans-serif",
     headingFont: "'Space Grotesk Variable', sans-serif",
     codeFont: "'JetBrains Mono Variable', monospace",

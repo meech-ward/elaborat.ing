@@ -18,6 +18,8 @@
   --blue:#72A6FF; --purple:#C49BFF; --amber:#F5D27A; --green:#F5A55A;
   --source:#C49BFF; --selection:#0F3323; --shadow:rgba(0,0,0,0.45); --dot:#2C2F2D; --warn-bg:#3A2C0E;
   --danger:#F16A50; --note:#6E9EFF; --drawing:#F07FB6; --diagram:#B88CF5;
+  --island:#1F201F; --island-ring:#323432; --island-shadow:rgba(0,0,0,0.50);
+  --tool-ink:#D0D3D1; --tool-on:#12402B; --tool-on-ink:#A9F1CA;
   color-scheme:dark;
   font-family:var(--ui-font);
 }
@@ -28,6 +30,8 @@
   --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
   --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1; --warn-bg:#FFF4D6;
   --danger:#CA3214; --note:#2F6BDB; --drawing:#C73A86; --diagram:#7A4BD6;
+  --island:#FFFFFF; --island-ring:#E2E6E4; --island-shadow:rgba(18,20,19,0.12);
+  --tool-ink:#2A2F2C; --tool-on:#DCF5E8; --tool-on-ink:#065C3A;
   color-scheme:light;
 }
 /* Before the app sets data-scheme, the first paint follows the device. */
@@ -39,6 +43,8 @@
     --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
     --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1; --warn-bg:#FFF4D6;
     --danger:#CA3214; --note:#2F6BDB; --drawing:#C73A86; --diagram:#7A4BD6;
+    --island:#FFFFFF; --island-ring:#E2E6E4; --island-shadow:rgba(18,20,19,0.12);
+    --tool-ink:#2A2F2C; --tool-on:#DCF5E8; --tool-on-ink:#065C3A;
     color-scheme:light;
   }
 }

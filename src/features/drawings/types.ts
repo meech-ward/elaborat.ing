@@ -186,5 +186,7 @@ export interface DrawingCanvasProps {
    * redraws the canvas without marking anything changed.
    */
   present?: (scene: DrawingScene) => DrawingScene;
+  /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */
+  onScrollChange?: (scrollX: number, scrollY: number, zoom: number) => void;
   onError?: (message: string) => void;
 }

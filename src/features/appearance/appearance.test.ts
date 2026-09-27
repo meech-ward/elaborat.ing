@@ -27,6 +27,8 @@ describe('getAppearanceTokens', () => {
     expect(tokens.accent).toBe('#3ECF8E');
     expect(tokens.selection).toBe(dark.accentSoft);
     expect([tokens.danger, tokens.note, tokens.drawing, tokens.diagram]).toEqual([dark.danger, dark.note, dark.drawing, dark.diagram]);
+    expect([tokens.island, tokens.islandRing, tokens.islandShadow]).toEqual([dark.island, dark.islandRing, dark.islandShadow]);
+    expect([tokens.toolInk, tokens.toolOn, tokens.toolOnInk]).toEqual([dark.toolInk, dark.toolOn, dark.toolOnInk]);
     expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).accent).toBe('#097C4F');
     expect(getAppearanceTokens({ theme: 'pewter', scheme: 'light' }).accent).toBe(palettes[6].light.accent);
   });
@@ -91,6 +93,12 @@ describe('getAppearanceTokens', () => {
     for (const key of ['focus', 'danger'] as const) {
       expect(rootBlock).toContain(`--${key}:${dark[key]};`);
       expect(lightBlock).toContain(`--${key}:${light[key]};`);
+    }
+    const islands = { island: 'island', islandRing: 'island-ring', islandShadow: 'island-shadow', toolInk: 'tool-ink', toolOn: 'tool-on', toolOnInk: 'tool-on-ink' } as const;
+    for (const [key, name] of Object.entries(islands) as Array<[keyof typeof islands, string]>) {
+      const compact = (value: string) => value.replace(/, /g, ',');
+      expect(rootBlock).toContain(`--${name}:${compact(dark[key])};`);
+      expect(lightBlock).toContain(`--${name}:${compact(light[key])};`);
     }
   });
 });

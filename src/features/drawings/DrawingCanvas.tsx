@@ -179,7 +179,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, onError } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   // Raw authored authority: the only state ever forwarded or saved.
   const rawRef = useRef<DrawingScene>(scene);
@@ -195,11 +195,13 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const presentRef = useRef(present);
   const onChangeRef = useRef(onChange);
   const onErrorRef = useRef(onError);
+  const onScrollRef = useRef(onScrollChange);
   // Latest callbacks without re-subscribing the native component: effects
   // only, never ref writes during render.
   useEffect(() => {
     onChangeRef.current = onChange;
     onErrorRef.current = onError;
+    onScrollRef.current = onScrollChange;
   });
 
   // Read by the native canvas on mount only; later scenes arrive through
@@ -297,6 +299,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               }
             }}
             onChange={handleLibraryChange}
+            onScrollChange={(scrollX, scrollY, zoom) => onScrollRef.current?.(scrollX, scrollY, zoom.value)}
           />
         </Suspense>
       </CanvasErrorBoundary>

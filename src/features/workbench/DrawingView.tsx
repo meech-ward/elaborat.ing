@@ -29,7 +29,8 @@ import { ViewSwitcher } from "./ViewSwitcher";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { duplicateShortcutLabel } from "./viewShortcuts";
-import { TablineActions } from "./tabline";
+import { useCanvasStage } from "./canvasStage";
+import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
@@ -89,7 +90,8 @@ export function DrawingView({
 }) {
   const path = initial.path;
   const theme = useCanvasTheme();
-  const present = useCanvasPresentation("drawing");
+  const desktop = useDesktopFrame();
+  const present = useCanvasPresentation("drawing", desktop);
   const [opened] = useState(() => tryParse(initial.content, path));
   const [original, setOriginal] = useState<ParsedDrawing | null>(opened.parsed);
   const [scene, setScene] = useState<DrawingScene | null>(opened.parsed?.scene ?? null);
@@ -304,8 +306,11 @@ export function DrawingView({
     setNotice(`Exported ${result.filename}.`);
   }, [view, scene, sourceDraft, path]);
 
+  const fullBleed = desktop && active && view === "canvas" && scene !== null;
+  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
+
   return (
-    <div className="wb-native-view">
+    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined}>
       <TablineActions active={active}>
       <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
         <CompactFileIdentity navigation={navigation} path={path} />
@@ -422,7 +427,7 @@ export function DrawingView({
       )}
 
       {scene && (
-        <div hidden={view !== "canvas"} className="wb-native-stage">
+        <div hidden={view !== "canvas"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
           <DrawingCanvas
             scene={scene}
             onChange={(next) => {
@@ -430,6 +435,7 @@ export function DrawingView({
             }}
             theme={theme}
             present={present}
+            onScrollChange={onStageScroll}
             active={active && view === "canvas"}
             viewOnly={Boolean(readOnly)}
           />

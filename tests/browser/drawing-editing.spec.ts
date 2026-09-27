@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
+import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -179,6 +180,41 @@ test("a drawing changed on another device updates the open canvas when it has no
   await expect(status(page)).toContainText("2 elements")
   await expect(status(page)).toContainText("Saved")
   expect(fake.server.content(id, "sketch.excalidraw")).toBe(theirs)
+})
+
+test("on a desktop the canvas fills the window behind the panels, and the side panel keeps its own clicks", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const { fake, id } = await openProject(page, { "sketch.excalidraw": SCENE }, "sketch.excalidraw")
+  await expect(canvas(page)).toBeVisible()
+  await expect.poll(() => canvas(page).boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
+
+  // The rectangle tool, selected, takes the palette's selected-tool colour.
+  await page.mouse.click(900, 600)
+  await page.keyboard.press("2")
+  const scheme = await page.evaluate(() => (document.documentElement.dataset.scheme === "light" ? "light" : "dark"))
+  const rgb = (hex: string) => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`
+  await expect(page.locator(".App-toolbar .ToolIcon_type_radio:checked + .ToolIcon__icon")).toHaveCSS("background-color", rgb(palettes[0][scheme].toolOn))
+
+  // A drag over the side panel stays there and draws nothing.
+  const files = (await page.getByRole("navigation", { name: "Workspace files" }).boundingBox())!
+  const [x, y] = [files.x + files.width / 2, files.y + files.height - 60]
+  expect(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest(".wb-files-panel")), [x, y])).toBe(true)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 60, y + 30, { steps: 5 })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  await expect(status(page)).toContainText("Saved")
+  await expect(status(page)).toContainText("1 elements")
+
+  // A rectangle drawn in the canvas area (clear of the tool's properties panel) saves.
+  await page.mouse.move(760, 480)
+  await page.mouse.down()
+  await page.mouse.move(900, 570, { steps: 8 })
+  await page.mouse.up()
+  await expect(status(page)).toContainText("Unsaved changes")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => elements(fake.server.content(id, "sketch.excalidraw")).length).toBe(2)
 })
 
 test.describe("on a phone", () => {

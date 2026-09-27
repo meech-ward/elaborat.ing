@@ -10,16 +10,17 @@ export function useCanvasTheme(): "light" | "dark" {
 /**
  * The palette's canvas colours over a drawing or a diagram, for display
  * only (see DrawingCanvas's `present`). Excalidraw's dark theme inverts the
- * canvas, so dark colours go in inverted ahead of it.
+ * canvas, so dark colours go in inverted ahead of it. Over the desktop's
+ * dotted background the canvas is clear, so the dots show through.
  */
-export function useCanvasPresentation(kind: "drawing" | "diagram"): (scene: DrawingScene) => DrawingScene {
+export function useCanvasPresentation(kind: "drawing" | "diagram", overDots = false): (scene: DrawingScene) => DrawingScene {
   const { appearance } = useAppearance();
   return useMemo(() => {
     const palette = getPaletteColors(appearance);
     const shown = appearance.scheme === "dark" ? beforeDarkFilter : (color: string) => color;
-    const canvas = { background: shown(palette.bg), stroke: shown(palette.ink) };
+    const canvas = { background: overDots ? "transparent" : shown(palette.bg), stroke: shown(palette.ink) };
     if (kind === "drawing") return (scene: DrawingScene) => presentDrawing(scene, canvas);
     const diagram = { stroke: canvas.stroke, label: shown(palette.inkSoft), fill: shown(palette.d2Fill), fill2: shown(palette.d2Fill2) };
     return (scene: DrawingScene) => ({ ...presentDrawing(scene, canvas), elements: presentDiagramElements(scene.elements, diagram) });
-  }, [appearance, kind]);
+  }, [appearance, kind, overDots]);
 }
