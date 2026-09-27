@@ -8,8 +8,9 @@
   font-family: var(--ui-font);
 }
 .project-hub .wb-app { height: 100%; }
-/* Buttons built on the shared button component, and the tabs, keep their type. */
-.wb-app button:where(:not([data-slot="button"], [role="tab"])),
+/* Buttons built on the design system's components (they carry data-slot),
+   and the tabs, keep their type. */
+.wb-app button:where(:not([data-slot], [role="tab"])),
 .wb-palette button {
   cursor: pointer;
   font: inherit;
@@ -108,73 +109,6 @@
 .wb-sidebar-provider {
   display: contents;
 }
-.wb-explorer {
-  width: 100%;
-  height: 100%;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--bg);
-  border-right: 1px solid var(--panel-border);
-  overflow: hidden;
-  scrollbar-gutter: stable;
-}
-.wb-explorer-title {
-  /* The title is a SidebarHeader above the scrolling SidebarContent, so it
-     stays pinned without sticky positioning. */
-  position: static;
-  z-index: 2;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px 4px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: normal;
-  color: var(--muted);
-  background: var(--bg);
-}
-.wb-explorer-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  border-radius: 7px;
-}
-.wb-explorer-row:hover {
-  background: var(--seg);
-}
-.wb-explorer-row[data-active="true"] {
-  background: var(--accent-soft);
-}
-.wb-explorer-row[data-active="true"] .wb-explorer-open {
-  color: var(--accent-soft-text);
-  font-weight: 600;
-}
-.wb-explorer-trigger {
-  display: flex;
-  align-items: stretch;
-  flex: 1;
-  min-width: 0;
-}
-.wb-explorer-open {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  min-height: 28px;
-  /* The kind badge hangs in the indent, so a wrapped name lines up. */
-  padding: 4px 6px 4px 31px;
-  text-indent: -23px;
-  overflow-wrap: anywhere;
-  border-radius: 7px;
-  color: var(--text);
-}
-/* More specific than the workbench's general button font reset. */
-.wb-explorer :is(.wb-explorer-open, .wb-tree-select, .wb-tree-root) {
-  font-size: 13px;
-  line-height: 20px;
-}
 /* A file's kind before its name: M notes, D drawings, 2 diagrams. */
 .wb-kind {
   display: inline-block;
@@ -192,217 +126,6 @@
 }
 .wb-kind[data-kind="diagram"] {
   color: var(--diagram);
-}
-.wb-explorer-row[data-active="true"] .wb-kind {
-  color: inherit;
-}
-/* Row actions show on hover, on focus and on the active or selected row;
-   hidden, they stay in the accessibility tree and still take clicks. */
-@media (hover: hover) {
-  .wb-explorer-row:not([data-active="true"], :hover, :focus-within) .wb-explorer-trigger > .wb-icon:not([aria-expanded="true"]),
-  .wb-tree-row:not([data-selected="true"], :hover, :focus-within) > .wb-icon:not([aria-expanded="true"]) {
-    opacity: 0;
-  }
-}
-/* Always-visible per-row fallback menu (touch/keyboard users who cannot
-open a context menu); compact but above the 24px minimum target. */
-.wb-explorer-trigger > .wb-icon {
-  width: 28px;
-  height: 28px;
-  align-self: center;
-  flex-shrink: 0;
-  margin-right: 4px;
-}
-.wb-explorer p {
-  padding: 15px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.wb-explorer-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-/* Folder tree: semantic nested lists with disclosure buttons. Token
-colors only; names wrap inside the narrow panel instead of overflowing. */
-.wb-tree {
-  padding: 4px 8px 12px;
-}
-.wb-tree-root {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 28px;
-  padding: 4px 8px;
-  color: var(--text);
-  text-align: left;
-  border-radius: 7px;
-  margin-bottom: 4px;
-}
-.wb-tree-root:hover {
-  background: var(--seg);
-}
-.wb-tree-root[aria-pressed="true"] {
-  background: var(--accent-soft);
-}
-.wb-tree-list,
-.wb-tree-nested {
-  display: grid;
-  /* Rows never outgrow the panel, so a long name ends in an ellipsis. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.wb-tree-nested {
-  margin-block-start: 2px;
-  margin-inline-start: 8px;
-  padding-inline-start: 7px;
-  border-inline-start: 1px solid var(--panel-border);
-}
-/* A new file or folder's name field, where the entry will appear. */
-.wb-new-entry {
-  display: grid;
-  gap: 4px;
-  padding: 2px 0;
-}
-.wb-new-entry input {
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  padding: 7px 6px 7px 32px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 20px;
-}
-.wb-new-entry input[aria-invalid="true"] {
-  border-color: var(--text);
-}
-.wb-new-entry-error {
-  margin: 0;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--seg);
-  color: var(--text);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.wb-tree-row {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-  min-width: 0;
-  border-radius: 7px;
-}
-.wb-tree-row:hover {
-  background: var(--seg);
-}
-.wb-tree-row[data-selected="true"] {
-  background: var(--accent-soft);
-}
-/* A folder's always-visible action menu, sized like a file's. */
-.wb-tree-row > .wb-icon {
-  width: 28px;
-  height: 28px;
-  align-self: center;
-  flex-shrink: 0;
-}
-.wb-tree-toggle {
-  width: 28px;
-  min-height: 28px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  border-radius: 7px;
-}
-.wb-tree-toggle:hover {
-  color: var(--text);
-}
-.wb-tree-toggle svg {
-  transition: transform 140ms ease;
-}
-.wb-tree-toggle[aria-expanded="true"] svg {
-  transform: rotate(90deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .wb-tree-toggle svg {
-    transition: none;
-  }
-}
-.wb-tree-select {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  padding: 4px 8px;
-  color: var(--text);
-  text-align: left;
-  border-radius: 7px;
-}
-.wb-tree-select svg,
-.wb-tree-root svg {
-  flex-shrink: 0;
-  color: var(--muted);
-}
-.wb-tree-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.wb-explorer button:focus-visible {
-  outline: 2px solid var(--focus, var(--accent));
-  outline-offset: -2px;
-}
-@media (pointer: coarse) {
-  .wb-explorer :is(.wb-tree-toggle, .wb-tree-select, .wb-tree-root) {
-    min-height: 40px;
-  }
-  .wb-explorer .wb-tree-toggle,
-  .wb-explorer .wb-icon {
-    width: 40px;
-    height: 40px;
-  }
-  .wb-explorer .wb-explorer-open {
-    min-height: 40px;
-  }
-}
-.wb-explorer-draft {
-  color: var(--accent-soft-text);
-}
-/* The tab's unsaved dot, after the name in the tree. */
-.wb-explorer-dirty {
-  display: inline-block;
-  margin-left: 7px;
-  vertical-align: middle;
-}
-/* Failed list: visible error with retry, never a silent empty tree. */
-.wb-explorer-error {
-  margin: 8px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  background: var(--seg);
-}
-.wb-explorer-error p {
-  padding: 0 0 8px;
-  overflow-wrap: anywhere;
-}
-.wb-explorer-error button {
-  min-height: 36px;
-  padding: 6px 14px;
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
 }
 .wb-main {
   display: flex;
@@ -651,7 +374,7 @@ the request runs, keeping the renamed session inert. */
   --color-on-surface: var(--text);
   --color-border: var(--panel-border);
 }
-.wb-app :focus-visible:where(:not([data-slot="button"])),
+.wb-app :focus-visible:where(:not([data-slot])),
 .wb-palette :focus-visible {
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: -2px;
@@ -685,9 +408,6 @@ the request runs, keeping the renamed session inert. */
   background: var(--accent);
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: 0;
-}
-.wb-explorer-overlay {
-  z-index: 30;
 }
 .wb-move {
   width: min(38rem, calc(100vw - 24px));
@@ -774,49 +494,6 @@ above the choices. */
 .wb-app[data-compact="true"] .wb-native-view > [aria-live] + :not(.wb-native-stage) { margin-top: 64px; }
 /* Excalidraw's own toolbar sits below the floating controls. */
 .wb-app[data-compact="true"] .excalidraw .App-top-bar { transform: translateY(56px); }
-/* The files screen: the project, the files and the account, stacked. */
-.wb-files-screen {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background-color: var(--bg);
-  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
-  background-size: 22px 22px;
-}
-.wb-files-screen .wb-float { box-shadow: none; }
-.wb-files-screen .wb-project-panel { min-height: 48px; padding: 8px 52px 8px 14px; }
-.wb-files-screen .wb-project-panel h1 { font-size: 17px; }
-.wb-files-screen .wb-project-panel > .wb-icon { top: 3px; right: 4px; width: 40px; height: 40px; }
-.wb-files-screen .wb-files-panel { flex: 1 0 auto; min-height: 240px; display: flex; flex-direction: column; }
-.wb-files-screen .wb-explorer { height: auto; flex: 1; overflow: visible; scrollbar-gutter: auto; }
-.wb-files-screen .wb-files-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 10px 4px; }
-.wb-files-screen .wb-files-actions .wb-button { justify-content: center; width: 100%; height: 40px; border-radius: 10px; font-size: 15px; font-weight: 600; }
-.wb-files-screen .wb-tree { padding: 4px 10px 10px; }
-.wb-files-screen .wb-explorer :is(.wb-explorer-open, .wb-tree-select, .wb-tree-root) { min-height: 40px; font-size: 15px; }
-.wb-files-screen .wb-explorer-open { padding-left: 33px; text-indent: -25px; }
-.wb-files-screen .wb-kind { width: 18px; font-size: 12px; }
-.wb-files-screen .wb-explorer :is(.wb-tree-toggle, .wb-icon) { width: 40px; height: 40px; min-height: 40px; }
-.wb-files-screen .wb-account-panel { flex-shrink: 0; font-size: 15px; }
-.wb-files-screen .wb-account-links { flex-wrap: wrap; row-gap: 4px; }
-.wb-files-screen .wb-account-links :is(a, .wb-link-button) { display: inline-flex; align-items: center; min-height: 40px; }
-.wb-files-screen .wb-account-links > .wb-icon { width: 40px; height: 40px; }
-.wb-files-screen .wb-avatar { width: 36px; height: 36px; }
-.wb-files-screen .wb-account-profile .wb-link-button { min-height: 40px; }
-.wb-files-screen :is(button, select, summary, input:not([type="file"])) { min-height: 40px; }
-.wb-navigation-tabs { padding: 4px 10px; }
-.wb-navigation-tabs h2 { padding: 6px 8px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.wb-navigation-tab { display: flex; align-items: center; border-radius: 9px; list-style: none; }
-.wb-navigation-tab > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; padding: 8px; font-size: 15px; }
-.wb-navigation-tab > button:first-child > span:first-child { overflow-wrap: anywhere; }
-.wb-navigation-tab:has([aria-current]) { background: var(--accent-soft); }
-.wb-navigation-tab > [data-sidebar="menu-action"] { position: relative; top: auto; right: auto; flex-shrink: 0; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; }
-.wb-navigation-diagnostics { flex-shrink: 0; padding: 8px 12px; font-size: 12px; overflow-wrap: anywhere; }
 .wb-palette {
   transition: opacity 100ms ease, transform 100ms ease;
 }
@@ -847,7 +524,6 @@ above the choices. */
 .wb-app:not([data-compact="true"]) > .wb-body {
   padding: 16px;
 }
-.wb-float,
 .wb-app:not([data-compact="true"]) .wb-main-panel {
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -867,50 +543,6 @@ above the choices. */
   background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
   outline: none;
 }
-.wb-sidebar-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  height: 100%;
-  min-height: 0;
-}
-.wb-project-panel {
-  position: relative;
-  flex-shrink: 0;
-  padding: 12px 44px 12px 14px;
-}
-.wb-project-panel > div {
-  flex-wrap: wrap;
-  row-gap: 4px;
-}
-.wb-project-panel h1 {
-  width: 100%;
-  font-size: 14px;
-  font-weight: 600;
-  order: -1;
-}
-.wb-project-panel > .wb-icon {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 30px;
-  height: 30px;
-}
-.wb-files-panel {
-  flex: 1;
-  min-height: 0;
-  width: 100% !important;
-  background: var(--panel);
-}
-.wb-files-panel .wb-explorer {
-  background: transparent;
-  border-right: 0;
-}
-.wb-files-actions {
-  display: flex;
-  gap: 8px;
-  padding: 12px 12px 6px;
-}
 .wb-app .wb-button {
   display: inline-flex;
   align-items: center;
@@ -929,71 +561,6 @@ above the choices. */
   background: var(--accent);
   border-color: transparent;
   color: var(--accent-text);
-}
-.wb-account-panel {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  font-size: 13px;
-}
-.wb-account-unsaved {
-  color: var(--muted);
-}
-.wb-account-links {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  white-space: nowrap;
-}
-.wb-account-links > .wb-icon {
-  width: 30px;
-  height: 30px;
-  margin-left: auto;
-}
-.wb-account-links a,
-.wb-app .wb-link-button {
-  color: var(--muted);
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.wb-account-profile {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.wb-avatar {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-soft-text);
-  font-weight: 600;
-}
-.wb-account-email {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-}
-/* File names stay on one line in the side panel; the full path is the title. */
-.wb-files-panel .wb-explorer-open {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow-wrap: normal;
 }
 /* Banners and their buttons, in the palette's warning and danger colours. */
 .wb-banner-warn {

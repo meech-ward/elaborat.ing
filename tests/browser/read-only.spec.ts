@@ -63,7 +63,7 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   await expect(editorText(page)).toContainText("The first paragraph.")
   await typeInSource(page, " TYPED")
   await expect(editorText(page)).not.toContainText("TYPED")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
 
   // Nor does typing in Rendered, which offers no block to insert.
   await page.getByRole("button", { name: "Rendered" }).click()
@@ -79,8 +79,9 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   // The file can be exported, not saved or formatted.
   expect(await menuItems(page, page.getByRole("button", { name: "File actions" }))).toEqual(["Export"])
   // Nothing creates or imports files.
-  const workbench = await menuItems(page, page.getByRole("button", { name: "Workbench menu" }))
-  for (const item of ["New", "New MDX note", "New drawing", "New diagram", "Import", "New folder"]) expect(workbench).not.toContain(item)
+  const project = await menuItems(page, page.getByRole("button", { name: /, project menu$/ }))
+  for (const item of ["New note", "New drawing", "New diagram", "Import a file", "New folder"]) expect(project).not.toContain(item)
+  await expect(page.getByRole("button", { name: "New file" })).toHaveCount(0)
 
   // The explorer offers no Rename, Move or Delete, for files or folders.
   const files = await explorer(page)
@@ -99,7 +100,7 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   await page.getByRole("button", { name: "Source" }).click()
   await expect(editorText(page)).toContainText("The first paragraph.", { timeout: 15_000 })
   await expect(editorText(page)).not.toContainText("TYPED")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   await quiet(fake, 1_000)
   expect(saves(fake)).toHaveLength(0)
   expect(server.content(id, "notes/plan.md")).toBe(NOTE)
@@ -120,7 +121,7 @@ test("an archived project says so, stays read-only, and after Unarchive can be e
 
   await typeInSource(page, " TYPED")
   await expect(editorText(page)).not.toContainText("TYPED")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
 
   // Unarchived, it takes edits at once, without a reload.
   await page.getByRole("button", { name: "Unarchive" }).click()
@@ -128,7 +129,7 @@ test("an archived project says so, stays read-only, and after Unarchive can be e
   await expect(page.getByRole("button", { name: "Unarchive" })).toHaveCount(0)
   expect(server.projects.get(id)!.archivedAt).toBeNull()
   await typeInSource(page, " edited")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toBeVisible()
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => server.content(id, "plan.md")).toBe(`${NOTE} edited`)
   expect(saves(fake).length).toBeGreaterThan(0)

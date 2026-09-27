@@ -1,19 +1,18 @@
 /**
- * Folder explorer tree.
- *
- * Semantic nested lists with disclosure buttons — deliberately not an ARIA
- * tree, whose complete keyboard contract is out of scope. Each folder row
- * (ExplorerFolderRow) carries ordinary buttons: a chevron that
- * expands/collapses, a name button that selects the creation destination
- * without touching the active editor, and Rename, Move to folder and
- * Delete. The explicit Workspace root row selects the root. Files reuse
- * ExplorerFileRow's right-click/Shift+F10/copy/rename behaviors with
- * basename labels; full paths stay in titles and accessible names. The
- * active file's row scrolls into view once each time the active file
- * changes (the workbench expands its folders).
+ * Folder explorer tree: the library's tree rows in one SidebarMenu, each
+ * indented by its depth. Deliberately not an ARIA tree, whose complete
+ * keyboard contract is out of scope: a folder row is a disclosure button
+ * (aria-expanded) that also makes the folder where new files and folders go,
+ * and a file row opens the file. Rows carry Rename, Move to folder, Delete
+ * and, for files, Copy and Duplicate, in a right-click menu and an action
+ * menu button (ExplorerFolderRow, ExplorerFileRow). Rows show basenames;
+ * full paths stay in titles and accessible names. The active file's row
+ * scrolls into view once each time the active file changes (the workbench
+ * expands its folders).
  */
-import { useEffect, useRef, type ReactNode } from "react";
-import { FolderOpen } from "lucide-react";
+import { Fragment, useEffect, useRef, type ReactNode } from "react";
+import { SidebarMenu } from "@/components/ui/sidebar";
+import type { PanelRowSize } from "@/features/design-system";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
 import { ExplorerFolderRow } from "./ExplorerFolderRow";
@@ -22,6 +21,8 @@ import { canMove } from "./movePlan";
 
 export interface ExplorerTreeProps {
   tree: FolderTree;
+  /** `touch` on the phone's files screen. */
+  size?: PanelRowSize;
   /** Canonical expanded directory paths. */
   expanded: readonly string[];
   /** "" selects the workspace root; null is no explicit selection. */
@@ -35,7 +36,7 @@ export interface ExplorerTreeProps {
   onSelectFolder: (path: string) => void;
   onOpenFile: (path: string) => void;
   onFeedback: (message: string) => void;
-  /** Rename and move arrive with roadmap phase 2 step 12; without them the row offers neither. */
+  /** Without these a row offers no rename or move. */
   onRenameFile?: (path: string, newName: string) => Promise<void>;
   onMoveFile?: (path: string) => void;
   /** Copy a file next to itself; read-only projects offer no Duplicate. */
@@ -52,6 +53,7 @@ export interface ExplorerTreeProps {
 
 export function ExplorerTree({
   tree,
+  size = "default",
   expanded,
   selectedFolder,
   activeFile,
@@ -71,46 +73,48 @@ export function ExplorerTree({
   onDeleteFolder,
   newEntry = null,
 }: ExplorerTreeProps) {
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLUListElement>(null);
   // The file whose row was last scrolled to, so scrolling the tree by hand is left alone.
   const shown = useRef<string | null>(null);
   useEffect(() => {
     if (!activeFile || shown.current === activeFile) return;
-    const row = root.current?.querySelector('.wb-explorer-row[data-active="true"]');
+    const row = root.current?.querySelector('[data-tree-row="file"] > [data-active]');
     // Not there yet (a folder above it is still closed) or not shown: try again later.
     if (!row || row.getClientRects().length === 0) return;
     shown.current = activeFile;
     row.scrollIntoView({ block: "nearest" });
   }, [activeFile, expanded]);
   const open = new Set(expanded);
-  const fieldIn = (dir: string) => (newEntry?.dir === dir ? <li key="new-entry" className="wb-tree-new">{newEntry.field}</li> : null);
-  const rootSelected = selectedFolder === "";
-  const renderFile = (file: TreeFile) => (
-    <li key={file.path} className="wb-tree-file">
-      <ExplorerFileRow
-        path={file.path}
-        label={basenameForPath(file.path)}
-        active={file.path === activeFile}
-        dirty={isDirty(file.path)}
-        unsavedDraft={isUnsavedDraft(file.path)}
-        neverSaved={isNeverSaved(file.path)}
-        draft={file.draft}
-        onOpen={() => onOpenFile(file.path)}
-        onFeedback={onFeedback}
-        onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
-        onDuplicate={onDuplicateFile ? () => onDuplicateFile(file.path) : undefined}
-        onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
-        onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
-      />
-    </li>
+  const fieldIn = (dir: string) => (newEntry?.dir === dir ? newEntry.field : null);
+  const renderFile = (file: TreeFile, depth: number) => (
+    <ExplorerFileRow
+      key={file.path}
+      path={file.path}
+      label={basenameForPath(file.path)}
+      depth={depth}
+      size={size}
+      active={file.path === activeFile}
+      dirty={isDirty(file.path)}
+      unsavedDraft={isUnsavedDraft(file.path)}
+      neverSaved={isNeverSaved(file.path)}
+      draft={file.draft}
+      onOpen={() => onOpenFile(file.path)}
+      onFeedback={onFeedback}
+      onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
+      onDuplicate={onDuplicateFile ? () => onDuplicateFile(file.path) : undefined}
+      onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
+      onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
+    />
   );
-  const renderFolder = (node: FolderNode) => {
+  const renderFolder = (node: FolderNode, depth: number): ReactNode => {
     const isOpen = open.has(node.path);
     return (
-      <li key={node.path} className="wb-tree-folder">
+      <Fragment key={node.path}>
         <ExplorerFolderRow
           path={node.path}
           name={node.name}
+          depth={depth}
+          size={size}
           open={isOpen}
           selected={selectedFolder === node.path}
           onToggle={() => onToggleFolder(node.path)}
@@ -120,32 +124,20 @@ export function ExplorerTree({
           onDelete={onDeleteFolder ? () => onDeleteFolder(node.path) : undefined}
         />
         {isOpen && (
-          <ul className="wb-tree-nested">
+          <>
             {fieldIn(node.path)}
-            {node.folders.map(renderFolder)}
-            {node.files.map(renderFile)}
-          </ul>
+            {node.folders.map((child) => renderFolder(child, depth + 1))}
+            {node.files.map((file) => renderFile(file, depth + 1))}
+          </>
         )}
-      </li>
+      </Fragment>
     );
   };
   return (
-    <div className="wb-tree" ref={root}>
-      <button
-        className="wb-tree-root"
-        aria-pressed={rootSelected}
-        aria-label="Select Workspace root for creation"
-        title="Workspace root"
-        onClick={() => onSelectFolder("")}
-      >
-        <FolderOpen size={15} aria-hidden="true" />
-        <span className="wb-tree-name">Workspace root</span>
-      </button>
-      <ul className="wb-tree-list">
-        {fieldIn("")}
-        {tree.folders.map(renderFolder)}
-        {tree.rootFiles.map(renderFile)}
-      </ul>
-    </div>
+    <SidebarMenu ref={root}>
+      {fieldIn("")}
+      {tree.folders.map((folder) => renderFolder(folder, 0))}
+      {tree.rootFiles.map((file) => renderFile(file, 0))}
+    </SidebarMenu>
   );
 }

@@ -44,6 +44,20 @@ export function compareNames(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * The paths the tree shows: a D2 diagram's generated files (`x.excalidraw`
+ * and `x.d2.json` beside `x.d2`) are left out, since they belong to the
+ * diagram. A drawing without a diagram of the same name stays.
+ */
+export function hideGeneratedFiles(paths: readonly string[]): string[] {
+  const diagrams = new Set(paths.filter((path) => path.endsWith(".d2")));
+  return paths.filter((path) => {
+    if (path.endsWith(".d2.json")) return !diagrams.has(path.slice(0, -".json".length));
+    if (path.endsWith(".excalidraw")) return !diagrams.has(`${path.slice(0, -".excalidraw".length)}.d2`);
+    return true;
+  });
+}
+
 /** Parent directory of a file or folder path; "" is the workspace root. */
 export function parentDirOf(path: string): string {
   const slash = path.lastIndexOf("/");

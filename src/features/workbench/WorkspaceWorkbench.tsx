@@ -19,17 +19,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useTabReorder } from "./useTabReorder";
 import { TabStrip } from "./TabStrip";
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuAction,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import {
   Command,
   CommandInput,
@@ -43,19 +33,13 @@ import {
   Diamond,
   Maximize2,
   Minimize2,
-  Plus,
-  Sun,
   X,
-  FolderPlus,
-  FolderSync,
-  FilePlus,
-  PenTool,
-  Network,
-  FileUp,
 } from "lucide-react";
-import { useAppearance } from "@/features/appearance";
+import { Banner, BannerAction, FloatingPanel, type ActionMenuProps, type MenuEntry, type PanelRowSize } from "@/features/design-system";
+import { DottedPage } from "@/components/panel";
+import { cn } from "@/lib/utils";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
@@ -64,12 +48,12 @@ import { parseDrawingFile } from "@/features/drawings/parse";
 import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
-import { ActionMenu } from "./WorkbenchChrome";
 import { TablineProvider } from "./tabline";
 import { EditorHeader, IconButton, PhoneHeader, RoundIconButton, commandShortcut, isApplePlatform } from "@/features/design-system";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
+import { AccountPanel, FilesPanel, NewButtons, ProjectPanel, TreeScroller, type PanelPerson, type PanelSync } from "./SidePanels";
 import { SignUpTo } from "@/features/projects/LocalProject";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
@@ -83,6 +67,7 @@ import type { WorkspaceFileRef, WorkspaceStore } from "./workspaceStore";
 import {
   ancestorsOf,
   buildFolderTree,
+  hideGeneratedFiles,
   joinFolder,
   revealAncestors,
 } from "./folderTree";
@@ -114,23 +99,27 @@ import {
   type PersistedTabs,
 } from "./tabPersistence";
 import "./workbench.css";
-import "./sidePanels.css";
 
 /**
  * The editor for one project: an explorer, tabs of open files, each a
  * source and rendered editor, saves to this device (sync sends them), and a
  * command palette. On a desktop it sits in floating panels on a dotted
- * background: the project (`projectHeader`), the files and the account with
- * the sync state (`syncStatus`) down the side, and the editor. On a phone the
- * same panels are a files screen of their own, and an open file fills the
- * screen with a floating Back button that returns to it.
+ * background: the project (its menu, share and notices), the files and the
+ * account with the sync state (`sync`) down the side (SidePanels), and
+ * the editor. On a phone the same panels are a files screen of their own,
+ * and an open file fills the screen with a floating Back button that
+ * returns to it.
  */
 export function WorkspaceWorkbench({
   client,
   onLeaveGuard,
   projectId,
-  projectHeader,
-  syncStatus,
+  projectName = "Project",
+  projectMenu = [],
+  onShare,
+  projectNotices,
+  sync = null,
+  onSyncNow,
   searchFiles = null,
   onResolveConflict,
   readOnly = null,
@@ -139,8 +128,18 @@ export function WorkspaceWorkbench({
   client: WorkspaceStore;
   onLeaveGuard?: (guard: PrepareProjectLeave | null) => void;
   projectId: string;
-  projectHeader?: ReactNode;
-  syncStatus?: ReactNode;
+  /** The project's name, at the top of the side panels. */
+  projectName?: string;
+  /** The other projects and the way home: the start of the project menu, before its actions. */
+  projectMenu?: readonly MenuEntry[];
+  /** Opens sharing; without it (a viewer, or offline) there is no share button. */
+  onShare?: () => void;
+  /** What the project needs to say (read-only, errors), under the project panel. */
+  projectNotices?: ReactNode;
+  /** The sync state, shown with the person. */
+  sync?: PanelSync | null;
+  /** Sync now, in the person's menu. */
+  onSyncNow?: () => void;
   /** Finds this project's files by their text (the files panel's search); null when offline or signed out. */
   searchFiles?: ((query: string) => Promise<FileSearchHit[]>) | null;
   onResolveConflict?: (path: string, choice: ConflictChoice) => Promise<void>;
@@ -189,7 +188,8 @@ export function WorkspaceWorkbench({
   const [panel, setPanel] = useState(false);
   // Element that opened the command palette; Escape/focus return goes here.
   const paletteInvoker = useRef<HTMLElement | null>(null);
-  const workbenchMenuButton = useRef<HTMLButtonElement>(null);
+  // The project panel, whose menu button the palette returns focus to when the menu opened it.
+  const projectPanel = useRef<HTMLElement>(null);
   const openPalette = (invoker: HTMLElement | null) => {
     paletteInvoker.current = invoker;
     setPaletteFiles(false);
@@ -208,9 +208,9 @@ export function WorkspaceWorkbench({
   const [paletteFiles, setPaletteFiles] = useState(false);
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<Record<string, string | null>>({});
-  const { appearance, toggleScheme } = useAppearance();
   const openSettings = useOpenSettings();
   const auth = useAuth();
+  const routerNavigate = useNavigate();
   const sequence = useRef(0);
   const restoreDone = useRef(false);
   const interacted = useRef(false);
@@ -322,7 +322,8 @@ export function WorkspaceWorkbench({
         : [...prev.expanded, path].slice(-MAX_EXPANDED_FOLDERS),
     }));
   }, []);
-  const selectFolder = useCallback((path: string) => {
+  // null: new files and folders go at the top of the project.
+  const selectFolder = useCallback((path: string | null) => {
     setFolderPrefs((prev) =>
       prev.selectedFolder === path ? prev : { ...prev, selectedFolder: path },
     );
@@ -751,8 +752,9 @@ export function WorkspaceWorkbench({
   const draftPaths = state.tabs
     .filter((tab) => tab.revision === null && !serverPaths.has(tab.path))
     .map((tab) => tab.path);
+  // A D2 diagram's generated canvas and layout files stay out of the tree.
   const tree = buildFolderTree(
-    files.map((file) => file.path),
+    hideGeneratedFiles(files.map((file) => file.path)),
     directories,
     draftPaths,
   );
@@ -760,20 +762,23 @@ export function WorkspaceWorkbench({
   const neverSaved = (path: string) => draftPaths.includes(path) || files.some((file) => file.path === path && file.revision === null);
   const treeIsEmpty =
     tree.folders.length === 0 && tree.rootFiles.length === 0;
+  // The side panels' size: the desktop's, or the phone's larger rows (the
+  // two never show at once).
+  const panelSize: PanelRowSize = narrow ? "touch" : "default";
   // One explorer implementation for the desktop sidebar and the 390px
-  // phone overlay: loading, error-with-retry, tree, and empty states.
-  const renderExplorerBody = () => (
+  // phone files screen: loading, error-with-retry, tree, and empty states.
+  const explorerBody = (
     <>
-      {!listed && !listError && <p role="status">Loading files…</p>}
+      {!listed && !listError && <p role="status" className={cn("px-2 py-1.5 text-muted-foreground", narrow ? "text-[15px]" : "text-[13px]")}>Loading files…</p>}
       {listError && (
-        <div className="wb-explorer-error">
-          <p role="alert">File list failed: {listError}</p>
-          <button onClick={() => void refreshList()}>Retry</button>
-        </div>
+        <Banner tone="danger" className="mb-2" action={<BannerAction onClick={() => void refreshList()}>Retry</BannerAction>}>
+          File list failed: {listError}
+        </Banner>
       )}
       {(listed || !listError) && (
         <ExplorerTree
           tree={tree}
+          size={panelSize}
           expanded={folderPrefs.expanded}
           selectedFolder={folderPrefs.selectedFolder}
           activeFile={state.active}
@@ -785,7 +790,11 @@ export function WorkspaceWorkbench({
           }
           onToggleFolder={toggleFolder}
           onSelectFolder={selectFolder}
-          onOpenFile={(path) => void openFromNavigation(path)}
+          onOpenFile={(path) => {
+            // Opening a file puts new files back at the top of the project.
+            selectFolder(null);
+            void openFromNavigation(path);
+          }}
           onFeedback={setNotice}
           onRenameFile={readOnly ? undefined : (path, name) => (neverSaved(path) ? renameNewFile(path, name) : moves.rename(path, name))}
           isNeverSaved={neverSaved}
@@ -812,7 +821,7 @@ export function WorkspaceWorkbench({
         />
       )}
       {listed && !listError && treeIsEmpty && (
-        <p>{readOnly ? "No files yet." : "No files yet. Create a note to start."}</p>
+        <p className={cn("px-2 py-1.5 text-muted-foreground", narrow ? "text-[15px]" : "text-[13px]")}>{readOnly ? "No files yet." : "No files yet. Create a note to start."}</p>
       )}
     </>
   );
@@ -835,38 +844,33 @@ export function WorkspaceWorkbench({
       run: () => void openFromNavigation(file.path),
     })),
   ];
-  const workbenchMenu = (
-    <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton} finalFocus={() => {
-      const keep = keepMenuFocus.current;
-      keepMenuFocus.current = false;
-      return !keep;
-    }} onClosed={runAfterClose}>
-      {!readOnly && (
-        <button onClick={() => afterMenu(() => startCreate("mdx"))}>
-          <FilePlus size={14} /> New
-        </button>
-      )}
-      {!readOnly && <button onClick={() => afterMenu(() => startCreate("drawing"))}><PenTool size={14} /> New drawing</button>}
-      {!readOnly && <button onClick={() => afterMenu(() => startCreate("diagram"))}><Network size={14} /> New diagram</button>}
-      {!readOnly && (
-        <button onClick={() => fileInput.current?.click()}>
-          <FileUp size={14} /> Import
-        </button>
-      )}
-      {!readOnly && (
-        <button onClick={() => afterMenu(() => startCreate("folder"))}>
-          <FolderPlus size={14} /> New folder
-        </button>
-      )}
-      <button onClick={() => void refreshList()}>
-        <FolderSync size={14} /> Refresh file list
-      </button>
-      <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
-      <button onClick={() => afterMenu(openSettings)}>Settings</button>
-      <button onClick={() => afterMenu(openSettings)}>Reading preferences</button>
-      {narrow && <button onClick={() => setPanel((v) => !v)}>Diagnostics</button>}
-    </ActionMenu>
-  );
+  // The menus below close before what they chose moves focus (a name
+  // field, a dialog): it runs from afterClose, and keepMenuFocus stops the
+  // menu taking focus back to its button.
+  const closingMenu: ActionMenuProps = {
+    onOpenChangeComplete: (open) => {
+      if (!open) runAfterClose();
+    },
+    contentProps: {
+      finalFocus: () => {
+        const keep = keepMenuFocus.current;
+        keepMenuFocus.current = false;
+        return !keep;
+      },
+    },
+  };
+  // The project menu: the other projects and the way home (projectMenu), then this project's actions.
+  const projectActions: MenuEntry[] = [
+    ...(readOnly ? [] : [{ label: "Import a file", group: "actions", onSelect: () => fileInput.current?.click() }]),
+    { label: "Refresh file list", group: "actions", onSelect: () => void refreshList() },
+    {
+      label: "Command palette",
+      group: "actions",
+      // Closing, the palette gives focus back to the project menu's button.
+      onSelect: () => openPalette(projectPanel.current?.querySelector<HTMLElement>('[aria-haspopup="menu"]') ?? null),
+    },
+    ...(narrow ? [{ label: "Diagnostics", group: "actions", onSelect: () => setPanel((v) => !v) }] : []),
+  ];
   const importInput = (
     <input
       ref={fileInput}
@@ -881,42 +885,60 @@ export function WorkspaceWorkbench({
       }}
     />
   );
-  const newFileMenu = (
-    <ActionMenu label="New file" trigger={<><Plus size={15} /> New file</>} triggerClassName="wb-button wb-button-primary" align="start" finalFocus={() => {
-      const keep = keepMenuFocus.current;
-      keepMenuFocus.current = false;
-      return !keep;
-    }} onClosed={runAfterClose}>
-      <button onClick={() => afterMenu(() => startCreate("mdx"))}>New note</button>
-      <button onClick={() => afterMenu(() => startCreate("drawing"))}>New drawing</button>
-      <button onClick={() => afterMenu(() => startCreate("diagram"))}>New diagram</button>
-    </ActionMenu>
-  );
-  const unsaved = state.tabs.filter((tab) => tab.dirty).length;
+  const newFileEntries: MenuEntry[] = [
+    { label: "New note", onSelect: () => afterMenu(() => startCreate("mdx")) },
+    { label: "New drawing", onSelect: () => afterMenu(() => startCreate("drawing")) },
+    { label: "New diagram", onSelect: () => afterMenu(() => startCreate("diagram")) },
+  ];
   const agentCount = useConnectedAgentCount(!local && auth.status === "ready");
-  const accountPanel = (
-    <section className="wb-float wb-account-panel" aria-label="Account and app">
-      {syncStatus}
-      {unsaved > 0 && <p className="wb-account-unsaved">{unsaved} unsaved</p>}
-      <div className="wb-account-links">
-        {local ? <Link to="/sign-up">Sign up to connect agents</Link> : (
-          <Link to="/agents" aria-label={agentCount ? `Connected agents, ${agentCount}` : undefined}>
-            Connected agents{agentCount ? <span className="wb-account-count">{agentCount}</span> : null}
-          </Link>
-        )}
-        <button type="button" className="wb-link-button" onClick={openSettings}>Settings</button>
-        <button type="button" className="wb-icon" aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`} onClick={toggleScheme}>
-          <Sun size={15} />
-        </button>
-      </div>
-      {auth.status === "ready" && (
-        <div className="wb-account-profile">
-          <span className="wb-avatar" aria-hidden="true">{(auth.email ?? "?").slice(0, 1).toUpperCase()}</span>
-          <span className="wb-account-email">{auth.email ?? "Signed in"}</span>
-          <button type="button" className="wb-link-button" onClick={() => void signOut().catch((reason: unknown) => setNotice(`Not signed out: ${reason instanceof Error ? reason.message : String(reason)}`))}>Sign out</button>
-        </div>
-      )}
-    </section>
+  const person: PanelPerson | null = auth.status === "ready" ? personOf(auth.user, auth.email) : null;
+  const personMenu: MenuEntry[] = [
+    { label: "Settings", onSelect: () => afterMenu(openSettings) },
+    // On a phone the account panel has no Connected agents row.
+    ...(narrow ? [{ label: agentCount ? `Connected agents (${agentCount})` : "Connected agents", onSelect: () => void routerNavigate({ to: "/agents" }) }] : []),
+    ...(onSyncNow ? [{ label: "Sync now", onSelect: onSyncNow }] : []),
+    {
+      label: "Sign out",
+      onSelect: () => void signOut().catch((reason: unknown) => setNotice(`Not signed out: ${reason instanceof Error ? reason.message : String(reason)}`)),
+    },
+  ];
+  // The project, the files and the account: down the side on a desktop, the files screen on a phone.
+  const sidePanels = (
+    <>
+      <ProjectPanel
+        ref={projectPanel}
+        size={panelSize}
+        name={projectName}
+        menu={[...projectMenu, ...projectActions]}
+        menuProps={closingMenu}
+        onShare={onShare}
+        local={local}
+        notices={projectNotices}
+      >
+        {importInput}
+      </ProjectPanel>
+      <FilesPanel size={panelSize}>
+        <FileSearch
+          size={panelSize}
+          search={local ? null : searchFiles}
+          unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
+          onOpen={(path) => void openFromNavigation(path)}
+          actions={!readOnly && <NewButtons size={panelSize} newFile={newFileEntries} menuProps={closingMenu} onNewFolder={() => startCreate("folder")} />}
+        >
+          <TreeScroller>{explorerBody}</TreeScroller>
+        </FileSearch>
+      </FilesPanel>
+      <AccountPanel
+        size={panelSize}
+        local={local}
+        agentCount={agentCount ?? undefined}
+        onLookAndTheme={openSettings}
+        person={person}
+        menu={personMenu}
+        menuProps={closingMenu}
+        sync={sync}
+      />
+    </>
   );
   // On a phone: the open file's floating Back button, and the files screen,
   // which shows when it is asked for or when no file is open.
@@ -946,37 +968,7 @@ export function WorkspaceWorkbench({
               groupResizeBehavior="preserve-pixel-size"
               className="wb-explorer-panel"
             >
-              <div className="wb-sidebar-column">
-                <header className="wb-float wb-project-panel">
-                  {projectHeader}
-                  {workbenchMenu}
-                  {importInput}
-                </header>
-                <Sidebar collapsible="none" className="wb-float wb-files-panel">
-                  <nav className="wb-explorer" aria-label="Workspace files">
-                    <FileSearch
-                      search={local ? null : searchFiles}
-                      unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
-                      onOpen={(path) => void openFromNavigation(path)}
-                      actions={!readOnly && (
-                        <div className="wb-files-actions">
-                          {newFileMenu}
-                          <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
-                            <FolderPlus size={15} /> New folder
-                          </button>
-                        </div>
-                      )}
-                    >
-                      <SidebarContent>
-                        <SidebarGroup>
-                          <SidebarGroupContent>{renderExplorerBody()}</SidebarGroupContent>
-                        </SidebarGroup>
-                      </SidebarContent>
-                    </FileSearch>
-                  </nav>
-                </Sidebar>
-                {accountPanel}
-              </div>
+              <div className="flex h-full min-h-0 flex-col gap-3">{sidePanels}</div>
             </ResizablePanel>
           )}
           {sidebar && !narrow && !focus && (
@@ -1173,52 +1165,19 @@ export function WorkspaceWorkbench({
         </ResizablePanelGroup>
       </div>
       {filesScreen && (
-        <section className="wb-files-screen" aria-label="Files and projects">
-          <header className="wb-float wb-project-panel">
-            {projectHeader}
-            {workbenchMenu}
-            {importInput}
-          </header>
-          <div className="wb-float wb-files-panel">
-            <nav className="wb-explorer" aria-label="Workspace files">
-              <FileSearch
-                search={local ? null : searchFiles}
-                unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
-                onOpen={(path) => void openFromNavigation(path)}
-                actions={!readOnly && (
-                  <div className="wb-files-actions">
-                    {newFileMenu}
-                    <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
-                      <FolderPlus size={15} /> New folder
-                    </button>
-                  </div>
-                )}
-              >
-                {state.tabs.length > 0 && (
-                  <section aria-label="Open files" className="wb-navigation-tabs">
-                    <h2>Open</h2>
-                    <SidebarMenu>
-                      {state.tabs.map((tab) => <SidebarMenuItem className="wb-navigation-tab" key={tab.path}>
-                        <SidebarMenuButton type="button" data-open-file={tab.path} isActive={tab.path === state.active} aria-current={tab.path === state.active ? "page" : undefined} onClick={() => { selectTab(tab.path); setSidebar(false); }}>
-                          <span>{tab.path}</span>{tab.dirty && <span aria-label="unsaved changes">●</span>}
-                        </SidebarMenuButton>
-                        <SidebarMenuAction type="button" aria-label={`Close ${tab.path}`} onClick={() => closeTab(tab.path)}><X size={16} /></SidebarMenuAction>
-                      </SidebarMenuItem>)}
-                    </SidebarMenu>
-                  </section>
-                )}
-                {renderExplorerBody()}
-              </FileSearch>
-            </nav>
-          </div>
-          {accountPanel}
-          {panel && <section aria-label="Bottom panel" className="wb-float wb-navigation-diagnostics">
-            <p>Project files · {files.length} files · {state.tabs.length} open</p>
-            <p>{state.active ? `${state.active}: ${state.tabs.find(tab => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
-            {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
-            <p>File saves use revision checks. This panel does not execute commands.</p>
-          </section>}
+        <section aria-label="Files and projects" data-files-screen="" className="absolute inset-0 z-40 overflow-y-auto overscroll-contain">
+        <DottedPage className="flex min-h-full flex-col gap-2.5 pt-[calc(12px+env(safe-area-inset-top))] pr-[calc(12px+env(safe-area-inset-right))] pb-[calc(12px+env(safe-area-inset-bottom))] pl-[calc(12px+env(safe-area-inset-left))]">
+          {sidePanels}
+          {panel && (
+            <FloatingPanel variant="flat" render={<section aria-label="Bottom panel" />} className="shrink-0 px-3 py-2 text-xs [overflow-wrap:anywhere]">
+              <p>Project files · {files.length} files · {state.tabs.length} open</p>
+              <p>{state.active ? `${state.active}: ${state.tabs.find(tab => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
+              {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
+              <p>File saves use revision checks. This panel does not execute commands.</p>
+            </FloatingPanel>
+          )}
           {notice && <p role="status" className="wb-notice">{notice}</p>}
+        </DottedPage>
         </section>
       )}
       <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>
@@ -1294,4 +1253,16 @@ export function WorkspaceWorkbench({
     </div>
     </SidebarProvider>
   );
+}
+
+/** The signed-in person as the account panel shows them: a name from their profile, else their email's first part. */
+function personOf(user: { user_metadata?: Record<string, unknown> }, email: string | null): PanelPerson {
+  const meta = user.user_metadata ?? {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const address = email ?? "";
+  return {
+    name: text(meta.full_name) ?? text(meta.name) ?? (address.split("@")[0] || "Signed in"),
+    email: address,
+    image: text(meta.avatar_url),
+  };
 }

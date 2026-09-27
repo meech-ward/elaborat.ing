@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { SidebarMenuBadge, SidebarMenuItem } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { ActionMenu, type MenuEntry } from "./ActionMenu"
+import { ActionMenu, type ActionMenuProps, type MenuEntry } from "./ActionMenu"
 import { PanelRow, type PanelRowProps, type PanelRowSize } from "./PanelRow"
 
 // The account panel at the foot of the sidebar: IconRows ("Connected
@@ -98,9 +98,10 @@ const personSizes: Record<PanelRowSize, { row: string; avatar: string; fallback:
 /**
  * The signed-in person: Avatar (the picture, or the initial in accentSoft),
  * the name at 600 and the email in dim, then a gear button that opens an
- * ActionMenu with `menu` as its entries. `trailing` replaces the gear (the
- * phone shows the sync status there); with a `menu` too, the whole row
- * opens the menu, so it keeps a way in.
+ * ActionMenu with `menu` as its entries. `status` (a StatusDot, such as the
+ * sync state) sits at the end of the name's line. `trailing` replaces the
+ * gear (the phone shows the sync status there); with a `menu` too, the whole
+ * row opens the menu, so it keeps a way in.
  */
 export function PersonRow({
   name,
@@ -108,6 +109,8 @@ export function PersonRow({
   image,
   menu,
   menuLabel = "Settings, help and terms",
+  menuProps,
+  status,
   trailing,
   size = "default",
   className,
@@ -119,6 +122,10 @@ export function PersonRow({
   /** The gear menu's entries. */
   menu?: readonly MenuEntry[]
   menuLabel?: string
+  /** Passed to the menu: onOpenChangeComplete, and contentProps such as finalFocus. */
+  menuProps?: ActionMenuProps
+  /** Shown at the end of the name's line, e.g. <StatusDot status="synced" />. */
+  status?: ReactNode
   trailing?: ReactNode
   size?: PanelRowSize
   className?: string
@@ -131,7 +138,14 @@ export function PersonRow({
         <AvatarFallback className={s.fallback}>{initialFor(name, email)}</AvatarFallback>
       </Avatar>
       <span className="flex min-w-0 flex-1 flex-col leading-[normal]">
-        <span className={cn("truncate font-semibold text-foreground", s.name)}>{name}</span>
+        {status ? (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={cn("min-w-0 flex-1 truncate font-semibold text-foreground", s.name)}>{name}</span>
+            <span className={cn("shrink-0 text-dim", s.email)}>{status}</span>
+          </span>
+        ) : (
+          <span className={cn("truncate font-semibold text-foreground", s.name)}>{name}</span>
+        )}
         <span className={cn("truncate text-dim", s.email)}>{email}</span>
       </span>
     </>
@@ -140,8 +154,9 @@ export function PersonRow({
     // The row's text names the button; the menu says what it holds.
     return (
       <ActionMenu
+        {...menuProps}
         entries={menu}
-        contentProps={{ align: "end", side: "top", "aria-label": menuLabel }}
+        contentProps={{ align: "end", side: "top", "aria-label": menuLabel, ...menuProps?.contentProps }}
         trigger={
           <Button
             variant="ghost"
@@ -165,8 +180,9 @@ export function PersonRow({
       {trailing ??
         (menu && (
           <ActionMenu
+            {...menuProps}
             entries={menu}
-            contentProps={{ align: "end", side: "top" }}
+            contentProps={{ align: "end", side: "top", ...menuProps?.contentProps }}
             trigger={
               <Button variant="ghost" size={size === "touch" ? "icon-lg" : "icon"} aria-label={menuLabel} title={menuLabel}>
                 <Settings aria-hidden="true" />

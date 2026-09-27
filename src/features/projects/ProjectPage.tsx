@@ -1,8 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
-import { UserPlus } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { PanelPage } from "@/components/panel"
-import { Button } from "@/components/ui/button"
+import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
@@ -12,11 +11,10 @@ import { loadWorkbench } from "@/features/workbench/load"
 import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
-import { LocalProjectHeader } from "./LocalProject"
 import { MembersDialog } from "./MembersDialog"
-import { ProjectSwitcher } from "./ProjectSwitcher"
+import { projectMenuEntries } from "./projectMenu"
 import { readOnlyReason } from "./readOnly"
-import { statusLabel } from "./statusLabel"
+import { syncDot } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 import { useDepartureGuard } from "./useDepartureGuard"
 
@@ -168,50 +166,28 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   }
 
   const readOnly = readOnlyReason(entry)
-  const header = account.local ? <LocalProjectHeader error={departureError ?? error} /> : (
-    <div className="flex min-w-0 items-center gap-3 text-sm">
-      <Link to="/" className="underline underline-offset-4">
-        Your projects
-      </Link>
-      <h1 className="truncate font-semibold">{entry?.title ?? "Project"}</h1>
-      <ProjectSwitcher entries={state.entries} current={projectId} />
-      {entry?.role === "owner" && account.online ? (
-        <button type="button" className="wb-icon wb-share-project" aria-label="Share project" title="Share project" onClick={() => setSharing(true)}>
-          <UserPlus size={15} aria-hidden="true" />
-        </button>
+  // The project menu starts with the other projects and the way home; the workbench adds the actions.
+  const go = (href: string) => void navigate({ href })
+  const projectMenu: MenuEntry[] = account.local
+    ? [{ label: "Home", group: "home", onSelect: () => go("/") }]
+    : projectMenuEntries(state.entries, projectId, go)
+  const problem = departureError ?? error
+  const notices = (
+    <>
+      {readOnly ? (
+        <Banner
+          tone={entry?.archived ? "warn" : "info"}
+          action={entry?.archived && canEdit(entry.role) ? <BannerAction onClick={() => void unarchive()}>Unarchive</BannerAction> : undefined}
+        >
+          {readOnly}
+        </Banner>
       ) : null}
-      {readOnly ? <p className="text-(--warn-text)">{readOnly}</p> : null}
-      {entry?.archived && canEdit(entry.role) ? (
-        <Button variant="outline" size="sm" onClick={() => void unarchive()}>
-          Unarchive
-        </Button>
-      ) : null}
-      {error || departureError ? (
-        <p role="alert" className="text-destructive">
-          {departureError ?? error}
-        </p>
-      ) : null}
-    </div>
+      {problem ? <Banner tone="danger">{problem}</Banner> : null}
+    </>
   )
 
-  // The sync state sits with the account on a desktop, and in the phone menu.
-  const syncStatus = account.local ? (
-    <p role="status" className="text-sm text-muted-foreground">
-      Saved in this browser
-    </p>
-  ) : (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-      <p role="status" className="truncate text-muted-foreground">
-        {entry ? statusLabel(entry) : ""}
-        {!account.online || state.offline ? " (offline)" : ""}
-      </p>
-      {account.online ? (
-        <Button variant="outline" size="sm" onClick={() => void syncNow()}>
-          Sync now
-        </Button>
-      ) : null}
-    </div>
-  )
+  // The sync state sits with the person in the account panel.
+  const sync = entry && !account.local ? syncDot(entry, !account.online || state.offline) : null
 
   return (
     <Suspense
@@ -226,8 +202,12 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       <WorkspaceWorkbench
         client={workspace}
         projectId={projectId}
-        projectHeader={header}
-        syncStatus={syncStatus}
+        projectName={account.local ? "Local project" : (entry?.title ?? "Project")}
+        projectMenu={projectMenu}
+        onShare={entry?.role === "owner" && account.online ? () => setSharing(true) : undefined}
+        projectNotices={notices}
+        sync={sync}
+        onSyncNow={account.online && !account.local ? () => void syncNow() : undefined}
         searchFiles={account.online && !account.local ? searchFiles : null}
         onLeaveGuard={registerLeaveGuard}
         onResolveConflict={resolveConflict}

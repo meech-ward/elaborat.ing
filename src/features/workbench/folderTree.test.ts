@@ -4,6 +4,7 @@ import {
   buildFolderTree,
   folderNameError,
   folderRenameError,
+  hideGeneratedFiles,
   isCanonicalDirectoryPath,
   joinFolder,
   parentDirOf,
@@ -178,5 +179,20 @@ describe("folderRenameError", () => {
     for (const name of ["a/b", ".hidden", ".."]) {
       expect(folderRenameError("docs", name)).toBe("Use one folder name without separators, leading dots, or control characters.");
     }
+  });
+});
+
+describe("hideGeneratedFiles", () => {
+  test("a diagram's generated canvas and layout files are left out, and a drawing on its own stays", () => {
+    expect(
+      hideGeneratedFiles([
+        "flows/signup.d2",
+        "flows/signup.excalidraw",
+        "flows/signup.d2.json",
+        "art/flow.excalidraw",
+        "orphan.d2.json",
+        "README.md",
+      ]),
+    ).toEqual(["flows/signup.d2", "art/flow.excalidraw", "orphan.d2.json", "README.md"]);
   });
 });

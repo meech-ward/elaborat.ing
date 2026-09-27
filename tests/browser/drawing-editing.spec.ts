@@ -137,7 +137,7 @@ test("a file that is not a valid drawing opens as text, and nothing is written",
 
 test("a new drawing from the menu is saved empty and opens on the canvas", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
-  await page.getByRole("button", { name: "Workbench menu" }).click()
+  await page.getByRole("button", { name: "New file" }).click()
   await page.getByRole("menuitem", { name: "New drawing" }).click()
   // It asks for a name first; Enter takes the one proposed.
   await expect(page.getByRole("textbox", { name: /^Name of the new drawing in / })).toHaveValue("untitled.excalidraw")
@@ -176,7 +176,8 @@ test("a drawing changed on another device updates the open canvas when it has no
   const theirs = `${JSON.stringify({ ...scene, elements: [...scene.elements, second] }, null, 2)}\n`
   const version = fake.server.projects.get(id)!.files.get("sketch.excalidraw")!.version
   await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "sketch.excalidraw", content: theirs, base_version: version }])
-  await page.getByRole("button", { name: "Sync now" }).click()
+  await page.getByRole("button", { name: "Account and settings" }).click()
+  await page.getByRole("menuitem", { name: "Sync now" }).click()
   await expect(status(page)).toContainText("2 elements")
   await expect(status(page)).toContainText("Saved")
   expect(fake.server.content(id, "sketch.excalidraw")).toBe(theirs)
@@ -198,7 +199,7 @@ test("on a desktop the canvas fills the window behind the panels, and the side p
   // A drag over the side panel stays there and draws nothing.
   const files = (await page.getByRole("navigation", { name: "Workspace files" }).boundingBox())!
   const [x, y] = [files.x + files.width / 2, files.y + files.height - 60]
-  expect(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest(".wb-files-panel")), [x, y])).toBe(true)
+  expect(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('nav[aria-label="Workspace files"]')), [x, y])).toBe(true)
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x + 60, y + 30, { steps: 5 })

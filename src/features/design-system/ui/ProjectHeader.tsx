@@ -1,8 +1,8 @@
 import { ChevronDown, UserPlus } from "lucide-react"
-import type { ReactNode } from "react"
-import { Button } from "@/components/ui/button"
+import { cloneElement, type ReactElement, type ReactNode } from "react"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { ActionMenu, type MenuEntry } from "./ActionMenu"
+import { ActionMenu, type ActionMenuProps, type MenuEntry } from "./ActionMenu"
 import { FloatingPanel } from "./FloatingPanel"
 import { SharpDiamond } from "./SharpDiamond"
 
@@ -34,7 +34,10 @@ const sizes = {
 export function ProjectHeader({
   name,
   menu,
+  menuLabel,
+  menuProps,
   onShare,
+  shareLink,
   shareLabel = "Share project",
   size = "default",
   variant,
@@ -42,10 +45,19 @@ export function ProjectHeader({
   children,
 }: {
   name: ReactNode
-  /** The project menu's entries. */
+  /** The project menu's entries (use groups for the projects, the way home and the actions). */
   menu: readonly MenuEntry[]
-  /** Without it the share button is left out. */
+  /** The name button's accessible name, when it should say more than the name ("Notes, project menu"). */
+  menuLabel?: string
+  /** Passed to the menu: onOpenChangeComplete, and contentProps such as finalFocus. */
+  menuProps?: ActionMenuProps
+  /** Without it (or `shareLink`) the share button is left out. */
   onShare?: () => void
+  /**
+   * The share button as a link instead, such as a Link to sign up; it needs
+   * no `onShare`. It takes the ghost icon button's look and stays a link.
+   */
+  shareLink?: ReactElement<{ className?: string; title?: string; "aria-label"?: string; children?: ReactNode }>
   shareLabel?: string
   size?: "default" | "touch"
   /** `flat` drops the panel shadow, as on phones. */
@@ -58,19 +70,27 @@ export function ProjectHeader({
     <FloatingPanel variant={variant} className={cn("flex items-center", s.panel, className)}>
       <SharpDiamond aria-hidden="true" className={cn("shrink-0 text-primary", s.mark)} />
       <ActionMenu
+        {...menuProps}
         entries={menu}
         trigger={
-          <Button variant="ghost" className={cn("min-w-0 flex-1 justify-start gap-1.5 font-semibold text-foreground", s.name)}>
+          <Button variant="ghost" aria-label={menuLabel} className={cn("min-w-0 flex-1 justify-start gap-1.5 font-semibold text-foreground", s.name)}>
             <span className="min-w-0 flex-1 truncate text-left">{name}</span>
             <ChevronDown aria-hidden="true" className="size-4 text-dim" />
           </Button>
         }
       />
-      {onShare && (
-        <Button variant="ghost" size={s.share} aria-label={shareLabel} title={shareLabel} className={s.shareClass} onClick={onShare}>
-          <UserPlus aria-hidden="true" />
-        </Button>
-      )}
+      {shareLink
+        ? cloneElement(shareLink, {
+            "aria-label": shareLabel,
+            title: shareLabel,
+            className: cn(buttonVariants({ variant: "ghost", size: s.share }), s.shareClass),
+            children: <UserPlus aria-hidden="true" />,
+          })
+        : onShare && (
+            <Button variant="ghost" size={s.share} aria-label={shareLabel} title={shareLabel} className={s.shareClass} onClick={onShare}>
+              <UserPlus aria-hidden="true" />
+            </Button>
+          )}
       {children}
     </FloatingPanel>
   )

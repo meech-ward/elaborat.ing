@@ -45,7 +45,7 @@ async function deleteFrom(page: Page, path: string, kind: "file" | "folder" = "f
   const files = await explorer(page)
   const parts = path.split("/").slice(0, -1)
   for (let i = 1; i <= parts.length; i++) {
-    const expand = files.getByRole("button", { name: `Expand ${parts.slice(0, i).join("/")}`, exact: true })
+    const expand = files.getByRole("button", { name: parts.slice(0, i).join("/"), exact: true, expanded: false })
     if (await expand.count()) await expand.click()
   }
   await files.getByRole("button", { name: `Actions for ${kind === "folder" ? "folder " : ""}${path}`, exact: true }).click()
@@ -113,7 +113,7 @@ test("deleting a folder takes a diagram's three files and the folder itself, in 
   await dialog.getByRole("button", { name: "Delete", exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByText("Deleted diagrams with the 3 files in it.")).toBeVisible()
-  await expect((await explorer(page)).getByRole("button", { name: "Select folder diagrams for creation" })).toHaveCount(0)
+  await expect((await explorer(page)).getByRole("button", { name: "diagrams", exact: true })).toHaveCount(0)
 
   await expect.poll(() => fake.server.paths(id)).toEqual(["page.mdx"])
   expect(await fake.server.remote(person.id).folders(id)).toEqual([])
@@ -152,7 +152,7 @@ test("a note with unsaved edits cannot be deleted until they are saved", async (
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("More.")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toBeVisible()
   const before = saves(fake).length
 
   await deleteFrom(page, "notes/plan.md")
@@ -169,7 +169,7 @@ test("a note with unsaved edits cannot be deleted until they are saved", async (
   // Once saved, it can go.
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   await deleteFrom(page, "notes/plan.md")
   await dialog.getByRole("button", { name: "Delete", exact: true }).click()
   await expect(dialog).toBeHidden()

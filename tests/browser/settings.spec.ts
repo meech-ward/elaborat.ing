@@ -34,8 +34,7 @@ async function openProject(page: Page) {
 
 test("a palette and dark mode chosen in Settings apply at once and survive a reload", async ({ page }) => {
   await openProject(page)
-  await page.getByRole("button", { name: "Workbench menu" }).click()
-  await page.getByRole("menuitem", { name: "Settings" }).click()
+  await page.getByRole("button", { name: "Look and theme" }).click()
   const dialog = page.getByRole("dialog", { name: "Settings" })
   await dialog.getByRole("radio", { name: "Glacier Cyan" }).check()
   await dialog.getByRole("radio", { name: "Dark" }).check()
@@ -52,8 +51,7 @@ test("a palette and dark mode chosen in Settings apply at once and survive a rel
 test("System follows the device while the page is open", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" })
   await openProject(page)
-  await page.getByRole("button", { name: "Workbench menu" }).click()
-  await page.getByRole("menuitem", { name: "Settings" }).click()
+  await page.getByRole("button", { name: "Look and theme" }).click()
   await page.getByRole("dialog", { name: "Settings" }).getByRole("radio", { name: "System" }).check()
   await expect.poll(() => background(page)).toBe(rgb(supabase.light.panel))
   await page.emulateMedia({ colorScheme: "dark" })
@@ -91,8 +89,7 @@ test("the code editor and the drawing canvas take the chosen palette's colours, 
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   await page.locator(".excalidraw canvas.static:visible").waitFor()
 
-  await page.getByRole("button", { name: "Workbench menu" }).click()
-  await page.getByRole("menuitem", { name: "Settings" }).click()
+  await page.getByRole("button", { name: "Look and theme" }).click()
   const dialog = page.getByRole("dialog", { name: "Settings" })
   await dialog.getByRole("radio", { name: "Cherry Paper" }).check()
   await dialog.getByRole("radio", { name: "Light", exact: true }).check()

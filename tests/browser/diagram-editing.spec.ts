@@ -78,7 +78,8 @@ test("when a generated file changed elsewhere, a save keeps all three files as t
   const theirs = fake.server.content(id, "flow.excalidraw")!.replace('"elements"', '"theirs": true, "elements"')
   const version = fake.server.projects.get(id)!.files.get("flow.excalidraw")!.version
   await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "flow.excalidraw", content: theirs, base_version: version }])
-  await page.getByRole("button", { name: "Sync now" }).click()
+  await page.getByRole("button", { name: "Account and settings" }).click()
+  await page.getByRole("menuitem", { name: "Sync now" }).click()
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
 
   await page.getByRole("group", { name: "Diagram view" }).getByRole("button", { name: "Code", exact: true }).click()
@@ -204,7 +205,7 @@ test("renaming a connection's label on the canvas stays a canvas-only change, wi
 
 test("a new diagram from the menu is saved with an example and compiles", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
-  await page.getByRole("button", { name: "Workbench menu" }).click()
+  await page.getByRole("button", { name: "New file" }).click()
   await page.getByRole("menuitem", { name: "New diagram" }).click()
   // It asks for a name first; Enter takes the one proposed.
   await expect(page.getByRole("textbox", { name: /^Name of the new diagram in / })).toHaveValue("untitled.d2")

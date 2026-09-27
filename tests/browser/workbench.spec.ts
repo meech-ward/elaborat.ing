@@ -115,13 +115,13 @@ test("undoing back to the saved text clears the unsaved state, and a reload rest
   const mark = page.getByRole("tab", { name: "a.md, unsaved changes" })
   await typeAtEnd(page, "draft")
   await expect(mark).toBeVisible()
-  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible()
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toBeVisible()
   expect(await warnsOnLeave(page)).toBe(true)
 
   await page.keyboard.press("ControlOrMeta+z")
   await expect(editorText(page)).not.toContainText("draft")
   await expect(mark).toHaveCount(0)
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   await expect(page).not.toHaveTitle(/^•/)
   expect(await warnsOnLeave(page)).toBe(false)
 
@@ -150,7 +150,7 @@ test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved s
   await page.keyboard.press("ControlOrMeta+z")
   await expect(paragraph).toHaveText("First paragraph.")
   await expect(mark).toHaveCount(0)
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   expect(await warnsOnLeave(page)).toBe(false)
 
   await page.waitForTimeout(300)
@@ -164,7 +164,8 @@ test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved s
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
   await typeAtEnd(page, "draft")
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
   await page.getByRole("link", { name: "Notes" }).click()
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
@@ -185,7 +186,8 @@ for (const choice of ["mine", "theirs", "both"] as const) {
     const version = fake.server.projects.get(id)!.files.get("a.md")!.version
     await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.md", content: "theirs\n", base_version: version }])
     fake.offline = false
-    await page.getByRole("button", { name: "Sync now" }).click()
+    await page.getByRole("button", { name: "Account and settings" }).click()
+    await page.getByRole("menuitem", { name: "Sync now" }).click()
 
     await expect(page.getByText("was changed on another device too")).toBeVisible()
     await page.getByRole("button", { name: `Keep ${choice}` }).click()
@@ -204,8 +206,8 @@ for (const choice of ["mine", "theirs", "both"] as const) {
 
 test("a new note from the menu is saved under a new name", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "a\n" })
-  await page.getByRole("button", { name: "Workbench menu" }).click()
-  await page.getByRole("button", { name: "New", exact: true }).or(page.getByRole("menuitem", { name: "New", exact: true })).first().click()
+  await page.getByRole("button", { name: "New file" }).click()
+  await page.getByRole("menuitem", { name: "New note" }).click()
   // It asks for a name first; Enter takes the one proposed.
   await expect(page.getByRole("textbox", { name: /^Name of the new note in / })).toHaveValue(/^untitled/)
   await page.keyboard.press("Enter")
@@ -408,7 +410,7 @@ test.describe("on a phone", () => {
     const screen = page.getByRole("region", { name: "Files and projects" })
     await expect(screen).toBeVisible()
     await expect(screen.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
-    const expand = screen.getByRole("button", { name: "Expand notes", exact: true })
+    const expand = screen.getByRole("button", { name: "notes", exact: true, expanded: false })
     if (await expand.count()) await expand.click()
     await screen.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "notes/b.md", exact: true }).click()
     await expect(screen).toBeHidden()
@@ -432,13 +434,18 @@ test.describe("on a phone", () => {
 
     await page.getByRole("button", { name: "Back to files and projects" }).click()
     const screen = page.getByRole("region", { name: "Files and projects" })
-    const open = screen.getByRole("region", { name: "Open files" }).getByRole("button", { name: "a.md", exact: true })
-    await expect(open).toBeVisible()
-    // Axe finds nothing on the files screen, in light and in dark.
-    for (let scheme = 0; scheme < 2; scheme++) {
-      const results = await new AxeBuilder({ page }).include(".wb-files-screen").analyze()
+    // The open file is marked in the tree.
+    const open = screen.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "a.md", exact: true })
+    await expect(open).toHaveAttribute("aria-current", "true")
+    // Axe finds nothing on the files screen, in light and in dark (Look and theme opens Settings).
+    for (const next of ["Dark", "Light"]) {
+      const results = await new AxeBuilder({ page }).include("[data-files-screen]").analyze()
       expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
-      await screen.getByRole("button", { name: /^Switch to (dark|light) mode$/ }).click()
+      await screen.getByRole("button", { name: "Look and theme" }).click()
+      const settings = page.getByRole("dialog", { name: "Settings" })
+      await settings.getByRole("radio", { name: next, exact: true }).check()
+      await page.keyboard.press("Escape")
+      await expect(settings).toBeHidden()
     }
     await open.click()
     await expect(screen).toBeHidden()

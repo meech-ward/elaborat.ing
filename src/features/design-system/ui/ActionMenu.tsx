@@ -15,9 +15,13 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 import { menuRows, type MenuEntry } from "./menuRows"
 
 export type { MenuEntry } from "./menuRows"
+
+/** What a component that opens an ActionMenu passes on to it: when it has closed, and where focus goes. */
+export type ActionMenuProps = Pick<ComponentProps<typeof ActionMenu>, "onOpenChangeComplete" | "contentProps">
 
 // The app's menus, from one list of entries: ActionMenu opens from a button,
 // ActionContextMenu on right-click (or a long press on touch screens). Both
@@ -25,10 +29,15 @@ export type { MenuEntry } from "./menuRows"
 // typeahead and dismissal; destructive entries go last, in the danger
 // colour, after a separator.
 
-type DropdownRootProps = Pick<ComponentProps<typeof DropdownMenu>, "open" | "defaultOpen" | "onOpenChange" | "modal">
+type DropdownRootProps = Pick<ComponentProps<typeof DropdownMenu>, "open" | "defaultOpen" | "onOpenChange" | "onOpenChangeComplete" | "modal">
 type DropdownContentProps = Omit<ComponentProps<typeof DropdownMenuContent>, "children">
 
-/** A menu that opens from its trigger (a Button, usually), with the entries as items. */
+/**
+ * A menu that opens from its trigger (a Button, usually), with the entries as
+ * items. An entry that moves focus elsewhere (a dialog, a name field) can run
+ * from `onOpenChangeComplete` once the menu has closed, with `finalFocus`
+ * (in `contentProps`) keeping the menu from taking focus back.
+ */
 export function ActionMenu({
   entries,
   trigger,
@@ -38,7 +47,7 @@ export function ActionMenu({
   entries: readonly MenuEntry[]
   /** The element that opens the menu; Base UI renders it as the trigger. */
   trigger: ReactElement
-  /** Placement and extra props for the popup (align, side, className, aria-label ...). */
+  /** Placement and extra props for the popup (align, side, className, aria-label, finalFocus ...). */
   contentProps?: DropdownContentProps
 }) {
   return (
@@ -50,10 +59,12 @@ export function ActionMenu({
             <DropdownMenuSeparator key={row.key} />
           ) : (
             <DropdownMenuItem
-              key={row.entry.label}
+              key={row.entry.id ?? row.entry.label}
               variant={row.entry.destructive ? "destructive" : "default"}
               disabled={row.entry.disabled}
               aria-keyshortcuts={row.entry.keyShortcuts}
+              aria-current={row.entry.current ? "page" : undefined}
+              className={cn(row.entry.current && "font-semibold")}
               onClick={row.entry.onSelect}
             >
               {row.entry.label}
@@ -104,10 +115,12 @@ export function ActionContextMenu({
             <ContextMenuSeparator key={row.key} />
           ) : (
             <ContextMenuItem
-              key={row.entry.label}
+              key={row.entry.id ?? row.entry.label}
               variant={row.entry.destructive ? "destructive" : "default"}
               disabled={row.entry.disabled}
               aria-keyshortcuts={row.entry.keyShortcuts}
+              aria-current={row.entry.current ? "page" : undefined}
+              className={cn(row.entry.current && "font-semibold")}
               onClick={row.entry.onSelect}
             >
               {row.entry.label}

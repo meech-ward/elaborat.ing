@@ -1,29 +1,19 @@
 /**
- * Explorer file row with Base UI context-menu actions.
- *
- * Each row exposes Copy filename, Copy path, Rename, Duplicate, Move to
- * folder and Delete through a real Base UI context menu (right-click, keyboard
- * Menu/Shift+F10, long-press) on the whole row, plus an action-menu button
- * carrying the same list for touch and assistive-technology users. The
- * button shows on hover, on focus and on the active row, and always on
+ * Explorer file row: the library's TreeFileRow, with the same actions in a
+ * right-click menu (keyboard Menu/Shift+F10, long-press) on the row and in
+ * its action menu button, which shows on hover and focus, and always on
  * touch screens; hidden, it stays in the accessibility tree.
- * Requesting the menu never opens the file: opening happens only through
- * the row's primary button. Rename runs through a dialog with inline
- * validation; the workbench performs the rename and reports the
- * result. The dialog stays open (pending, non-dismissable) until the
- * rename settles, so the renamed session is inert while the request runs
- * and typing cannot create a newly dirty draft under async completion.
+ *
+ * The actions are Copy filename, Copy path, Rename, Duplicate, Move to
+ * folder and Delete. Requesting the menu never opens the file: opening
+ * happens only through the row itself. Rename runs through a dialog with
+ * inline validation; the workbench performs the rename and reports the
+ * result. The dialog stays open (pending, non-dismissable) until the rename
+ * settles, so the renamed session is inert while the request runs and typing
+ * cannot create a newly dirty draft under async completion.
  */
 import { useState } from "react";
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  MenuItems,
-  type MenuEntry,
-} from "@/components/ui/menu";
-import { ActionMenu } from "./WorkbenchChrome";
-import { KindBadge } from "./KindBadge";
+import { TreeFileRow, TreeRowMenu, type MenuEntry, type PanelRowSize } from "@/features/design-system";
 import {
   copyPayloadForPath,
   copyTextToClipboard,
@@ -32,11 +22,14 @@ import {
   renameStemLength,
 } from "./explorerActions";
 import { RenameDialog } from "./RenameDialog";
+import { kindForPath } from "./session";
 import { duplicateShortcutLabel } from "./viewShortcuts";
 
 export function ExplorerFileRow({
   path,
   label,
+  depth = 0,
+  size = "default",
   active,
   dirty,
   unsavedDraft,
@@ -56,6 +49,10 @@ export function ExplorerFileRow({
    * copy/rename actions; defaults to the full path.
    */
   label?: string;
+  /** How deep the row sits in the tree: 0 at the top of the project. */
+  depth?: number;
+  /** `touch` on the phone's files screen. */
+  size?: PanelRowSize;
   active: boolean;
   /** True when the file is open with unsaved changes (rename refused). */
   dirty: boolean;
@@ -84,25 +81,12 @@ export function ExplorerFileRow({
   // A new dialog for each opening, so it starts from the current name.
   const [renameKey, setRenameKey] = useState(0);
 
-  const copyFilename = async () => {
-    const { filename } = copyPayloadForPath(path);
+  const copy = async (text: string, what: string) => {
     try {
-      await copyTextToClipboard(filename);
-      onFeedback(`Copied filename "${filename}".`);
+      await copyTextToClipboard(text);
+      onFeedback(`Copied ${what} "${text}".`);
     } catch (copyError) {
-      onFeedback(
-        `Copy failed: ${copyError instanceof Error ? copyError.message : String(copyError)}.`,
-      );
-    }
-  };
-  const copyPath = async () => {
-    try {
-      await copyTextToClipboard(path);
-      onFeedback(`Copied path "${path}".`);
-    } catch (copyError) {
-      onFeedback(
-        `Copy failed: ${copyError instanceof Error ? copyError.message : String(copyError)}.`,
-      );
+      onFeedback(`Copy failed: ${copyError instanceof Error ? copyError.message : String(copyError)}.`);
     }
   };
   const requestRename = () => {
@@ -112,9 +96,7 @@ export function ExplorerFileRow({
       return;
     }
     if (dirty) {
-      onFeedback(
-        `Rename refused: ${path} has unsaved changes. Save or discard them first, then rename again.`,
-      );
+      onFeedback(`Rename refused: ${path} has unsaved changes. Save or discard them first, then rename again.`);
       return;
     }
     if (unsavedDraft) {
@@ -129,50 +111,32 @@ export function ExplorerFileRow({
 
   // One list for the action button and the right-click menu.
   const items: MenuEntry[] = [
-    { label: "Copy filename", onSelect: () => void copyFilename() },
-    { label: "Copy path", onSelect: () => void copyPath() },
+    { label: "Copy filename", onSelect: () => void copy(copyPayloadForPath(path).filename, "filename") },
+    { label: "Copy path", onSelect: () => void copy(path, "path") },
     ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
     ...(onDuplicate ? [{ label: "Duplicate", onSelect: onDuplicate, shortcut: duplicateShortcutLabel() }] : []),
     ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
     ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
   ];
+  const menuLabel = `Actions for ${path}`;
 
   return (
-    <div className="wb-explorer-row" data-active={active}>
-      <ContextMenu>
-        <ContextMenuTrigger className="wb-explorer-trigger">
-          <button
-            className="wb-explorer-open"
-            aria-current={active}
-            aria-label={
-              draft
-                ? `${path}, unsaved draft`
-                : label && label !== path
-                  ? path
-                  : undefined
-            }
-            title={path}
-            onClick={onOpen}
-            onKeyDown={openRowMenuFromKeyboard}
-          >
-            <KindBadge path={path} />
-            {label ?? path}
-            {draft && (
-              <span aria-hidden="true" className="wb-explorer-draft">
-                {" "}
-                ●
-              </span>
-            )}
-            {dirty && !draft && <span aria-hidden="true" className="wb-tab-dirty wb-explorer-dirty" />}
-          </button>
-          {/* For users who cannot open a context menu: the same actions
-          through an ordinary menu button. */}
-          <ActionMenu label={`Actions for ${path}`} items={items} />
-        </ContextMenuTrigger>
-        <ContextMenuContent aria-label={`Actions for ${path}`}>
-          <MenuItems items={items} />
-        </ContextMenuContent>
-      </ContextMenu>
+    <>
+      <TreeFileRow
+        name={label ?? path}
+        kind={kindForPath(path)}
+        depth={depth}
+        size={size}
+        selected={active}
+        dirty={dirty || Boolean(draft)}
+        title={path}
+        data-path={path}
+        aria-label={draft ? `${path}, unsaved draft` : label && label !== path ? path : undefined}
+        onClick={onOpen}
+        onKeyDown={openRowMenuFromKeyboard}
+        rowMenu={{ label: menuLabel, entries: items }}
+        actions={<TreeRowMenu label={menuLabel} entries={items} size={size} />}
+      />
       <RenameDialog
         key={renameKey}
         open={renameOpen}
@@ -185,7 +149,7 @@ export function ExplorerFileRow({
         onRename={(name) => onRename?.(name) ?? Promise.resolve()}
         onOpenChange={setRenameOpen}
       />
-    </div>
+    </>
   );
 }
 

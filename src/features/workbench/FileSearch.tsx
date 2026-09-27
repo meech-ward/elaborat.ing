@@ -1,6 +1,9 @@
-import { Search } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { SidebarMenu } from "@/components/ui/sidebar";
+import { SearchField, SearchHitRow, type PanelRowSize } from "@/features/design-system";
+import { cn } from "@/lib/utils";
 import { snippet, type FileSearchHit } from "./contentSearch";
+import { kindForPath } from "./session";
 
 /** Wait this long after typing stops before searching. */
 const DEBOUNCE_MS = 250;
@@ -13,11 +16,13 @@ type Result = { query: string; hits: FileSearchHit[] } | { query: string; error:
  * with a snippet, take the place of the tree; choosing one opens it, and
  * Escape clears the field.
  */
-export function FileSearch({ search, unavailable = "Search needs a connection.", onOpen, actions, children }: {
+export function FileSearch({ search, unavailable = "Search needs a connection.", size = "default", onOpen, actions, children }: {
   /** Finds files in this project by their text; null when there is no connection or no account. */
   search: ((query: string) => Promise<FileSearchHit[]>) | null;
   /** What the results say when there is no `search`. */
   unavailable?: ReactNode;
+  /** `touch` on the phone's files screen. */
+  size?: PanelRowSize;
   onOpen: (path: string) => void;
   /** Shown under the field whether or not it has text. */
   actions?: ReactNode;
@@ -57,10 +62,9 @@ export function FileSearch({ search, unavailable = "Search needs a connection.",
 
   return (
     <>
-      <div className="wb-file-search" role="search">
-        <Search size={14} aria-hidden="true" />
-        <input
-          type="search"
+      <div role="search" className={size === "touch" ? "mb-2" : "mx-0.5 mb-1.5"}>
+        <SearchField
+          size={size}
           aria-label="Search notes, drawings and diagrams"
           placeholder="Search"
           value={query}
@@ -79,26 +83,30 @@ export function FileSearch({ search, unavailable = "Search needs a connection.",
       </div>
       {actions}
       {trimmed ? (
-        <section className="wb-search-results" aria-label="Search results">
-          {status && <p role="status">{status}</p>}
+        <section aria-label="Search results" className="min-h-0 flex-1 overflow-y-auto">
+          {status && (
+            <p role="status" className={cn("px-2 py-1.5 text-muted-foreground", size === "touch" ? "text-[15px]" : "text-[13px]")}>
+              {status}
+            </p>
+          )}
           {hits.length > 0 && (
-            <ul>
+            <SidebarMenu>
               {hits.map((hit) => {
                 const { before, match, after } = snippet(hit.text, trimmed);
                 return (
-                  <li key={hit.path}>
-                    <button type="button" onClick={() => onOpen(hit.path)}>
-                      <span className="wb-search-path">{hit.path}</span>
-                      <span className="wb-search-snippet">
-                        {before}
-                        {match && <strong>{match}</strong>}
-                        {after}
-                      </span>
-                    </button>
-                  </li>
+                  <SearchHitRow
+                    key={hit.path}
+                    path={hit.path}
+                    kind={kindForPath(hit.path)}
+                    before={before}
+                    match={match}
+                    after={after}
+                    size={size}
+                    onClick={() => onOpen(hit.path)}
+                  />
                 );
               })}
-            </ul>
+            </SidebarMenu>
           )}
         </section>
       ) : (

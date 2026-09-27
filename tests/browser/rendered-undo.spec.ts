@@ -61,7 +61,7 @@ async function toRendered(page: Page) {
 async function saved(page: Page, fake: FakeSupabase, id: string) {
   await page.getByRole("button", { name: "File actions" }).click()
   await page.getByRole("menuitem", { name: "Save" }).click()
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toHaveCount(0)
   await quiet(fake, 1_500)
   return fake.server.content(id, PATH)
 }

@@ -28,7 +28,7 @@ async function explorer(page: Page, path?: string) {
   const parts = path?.split("/").slice(0, -1) ?? []
   for (let i = 1; i <= parts.length; i++) {
     const folder = parts.slice(0, i).join("/")
-    const expand = page.getByRole("button", { name: `Expand ${folder}`, exact: true })
+    const expand = page.getByRole("button", { name: folder, exact: true, expanded: false })
     if (await expand.count()) await expand.click()
   }
 }
@@ -52,7 +52,8 @@ test("a new project opens at its own URL and reaches the server", async ({ page 
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
   expect(fake.server.projects.get(id)?.title).toBe("Notes")
 
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("link", { name: "Notes" })).toBeVisible()
 })
 
@@ -144,7 +145,8 @@ test("an invitation shows on the projects home, and accepting it opens the proje
   await expect(page.getByRole("button", { name: "a.md", exact: true })).toBeVisible()
   expect(server.projects.get(id)!.members.get(person.id)?.acceptedAt).not.toBeNull()
 
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
   await expect(page.getByRole("region", { name: "Invitations" })).toHaveCount(0)
 })
@@ -157,7 +159,8 @@ test("leaving a shared project removes it from the list and from this device", a
   // Open it once, so it is on this device.
   await page.goto(projectUrl(id))
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("link", { name: "Their notes" })).toBeVisible()
 
   let asked = ""
@@ -193,7 +196,8 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   await page.keyboard.type(" and me")
   await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   const row = page.getByRole("listitem").filter({ hasText: "Their notes" })
   await expect(row).toContainText("Saved on this device, waiting to sync")
 
@@ -257,7 +261,8 @@ test("an archived project moves to its own section and refuses edits until it is
   expect(server.content(id, "a.md")).toBe("# Notes")
 
   // Unarchived, it is back with the others, and an edit saves and reaches the server.
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await pick(page, "Notes", "Unarchive")
   await expect(page.getByText("Unarchived Notes.")).toBeVisible()
   await expect(archived).toHaveCount(0)
@@ -282,7 +287,8 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await page.keyboard.type(" and more")
   await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
-  await page.getByRole("link", { name: "Your projects" }).click()
+  await page.getByRole("button", { name: /, project menu$/ }).click()
+  await page.getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("listitem").filter({ hasText: "Notes" })).toContainText("Saved on this device, waiting to sync")
 
   await pick(page, "Notes", "Delete permanently")

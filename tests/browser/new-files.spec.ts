@@ -33,9 +33,9 @@ async function openProject(page: Page, files: Record<string, string>, folders: s
   return { fake, id }
 }
 
-/** Choose an item from the workbench menu. */
+/** Choose an item from the New file menu. */
 async function fromMenu(page: Page, item: string) {
-  await page.getByRole("button", { name: "Workbench menu" }).click()
+  await page.getByRole("button", { name: "New file" }).click()
   await page.getByRole("menuitem", { name: item, exact: true }).click()
 }
 
@@ -48,7 +48,7 @@ async function expectNoAxeViolations(page: Page, selector: string) {
 }
 
 const kinds = [
-  { item: "New", noun: "note", proposed: "untitled.mdx", name: "ideas", path: "ideas.mdx", existing: "# Ideas\n" },
+  { item: "New note", noun: "note", proposed: "untitled.mdx", name: "ideas", path: "ideas.mdx", existing: "# Ideas\n" },
   { item: "New drawing", noun: "drawing", proposed: "untitled.excalidraw", name: "sketch", path: "sketch.excalidraw", existing: DRAWING },
   { item: "New diagram", noun: "diagram", proposed: "untitled.d2", name: "flow", path: "flow.d2", existing: "a -> b\n" },
 ]
@@ -83,7 +83,7 @@ for (const kind of kinds) {
     await expect(page.getByRole("alert").filter({ hasText: `${kind.path} already exists here. Choose another name.` })).toBeVisible()
     await expect(field).toBeFocused()
     await expect(field).toHaveAttribute("aria-invalid", "true")
-    await expectNoAxeViolations(page, ".wb-explorer")
+    await expectNoAxeViolations(page, 'nav[aria-label="Workspace files"]')
 
     await page.keyboard.press("Escape")
     await expect(field).toHaveCount(0)
@@ -96,7 +96,8 @@ for (const kind of kinds) {
 test("a new folder from the palette is named in the selected folder, and Enter creates it", async ({ page }) => {
   const { fake, id } = await openProject(page, { "notes/a.md": "a\n" })
   await showExplorer(page)
-  await page.getByRole("button", { name: "Select folder notes for creation" }).click()
+  // Choosing a folder in the tree opens it and puts new files and folders there.
+  await page.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "notes", exact: true }).click()
   await page.keyboard.press("ControlOrMeta+k")
   await page.getByLabel("Search commands").first().fill("New folder")
   await page.keyboard.press("Enter")
@@ -148,7 +149,7 @@ test.describe("on a phone", () => {
   test("a dialog asks for the new note's name, and axe finds nothing in it", async ({ page }) => {
     const { fake, id } = await openProject(page, { "a.mdx": "a\n" }, [], true)
     await page.getByRole("button", { name: "Back to files and projects" }).click()
-    await fromMenu(page, "New")
+    await fromMenu(page, "New note")
     const dialog = page.getByRole("dialog", { name: "New note in Workspace root" })
     await expect(dialog.getByLabel("Name")).toBeFocused()
     await expect(dialog.getByLabel("Name")).toHaveValue("untitled.mdx")

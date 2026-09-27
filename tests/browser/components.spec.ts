@@ -212,7 +212,7 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
 
   // Open the module in another tab, and save it broken.
   await showExplorer(page)
-  await page.getByRole("button", { name: "Expand components", exact: true }).click()
+  await page.getByRole("button", { name: "components", exact: true, expanded: false }).click()
   await page.getByRole("button", { name: MODULE, exact: true }).click()
   await expect(page.getByRole("tab", { name: MODULE })).toHaveAttribute("aria-selected", "true")
   const saveModule = async (lastLine: string) => {

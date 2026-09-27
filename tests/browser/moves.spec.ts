@@ -48,7 +48,7 @@ async function fileAction(page: Page, path: string, action: "Rename" | "Move to 
   const files = page.getByRole("navigation", { name: "Workspace files" }).first()
   const parts = path.split("/").slice(0, -1)
   for (let i = 1; i <= parts.length; i++) {
-    const expand = files.getByRole("button", { name: `Expand ${parts.slice(0, i).join("/")}`, exact: true })
+    const expand = files.getByRole("button", { name: parts.slice(0, i).join("/"), exact: true, expanded: false })
     if (await expand.count()) await expand.click()
   }
   await files.getByRole("button", { name: `Actions for ${path}`, exact: true }).click()
@@ -78,7 +78,7 @@ test("renaming a folder moves everything in it and rewrites references to it, in
   const files = await explorer(page)
   await files.getByRole("button", { name: "index.mdx", exact: true }).click()
   await expect(page.getByRole("tab", { name: "index.mdx" })).toHaveAttribute("aria-selected", "true")
-  await expect(files.getByRole("button", { name: "Collapse docs", exact: true })).toBeVisible()
+  await expect(files.getByRole("button", { name: "docs", exact: true, expanded: true })).toBeVisible()
   const before = saves(fake).length
 
   await folderAction(page, "docs", "Rename")
@@ -92,7 +92,7 @@ test("renaming a folder moves everything in it and rewrites references to it, in
   await expect(page.getByRole("tab", { name: "notes/plan.mdx" })).toBeVisible()
   await expect(page.getByRole("tab", { name: "docs/plan.mdx" })).toHaveCount(0)
   // The folder is still expanded, under its new name.
-  await expect(files.getByRole("button", { name: "Collapse notes", exact: true })).toBeVisible()
+  await expect(files.getByRole("button", { name: "notes", exact: true, expanded: true })).toBeVisible()
 
   await expect.poll(() => fake.server.paths(id)).toEqual(["index.mdx", "notes/plan.mdx", "notes/sketch.excalidraw"])
   const moved = '# Plan\n\n<Drawing src="notes/sketch.excalidraw" />\n'
@@ -273,7 +273,7 @@ test("a file of a kind the app does not edit is listed and opens as text, but is
   await openProject(page, { "agent/output.txt": "hello from an agent\n", "notes.md": "# Notes\n" }, [], "notes.md")
   await showExplorer(page)
   const files = page.getByRole("navigation", { name: "Workspace files" })
-  await files.getByRole("button", { name: "Expand agent", exact: true }).click()
+  await files.getByRole("button", { name: "agent", exact: true, expanded: false }).click()
   await files.getByRole("button", { name: "agent/output.txt", exact: true }).click()
   await expect(page.getByRole("tab", { name: "agent/output.txt" })).toHaveAttribute("aria-selected", "true")
   await expect(editorText(page)).toContainText("hello from an agent")

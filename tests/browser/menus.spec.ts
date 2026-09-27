@@ -99,7 +99,7 @@ test("the action button and a right-click on the row list the same items", async
 
   await files.getByRole("button", { name: "Actions for folder notes", exact: true }).click()
   const folderFromButton = await itemsOfOpenMenu(page)
-  await files.getByRole("button", { name: "Select folder notes for creation", exact: true }).click({ button: "right" })
+  await files.getByRole("button", { name: "notes", exact: true }).click({ button: "right" })
   expect(await itemsOfOpenMenu(page)).toEqual(folderFromButton)
   expect(folderFromButton).toEqual(["Rename", "Move to folder", "Delete"])
 })
@@ -113,7 +113,7 @@ test("the tree marks each file's kind and follows the active tab", async ({ page
     "data.json": "{}\n",
   }, "notes/plan.md")
   const files = await explorer(page)
-  const badge = (name: string) => files.getByRole("button", { name, exact: true }).locator(".wb-kind")
+  const badge = (name: string) => files.getByRole("button", { name, exact: true }).locator("[data-kind]")
   await expect(badge("README.md")).toHaveText("M")
   await expect(badge("notes/plan.md")).toHaveText("M")
   await expect(badge("flow.excalidraw")).toHaveText("D")
@@ -124,16 +124,16 @@ test("the tree marks each file's kind and follows the active tab", async ({ page
   await files.getByRole("button", { name: "README.md", exact: true }).click()
   await expect(page.getByRole("tab", { name: "README.md" })).toHaveAttribute("aria-selected", "true")
   await expect(files.getByRole("button", { name: "README.md", exact: true })).toHaveAttribute("aria-current", "true")
-  await expect(files.getByRole("button", { name: "notes/plan.md", exact: true })).toHaveAttribute("aria-current", "false")
+  await expect(files.getByRole("button", { name: "notes/plan.md", exact: true })).not.toHaveAttribute("aria-current", "true")
 
   // Its folder closed, the note's tab brings the folder back open with the row marked and in view.
-  await files.getByRole("button", { name: "Collapse notes", exact: true }).click()
+  await files.getByRole("button", { name: "notes", exact: true, expanded: true }).click()
   await expect(files.getByRole("button", { name: "notes/plan.md", exact: true })).toHaveCount(0)
   await page.getByRole("tab", { name: "notes/plan.md" }).click()
   const plan = files.getByRole("button", { name: "notes/plan.md", exact: true })
   await expect(plan).toHaveAttribute("aria-current", "true")
   await expect(plan).toBeInViewport()
-  await expect(files.getByRole("button", { name: "Collapse notes", exact: true })).toBeVisible()
+  await expect(files.getByRole("button", { name: "notes", exact: true, expanded: true })).toBeVisible()
 })
 
 for (const [width, scheme] of [

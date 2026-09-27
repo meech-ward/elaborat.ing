@@ -26,7 +26,7 @@ async function openProject(page: Page, files: Record<string, string>, phone: boo
     await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   }
   const explorer = page.getByRole("navigation", { name: "Workspace files" }).first()
-  await explorer.getByRole("button", { name: "Expand notes", exact: true }).click()
+  await explorer.getByRole("button", { name: "notes", exact: true, expanded: false }).click()
   return explorer
 }
 

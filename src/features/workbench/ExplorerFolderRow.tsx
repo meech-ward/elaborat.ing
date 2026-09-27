@@ -1,22 +1,13 @@
 /**
- * Explorer folder row: a name button that selects the folder as the
- * creation destination, a chevron that expands or collapses it, and, as for
- * files, Rename, Move to folder and Delete through a Base UI context menu
- * (right-click, keyboard Menu/Shift+F10, long-press) plus an action-menu
- * button with the same list. Renaming uses the files' rename dialog; the
- * workbench moves or deletes the folder with everything in it and reports
- * the result.
+ * Explorer folder row: the library's TreeFolderRow. Choosing the row opens
+ * or closes the folder and makes it where new files and folders go. As for
+ * files, Rename, Move to folder and Delete are in a right-click menu
+ * (keyboard Menu/Shift+F10, long-press) on the row and in its action menu
+ * button. Renaming uses the files' rename dialog; the workbench moves or
+ * deletes the folder with everything in it and reports the result.
  */
 import { useState } from "react";
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-  MenuItems,
-  type MenuEntry,
-} from "@/components/ui/menu";
-import { ActionMenu } from "./WorkbenchChrome";
+import { TreeFolderRow, TreeRowMenu, type MenuEntry, type PanelRowSize } from "@/features/design-system";
 import { openRowMenuFromKeyboard } from "./explorerActions";
 import { folderRenameError } from "./folderTree";
 import { RenameDialog } from "./RenameDialog";
@@ -24,6 +15,8 @@ import { RenameDialog } from "./RenameDialog";
 export function ExplorerFolderRow({
   path,
   name,
+  depth = 0,
+  size = "default",
   open,
   selected,
   onToggle,
@@ -35,6 +28,10 @@ export function ExplorerFolderRow({
   path: string;
   /** The folder's own name, shown on the row. */
   name: string;
+  /** How deep the row sits in the tree: 0 at the top of the project. */
+  depth?: number;
+  /** `touch` on the phone's files screen. */
+  size?: PanelRowSize;
   /** Expanded in the tree. */
   open: boolean;
   /** Selected as the creation destination. */
@@ -50,8 +47,6 @@ export function ExplorerFolderRow({
   const [renameOpen, setRenameOpen] = useState(false);
   // A new dialog for each opening, so it starts from the current name.
   const [renameKey, setRenameKey] = useState(0);
-  const Icon = open ? FolderOpen : Folder;
-  const hasActions = Boolean(onRename || onMove || onDelete);
   const requestRename = () => {
     setRenameKey((key) => key + 1);
     setRenameOpen(true);
@@ -62,50 +57,28 @@ export function ExplorerFolderRow({
     ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
     ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
   ];
+  const hasActions = items.length > 0;
+  const menuLabel = `Actions for folder ${path}`;
 
-  const buttons = (
-    <>
-      <button
-        className="wb-tree-select"
-        aria-pressed={selected}
-        aria-label={`Select folder ${path} for creation`}
-        title={path}
-        onClick={onSelect}
-        onKeyDown={hasActions ? openRowMenuFromKeyboard : undefined}
-      >
-        <Icon size={15} aria-hidden="true" />
-        <span className="wb-tree-name">{name}</span>
-      </button>
-      {hasActions && <ActionMenu label={`Actions for folder ${path}`} items={items} />}
-      <button
-        className="wb-tree-toggle"
-        aria-expanded={open}
-        aria-label={`${open ? "Collapse" : "Expand"} ${path}`}
-        title={`${open ? "Collapse" : "Expand"} ${path}`}
-        onClick={onToggle}
-      >
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
-    </>
-  );
-
-  if (!hasActions) {
-    return (
-      <div className="wb-tree-row" data-selected={selected}>
-        {buttons}
-      </div>
-    );
-  }
   return (
     <>
-      <ContextMenu>
-        <ContextMenuTrigger className="wb-tree-row" data-selected={selected}>
-          {buttons}
-        </ContextMenuTrigger>
-        <ContextMenuContent aria-label={`Actions for folder ${path}`}>
-          <MenuItems items={items} />
-        </ContextMenuContent>
-      </ContextMenu>
+      <TreeFolderRow
+        name={name}
+        open={open}
+        depth={depth}
+        size={size}
+        selected={selected}
+        title={path}
+        data-path={path}
+        aria-label={name !== path ? path : undefined}
+        onClick={() => {
+          onSelect();
+          onToggle();
+        }}
+        onKeyDown={hasActions ? openRowMenuFromKeyboard : undefined}
+        rowMenu={hasActions ? { label: menuLabel, entries: items } : undefined}
+        actions={hasActions ? <TreeRowMenu label={menuLabel} entries={items} size={size} /> : undefined}
+      />
       {onRename && (
         <RenameDialog
           key={renameKey}

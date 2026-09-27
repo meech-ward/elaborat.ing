@@ -10,8 +10,9 @@ import { KindBadge } from "../ui/KindBadge"
 import { PanelRow } from "../ui/PanelRow"
 import { ProjectHeader } from "../ui/ProjectHeader"
 import { SearchField } from "../ui/SearchField"
+import { SearchHitRow } from "../ui/SearchHitRow"
 import { StatusDot } from "../ui/StatusDot"
-import { TreeFileRow, TreeFolderRow, TreeRowMenu } from "../ui/TreeRows"
+import { TreeFileRow, TreeFolderRow, TreeNameField, TreeRowMenu } from "../ui/TreeRows"
 import { phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
 
@@ -28,16 +29,19 @@ const focus = "outline-2 -outline-offset-2 outline-ring outline-solid"
 
 const noop = () => {}
 
+// The project menu: the projects (the open one current), the way home, then the project's actions.
 const projectMenu: MenuEntry[] = [
-  { label: "Rename project", onSelect: noop },
-  { label: "Download as zip", onSelect: noop },
-  { label: "All projects", onSelect: noop },
+  { label: "Product notes", group: "projects", current: true, onSelect: noop },
+  { label: "Research", group: "projects", onSelect: noop },
+  { label: "All projects", group: "home", onSelect: noop },
+  { label: "Import a file", group: "actions", onSelect: noop },
+  { label: "Refresh file list", group: "actions", onSelect: noop },
+  { label: "Command palette", group: "actions", onSelect: noop },
 ]
 
 const personMenu: MenuEntry[] = [
   { label: "Settings", onSelect: noop },
-  { label: "Help", onSelect: noop },
-  { label: "Terms", onSelect: noop },
+  { label: "Sync now", onSelect: noop },
   { label: "Sign out", onSelect: noop },
 ]
 
@@ -66,6 +70,19 @@ function States() {
         <GuideValue>
           Folder open, file selected with unsaved changes, hover, focus, actions on hover (ellipsis), folder closed, a file at the top.
         </GuideValue>
+        <GuideLabel>New entry name</GuideLabel>
+        <SidebarMenu aria-label="New entry name states">
+          <TreeFolderRow name="docs" open />
+          <TreeNameField depth={1} defaultValue="untitled.mdx" aria-label="Name of the new note in docs" />
+          <TreeNameField depth={1} defaultValue="pricing.md" error="pricing.md already exists here. Choose another name." aria-label="Name of the new note in docs, taken" />
+        </SidebarMenu>
+        <GuideValue>Where the new file will appear, at its depth; a name that cannot be used says why under it.</GuideValue>
+        <GuideLabel>Search results</GuideLabel>
+        <SidebarMenu aria-label="Search result sample">
+          <SearchHitRow path="docs/customer-model.mdx" kind="note" before="How a " match="customer" after=" moves from sign-up to their first project, and where agents help." />
+          <SearchHitRow path="flows/billing.d2" kind="diagram" before="" match="customer" after=" -> invoice" />
+        </SidebarMenu>
+        <GuideValue>A hit replaces the tree while the field has text: the path, and the words around the match.</GuideValue>
         <GuideLabel>Kind badges</GuideLabel>
         <div className="flex items-center gap-4">
           {(
@@ -167,7 +184,7 @@ function DesktopSidebar() {
           <IconRow icon={<Bot />} label="Connected agents" count={2} />
           <IconRow icon={<Sun />} label="Look and theme" />
         </SidebarMenu>
-        <PersonRow name="Person" email="person@example.com" menu={personMenu} />
+        <PersonRow name="Person" email="person@example.com" menu={personMenu} status={<StatusDot status="synced" />} />
       </FloatingPanel>
     </DottedPage>
   )
@@ -175,8 +192,8 @@ function DesktopSidebar() {
 
 /**
  * The phone's files and projects screen (390 by 844): 40px rows and 15px
- * text. The sync status takes the gear's place, so the person's row itself
- * opens the settings menu.
+ * text, each with its actions button (phones have no hover). The sync status
+ * takes the gear's place, so the person's row itself opens the settings menu.
  */
 function PhoneFiles() {
   return (
@@ -195,14 +212,14 @@ function PhoneFiles() {
           </Button>
         </div>
         <SidebarMenu>
-          <TreeFolderRow size="touch" name="art" open />
-          <TreeFileRow size="touch" name="flow.excalidraw" kind="drawing" depth={1} />
-          <TreeFolderRow size="touch" name="docs" open />
-          <TreeFileRow size="touch" name="customer-model.mdx" kind="note" depth={1} selected dirty />
-          <TreeFileRow size="touch" name="onboarding.mdx" kind="note" depth={1} />
-          <TreeFileRow size="touch" name="pricing.md" kind="note" depth={1} />
-          <TreeFolderRow size="touch" name="flows" open={false} />
-          <TreeFileRow size="touch" name="README.md" kind="note" />
+          <TreeFolderRow size="touch" name="art" open actions={<TreeRowMenu size="touch" label="Actions for folder art, phone sample" entries={fileMenu} />} />
+          <TreeFileRow size="touch" name="flow.excalidraw" kind="drawing" depth={1} actions={<TreeRowMenu size="touch" label="Actions for art/flow.excalidraw, phone sample" entries={fileMenu} />} />
+          <TreeFolderRow size="touch" name="docs" open actions={<TreeRowMenu size="touch" label="Actions for folder docs, phone sample" entries={fileMenu} />} />
+          <TreeFileRow size="touch" name="customer-model.mdx" kind="note" depth={1} selected dirty actions={<TreeRowMenu size="touch" label="Actions for docs/customer-model.mdx, phone sample" entries={fileMenu} />} />
+          <TreeFileRow size="touch" name="onboarding.mdx" kind="note" depth={1} actions={<TreeRowMenu size="touch" label="Actions for docs/onboarding.mdx, phone sample" entries={fileMenu} />} />
+          <TreeFileRow size="touch" name="pricing.md" kind="note" depth={1} actions={<TreeRowMenu size="touch" label="Actions for docs/pricing.md, phone sample" entries={fileMenu} />} />
+          <TreeFolderRow size="touch" name="flows" open={false} actions={<TreeRowMenu size="touch" label="Actions for folder flows, phone sample" entries={fileMenu} />} />
+          <TreeFileRow size="touch" name="README.md" kind="note" actions={<TreeRowMenu size="touch" label="Actions for README.md, phone sample" entries={fileMenu} />} />
         </SidebarMenu>
       </FloatingPanel>
       <FloatingPanel variant="flat" className="flex flex-col px-2 pt-1.5 pb-1">

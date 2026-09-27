@@ -20,7 +20,7 @@ export function MoveDialog({ path, kind = "file", folders, folder, plan, pending
   const destinations = kind === "folder" ? folders.filter(entry => entry !== path && !entry.startsWith(`${path}/`)) : folders;
   return <Dialog open onOpenChange={open => { if (!open && !pending) onClose(); }}>
     <DialogContent className="wb-rename wb-move" aria-busy={pending} initialFocus={select} showCloseButton={false}
-      finalFocus={() => [...document.querySelectorAll<HTMLButtonElement>(kind === "folder" ? ".wb-tree-select" : ".wb-explorer-open")].find(button => button.title === path) ?? document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')}>
+      finalFocus={() => [...document.querySelectorAll<HTMLElement>(`[data-tree-row="${kind}"] > [data-path]`)].find(row => row.dataset.path === path) ?? document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')}>
       <DialogTitle>{kind === "folder" ? "Move folder" : "Move to folder"}</DialogTitle>
       <DialogDescription>{kind === "folder"
         ? <>Move {path} and everything in it. References to its files are updated in the same save.</>

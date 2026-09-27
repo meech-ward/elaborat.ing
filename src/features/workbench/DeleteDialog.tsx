@@ -18,9 +18,8 @@ export function DeleteDialog({ request, plan, pending, deleting, error, stale, o
   const path = folder ? request.folder : request.path;
   return <AlertDialog open onOpenChange={open => { if (!open && !deleting) onClose(); }}>
     <DialogContent className="wb-rename wb-move" aria-busy={pending} initialFocus={cancel} showCloseButton={false}
-      finalFocus={() => [...document.querySelectorAll<HTMLButtonElement>(folder ? ".wb-tree-select" : ".wb-explorer-open")].find(button => button.title === path)
-        ?? document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
-        ?? document.querySelector<HTMLButtonElement>(".wb-tree-root")}>
+      finalFocus={() => [...document.querySelectorAll<HTMLElement>(`[data-tree-row="${folder ? "folder" : "file"}"] > [data-path]`)].find(row => row.dataset.path === path)
+        ?? document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')}>
       <DialogTitle>{folder ? `Delete folder ${path}` : `Delete ${path}`}</DialogTitle>
       <DialogDescription>
         This removes {path}{folder ? " and everything in it" : ""} from the project, for everyone who can open it.

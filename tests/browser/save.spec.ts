@@ -16,7 +16,7 @@ test("an edit shows Save and the tree row's dot, and saving hides them and write
   await page.goto(new URL(`projects/${id}/a.md`, APP_URL).href)
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   const save = page.getByRole("button", { name: "Save", exact: true })
-  const treeDot = page.locator(".wb-explorer-row .wb-explorer-dirty")
+  const treeDot = page.getByRole("navigation", { name: "Workspace files" }).locator('[data-slot="dirty-dot"]')
   await expect(save).toHaveCount(0)
   await expect(treeDot).toHaveCount(0)
   await page.locator(".monaco-editor:visible .view-lines").first().click()

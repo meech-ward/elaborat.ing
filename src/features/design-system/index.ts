@@ -8,7 +8,7 @@
 export { StyleGuidePage } from "./guide/StyleGuidePage"
 
 // --- Controls (guide/ControlsSection.tsx) ---
-export { ActionContextMenu, ActionMenu, type MenuEntry } from "./ui/ActionMenu"
+export { ActionContextMenu, ActionMenu, type ActionMenuProps, type MenuEntry } from "./ui/ActionMenu"
 export { Banner, BannerAction, Callout, type BannerTone } from "./ui/Banner"
 export { ButtonShortcut } from "./ui/ButtonShortcut"
 export { EmptyState } from "./ui/EmptyState"
@@ -24,8 +24,9 @@ export { KindBadge, kindBadgeVariants, type FileKind } from "./ui/KindBadge"
 export { PanelRow, panelRowVariants, type PanelRowProps, type PanelRowSize } from "./ui/PanelRow"
 export { ProjectHeader } from "./ui/ProjectHeader"
 export { SearchField, type SearchFieldProps } from "./ui/SearchField"
+export { SearchHitRow } from "./ui/SearchHitRow"
 export { SharpDiamond } from "./ui/SharpDiamond"
-export { TreeFileRow, TreeFolderRow, TreeRowMenu } from "./ui/TreeRows"
+export { TreeFileRow, TreeFolderRow, TreeNameField, TreeRowMenu } from "./ui/TreeRows"
 // --- end Navigation ---
 
 // --- Editor chrome (guide/EditorChromeSection.tsx) ---

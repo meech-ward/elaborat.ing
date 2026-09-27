@@ -91,16 +91,16 @@ test("the project panel switches to another project and back to all projects", a
   await signedIn(page)
   await openProject(page, alpha, "a.md")
 
-  await page.getByRole("button", { name: "Switch project" }).click()
+  // The project's name opens its menu: the projects, the way home, then the project's actions.
+  await page.getByRole("button", { name: "Alpha, project menu" }).click()
   const menu = page.getByRole("menu")
-  await expect(menu.getByRole("menuitem")).toHaveText(["Alpha", "Beta", "All projects"])
+  await expect(menu.getByRole("menuitem")).toHaveText(["Alpha", "Beta", "All projects", "Import a file", "Refresh file list", "Command palette"])
   await expect(menu.getByRole("menuitem", { name: "Alpha" })).toHaveAttribute("aria-current", "page")
   await menu.getByRole("menuitem", { name: "Beta" }).click()
   await expect(page).toHaveURL(projectUrl(beta))
   await expect(page.getByRole("heading", { level: 1, name: "Beta" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Your projects" })).toBeVisible()
 
-  await page.getByRole("button", { name: "Switch project" }).click()
+  await page.getByRole("button", { name: "Beta, project menu" }).click()
   await page.getByRole("menu").getByRole("menuitem", { name: "All projects" }).click()
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
 })
@@ -144,12 +144,14 @@ test("the account panel shows how many agents are connected, and none when there
   await fakeSupabase(page, { server, grants })
   await signedIn(page)
   await openProject(page, id)
-  const link = page.getByRole("link", { name: "Connected agents, 2" })
+  // The count describes the link.
+  const link = page.getByRole("link", { name: "Connected agents", exact: true })
   await expect(link).toBeVisible()
   await expect(link).toHaveAttribute("href", "/agents")
+  await expect(link).toHaveAccessibleDescription("2")
 
   grants.length = 0
   await page.reload()
-  await expect(page.getByRole("link", { name: "Connected agents", exact: true })).toBeVisible()
-  await expect(page.locator(".wb-account-count")).toHaveCount(0)
+  await expect(link).toBeVisible()
+  await expect(link).not.toHaveAttribute("aria-describedby")
 })
