@@ -62,7 +62,7 @@
   background-size: 20px 20px;
 }
 .rv-viewport:active { cursor: grabbing; }
-.rv-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.rv-viewport:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: -3px; }
 .rv-image {
   position: absolute;
   width: calc(100% - 32px);
