@@ -3,15 +3,30 @@
 Documents and diagrams for people who like Markdown, and the AI agents they
 work with.
 
-- Write notes in Markdown and MDX, with a code editor and an editable rendered view.
+- Write notes in MDX (Markdown plus components), with a code editor, an
+  editable rendered view, or both side by side.
 - Draw on native Excalidraw canvases, and write diagrams as D2 code.
 - Connect Claude, ChatGPT or any MCP client to your account, and work on the
   same documents together.
 - Run your own copy on a free Supabase project, or use the hosted one at
-  https://elaborat.ing, once it launches.
+  https://elaborat.ing.
 
-**Status:** early and being built in public. Nothing here is ready to use yet.
-The [roadmap](docs/roadmap.md) shows what is being built and in what order.
+**Status:** early and being built in public. You can try it at
+https://elaborat.ing, without an account (your work stays in that browser) or
+with one. Expect rough edges. The [roadmap](docs/roadmap.md) shows what is
+being built and in what order.
+
+## Connect an agent
+
+Add elaborat.ing as a custom connector (MCP server) in Claude, ChatGPT or any
+MCP client:
+
+```
+https://elaborat.ing/mcp
+```
+
+Sign in when asked and allow access. The agent can then list, read, write and
+organize your projects' files, search them, and show a file in the chat.
 
 ## Docs
 

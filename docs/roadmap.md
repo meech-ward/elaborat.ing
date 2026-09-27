@@ -26,22 +26,23 @@ user's files through MCP, on the hosted Supabase project.
    in `architecture.md`). (The pull request check that fails when committed
    migrations are out of date with `supabase/schemas/` is done: the
    `migrations` job in `ci.yml`.)
-3. **Sign-in and consent.** Email sign-in, the OAuth 2.1 server enabled in
-   `config.toml`, asymmetric signing keys, and the app's sign-in and consent
-   pages using Supabase's React consent block. The app deploys to
-   https://elaborat.ing.
+3. **Sign-in and consent (done).** Email sign-in (link or code, sent through
+   custom SMTP), the OAuth 2.1 server with dynamic client registration enabled
+   in `config.toml`, asymmetric signing keys, and the app's sign-in and consent
+   pages. The app deploys to https://elaborat.ing.
 4. **MCP server (deployed).** The `mcp-server` Edge Function from Supabase's
-   MCP Server block, with tools that wrap the core database functions, tested
-   live with a signed-in session. Connecting real clients waits for step 3.
-5. **Prove it with real clients.** Connect Claude and ChatGPT, run a
-   read-edit-read loop, and confirm with a real OAuth token that it carries
-   `client_id` and that Auth refuses account changes made with it.
+   MCP Server block, with tools that wrap the core database functions, served
+   at https://elaborat.ing/mcp through the site's Worker. A `show_file` tool
+   shows a file in the chat as an MCP Apps view.
+5. **Prove it with real clients.** Done with ChatGPT: it registered itself,
+   the person consented, its Auth session carries its OAuth client id, and it
+   created and edited a project's notes and a drawing. Still to do: Claude, and
+   a check that Auth refuses account changes made with an OAuth token.
 6. **Hybrid search (built).** Passages per heading, the documented
    `hybrid_search` function, automatic embeddings with the built-in `gte-small`
    model, a `search` function for query embeddings, and an MCP search tool.
-   pgTAP tests prove results come only from the caller's projects. It runs on
-   the hosted project once its Vault holds the embed key and the functions are
-   deployed (see "Search" in architecture.md).
+   pgTAP tests prove results come only from the caller's projects. Running on
+   the hosted project (see "Search" in architecture.md).
 
 ## Phase 2: the editor moves in
 
