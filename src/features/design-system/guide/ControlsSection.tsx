@@ -2,31 +2,22 @@ import { useState } from "react"
 import { ChevronDown, Diamond, Maximize2, Plus, Settings, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
-import { ActionContextMenu, ActionMenu, type MenuEntry } from "../ui/ActionMenu"
-import { Banner, BannerAction, Callout } from "../ui/Banner"
+import { ActionContextMenu, ActionMenu } from "../ui/ActionMenu"
+import { Banner } from "../ui/Banner"
 import { ButtonShortcut } from "../ui/ButtonShortcut"
 import { EmptyState } from "../ui/EmptyState"
 import { Hint } from "../ui/Hint"
 import { LoadingLine } from "../ui/LoadingLine"
+import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { DirtyDot, StatusDot } from "../ui/StatusDot"
-import { GuideGroup, GuideLabel, GuideValue } from "./parts"
+import { fileActions } from "./fileActions"
+import { GuideGroup, GuideLabel, GuideValue, useGuidePortal } from "./parts"
 
-// The Controls group: buttons, keys, tooltips, menus, banners, callouts,
-// status, loading and empty states, each in its states. Laid out in the
-// style guide's three columns from lg up; one column on phones.
-
-// The focus ring, drawn on a button that does not have focus, to show it:
-// the Button primitive's focus-visible outline without the condition.
-const SHOWN_FOCUS = "outline-2 outline-offset-2 outline-solid outline-ring"
-
-function fileActions(choose: (label: string) => void): MenuEntry[] {
-  return [
-    { label: "Rename", shortcut: "F2", keyShortcuts: "F2", onSelect: () => choose("Rename") },
-    { label: "Duplicate", shortcut: "⌘D", keyShortcuts: "Meta+D", onSelect: () => choose("Duplicate") },
-    { label: "Move to…", onSelect: () => choose("Move to…") },
-    { label: "Delete", shortcut: "⌫", keyShortcuts: "Backspace", destructive: true, onSelect: () => choose("Delete") },
-  ]
-}
+// The Controls group: the button sizes and disabled states, keys, tooltips,
+// live menus, the empty state, the other banner tones and status, the
+// unsaved dot and loading lines. The approved sheet at the top of the page
+// has the buttons, the menu and the warn banner, callout and status; this
+// group has the rest. Three columns from lg up; one column on phones.
 
 export function ControlsSection() {
   return (
@@ -47,26 +38,20 @@ export function ControlsSection() {
 }
 
 function ButtonsDemo() {
+  const apple = isApplePlatform()
+  const save = commandShortcut("S", apple)
+  const focus = commandShortcut(".", apple)
+  const palette = commandShortcut("P", apple)
   return (
     <>
-      <GuideLabel>Buttons</GuideLabel>
-      <div className="flex flex-wrap items-center gap-2.5">
-        <Button aria-keyshortcuts="Meta+S">
-          Save
-          <ButtonShortcut>⌘S</ButtonShortcut>
-        </Button>
-        <Button variant="secondary">New folder</Button>
-        <Button variant="outline">Cancel</Button>
-        <Button variant="destructive">Delete</Button>
-        <Button className={SHOWN_FOCUS}>Focused</Button>
-      </div>
       <GuideLabel>Sizes</GuideLabel>
       <div className="flex flex-wrap items-center gap-2.5">
-        <Button size="sm" aria-keyshortcuts="Meta+S">
+        <Button size="sm" aria-keyshortcuts={save.aria}>
           Save
-          <ButtonShortcut>⌘S</ButtonShortcut>
+          <ButtonShortcut>{save.label}</ButtonShortcut>
         </Button>
         <Button size="lg">Create project</Button>
+        <Button size="touch">New file</Button>
         <Button variant="secondary" size="icon" aria-label="New file">
           <Plus />
         </Button>
@@ -74,7 +59,10 @@ function ButtonsDemo() {
           <Plus />
         </Button>
       </div>
-      <GuideValue>30 toolbar, 32, 36 large; icons 30 and 40; radius 9; 600 13px</GuideValue>
+      <GuideValue>
+        30 toolbar, 32, 36 large, 40 touch (15px, radius 10); icons 30 and 40; radius 9; 600 13px. On touch screens every size is at
+        least 40 high.
+      </GuideValue>
       <GuideLabel>Disabled</GuideLabel>
       <div className="flex flex-wrap items-center gap-2.5">
         <Button disabled>Save</Button>
@@ -92,11 +80,11 @@ function ButtonsDemo() {
 
       <GuideLabel>Kbd</GuideLabel>
       <div className="flex flex-wrap items-center gap-2.5">
-        <Kbd>⌘P</Kbd>
+        <Kbd>{palette.label}</Kbd>
         <KbdGroup>
-          <Kbd>⌘</Kbd>
-          <Kbd>⇧</Kbd>
-          <Kbd>P</Kbd>
+          {(apple ? ["⌘", "⇧", "P"] : ["Ctrl", "Shift", "P"]).map((key) => (
+            <Kbd key={key}>{key}</Kbd>
+          ))}
         </KbdGroup>
         <Kbd>F2</Kbd>
         <Kbd>Esc</Kbd>
@@ -104,8 +92,8 @@ function ButtonsDemo() {
 
       <GuideLabel>Tooltip</GuideLabel>
       <div className="flex flex-wrap items-center gap-1">
-        <Hint label="Focus" shortcut="⌘.">
-          <Button variant="ghost" size="icon" aria-label="Focus (⌘.)" aria-keyshortcuts="Meta+.">
+        <Hint label="Focus" shortcut={focus.label}>
+          <Button variant="ghost" size="icon" aria-label={`Focus (${focus.label})`} aria-keyshortcuts={focus.aria}>
             <Maximize2 />
           </Button>
         </Hint>
@@ -128,16 +116,17 @@ function ButtonsDemo() {
 function MenuDemo() {
   const [chosen, setChosen] = useState<string | null>(null)
   const entries = fileActions(setChosen)
+  // The menus open inside the page's main landmark, not at the end of the body.
+  const portal = useGuidePortal()
   return (
     <>
-      <GuideLabel>Menu</GuideLabel>
-      <MenuSpecimen />
       <GuideLabel>Try it</GuideLabel>
       <div className="flex flex-wrap items-stretch gap-2.5">
         <ActionMenu
           entries={entries}
+          contentProps={{ container: portal }}
           trigger={
-            <Button variant="outline" className="pointer-coarse:h-10">
+            <Button variant="outline">
               File actions
               <ChevronDown data-icon="inline-end" />
             </Button>
@@ -146,6 +135,7 @@ function MenuDemo() {
         <ActionContextMenu
           entries={entries}
           aria-label="File actions"
+          contentProps={{ container: portal }}
           className="flex min-h-10 min-w-0 flex-1 items-center justify-center rounded-button border border-dashed border-panel-border px-3 text-center text-[13px] text-muted-foreground"
         >
           Right-click here, or press and hold
@@ -173,54 +163,17 @@ function MenuDemo() {
   )
 }
 
-/**
- * The menu held open as the style guide draws it, with Duplicate
- * highlighted: the real ActionMenu, laid out in place (its portal renders
- * here and the positioner is static) and inert, so it neither takes focus
- * nor reacts to the pointer. "Try it" below has the live ones.
- */
-function MenuSpecimen() {
-  const [container, setContainer] = useState<HTMLDivElement | null>(null)
-  return (
-    <div inert ref={setContainer} data-specimen="menu">
-      {container && (
-        <ActionMenu
-          open
-          modal={false}
-          entries={fileActions(() => {})}
-          trigger={<button type="button" aria-label="Example menu" className="sr-only" />}
-          contentProps={{
-            container,
-            sideOffset: 0,
-            positionerClassName: "static! transform-none!",
-            // The highlighted look, drawn on the second item: the menu
-            // primitive's data-highlighted colours.
-            className: "max-h-none! w-fit [&>*:nth-child(2)]:bg-accent [&>*:nth-child(2)]:text-accent-foreground",
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
 function FeedbackDemo() {
   return (
     <>
-      <GuideLabel>Banner, callout, status</GuideLabel>
-      <Banner tone="warn" action={<BannerAction>Compare</BannerAction>}>
-        pricing.md changed on another device.
-      </Banner>
-      <Callout>Agents act as the signed-in person in every project they can open.</Callout>
-      <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
-        <StatusDot status="synced" />
-        <StatusDot status="unsaved" />
-        <StatusDot status="failed" />
-        <StatusDot status="offline" />
-      </div>
-
       <GuideLabel>Banner tones</GuideLabel>
       <Banner tone="danger">Render error on line 4. The source is unchanged and stays editable.</Banner>
       <Banner tone="info">Offline: showing the projects on this device. Changes sync when you are back online.</Banner>
+
+      <GuideLabel>Offline status</GuideLabel>
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
+        <StatusDot status="offline" />
+      </div>
 
       <GuideLabel>Dirty dot</GuideLabel>
       <span className="inline-flex items-center gap-[7px] text-[13px] font-semibold">

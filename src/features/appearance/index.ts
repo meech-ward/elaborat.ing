@@ -7,7 +7,10 @@ export {
   getPaletteColors,
   parseAppearanceSetting,
   themes,
+  tokenProperty,
 } from "./tokens";
+export { palettes } from "./palettes";
+export type { Palette, PaletteColors, PaletteId } from "./palettes";
 export type {
   Appearance,
   AppearanceSetting,

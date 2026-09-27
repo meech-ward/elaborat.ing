@@ -39,18 +39,9 @@ export function Banner({
   )
 }
 
-/** The banner's action: a text button in the banner's own colour and weight, underlined. */
-export function BannerAction({ className, ...props }: ComponentProps<typeof Button>) {
-  return (
-    <Button
-      variant="link"
-      className={cn(
-        "inline h-auto p-0 align-baseline text-[length:inherit] font-[inherit] text-current underline decoration-1 underline-offset-2 hover:decoration-2",
-        className,
-      )}
-      {...props}
-    />
-  )
+/** The banner's action: a text button in the banner's own colour and size, 600, underlined on hover. */
+export function BannerAction(props: Omit<ComponentProps<typeof Button>, "variant" | "size">) {
+  return <Button variant="inline" size="inline" {...props} />
 }
 
 /** Standing guidance in the accentSoft colours: 14px at 1.5, padding 12 by 14. */

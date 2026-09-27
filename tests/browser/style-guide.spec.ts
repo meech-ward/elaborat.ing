@@ -5,7 +5,8 @@ import { fakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // The style guide page: the foundations in the active palette, the palette
-// and mode switch, and the component sections in their places.
+// and mode switch, the approved sheet's components card, and the rest of the
+// library's sections in their places.
 
 const styleGuideUrl = new URL("style-guide", APP_URL).href
 const supabase = palettes.find((palette) => palette.id === "supabase-green")!
@@ -45,7 +46,7 @@ test("the foundations show the active palette, and the component sections sit in
   await page.emulateMedia({ colorScheme: "light" })
   await page.goto(styleGuideUrl)
   await expect(page.getByRole("heading", { level: 1, name: "elaborat.ing style guide" })).toBeVisible()
-  await expect(page.getByText("Supabase Green, light, following the device.", { exact: false })).toBeVisible()
+  await expect(page.getByText("Supabase Green, light. Every value is a token", { exact: false })).toBeVisible()
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex")
 
   const cards = page.getByRole("region")
@@ -59,9 +60,15 @@ test("the foundations show the active palette, and the component sections sit in
   }
   await expect(page.getByText("Customer model")).toBeVisible()
 
-  const components = cards.filter({ has: page.getByRole("heading", { level: 2, name: "Components and states" }) })
+  // The approved sheet's card: its six captions, and no groups inside.
+  const sheet = cards.filter({ has: page.getByRole("heading", { level: 2, name: "Components and states", exact: true }) })
+  for (const caption of ["Buttons", "View switch and tabs", "Tree rows and search", "Menu", "Banner, callout, status", "Canvas"]) {
+    await expect(sheet.getByText(caption, { exact: true })).toBeVisible()
+  }
+  await expect(sheet.getByRole("heading", { level: 3 })).toHaveCount(0)
+  const more = cards.filter({ has: page.getByRole("heading", { level: 2, name: "More components and states" }) })
   const c5 = cards.filter({ has: page.getByRole("heading", { level: 2, name: "C5 components" }) })
-  await expect(components.getByRole("heading", { level: 3 })).toHaveText(["Controls", "Navigation"])
+  await expect(more.getByRole("heading", { level: 3 })).toHaveText(["Controls", "Navigation"])
   await expect(c5.getByRole("heading", { level: 3 })).toHaveText(["Editor chrome", "Canvas"])
 })
 
@@ -93,6 +100,24 @@ for (const scheme of ["light", "dark"] as const) {
   })
 }
 
+test("an open menu stays inside the page's landmarks, with this platform's keys", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" })
+  await page.goto(styleGuideUrl)
+  const apple = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))
+  const more = page.getByRole("region").filter({ has: page.getByRole("heading", { level: 2, name: "More components and states" }) })
+  await more.getByRole("button", { name: "File actions" }).click()
+  // The sheet's menu is a picture of one: the open menu is the only menu.
+  const menu = page.getByRole("menu")
+  await expect(menu).toBeVisible()
+  await expect(page.locator("main").getByRole("menu")).toBeVisible()
+  const duplicate = menu.getByRole("menuitem", { name: /Duplicate/ })
+  await expect(duplicate).toHaveAttribute("aria-keyshortcuts", apple ? "Meta+D" : "Control+D")
+  await expect(duplicate).toContainText(apple ? "⌘D" : "Ctrl+D")
+  await expectAxeClean(page)
+  await page.keyboard.press("Escape")
+  await expect(menu).toBeHidden()
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
@@ -100,5 +125,15 @@ test.describe("on a phone", () => {
     await page.goto(styleGuideUrl)
     await expect(page.locator("[data-token]").first()).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+  })
+
+  test("buttons are at least 40 high on a touch screen", async ({ page }) => {
+    await page.goto(styleGuideUrl)
+    test.skip(!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)), "this browser reports no coarse pointer")
+    const sheet = page.getByRole("region").filter({ has: page.getByRole("heading", { level: 2, name: "Components and states", exact: true }) })
+    for (const name of ["Save", "New folder", "Cancel", "Delete", "Focused"]) {
+      const box = await sheet.getByRole("button", { name, exact: true }).boundingBox()
+      expect(box?.height, name).toBeGreaterThanOrEqual(40)
+    }
   })
 })

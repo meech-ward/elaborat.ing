@@ -4,7 +4,8 @@ import { GuideCard, GuideValue } from "./parts"
 
 // Space, radius, elevation and icons. The boxes use the Tailwind values the
 // tokens map to (index.css): spacing 1 to 8, rounded-row to rounded-pill,
-// shadow-panel and shadow-island.
+// shadow-panel and shadow-island. As in the style guide, a box's size is
+// inside its 1px border.
 const SPACE: readonly { px: number; className: string }[] = [
   { px: 4, className: "size-1" },
   { px: 6, className: "size-1.5" },
@@ -38,24 +39,25 @@ export function SpaceSection() {
       <div className="flex flex-wrap items-end gap-3.5">
         {SPACE.map(({ px, className }) => (
           <div key={px} className="flex flex-col items-center gap-1.5">
-            <div aria-hidden="true" className={cn("rounded-[3px] border border-primary bg-accent-soft", className)} />
+            <div aria-hidden="true" className={cn("box-content rounded-[3px] border border-primary bg-accent-soft", className)} />
             <GuideValue>{px}</GuideValue>
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-3.5">
+      {/* Five across on phones too: narrower tiles, captions may wrap. */}
+      <div className="grid grid-cols-5 gap-2 sm:flex sm:gap-3.5">
         {RADII.map(({ label, className }) => (
-          <div key={label} className="flex flex-col items-center gap-1.5">
-            <div aria-hidden="true" className={cn("h-11 w-16 border border-panel-border bg-seg", className)} />
-            <GuideValue>{label}</GuideValue>
+          <div key={label} className="flex min-w-0 flex-col items-center gap-1.5">
+            <div aria-hidden="true" className={cn("h-11 w-full border border-panel-border bg-seg sm:box-content sm:w-16", className)} />
+            <GuideValue className="text-center">{label}</GuideValue>
           </div>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-[18px]">
-        <div className="flex h-[60px] w-[150px] items-center justify-center rounded-panel border border-panel-border bg-panel shadow-panel">
+        <div className="box-content flex h-[60px] w-[150px] items-center justify-center rounded-panel border border-panel-border bg-panel shadow-panel">
           <GuideValue>panel · 0 10 30</GuideValue>
         </div>
-        <div className="flex h-11 items-center rounded-[10px] bg-island px-3 shadow-island">
+        <div className="flex h-11 items-center rounded-tile bg-island px-3 shadow-island">
           <GuideValue>canvas island</GuideValue>
         </div>
       </div>

@@ -91,10 +91,14 @@
   --font-mono: var(--code-font);
 
   /* The style guide's radii: rows 7, buttons 9, menus 12, panels 14, pills.
-     Its space scale (4, 6, 8, 12, 16, 24, 32) is Tailwind's own: 1, 1.5, 2,
-     3, 4, 6, 8. */
+     Its screens also use 8 for icon buttons and canvas tools (tool) and 10
+     for banners, callouts, canvas islands, colour chips and phone buttons
+     (tile). Its space scale (4, 6, 8, 12, 16, 24, 32) is Tailwind's own: 1,
+     1.5, 2, 3, 4, 6, 8. */
   --radius-row: 7px;
+  --radius-tool: 8px;
   --radius-button: 9px;
+  --radius-tile: 10px;
   --radius-menu: 12px;
   --radius-panel: 14px;
   --radius-pill: 999px;

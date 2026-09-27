@@ -2,8 +2,8 @@ import { useId } from "react"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useAppearance, type ColorMode, type ThemeName } from "@/features/appearance"
-import { palettes } from "@/features/appearance/palettes"
+import { palettes, useAppearance, type ColorMode, type ThemeName } from "@/features/appearance"
+import { useGuidePortal } from "./parts"
 
 // The page's palette and Light, Dark or System: the app's own appearance
 // setting (the same one Settings changes), so the choice sticks.
@@ -18,6 +18,7 @@ const PALETTE_ITEMS = palettes.map(({ id, label }) => ({ value: id, label }))
 export function AppearancePicker() {
   const { appearance, mode, setMode, setTheme } = useAppearance()
   const paletteId = useId()
+  const portal = useGuidePortal()
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Label htmlFor={paletteId} className="text-[13px] text-muted-foreground">
@@ -33,7 +34,7 @@ export function AppearancePicker() {
         <SelectTrigger id={paletteId} className="min-w-44">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent container={portal}>
           {palettes.map((palette) => (
             <SelectItem key={palette.id} value={palette.id}>
               <span

@@ -3,16 +3,17 @@ import { ensureGeneratedNativeFont } from "@/features/drawings"
 import { GuideCard, GuideValue } from "./parts"
 
 // The type scale: each sample in its size, weight and colour, with its spec.
+// Line heights are the fonts' own (normal) unless the spec gives one.
 const SAMPLES: readonly { spec: string; sample: ReactNode; className: string }[] = [
-  { spec: "H1 · 32 / 700", sample: "Customer model", className: "text-[32px] leading-tight font-bold" },
-  { spec: "H2 · 21 / 600", sample: "Steps", className: "text-[21px] leading-snug font-semibold" },
+  { spec: "H1 · 32 / 700", sample: "Customer model", className: "text-[32px] leading-[normal] font-bold" },
+  { spec: "H2 · 21 / 600", sample: "Steps", className: "text-[21px] leading-[normal] font-semibold" },
   {
     spec: "Body · 15.5 / 1.6",
     sample: "How a customer moves from sign-up to their first project.",
     className: "text-[15.5px] leading-[1.6] text-body",
   },
-  { spec: "UI · 13 / 500", sample: "customer-model.mdx", className: "text-[13px] font-medium" },
-  { spec: "Label · 11 / 600", sample: "Open editors", className: "text-[11px] font-semibold tracking-[0.07em] text-dim uppercase" },
+  { spec: "UI · 13 / 500", sample: "customer-model.mdx", className: "text-[13px] leading-[normal] font-medium" },
+  { spec: "Label · 11 / 600", sample: "Open editors", className: "text-[11px] leading-[normal] font-semibold tracking-[0.07em] text-dim uppercase" },
   {
     spec: "Code · 13 / 22",
     sample: (
@@ -23,7 +24,7 @@ const SAMPLES: readonly { spec: string; sample: ReactNode; className: string }[]
     ),
     className: "font-mono text-[13px] leading-[22px]",
   },
-  { spec: "Canvas · Excalifont", sample: "Sign up", className: "font-[family-name:Excalifont,cursive] text-[26px] text-ink" },
+  { spec: "Canvas · Excalifont", sample: "Sign up", className: "font-[family-name:Excalifont,cursive] text-[26px] leading-[normal] text-ink" },
 ]
 
 export function TypeSection() {

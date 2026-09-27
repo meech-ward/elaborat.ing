@@ -29,40 +29,50 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 // Restyled to the style guide: 32 high (30 small, the toolbar's Save),
-// radius 9, 600 13px; the focus colour as a 2px outline at offset 2;
-// disabled at 45%; pressed fills mixed with 12% black, and transparent ones
-// take the seg fill. Variants: default is the primary (accent) button,
-// secondary the seg fill, outline the Cancel look (muted text, 1px border),
-// ghost no border, destructive the danger-text outline (Delete), link a
-// text link. Icon buttons: icon 30 (radius 8), icon-lg 40 for phones and
-// touch screens.
+// radius 9, 600 13px, padding 14; the focus colour as a 2px outline at
+// offset 2; disabled at 45%. Filled buttons have no border, as the style
+// guide draws them; outline and destructive have the 1px panel border.
+// Hover and press mix the fill 6% and 12% towards the text colour (darker
+// in light mode, lighter in dark), and transparent ones take the seg fill.
+// Variants: default is the primary (accent) button, secondary the seg fill,
+// outline the Cancel look (muted text), ghost no border, destructive the
+// danger-text outline (Delete), link a text link, and inline a text action
+// inside a sentence (a banner's Compare: its colour and size, 600, underlined
+// on hover; use it with size inline, whose touch target reaches 40 high
+// without moving the text). Icon buttons: icon 30 (radius 8),
+// icon-lg 40. touch is the phones' text button: 40 high, radius 10, 15px.
+// On touch screens (pointer: coarse) every size but the extra-small ones
+// grows to 40 high, so touch targets reach 40px.
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-button border border-transparent bg-clip-padding text-[13px] font-semibold whitespace-nowrap transition-colors outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-button bg-clip-padding text-[13px] font-semibold whitespace-nowrap transition-colors outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--accent)_94%,black)] active:bg-[color-mix(in_oklab,var(--accent)_88%,black)]",
+          "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--accent)_94%,var(--text))] active:bg-[color-mix(in_oklab,var(--accent)_88%,var(--text))]",
         outline:
-          "border-border bg-transparent text-muted-foreground hover:bg-[color-mix(in_oklab,var(--seg)_50%,transparent)] hover:text-foreground active:bg-seg aria-expanded:bg-seg aria-expanded:text-foreground",
+          "border border-border bg-transparent text-muted-foreground hover:bg-[color-mix(in_oklab,var(--seg)_50%,transparent)] hover:text-foreground active:bg-seg aria-expanded:bg-seg aria-expanded:text-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--seg)_94%,black)] active:bg-[color-mix(in_oklab,var(--seg)_88%,black)] aria-expanded:bg-[color-mix(in_oklab,var(--seg)_88%,black)]",
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--seg)_94%,var(--text))] active:bg-[color-mix(in_oklab,var(--seg)_88%,var(--text))] aria-expanded:bg-[color-mix(in_oklab,var(--seg)_88%,var(--text))]",
         ghost:
           "bg-transparent text-muted-foreground hover:bg-[color-mix(in_oklab,var(--seg)_50%,transparent)] hover:text-foreground active:bg-seg aria-expanded:bg-seg aria-expanded:text-foreground",
         destructive:
-          "border-border bg-transparent text-destructive hover:bg-[color-mix(in_oklab,var(--seg)_50%,transparent)] active:bg-seg",
+          "border border-border bg-transparent text-destructive hover:bg-[color-mix(in_oklab,var(--seg)_50%,transparent)] active:bg-seg",
         link: "text-accent-soft-text underline-offset-4 hover:underline",
+        inline: "text-current decoration-1 underline-offset-2 hover:underline",
       },
       size: {
         default:
-          "h-8 px-3.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
+          "h-8 px-3.5 pointer-coarse:h-10 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
         xs: "h-6 gap-1 rounded-row px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-[30px] gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
-        lg: "h-9 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
-        icon: "size-[30px] rounded-[8px]",
+        sm: "h-[30px] gap-1.5 px-3 pointer-coarse:h-10 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
+        lg: "h-9 px-4 pointer-coarse:h-10 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
+        touch: "h-10 rounded-tile px-4 text-[15px]",
+        inline: "relative inline h-auto p-0 align-baseline text-[length:inherit] pointer-coarse:after:absolute pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-[11px]",
+        icon: "size-[30px] rounded-tool pointer-coarse:size-10",
         "icon-xs":
           "size-6 rounded-row [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-7 rounded-[8px]",
+        "icon-sm": "size-7 rounded-tool pointer-coarse:size-10",
         "icon-lg": "size-10 [&_svg:not([class*='size-'])]:size-5",
       },
     },

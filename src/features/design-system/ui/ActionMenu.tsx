@@ -72,17 +72,20 @@ export function ActionContextMenu({
   children,
   className,
   "aria-label": ariaLabel,
+  contentProps,
 }: {
   entries: readonly MenuEntry[]
   children: ReactNode
   className?: string
   /** A name for the menu popup, such as "File actions". */
   "aria-label"?: string
+  /** Placement and extra props for the popup (container, side, className ...). */
+  contentProps?: Omit<ComponentProps<typeof ContextMenuContent>, "children">
 }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger className={className}>{children}</ContextMenuTrigger>
-      <ContextMenuContent aria-label={ariaLabel}>
+      <ContextMenuContent aria-label={ariaLabel} {...contentProps}>
         {menuRows(entries).map((row) =>
           row.kind === "separator" ? (
             <ContextMenuSeparator key={row.key} />

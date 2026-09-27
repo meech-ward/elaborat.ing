@@ -26,7 +26,8 @@
 // Adaptations: `cn` via @/lib/utils; close button renders the repo Button;
 // `overlayClassName` passthrough lets the workbench keep its backdrop token
 // class while the upstream overlay keeps the starting/ending-style motion;
-// SheetFooter added (upstream export, used by nothing yet).
+// SheetFooter added (upstream export, used by nothing yet); the overlay is
+// the palette's shadow colour in place of upstream's black at 10%.
 "use client"
 
 import * as React from "react"
@@ -57,7 +58,7 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/10 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
+        "fixed inset-0 z-50 bg-(--shadow) transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
         className
       )}
       {...props}
