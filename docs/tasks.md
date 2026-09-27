@@ -934,7 +934,7 @@ Drawings and diagrams are saved at once, as `untitled.excalidraw` and
   cancels and creates nothing. A name that is taken or invalid shows why
   under the field and keeps it open.
 - Creating from the command palette or the workbench menu opens the same
-  field. On a phone, where the explorer is in the navigation drawer, a small
+  field. On a phone, where the explorer is on the files screen, a small
   dialog asks for the name instead.
 - An unsaved new note that already exists (from a draft kept across a
   reload) can be renamed: the rename just changes the name it will be saved
