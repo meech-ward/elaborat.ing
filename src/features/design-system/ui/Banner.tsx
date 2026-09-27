@@ -44,10 +44,15 @@ export function BannerAction(props: Omit<ComponentProps<typeof Button>, "variant
   return <Button variant="inline" size="inline" {...props} />
 }
 
-/** Standing guidance in the accentSoft colours: 14px at 1.5, padding 12 by 14. */
-export function Callout({ className, children, ...props }: Omit<ComponentProps<typeof Alert>, "variant">) {
+/**
+ * Standing guidance in the accentSoft colours: 14px at 1.5, padding 12 by
+ * 14. `icon` (a Lucide icon, such as <Info />) goes before the text, as a
+ * rendered note shows its callouts.
+ */
+export function Callout({ className, icon, children, ...props }: Omit<ComponentProps<typeof Alert>, "variant"> & { icon?: ReactNode }) {
   return (
     <Alert role="note" variant="soft" className={cn("px-3.5 py-3 text-sm leading-normal", className)} {...props}>
+      {icon}
       <AlertDescription>{children}</AlertDescription>
     </Alert>
   )

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { commandShortcut, isApplePlatform, viewShortcut } from "./shortcuts"
 import { clippedTabs, revealStart, type TabBox } from "./tabOverflow"
-import { mandatoryView } from "./views"
+import { mandatoryView, viewLabel } from "./views"
 
 // Five tabs, 100 wide with no gaps: a..e at 0, 100, 200, 300, 400.
 const tabs: TabBox[] = ["a", "b", "c", "d", "e"].map((value, i) => ({ value, left: i * 100, width: 100 }))
@@ -48,6 +48,15 @@ describe("mandatoryView", () => {
   })
   test("a view the switch does not offer is never selected", () => {
     expect(mandatoryView("source", ["split"], ["source", "rendered"])).toBe("source")
+  })
+})
+
+describe("viewLabel", () => {
+  test("a note's views are Source, Split and Rendered", () => {
+    expect((["source", "split", "rendered"] as const).map((view) => viewLabel(view))).toEqual(["Source", "Split", "Rendered"])
+  })
+  test("a drawing's or diagram's views are Code, Split and Canvas", () => {
+    expect((["source", "split", "rendered"] as const).map((view) => viewLabel(view, "canvas"))).toEqual(["Code", "Split", "Canvas"])
   })
 })
 

@@ -52,14 +52,15 @@ export function StyleGuidePage() {
             </div>
             <ComponentsSheet />
 
-            <GuideCard title="More components and states" className="gap-7">
+            {/* On phones the phone samples span the screen, past the card's padding (c5Samples.tsx). */}
+            <GuideCard title="More components and states" className="gap-7 max-sm:overflow-visible">
               <GuideValue className="-mt-3.5">
                 The rest of the library, for review: more states, and the components the sheet above leaves out.
               </GuideValue>
               <ControlsSection />
               <NavigationSection />
             </GuideCard>
-            <GuideCard title="C5 components" className="gap-7">
+            <GuideCard title="C5 components" className="gap-7 max-sm:overflow-visible">
               <EditorChromeSection />
               <CanvasSection />
             </GuideCard>

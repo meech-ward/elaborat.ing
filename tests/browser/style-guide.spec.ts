@@ -58,7 +58,7 @@ test("the foundations show the active palette, and the component sections sit in
   for (const name of ["Type", "Space, radius, elevation, icons"]) {
     await expect(page.getByRole("heading", { level: 2, name, exact: true })).toBeVisible()
   }
-  await expect(page.getByText("Customer model")).toBeVisible()
+  await expect(cards.filter({ has: page.getByRole("heading", { level: 2, name: "Type", exact: true }) }).getByText("Customer model")).toBeVisible()
 
   // The approved sheet's card: its six captions, and no groups inside.
   const sheet = cards.filter({ has: page.getByRole("heading", { level: 2, name: "Components and states", exact: true }) })

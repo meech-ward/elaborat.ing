@@ -92,13 +92,15 @@ const personSizes: Record<PanelRowSize, { row: string; avatar: string; fallback:
 }
 
 // No primitive fits the row itself: it is layout around shadcn's Avatar and
-// an ActionMenu, not a control.
+// an ActionMenu, not a control. On phones, where the sync status takes the
+// gear's place, the whole row is the menu's Button instead.
 
 /**
  * The signed-in person: Avatar (the picture, or the initial in accentSoft),
  * the name at 600 and the email in dim, then a gear button that opens an
  * ActionMenu with `menu` as its entries. `trailing` replaces the gear (the
- * phone shows the sync status there).
+ * phone shows the sync status there); with a `menu` too, the whole row
+ * opens the menu, so it keeps a way in.
  */
 export function PersonRow({
   name,
@@ -122,9 +124,9 @@ export function PersonRow({
   className?: string
 }) {
   const s = personSizes[size]
-  return (
-    <div data-slot="person-row" className={cn("flex items-center", s.row, className)}>
-      <Avatar className={cn("after:hidden", s.avatar)}>
+  const person = (
+    <>
+      <Avatar aria-hidden="true" className={cn("after:hidden", s.avatar)}>
         {image && <AvatarImage src={image} alt="" />}
         <AvatarFallback className={s.fallback}>{initialFor(name, email)}</AvatarFallback>
       </Avatar>
@@ -132,6 +134,34 @@ export function PersonRow({
         <span className={cn("truncate font-semibold text-foreground", s.name)}>{name}</span>
         <span className={cn("truncate text-dim", s.email)}>{email}</span>
       </span>
+    </>
+  )
+  if (trailing && menu) {
+    // The row's text names the button; the menu says what it holds.
+    return (
+      <ActionMenu
+        entries={menu}
+        contentProps={{ align: "end", side: "top", "aria-label": menuLabel }}
+        trigger={
+          <Button
+            variant="ghost"
+            data-slot="person-row"
+            className={cn(
+              "h-auto w-full justify-start py-[5px] text-left font-normal",
+              size === "touch" ? "gap-3 px-2.5" : "gap-2.5 px-2",
+              className,
+            )}
+          >
+            {person}
+            {trailing}
+          </Button>
+        }
+      />
+    )
+  }
+  return (
+    <div data-slot="person-row" className={cn("flex items-center", s.row, className)}>
+      {person}
       {trailing ??
         (menu && (
           <ActionMenu

@@ -3,9 +3,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import { Hint } from "./Hint"
 import { isApplePlatform, viewShortcut } from "./shortcuts"
-import { EDITOR_VIEWS, mandatoryView, type EditorView } from "./views"
+import { EDITOR_VIEWS, mandatoryView, viewLabel, type EditorView, type ViewNames } from "./views"
 
-export type { EditorView } from "./views"
+export type { EditorView, ViewNames } from "./views"
 
 const ICONS: Record<EditorView, LucideIcon> = { source: Code, split: Columns2, rendered: Eye }
 
@@ -19,12 +19,14 @@ const ICONS: Record<EditorView, LucideIcon> = { source: Code, split: Columns2, r
  * screens the buttons grow to 40 high.
  *
  * `views` limits the switch, for example to Source and Rendered on phones,
- * where there is no room to split.
+ * where there is no room to split. `names="canvas"` calls the views Code,
+ * Split and Canvas, for a drawing or a diagram.
  */
 export function ViewSwitch({
   value,
   onValueChange,
   views = ["source", "split", "rendered"],
+  names = "note",
   disabled,
   "aria-label": ariaLabel = "View",
   className,
@@ -32,6 +34,7 @@ export function ViewSwitch({
   value: EditorView
   onValueChange: (view: EditorView) => void
   views?: readonly EditorView[]
+  names?: ViewNames
   disabled?: boolean
   "aria-label"?: string
   className?: string
@@ -54,11 +57,12 @@ export function ViewSwitch({
       {EDITOR_VIEWS.filter((view) => views.includes(view.value)).map((view) => {
         const Icon = ICONS[view.value]
         const shortcut = viewShortcut(view.digit, apple)
+        const label = viewLabel(view.value, names)
         return (
-          <Hint key={view.value} label={view.label} shortcut={shortcut.label}>
+          <Hint key={view.value} label={label} shortcut={shortcut.label}>
             <ToggleGroupItem
               value={view.value}
-              aria-label={view.label}
+              aria-label={label}
               aria-keyshortcuts={shortcut.aria}
               className="pointer-coarse:h-10 pointer-coarse:w-11"
             >

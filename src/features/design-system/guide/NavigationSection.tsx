@@ -2,6 +2,7 @@ import { Bot, FolderPlus, Plus, Sun } from "lucide-react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { SidebarMenu, SidebarMenuItem, SidebarProvider } from "@/components/ui/sidebar"
+import { cn } from "@/lib/utils"
 import { IconRow, PersonRow } from "../ui/AccountRows"
 import type { MenuEntry } from "../ui/ActionMenu"
 import { FloatingPanel } from "../ui/FloatingPanel"
@@ -11,6 +12,7 @@ import { ProjectHeader } from "../ui/ProjectHeader"
 import { SearchField } from "../ui/SearchField"
 import { StatusDot } from "../ui/StatusDot"
 import { TreeFileRow, TreeFolderRow, TreeRowMenu } from "../ui/TreeRows"
+import { phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
 
 // The Navigation group: the sidebar's floating panels, rows, search, the
@@ -48,7 +50,7 @@ const fileMenu: MenuEntry[] = [
 
 function States() {
   return (
-    <div className="grid gap-7 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Tree rows and search</GuideLabel>
         <SearchField placeholder="Search" aria-label="Search notes, drawings and diagrams" />
@@ -171,10 +173,14 @@ function DesktopSidebar() {
   )
 }
 
-/** The phone's files and projects screen (390 by 844): 40px rows and 15px text. */
+/**
+ * The phone's files and projects screen (390 by 844): 40px rows and 15px
+ * text. The sync status takes the gear's place, so the person's row itself
+ * opens the settings menu.
+ */
 function PhoneFiles() {
   return (
-    <DottedPage className="flex h-[844px] min-h-0 w-full flex-col gap-2.5 rounded-[4px] p-3">
+    <DottedPage className={cn("flex h-[844px] min-h-0 w-full flex-col gap-2.5 rounded-[4px] p-3", phoneBleed)}>
       <ProjectHeader name="Product notes" menu={projectMenu} onShare={noop} size="touch" variant="flat" />
       <FloatingPanel
         variant="flat"
@@ -199,11 +205,17 @@ function PhoneFiles() {
           <TreeFileRow size="touch" name="README.md" kind="note" />
         </SidebarMenu>
       </FloatingPanel>
-      <FloatingPanel variant="flat" className="flex flex-col px-2 pt-1.5 pb-2">
+      <FloatingPanel variant="flat" className="flex flex-col px-2 pt-1.5 pb-1">
         <SidebarMenu>
           <IconRow size="touch" icon={<Sun />} label="Look and theme" />
         </SidebarMenu>
-        <PersonRow size="touch" name="Person" email="person@example.com" trailing={<StatusDot status="synced" className="text-[13px] leading-[normal] text-dim" />} />
+        <PersonRow
+          size="touch"
+          name="Person"
+          email="person@example.com"
+          menu={personMenu}
+          trailing={<StatusDot status="synced" className="text-[13px] leading-[normal] text-dim" />}
+        />
       </FloatingPanel>
     </DottedPage>
   )

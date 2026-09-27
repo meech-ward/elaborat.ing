@@ -1,9 +1,10 @@
-import { ChevronDown, Diamond, UserPlus } from "lucide-react"
+import { ChevronDown, UserPlus } from "lucide-react"
 import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ActionMenu, type MenuEntry } from "./ActionMenu"
 import { FloatingPanel } from "./FloatingPanel"
+import { SharpDiamond } from "./SharpDiamond"
 
 const sizes = {
   // Desktop: a 44 high panel, 16px icons, the name 600 14px.
@@ -55,7 +56,7 @@ export function ProjectHeader({
   const s = sizes[size]
   return (
     <FloatingPanel variant={variant} className={cn("flex items-center", s.panel, className)}>
-      <Diamond aria-hidden="true" className={cn("shrink-0 text-primary", s.mark)} />
+      <SharpDiamond aria-hidden="true" className={cn("shrink-0 text-primary", s.mark)} />
       <ActionMenu
         entries={menu}
         trigger={

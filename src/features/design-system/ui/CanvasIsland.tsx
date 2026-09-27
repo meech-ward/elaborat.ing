@@ -3,7 +3,6 @@ import { cva, type VariantProps } from "class-variance-authority"
 import {
   ArrowRight,
   Circle,
-  Diamond,
   Ellipsis,
   Eraser,
   Hand,
@@ -20,6 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import { ActionMenu, type MenuEntry } from "./ActionMenu"
 import { Hint } from "./Hint"
+import { SharpDiamond } from "./SharpDiamond"
 
 // The canvas's floating islands: the tool picker and the zoom control that
 // sit on a drawing or a diagram, in the palette's island colours.
@@ -95,7 +95,7 @@ export const canvasTools = {
   hand: { id: "hand", label: "Hand", shortcut: "H", icon: Hand },
   select: { id: "select", label: "Select", shortcut: "V", icon: MousePointer2 },
   rectangle: { id: "rectangle", label: "Rectangle", shortcut: "R", icon: Square },
-  diamond: { id: "diamond", label: "Diamond", shortcut: "D", icon: Diamond },
+  diamond: { id: "diamond", label: "Diamond", shortcut: "D", icon: SharpDiamond },
   ellipse: { id: "ellipse", label: "Ellipse", shortcut: "O", icon: Circle },
   arrow: { id: "arrow", label: "Arrow", shortcut: "A", icon: ArrowRight },
   line: { id: "line", label: "Line", shortcut: "L", icon: Minus },

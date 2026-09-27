@@ -1,21 +1,28 @@
 import { useState } from "react"
-import { ChevronLeft, Maximize2, Minimize2, Save } from "lucide-react"
+import { ChevronLeft, Info, Maximize2, Minimize2, Save } from "lucide-react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
+import { Callout } from "../ui/Banner"
 import { EditorTab } from "../ui/EditorTab"
 import { FloatingPanel } from "../ui/FloatingPanel"
 import { IconButton, RoundIconButton } from "../ui/IconButton"
 import { KindBadge, type FileKind } from "../ui/KindBadge"
+import { NoteProse } from "../ui/NoteProse"
 import { SaveButton } from "../ui/SaveButton"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
+import { SourceLines, type SourcePart } from "../ui/SourceLines"
+import { SplitPanes } from "../ui/SplitPanes"
 import { TabLine, type TabLineItem } from "../ui/TabLine"
 import { ViewSwitch, type EditorView } from "../ui/ViewSwitch"
+import { C5FocusHeader, DiagramInNote, phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
 
 // The Editor chrome group: the open-file tabs, the view switch, Save and the
 // icon buttons, each in its states, then assembled as the C5 screens use
-// them: the desktop top line, the focus mode header and the phone header.
+// them: the note in Split (the top line over the source and the rendered
+// note), the focus mode header and the phone header.
 
 // A state drawn on a tab that does not have it, to show it: the pointer over
 // it (its fill and the close mark) and keyboard focus (the inset ring).
@@ -52,11 +59,37 @@ const OPEN_FILES = [
   "art/sketch.excalidraw",
 ]
 
+// customer-model.mdx as C5 screen 1 shows it, coloured as the editor colours it.
+const NOTE_SOURCE: readonly (readonly SourcePart[])[] = [
+  [["dim", "---"]],
+  [["key", "title"], ": ", ["str", "Customer model"]],
+  [["dim", "---"]],
+  [["kw", "import"], " { Callout } ", ["kw", "from"], " ", ["str", '"workspace:components/callout.mdx"']],
+  [],
+  [["head", "# Customer model"]],
+  [],
+  ["How a customer moves from sign-up to their first project, and where agents help."],
+  [],
+  [["key", "<Callout"], " tone=", ["str", '"note"'], ["key", ">"]],
+  ["  Agents act as the signed-in person in every project they can open."],
+  [["key", "</Callout>"]],
+  [],
+  [["head", "## Steps"]],
+  [],
+  [["kw", "1."], " Sign up with an email link."],
+  [["kw", "2."], " Create a project."],
+  [["kw", "3."], " Connect an agent."],
+  [],
+  [["key", "<Diagram"], " src=", ["str", '"flows/signup.d2"'], " ", ["key", "/>"]],
+  [],
+  [["key", "<Drawing"], " src=", ["str", '"art/flow.excalidraw"'], " ", ["key", "/>"]],
+]
+
 export function EditorChromeSection() {
   return (
     <GuideGroup title="Editor chrome">
       <div className="flex flex-col gap-7">
-        <div className="grid gap-7 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
           <div className="flex min-w-0 flex-col gap-3">
             <TabsDemo />
           </div>
@@ -70,7 +103,7 @@ export function EditorChromeSection() {
         <div className="flex min-w-0 flex-col gap-3">
           <DesktopTopLine />
         </div>
-        <div className="grid gap-7 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-7 lg:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-3">
             <FocusHeader />
           </div>
@@ -187,7 +220,39 @@ function ButtonsDemo() {
   )
 }
 
-/** C5 screen 1's top line: the open files, the view switch, Save and Focus. */
+/** customer-model.mdx rendered: the note's type, the callout with its icon, the steps and the diagram. */
+function RenderedNote() {
+  return (
+    <NoteProse aria-label="customer-model.mdx, rendered" className="h-full overflow-hidden">
+      <h1>Customer model</h1>
+      <p>How a customer moves from sign-up to their first project, and where agents help.</p>
+      <Callout icon={<Info aria-hidden="true" />}>Agents act as the signed-in person in every project they can open.</Callout>
+      <h2>Steps</h2>
+      <ol>
+        <li>Sign up with an email link.</li>
+        <li>Create a project.</li>
+        <li>Connect an agent.</li>
+      </ol>
+      <figure className="flex h-[150px] items-center justify-center rounded-[10px] border border-border bg-(--bg) bg-[radial-gradient(var(--dot)_1px,transparent_1.4px)] bg-size-[22px_22px]">
+        <DiagramInNote />
+      </figure>
+    </NoteProse>
+  )
+}
+
+/** The editor's body in each view: the source, both side by side, or the rendered note. */
+function NoteBody({ view }: { view: EditorView }) {
+  const source = <SourceLines aria-label="customer-model.mdx, source" lines={NOTE_SOURCE} currentLine={22} className="h-full overflow-hidden" />
+  if (view === "source") return source
+  if (view === "rendered") return <RenderedNote />
+  // As C5 draws it: the two panes share the width and the rendered one adds its padding, so the source takes 523 of 1126.
+  return <SplitPanes aria-label="Resize the source and the rendered note" startSize="46.45%" start={source} end={<RenderedNote />} />
+}
+
+/**
+ * C5 screen 1's editor: the top line (the open files, the view switch, Save
+ * and Focus) over customer-model.mdx in the view that is on.
+ */
 function DesktopTopLine() {
   const [open, setOpen] = useState<readonly string[]>(OPEN_FILES)
   const [active, setActive] = useState<string | null>(OPEN_FILES[0])
@@ -210,20 +275,28 @@ function DesktopTopLine() {
 
   return (
     <>
-      <GuideLabel>C5 desktop top line</GuideLabel>
-      <FloatingPanel className="max-w-[1128px] overflow-hidden">
-        <div className="flex h-[46px] items-center gap-1.5 px-1.5 pointer-coarse:h-[52px]">
-          <TabLine items={open.map((path) => tabItem(path, dirty))} value={active} onValueChange={setActive} onClose={close} />
-          <ViewSwitch value={view} onValueChange={setView} />
-          <SaveButton disabled={!active || !dirty.has(active)} onClick={save} />
-          <IconButton label="Focus" shortcut={focus.label} keyShortcuts={focus.aria}>
-            <Maximize2 />
-          </IconButton>
-        </div>
-        <div className="h-6 border-t border-border" />
-      </FloatingPanel>
+      <GuideLabel>C5 note in Split</GuideLabel>
+      {/* A desktop screen: narrower pages scroll it sideways rather than squeeze it. */}
+      <div className="-m-1 overflow-x-auto p-1">
+        <FloatingPanel className="max-w-[1128px] min-w-[900px] overflow-hidden">
+          <div className="flex h-[46px] items-center gap-1.5 px-1.5 pointer-coarse:h-[52px]">
+            <TabLine items={open.map((path) => tabItem(path, dirty))} value={active} onValueChange={setActive} onClose={close} />
+            <ViewSwitch value={view} onValueChange={setView} />
+            <SaveButton disabled={!active || !dirty.has(active)} onClick={save} />
+            <IconButton label="Focus" shortcut={focus.label} keyShortcuts={focus.aria}>
+              <Maximize2 />
+            </IconButton>
+          </div>
+          <div className="h-[580px] border-t border-border">
+            <NoteBody view={view} />
+          </div>
+        </FloatingPanel>
+      </div>
+      <GuideValue>
+        Source: 13 on 22 in the code font, numbers in faint, the current line in lineHi. Split: a 1px divider that turns accent under the pointer or with focus (arrow keys move it). Rendered: H1 32, body 15.5 on 1.6 in a 680 column, the callout with its icon.
+      </GuideValue>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <GuideValue>Live: pick, close (point at a tab, or Delete) and save tabs; 1128 wide, as on the 1440 screen</GuideValue>
+        <GuideValue>Live: pick, close (point at a tab, or Delete) and save tabs, and switch the view; the body stays customer-model.mdx. 1128 wide, as on the 1440 screen</GuideValue>
         {open.length < OPEN_FILES.length && (
           <Button
             variant="link"
@@ -242,23 +315,15 @@ function DesktopTopLine() {
   )
 }
 
-/** C5 screens 4 and 5: full screen, the header floats at the top right. */
+/** C5 screens 4 and 5: a drawing or diagram full screen, the header floats at the top right. */
 function FocusHeader() {
-  const [view, setView] = useState<EditorView>("rendered")
-  const focus = commandShortcut(".", isApplePlatform())
   return (
     <>
       <GuideLabel>Focus mode header</GuideLabel>
       <DottedPage className="relative h-[92px] min-h-0 overflow-hidden rounded-panel border border-border">
-        <FloatingPanel className="absolute top-4 right-4 flex h-11 items-center gap-1.5 rounded-menu px-1.5 pointer-coarse:h-[52px]">
-          <ViewSwitch value={view} onValueChange={setView} />
-          <SaveButton />
-          <IconButton label="Exit full screen" shortcut={focus.label} keyShortcuts={focus.aria}>
-            <Minimize2 />
-          </IconButton>
-        </FloatingPanel>
+        <C5FocusHeader names="canvas" className="absolute top-4 right-4" />
       </DottedPage>
-      <GuideValue>44 high, radius 12, padding 6, gap 6, the panel shadow; 16 from the top and right</GuideValue>
+      <GuideValue>44 high, radius 12, padding 6, gap 6, the panel shadow; 16 from the top and right. A drawing's or diagram's views are Code, Split and Canvas</GuideValue>
     </>
   )
 }
@@ -269,14 +334,14 @@ function PhoneHeader() {
   return (
     <>
       <GuideLabel>Phone header</GuideLabel>
-      <div className="relative h-[124px] w-full max-w-[390px] overflow-hidden rounded-panel border border-border bg-panel">
+      <div className={cn("relative h-[124px] w-full max-w-[390px] overflow-hidden rounded-panel border border-border bg-panel", phoneBleed)}>
         <RoundIconButton label="Back to files and projects" className="absolute top-3.5 left-3.5">
           <ChevronLeft />
         </RoundIconButton>
         <RoundIconButton label="Save" dirty={dirty} className="absolute top-3.5 right-3.5" onClick={() => setDirty(false)}>
           <Save />
         </RoundIconButton>
-        <p className="absolute top-16 left-[22px] text-[30px] leading-[1.15] font-bold">Onboarding</p>
+        <p className="absolute top-16 left-[22px] text-[30px] leading-[1.15] font-bold">Customer model</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <GuideValue>40 round, 14 from the edges; Save shows the dot until saved</GuideValue>
