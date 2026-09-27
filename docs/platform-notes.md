@@ -259,6 +259,18 @@ Re-check it against OpenAI's pages linked below.
   [MCP Apps in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt/),
   [security and privacy](https://developers.openai.com/apps-sdk/guides/security-privacy)
 
+- **Data only for the view goes in the tool result's `_meta`.** The spec passes
+  `content`, `structuredContent` and `_meta` to the view in
+  `ui/notifications/tool-result` and says only `content` is for the model, but
+  ChatGPT shows `structuredContent` to the model too and keeps `_meta` from it.
+  ChatGPT dropped `_meta` from that notification until a fix in May 2026; it
+  also hands it to the view as `window.openai.toolResponseMetadata`. Hosts cache
+  a view by its `ui://` URI, so a changed view gets a new URI. (Checked
+  2026-09-27.)
+  [Spec](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx),
+  [Apps SDK reference](https://developers.openai.com/apps-sdk/reference),
+  [the `_meta` fix](https://community.openai.com/t/mcp-apps-ui-notifications-tool-result-missing-meta-in-chatgpt/1375226)
+
 ## Browser isolation
 
 - **Chrome's Site Isolation groups processes by site** (scheme plus registrable

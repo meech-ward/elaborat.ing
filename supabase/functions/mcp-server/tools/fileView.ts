@@ -1,8 +1,10 @@
 import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { z } from 'npm:zod@4.4.3'
 
+import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
-import { renderMarkdown } from './markdown.ts'
+import { type EmbedRef, renderNote } from './markdown.ts'
 import { path, projectId } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
@@ -17,14 +19,24 @@ import type { ToolContext } from './types.ts'
 // https://modelcontextprotocol.io/docs/extensions/apps
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
-/** Change the URI when the HTML changes incompatibly: hosts may cache by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v1.html'
+/** Change the URI when the HTML changes: hosts cache the view by it. */
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v2.html'
+/** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
+const OLD_FILE_VIEW_URIS = ['ui://elaborating/file-view-v1.html']
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
 const APP_ORIGIN = 'https://elaborat.ing'
 
 /** Characters of a note rendered in the view; the rest is a click away. */
 const PREVIEW_LIMIT = 40_000
+/** Different drawings and diagrams drawn for one note; later ones show as links. */
+export const MAX_EMBEDS = 8
+/** SVG characters in one result, over all its drawings (each is at most MAX_SVG_CHARS). */
+export const MAX_TOTAL_SVG_CHARS = 600_000
+/** A drawing file longer than this is not read to draw it. */
+const MAX_SCENE_CHARS = 5_000_000
+/** The result `_meta` key holding each drawn file's SVG by path. `_meta` reaches the view, not the model. */
+export const SVG_META_KEY = 'elaborat.ing/svg'
 
 export type FileKind = 'note' | 'drawing' | 'diagram' | 'file'
 
@@ -41,6 +53,70 @@ export function fileUrl(projectId: string, path: string): string {
   return `${APP_ORIGIN}/projects/${projectId}/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
+/** A diagram's generated canvas, drawn by the app next to its `.d2` source. */
+export function companionPath(path: string): string {
+  return path.replace(/\.d2$/i, '.excalidraw')
+}
+
+export type EmbedStatus = 'drawn' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'not_shown' | 'unsupported'
+export type EmbedView = EmbedRef & { url: string; status: EmbedStatus }
+
+function drawOne(path: string, files: Map<string, string>, budget: number): { status: EmbedStatus; svg?: string } {
+  const kind = fileKind(path)
+  if (kind !== 'drawing' && kind !== 'diagram') return { status: 'unsupported' }
+  if (!files.has(path)) return { status: 'missing' }
+  const content = files.get(kind === 'diagram' ? companionPath(path) : path)
+  if (content === undefined) return { status: 'not_drawn' }
+  if (content.length > MAX_SCENE_CHARS) return { status: 'too_big' }
+  let elements
+  try {
+    elements = parseDrawing(content)
+  } catch {
+    return { status: 'unreadable' }
+  }
+  const drawn = drawingSvg(elements, Math.min(MAX_SVG_CHARS, budget))
+  return 'svg' in drawn ? { status: 'drawn', svg: drawn.svg } : { status: drawn.problem }
+}
+
+/**
+ * Draws the first MAX_EMBEDS different files the refs name, reading them
+ * (and each diagram's companion) as the user in one query. `known` holds
+ * contents already read.
+ */
+async function drawEmbeds(
+  supabase: SupabaseClient,
+  projectId: string,
+  refs: EmbedRef[],
+  known: Record<string, string> = {}
+): Promise<{ embeds: EmbedView[]; svgs: Record<string, string> }> {
+  const drawn = [...new Set(refs.map((ref) => ref.path))].slice(0, MAX_EMBEDS)
+  const files = new Map(Object.entries(known))
+  const wanted = new Set(drawn.flatMap((path) => (fileKind(path) === 'diagram' ? [path, companionPath(path)] : [path])))
+  for (const path of files.keys()) wanted.delete(path)
+  if (wanted.size > 0) {
+    const { data, error } = await supabase
+      .from('project_files')
+      .select('path, content')
+      .eq('project_id', projectId)
+      .in('path', [...wanted])
+    if (error) throw error
+    for (const row of data ?? []) files.set(row.path, String(row.content ?? ''))
+  }
+  const svgs: Record<string, string> = {}
+  const statuses = new Map<string, EmbedStatus>()
+  let budget = MAX_TOTAL_SVG_CHARS
+  for (const path of drawn) {
+    const { status, svg } = drawOne(path, files, budget)
+    statuses.set(path, status)
+    if (svg) {
+      svgs[path] = svg
+      budget -= svg.length
+    }
+  }
+  const embeds = refs.map((ref) => ({ ...ref, url: fileUrl(projectId, ref.path), status: statuses.get(ref.path) ?? 'not_shown' }))
+  return { embeds, svgs }
+}
+
 function preview(content: string): { source: string; truncated: boolean } {
   if (content.length <= PREVIEW_LIMIT) return { source: content, truncated: false }
   const cut = content.lastIndexOf('\n', PREVIEW_LIMIT)
@@ -48,26 +124,28 @@ function preview(content: string): { source: string; truncated: boolean } {
 }
 
 export function registerFileView(server: McpServer, { supabase }: ToolContext): void {
-  server.registerResource(
-    'file_view',
-    FILE_VIEW_URI,
-    {
-      title: 'File view',
-      description: 'A read-only view of one file with a link to open it in elaborat.ing. Used by show_file.',
-      mimeType: MCP_APP_MIME_TYPE,
-    },
-    () => ({
-      contents: [
-        {
-          uri: FILE_VIEW_URI,
-          mimeType: MCP_APP_MIME_TYPE,
-          text: FILE_VIEW_HTML,
-          // The view draws its own card, so the host adds no frame of its own.
-          _meta: { ui: { prefersBorder: false } },
-        },
-      ],
-    })
-  )
+  for (const [index, uri] of [FILE_VIEW_URI, ...OLD_FILE_VIEW_URIS].entries()) {
+    server.registerResource(
+      index === 0 ? 'file_view' : `file_view_${index}`,
+      uri,
+      {
+        title: 'File view',
+        description: 'A read-only view of one file with a link to open it in elaborat.ing. Used by show_file.',
+        mimeType: MCP_APP_MIME_TYPE,
+      },
+      () => ({
+        contents: [
+          {
+            uri,
+            mimeType: MCP_APP_MIME_TYPE,
+            text: FILE_VIEW_HTML,
+            // The view draws its own card, so the host adds no frame of its own.
+            _meta: { ui: { prefersBorder: false } },
+          },
+        ],
+      })
+    )
+  }
 
   server.registerTool(
     'show_file',
@@ -75,7 +153,7 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
       title: 'Show file',
       description:
         'Show one file to the user in the chat as a read-only card with a link to open it in elaborat.ing. ' +
-        'Notes are rendered; drawings and diagrams show their name and the link. ' +
+        'Notes are rendered, and drawings and diagrams are drawn, also where a note embeds them. ' +
         'Use this when the user wants to see a file. To read a file yourself, use read_file.',
       inputSchema: z.object({ project_id: projectId, path }),
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -93,7 +171,11 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
         if (!data) return errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
         const kind = fileKind(data.path)
         const url = fileUrl(project_id, data.path)
-        const note = kind === 'note' ? preview(String(data.content ?? '')) : null
+        const content = String(data.content ?? '')
+        const note = kind === 'note' ? preview(content) : null
+        const rendered = note ? renderNote(note.source) : null
+        const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
+        const { embeds, svgs } = refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {} }
         return {
           content: [
             { type: 'text', text: `Showing ${data.path} (version ${data.version}) to the user. Open it in elaborat.ing: ${url}` },
@@ -105,9 +187,11 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
             version: data.version,
             updated_at: data.updated_at ?? null,
             url,
-            html: note ? renderMarkdown(note.source) : null,
+            html: rendered?.html ?? null,
             truncated: note?.truncated ?? false,
+            embeds,
           },
+          ...(Object.keys(svgs).length > 0 ? { _meta: { [SVG_META_KEY]: svgs } } : {}),
         }
       } catch (error) {
         return runtimeErrorResult(error)

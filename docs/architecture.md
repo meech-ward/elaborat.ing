@@ -378,10 +378,16 @@ secrets.
 - **MCP Apps:** read-only views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with
-  one self-contained `ui://` view. It renders a note's Markdown (raw HTML shown
-  as text, sanitized) and shows drawings and diagrams as a card, each with an
-  "Open in elaborat.ing" link. The view is on its own tool, not on
-  `read_file`, so agents can read files without filling the chat with views.
+  one self-contained `ui://` view. It renders a note's Markdown (raw HTML and
+  other MDX shown as text, sanitized) and draws drawings and diagrams, shown on
+  their own or embedded in a note with `<Drawing>` and `<Diagram>`, each with an
+  "Open in elaborat.ing" link. The server draws them as SVG from the saved
+  scene (a diagram from its `.excalidraw` companion) with roughjs, the library
+  Excalidraw uses (`tools/drawingSvg.ts`), and sends the SVG in the result's
+  `_meta`, which reaches the view but not the model. Limits: 8 different files
+  drawn per note, 200,000 characters of SVG each and 600,000 per result, 3,000
+  elements per scene. The view is on its own tool, not on `read_file`, so
+  agents can read files without filling the chat with views.
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local

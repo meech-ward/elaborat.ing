@@ -3,7 +3,9 @@
 // and no network requests, so it runs under the spec's default policy with no
 // `_meta.ui.csp`. It talks to the host over the MCP Apps postMessage bridge:
 // ui/initialize, then the tool-input and tool-result notifications, theme
-// changes, size changes and ui/open-link.
+// changes, size changes and ui/open-link. Drawings arrive as SVG the server
+// drew, in the result's `_meta` (which the host passes to the view and keeps
+// from the model); in dark mode they go through Excalidraw's own dark filter.
 // https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
 
 /** The spec version this view speaks. */
@@ -83,6 +85,19 @@ body{font:14px/1.6 var(--ui-font);color:var(--text);-webkit-font-smoothing:antia
 .doc input[type=checkbox]{accent-color:var(--accent);margin:0 6px 0 0}
 .doc li:has(>input[type=checkbox]){list-style:none}
 .note{margin:0;color:var(--muted);font-size:13px}
+.doc.tall{max-height:640px}
+.art{overflow:hidden}
+.art svg{display:block;max-width:100%;height:auto;max-height:420px;margin:0 auto}
+.art .label-bg{fill:var(--panel)}
+:root[data-theme="dark"] .art svg{filter:invert(93%) hue-rotate(180deg)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .art svg{filter:invert(93%) hue-rotate(180deg)}}
+/* The dark panel colour, before the dark filter turns it back into itself. */
+:root[data-theme="dark"] .art .label-bg{fill:#f3f2f3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .art .label-bg{fill:#f3f2f3}}
+.doc figure.embed{display:grid;gap:8px;margin:.8em 0;padding:10px 12px;border:1px solid var(--panel-border);border-radius:10px}
+.doc figure.embed .art svg{max-height:300px}
+.doc figcaption{display:flex;align-items:center;gap:8px;min-width:0;font:12px/1.5 var(--code-font)}
+.doc figcaption a{overflow:hidden;color:var(--muted);white-space:nowrap;text-overflow:ellipsis}
 .foot{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .btn{display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border-radius:9px;background:var(--accent);color:var(--accent-text);font:600 13px/1 var(--ui-font);text-decoration:none}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -92,7 +107,8 @@ body{font:14px/1.6 var(--ui-font);color:var(--text);-webkit-font-smoothing:antia
 `
 
 // Plain script: it reads only the tool result, and puts HTML into the page
-// only from `html`, which the server rendered and sanitized.
+// only from `html`, which the server rendered and sanitized, and from the
+// SVG the server drew, which escapes every value it takes from the file.
 const SCRIPT = `
 (() => {
   const root = document.documentElement
@@ -103,11 +119,23 @@ const SCRIPT = `
     diagram: 'Diagrams open in elaborat.ing.',
     file: 'Open this file in elaborat.ing.',
   }
+  const EMBED_NOTES = {
+    drawn: 'Open it in elaborat.ing to see it.',
+    not_drawn: 'Open it in elaborat.ing to draw it.',
+    missing: 'No file at this path.',
+    unreadable: 'This drawing could not be read.',
+    empty: 'This drawing is empty.',
+    too_big: 'Too big to show here. Open it in elaborat.ing.',
+    not_shown: 'Open the note in elaborat.ing to see it.',
+    unsupported: 'Only drawings and diagrams are shown here.',
+  }
+  const SVG_KEY = 'elaborat.ing/svg'
   const APP = 'https://elaborat.ing/'
   const pending = new Map()
   let nextId = 1
   let hostCapabilities = {}
   let fileUrl = APP
+  let lastResult = null
 
   const post = (message) => window.parent.postMessage({ jsonrpc: '2.0', ...message }, '*')
   const notify = (method, params) => post({ method, params: params || {} })
@@ -144,6 +172,49 @@ const SCRIPT = `
     $('note').hidden = false
   }
 
+  // ChatGPT also hands the result's _meta to window.openai.
+  function svgsOf(result) {
+    const meta = result._meta || (window.openai && window.openai.toolResponseMetadata) || {}
+    const svgs = meta[SVG_KEY]
+    return svgs && typeof svgs === 'object' ? svgs : {}
+  }
+
+  // The embed's drawing, or null when it has none to show.
+  function artFor(embed, svgs) {
+    const svg = embed.status === 'drawn' ? svgs[embed.path] : null
+    if (typeof svg !== 'string' || !svg.startsWith('<svg')) return null
+    const art = document.createElement('div')
+    art.className = 'art'
+    art.setAttribute('role', 'img')
+    art.setAttribute('aria-label', (KINDS[embed.kind] || KINDS.file) + ' ' + embed.path)
+    art.innerHTML = svg
+    return art
+  }
+
+  const noteFor = (embed) => EMBED_NOTES[embed.status] || EMBED_NOTES.drawn
+
+  function fillFigures(doc, embeds, svgs) {
+    for (const figure of doc.querySelectorAll('figure[data-embed]')) {
+      const embed = embeds[Number(figure.dataset.embed)]
+      if (!embed || typeof embed.path !== 'string') { figure.remove(); continue }
+      let art = artFor(embed, svgs)
+      if (!art) {
+        art = document.createElement('p')
+        art.className = 'note'
+        art.textContent = noteFor(embed)
+      }
+      const caption = document.createElement('figcaption')
+      const kind = document.createElement('span')
+      kind.className = 'kind'
+      kind.textContent = KINDS[embed.kind] || KINDS.file
+      const link = document.createElement('a')
+      link.textContent = embed.path
+      if (typeof embed.url === 'string' && embed.url.startsWith(APP)) link.href = embed.url
+      caption.append(kind, link)
+      figure.replaceChildren(art, caption)
+    }
+  }
+
   function showInput(args) {
     if (args && typeof args.path === 'string') setHeader('file', args.path)
   }
@@ -155,9 +226,12 @@ const SCRIPT = `
       showProblem(first && typeof first.text === 'string' ? first.text : 'Something went wrong.')
       return
     }
+    lastResult = result
     $('card').removeAttribute('aria-busy')
     $('skel').hidden = true
     setHeader(view.kind, view.path)
+    const embeds = Array.isArray(view.embeds) ? view.embeds : []
+    const svgs = svgsOf(result)
     if (typeof view.url === 'string' && view.url.startsWith(APP)) {
       fileUrl = view.url
       $('open').href = view.url
@@ -165,13 +239,23 @@ const SCRIPT = `
     }
     $('version').textContent = typeof view.version === 'number' ? 'v' + view.version : ''
     const doc = $('doc')
+    $('art').hidden = true
     if (view.kind === 'note' && typeof view.html === 'string') {
       doc.innerHTML = view.html
+      fillFigures(doc, embeds, svgs)
+      doc.classList.toggle('tall', embeds.length > 0)
       doc.hidden = false
       const clipped = doc.scrollHeight > doc.clientHeight + 1
       doc.classList.toggle('clipped', clipped)
       $('note').textContent = 'Open in elaborat.ing to read the rest.'
       $('note').hidden = !(clipped || view.truncated)
+    } else if ((view.kind === 'drawing' || view.kind === 'diagram') && embeds[0]) {
+      doc.hidden = true
+      const art = artFor(embeds[0], svgs)
+      $('art').replaceChildren(...(art ? [art] : []))
+      $('art').hidden = !art
+      $('note').textContent = art ? '' : noteFor(embeds[0])
+      $('note').hidden = !!art
     } else {
       doc.hidden = true
       $('note').textContent = CARD_NOTES[view.kind] || CARD_NOTES.file
@@ -218,6 +302,11 @@ const SCRIPT = `
     observer.observe(root)
     observer.observe(document.body)
   }
+
+  // If ChatGPT sets its globals after the result arrived without _meta, draw again.
+  window.addEventListener('openai:set_globals', () => {
+    if (lastResult && !lastResult._meta) showResult(lastResult)
+  })
 
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return
@@ -275,6 +364,7 @@ export const FILE_VIEW_HTML = `<!doctype html>
   </header>
   <div class="skel" id="skel" aria-hidden="true"><span></span><span></span><span></span></div>
   <div class="doc" id="doc" hidden></div>
+  <div id="art" hidden></div>
   <p class="note" id="note" hidden></p>
   <footer class="foot" id="foot" hidden>
     <a class="btn" id="open" target="_blank" rel="noopener noreferrer">Open in elaborat.ing</a>
