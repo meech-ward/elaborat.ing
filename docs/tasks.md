@@ -919,7 +919,7 @@ silently, but every other stale kind reaches `onError` and the banner.
 
 ## T33: a new file asks for its name, and an unsaved new note can be renamed
 
-**Status:** Ready
+**Status:** Done (#32)
 
 "New note" opens a tab named `untitled.md` (`newUntitledNote` in
 `src/features/workbench/session.ts`) that is not a file until it is saved, so
