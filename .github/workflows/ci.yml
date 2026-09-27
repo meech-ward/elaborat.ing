@@ -6,6 +6,12 @@ on:
   pull_request:
   push:
 
+# A newer push to the same branch cancels the older run; the newest commit is
+# the one that gets checked (and, on main, deployed).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   app:
     runs-on: ubuntu-latest
