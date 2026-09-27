@@ -22,7 +22,9 @@
  */
 // shadcn Dialog generated with shadcn@4.21.0, base-nova.
 // https://ui.shadcn.com/docs/components/base/dialog
-// Adaptation: resolve cn through the existing app alias. Restyled as the
+// Adaptations: resolve cn through the existing app alias; DialogContent takes
+// a portal `container` and `showOverlay` (to lay an open dialog out in place,
+// or float one without dimming the page). Restyled as the
 // app's one dialog shell: the panel colour (popover) with radius 12, padding 20 and
 // the menu shadow over the background at 70%; the title at 15/600; the
 // actions at the bottom right, Cancel first. It stacks above the phone
@@ -76,13 +78,19 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  showOverlay = true,
+  container,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  /** Dim the page behind the dialog (a modal dialog blocks the page either way). */
+  showOverlay?: boolean
+  /** Where the portal renders; the body by default. */
+  container?: DialogPrimitive.Portal.Props["container"]
 }) {
   return (
-    <DialogPortal>
-      <DialogOverlay />
+    <DialogPortal container={container}>
+      {showOverlay && <DialogOverlay />}
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

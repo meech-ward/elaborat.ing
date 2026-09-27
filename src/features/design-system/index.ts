@@ -38,4 +38,20 @@ export { EDITOR_VIEWS, type EditorView } from "./ui/views"
 // --- end Editor chrome ---
 
 // --- Canvas (guide/CanvasSection.tsx) ---
+export {
+  CanvasIsland,
+  MoreTools,
+  ToolButton,
+  ToolGroup,
+  ZoomControl,
+  canvasIslandVariants,
+  canvasTools,
+  islandTools,
+  toolButtonVariants,
+  toolEntries,
+  type CanvasTool,
+  type IslandSize,
+} from "./ui/CanvasIsland"
+export { QuickOpen, type QuickOpenFile, type QuickOpenProps } from "./ui/QuickOpen"
+export { quickOpenMatches, type QuickOpenMatch } from "./ui/quickOpenMatch"
 // --- end Canvas ---
