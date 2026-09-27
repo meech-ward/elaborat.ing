@@ -32,7 +32,8 @@ test("a palette and dark mode chosen in Settings apply at once and survive a rel
   await dialog.getByRole("radio", { name: "Dark" }).check()
   await expect.poll(() => background(page)).toBe(glacier.dark.panel)
   // Check contrast once the dialog has finished fading in.
-  await dialog.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)))
+  // A colour change can replace a running transition, which cancels it, so wait for none to be running.
+  await expect.poll(() => dialog.evaluate((element) => element.getAnimations({ subtree: true }).every((animation) => animation.playState !== "running"))).toBe(true)
   expect(await new AxeBuilder({ page }).include('[role="dialog"]').analyze().then((result) => result.violations)).toEqual([])
 
   await page.reload()
