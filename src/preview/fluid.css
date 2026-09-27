@@ -1,3 +1,18 @@
+/* The page never zooms on phones and tablets (docs/architecture.md): no
+   double-tap zoom, and no iOS focus zoom, which happens when a text control
+   under 16px takes focus. A larger reading text size is kept. Touch screens
+   only: the frame's width is a pane's, not the screen's. */
+:root {
+  touch-action: manipulation;
+}
+@media (pointer: coarse) {
+  :is(input, textarea, select) {
+    font-size: 16px !important;
+  }
+  [contenteditable]:not([contenteditable="false"]) {
+    font-size: max(16px, 1em) !important;
+  }
+}
 .ProseMirror {
   min-height: 5em;
   outline: none;

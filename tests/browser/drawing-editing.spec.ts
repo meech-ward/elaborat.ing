@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import AxeBuilder from "@axe-core/playwright"
+import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"

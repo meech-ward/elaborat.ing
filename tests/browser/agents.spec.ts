@@ -1,4 +1,4 @@
-import AxeBuilder from "@axe-core/playwright"
+import AxeBuilder from "./axe.ts"
 import { expect, test } from "@playwright/test"
 import { fakeSupabase, signedIn, type OAuthGrant } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"

@@ -122,6 +122,13 @@ window.addEventListener(
   true,
 );
 
+// The page never zooms on phones and tablets (docs/architecture.md): a pinch
+// over the frame must not zoom the app's page either. iOS Safari ignores the
+// viewport's maximum-scale for pinches, so its gesture events are cancelled.
+for (const type of ["gesturestart", "gesturechange"]) {
+  document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+}
+
 /** A component's editable properties, or none while the document is read-only. */
 function slotByIndex(index: number): SlotInfo | undefined {
   if (isReadOnly()) return undefined;

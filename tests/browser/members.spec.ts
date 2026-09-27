@@ -1,4 +1,4 @@
-import AxeBuilder from "@axe-core/playwright"
+import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"

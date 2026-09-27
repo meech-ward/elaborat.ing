@@ -511,6 +511,13 @@ startup, so drawings work offline and no font request leaves the site. The
 font-subset worker is built as its own worker graph; bundled as app code it
 imports the DOM entry and fails.
 
+**Decision: the page never zooms on phones and tablets.** Page zoom is off on
+purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,
+16px text controls on touch screens and iOS pinch gestures cancelled, in the
+app and the preview frame), so the browser specs turn off axe's
+`meta-viewport` rule; the drawing and diagram canvases keep their own pinch
+zoom, and text size is adjustable in Settings > Reading.
+
 ## Offline start
 
 **Decision: once a project has opened on a device, the app starts again with

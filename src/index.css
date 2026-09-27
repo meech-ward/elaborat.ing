@@ -118,6 +118,25 @@ body {
   overflow-x: clip;
 }
 
+/* The page never zooms on phones and tablets (docs/architecture.md): no
+   double-tap zoom. The canvases keep their own pinch zoom (Excalidraw's
+   canvas is touch-action: none). */
+html {
+  touch-action: manipulation;
+}
+/* iOS Safari zooms the page when a text control under 16px takes focus. The
+   textarea rule covers Monaco's hidden input textarea without changing the
+   editor's text size. Excalidraw's text editor is left out: it matches the
+   drawing's zoom, and maximum-scale=1 stops focus zoom there. */
+@media (pointer: coarse), (max-width: 500px) {
+  :is(input, textarea:not(.excalidraw-wysiwyg), select) {
+    font-size: 16px !important;
+  }
+  [contenteditable]:not([contenteditable="false"]) {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
 /* Plain <kbd> in the app's own copy; the Kbd component (data-slot) styles itself. */
 kbd:not([data-slot]) {
   display: inline-block;

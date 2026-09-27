@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises"
 import path from "node:path"
-import AxeBuilder from "@axe-core/playwright"
+import AxeBuilder from "./axe.ts"
 import { expect, test } from "@playwright/test"
 import { APP_URL } from "./urls.ts"
 
@@ -22,6 +22,20 @@ test("the accessibility check catches a planted violation", async ({ page }) => 
   })
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.map((violation) => violation.id)).toContain("image-alt")
+})
+
+// Page zoom is off on phones and tablets (docs/architecture.md).
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test("the page never zooms: the viewport caps the scale, no double-tap zoom, 16px fields", async ({ page }) => {
+    await page.goto(new URL("sign-in", APP_URL).href)
+    await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible()
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute("content", /(^|,)\s*maximum-scale=1\s*(,|$)/)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).touchAction)).toBe("manipulation")
+    // iOS Safari zooms the page into a focused field under 16px.
+    await expect(page.getByRole("textbox").first()).toHaveCSS("font-size", "16px")
+  })
 })
 
 test("the app build serves Excalidraw's fonts from this site", async ({ request }) => {

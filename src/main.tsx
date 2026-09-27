@@ -9,6 +9,14 @@ import "./index.css"
 
 configureExcalidrawAssets()
 
+// The page never zooms on phones and tablets (docs/architecture.md). iOS Safari
+// ignores the viewport's maximum-scale for pinches, so its page-level gesture
+// events are cancelled. Only the default is prevented, never propagation:
+// Excalidraw listens for them on the document too, and zooms the canvas itself.
+for (const type of ["gesturestart", "gesturechange"]) {
+  document.addEventListener(type, (event) => event.preventDefault(), { passive: false })
+}
+
 const router = createRouter({ routeTree })
 
 declare module "@tanstack/react-router" {
