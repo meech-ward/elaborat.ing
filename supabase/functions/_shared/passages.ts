@@ -3,10 +3,11 @@ import remarkGfm from "npm:remark-gfm@4.0.1"
 import remarkMdx from "npm:remark-mdx@3.1.1"
 import remarkParse from "npm:remark-parse@11.0.0"
 import { unified } from "npm:unified@11.0.5"
+import { drawingTexts, parseDrawing } from "./drawing.ts"
 
 // Turns one file into passages for hybrid search: a passage per heading
-// section of a note, or blank-line-separated blocks of a D2 diagram, each short
-// enough for the embedding model.
+// section of a note, blank-line-separated blocks of a D2 diagram, or the text
+// written in a drawing, each short enough for the embedding model.
 
 export type Passage = {
   /** Headings above this passage, outermost first. Empty before the first heading. */
@@ -49,6 +50,8 @@ type Node = {
 type Unit = { text: string; start: number; end: number }
 
 export function extractPassages(path: string, source: string): Passage[] {
+  // Obsidian drawings end in .md too, so drawings come first.
+  if (/\.excalidraw(\.md)?$/i.test(path)) return drawingPassages(source)
   switch (/\.([^./]+)$/.exec(path)?.[1].toLowerCase()) {
     case "md":
       return notePassages(markdown.parse(source))
@@ -181,6 +184,22 @@ function diagramPassages(source: string): Passage[] {
   }
   if (blockStart !== -1) blocks.push(sourceUnit(source, blockStart, blockEnd))
   return pack([], blocks, true, (parts) => source.slice(parts[0].start, parts[parts.length - 1].end))
+}
+
+/**
+ * The text of a drawing's text elements in reading order, one per line. The
+ * text sits inside JSON (or compressed JSON), so every passage's span is the
+ * whole file. A drawing that cannot be read, or has no text, has no passages.
+ */
+function drawingPassages(source: string): Passage[] {
+  let texts: string[]
+  try {
+    texts = drawingTexts(parseDrawing(source))
+  } catch {
+    return []
+  }
+  const units = texts.map((text) => ({ text, start: 0, end: source.length }))
+  return pack([], units, false, (parts) => parts.map((part) => part.text).join("\n"))
 }
 
 /** The source between `start` and `end`, without surrounding whitespace. */

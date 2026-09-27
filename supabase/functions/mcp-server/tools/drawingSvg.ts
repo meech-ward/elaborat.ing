@@ -1,6 +1,8 @@
-import LZString from 'npm:lz-string@1.5.0'
 import rough from 'npm:roughjs@4.6.6'
 import type { RoughGenerator } from 'npm:roughjs@4.6.6/bin/generator.js'
+
+// Reading the scene is shared with search's indexing.
+export { parseDrawing } from '../../_shared/drawing.ts'
 
 // Draws a saved Excalidraw scene as SVG on the server, for the file view.
 // The view runs in the host's sandbox with no network, so it gets finished
@@ -27,24 +29,6 @@ export const MAX_SVG_CHARS = 200_000
 
 const INK = '#1e1e1e'
 const PADDING = 10
-const FENCE = /```(compressed-json|json)\s*\n([\s\S]*?)```/
-
-/** The live elements of a `.excalidraw` file or an Obsidian `.excalidraw.md`. Throws when it is not one. */
-export function parseDrawing(content: string): Element[] {
-  const trimmed = content.trim()
-  let json = trimmed
-  if (!trimmed.startsWith('{')) {
-    const fence = FENCE.exec(trimmed)
-    if (!fence) throw new Error('no drawing in this file')
-    json = fence[1] === 'compressed-json' ? LZString.decompressFromBase64(fence[2].replace(/\s+/g, '')) ?? '' : fence[2]
-  }
-  const scene = JSON.parse(json) as { elements?: unknown }
-  if (!scene || !Array.isArray(scene.elements)) throw new Error('no elements in this drawing')
-  return scene.elements.filter(
-    (element): element is Element =>
-      typeof element === 'object' && element !== null && typeof (element as Element).type === 'string' && (element as Element).isDeleted !== true
-  )
-}
 
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
 const fmt = (value: number): string => String(Math.round(value * 100) / 100)

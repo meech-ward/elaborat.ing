@@ -29,13 +29,18 @@ test("search in the files panel finds this project's files by their text, and op
     "notes/plan.md": "# Plan\n\nThe customer model comes first.",
     "flow.d2": "customer -> order",
     "readme.md": "# Readme",
+    "sketches/board.excalidraw": JSON.stringify({
+      type: "excalidraw",
+      version: 2,
+      elements: [{ id: "t", type: "text", x: 0, y: 0, width: 120, height: 25, text: "Checkout flow", originalText: "Checkout flow" }],
+    }),
   })
   await serverProject(server, "Elsewhere", { "other.md": "Another customer" })
   const fake = await fakeSupabase(page, { server })
   await signedIn(page)
   await openProject(page, id)
 
-  const field = page.getByRole("searchbox", { name: "Search notes and diagrams" })
+  const field = page.getByRole("searchbox", { name: "Search notes, drawings and diagrams" })
   await field.fill("customer model")
   const results = page.getByRole("region", { name: "Search results" })
   await expect(results.getByRole("button")).toHaveCount(1)
@@ -47,6 +52,12 @@ test("search in the files panel finds this project's files by their text, and op
   await expect(results.getByRole("button")).toHaveCount(2)
   await results.getByRole("button", { name: /notes\/plan\.md/ }).click()
   await expect(page).toHaveURL(projectUrl(id, "notes/plan.md"))
+
+  // Words written in a drawing find it, and its hit opens the drawing.
+  await field.fill("checkout")
+  await results.getByRole("button", { name: /sketches\/board\.excalidraw/ }).click()
+  await expect(page).toHaveURL(projectUrl(id, "sketches/board.excalidraw"))
+  await expect(page.locator(".excalidraw").first()).toBeVisible({ timeout: 15_000 })
 
   await field.fill("nothing like this")
   await expect(results.getByRole("status")).toHaveText("No files match.")
@@ -65,7 +76,7 @@ test("in the local project, search says to sign up", async ({ page }) => {
   await page.goto(APP_URL)
   await page.getByRole("banner").getByRole("link", { name: "Start writing" }).click()
   await expect(page.getByRole("heading", { level: 1, name: "Local project" })).toBeVisible({ timeout: 15_000 })
-  await page.getByRole("searchbox", { name: "Search notes and diagrams" }).fill("anything")
+  await page.getByRole("searchbox", { name: "Search notes, drawings and diagrams" }).fill("anything")
   const results = page.getByRole("region", { name: "Search results" })
   await expect(results.getByRole("link", { name: "Sign up to search" })).toHaveAttribute("href", "/sign-up")
 })

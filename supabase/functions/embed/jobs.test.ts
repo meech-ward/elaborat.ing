@@ -54,6 +54,23 @@ Deno.test('a note becomes one passage per heading, each embedded with its headin
   }
 })
 
+Deno.test('a drawing becomes a passage of its text, embedded as that text', async () => {
+  inputs.length = 0
+  const elements = [
+    { id: 'b', type: 'text', x: 0, y: 80, text: 'Simmer for an hour', originalText: 'Simmer for an hour' },
+    { id: 'a', type: 'text', x: 0, y: 0, text: 'Tomato sauce', originalText: 'Tomato sauce' },
+    { id: 'c', type: 'ellipse', x: 0, y: 40 },
+  ]
+  const drawing: FileRow = { ...note, path: 'sketches/sauce.excalidraw', content: JSON.stringify({ type: 'excalidraw', elements }) }
+  const { store, replaced } = fakeStore([drawing])
+  await processJobs([job(4, drawing.id)], store, embed)
+  assertEquals(
+    replaced.map((write) => write.rows.map((row) => [row.ordinal, row.headings, row.content, row.startOffset, row.endOffset])),
+    [[[0, '', 'Tomato sauce\nSimmer for an hour', 0, drawing.content.length]]],
+  )
+  assertEquals(inputs, ['Tomato sauce\nSimmer for an hour'])
+})
+
 Deno.test('a file that no longer exists just finishes its job', async () => {
   const { store, replaced, finished } = fakeStore([])
   const outcome = await processJobs([job(2, note.id)], store, embed)

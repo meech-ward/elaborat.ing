@@ -1,5 +1,5 @@
--- Hybrid search over the passages of notes and diagrams: keyword and meaning,
--- fused with Reciprocal Rank Fusion. See "Search" in docs/architecture.md.
+-- Hybrid search over the passages of notes, drawings and diagrams: keyword and
+-- meaning, fused with Reciprocal Rank Fusion. See "Search" in docs/architecture.md.
 --
 -- Supabase's guides: Hybrid search
 -- (https://supabase.com/docs/guides/ai/hybrid-search) and Automatic embeddings
@@ -10,8 +10,8 @@ create extension if not exists pgmq;
 create extension if not exists pg_net with schema extensions;
 create extension if not exists pg_cron;
 
--- A passage of a note or diagram: one heading section, or one block of D2,
--- short enough for the embedding model (supabase/functions/_shared/passages.ts).
+-- A passage of a note, diagram or drawing: one heading section, one block of
+-- D2, or the text written in a drawing, short enough for the embedding model (supabase/functions/_shared/passages.ts).
 -- The `embed` Edge Function writes a file's passages whole, embeddings
 -- included; people only read them.
 create table public.file_passages (
@@ -47,7 +47,7 @@ create policy "People can read passages in their projects"
   to authenticated
   using (project_id in (select private.readable_project_ids()));
 
--- Notes and diagrams whose passages are out of date. A rename can make a file
+-- Notes, diagrams and drawings whose passages are out of date. A rename can make a file
 -- searchable or not, so paths count as well as content. The `embed` function
 -- decides what the file needs from its current row.
 create function private.queue_file_passages()
@@ -72,15 +72,15 @@ create trigger queue_file_passages
   for each row
   execute function private.queue_file_passages();
 
--- Notes (.md, .mdx) and D2 diagrams have passages; Obsidian drawings
--- (.excalidraw.md) do not.
+-- Notes (.md, .mdx), D2 diagrams and drawings (.excalidraw, and Obsidian's
+-- .excalidraw.md) have passages.
 create function private.is_searchable_path(path text)
 returns boolean
 language sql
 immutable
 set search_path = ''
 as $$
-  select path ~* '\.(md|mdx|d2)$' and path !~* '\.excalidraw\.md$'
+  select path ~* '\.(md|mdx|d2|excalidraw)$'
 $$;
 
 revoke all on function private.is_searchable_path(text) from public, anon, authenticated;

@@ -61,7 +61,7 @@ export function FileSearch({ search, unavailable = "Search needs a connection.",
         <Search size={14} aria-hidden="true" />
         <input
           type="search"
-          aria-label="Search notes and diagrams"
+          aria-label="Search notes, drawings and diagrams"
           placeholder="Search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}

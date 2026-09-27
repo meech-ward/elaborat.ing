@@ -5,7 +5,7 @@ import { projectId } from './projects.ts'
 import { jsonResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
-// Hybrid search over the user's notes and diagrams, as the user: the query is
+// Hybrid search over the user's notes, drawings and diagrams, as the user: the query is
 // embedded with the model that embedded the passages, and public.hybrid_search
 // runs under RLS, so results come only from projects the user can read.
 
@@ -14,7 +14,7 @@ export function registerSearchTool(server: McpServer, { supabase, embed }: ToolC
     'search',
     {
       description:
-        'Search the notes and diagrams in the projects the user can read, or in one project, by keywords and by meaning. Returns passages, best match first, each with its project_id, path, headings, content and its start and end offsets in the file. Files are indexed shortly after they are saved.',
+        'Search the notes, drawings and diagrams in the projects the user can read, or in one project, by keywords and by meaning. Returns passages, best match first, each with its project_id, path, headings, content and its start and end offsets in the file. A drawing\'s passages are the text written in it, and their offsets span the whole file. Files are indexed shortly after they are saved.',
       inputSchema: z.object({
         query: z.string().trim().min(1).max(500).describe('What to look for, in words.'),
         match_count: z.number().int().min(1).max(30).optional().describe('How many passages to return, up to 30. Defaults to 10.'),

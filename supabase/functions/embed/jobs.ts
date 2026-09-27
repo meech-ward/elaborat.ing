@@ -2,7 +2,7 @@ import { z } from 'npm:zod@4.4.3'
 import { extractPassages } from '../_shared/passages.ts'
 
 // Turns queued files into passages with embeddings. The database queues a job
-// whenever a note or diagram is saved or renamed (private.queue_file_passages)
+// whenever a note, diagram or drawing is saved or renamed (private.queue_file_passages)
 // and pg_cron sends batches here (private.process_file_passages).
 
 export const JobSchema = z.object({ jobId: z.number().int(), fileId: z.uuid() })
@@ -48,7 +48,7 @@ export async function processJob(job: Job, store: PassageStore, embed: Embed): P
     await store.finish(job.jobId)
     return
   }
-  // A file that is not a note or diagram (after a rename, say) gets no passages.
+  // A file that is not a note, diagram or drawing (after a rename, say) gets no passages.
   const rows: PassageRow[] = []
   for (const [ordinal, passage] of extractPassages(file.path, file.content).entries()) {
     rows.push({

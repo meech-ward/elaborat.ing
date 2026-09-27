@@ -52,7 +52,7 @@ insert into public.project_members (project_id, user_id, role, accepted_at) valu
 
 create temporary table queued_before as select count(*) as n from pgmq.q_file_passages;
 
--- Saving notes and diagrams queues them; drawings and other files are not searched.
+-- Saving notes, diagrams and drawings queues them; other files are not searched.
 set local role authenticated;
 set local request.jwt.claims to '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
 select is(
@@ -64,20 +64,20 @@ select is(
       {"op":"put","path":"obsidian.excalidraw.md","content":"# drawing"},
       {"op":"put","path":"flow.d2.json","content":"{}"}]') ->> 'status',
   'saved',
-  'Alice saves notes, a diagram and other files'
+  'Alice saves notes, a diagram, drawings and another file'
 );
 reset role;
 
 select is(
   (select count(*) from pgmq.q_file_passages) - (select n from queued_before),
-  3::bigint,
-  'Only the notes and the diagram are queued'
+  5::bigint,
+  'Only the notes, the diagram and the drawings are queued'
 );
 select set_eq(
   $$select f.path from pgmq.q_file_passages q join public.project_files f on f.id = (q.message ->> 'fileId')::uuid
     where f.project_id = 'aaaaaaaa-0000-4000-8000-000000000001'$$,
-  array['sauce.md', 'garden.mdx', 'flow.d2'],
-  'Each queued job names a saved note or diagram'
+  array['sauce.md', 'garden.mdx', 'flow.d2', 'sketch.excalidraw', 'obsidian.excalidraw.md'],
+  'Each queued job names a saved note, diagram or drawing'
 );
 
 -- Without the project URL and the function's key in Vault, nothing is sent.

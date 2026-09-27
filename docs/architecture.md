@@ -253,7 +253,10 @@ access every time.
 schema is `supabase/schemas/search.sql`.
 
 - **Passages, not whole files.** Each note is split into passages by heading,
-  and each D2 diagram into blocks, by `supabase/functions/_shared/passages.ts`.
+  each D2 diagram into blocks, and each drawing (`.excalidraw`, or Obsidian's
+  `.excalidraw.md`) into the text of its text elements in reading order, by
+  `supabase/functions/_shared/passages.ts`. A drawing's text sits inside JSON,
+  so its passages' offsets span the whole file.
   The built-in embedding model (`gte-small`) reads English only and truncates at
   512 tokens, so passages stop at 1,500 characters. They live in
   `public.file_passages` with their headings and their offsets in the file.
@@ -271,8 +274,8 @@ schema is `supabase/schemas/search.sql`.
   before they are cut to size, so the files panel's search finds a project's
   matches however many other projects the person has.
 - **Automatic embeddings:** Supabase's documented pattern. A trigger on
-  `project_files` queues a note or diagram in the `file_passages` pgmq queue
-  when it is saved or renamed. A pg_cron job every 10 seconds sends batches to
+  `project_files` queues a note, diagram or drawing in the `file_passages` pgmq
+  queue when it is saved or renamed. A pg_cron job every 10 seconds sends batches to
   the `embed` Edge Function, which reads each file through a direct database
   connection, embeds its passages, and in one transaction replaces the file's
   passages and deletes the job. If the file changed after it was read, it writes

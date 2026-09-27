@@ -1,5 +1,6 @@
 import { expect } from "jsr:@std/expect@1.0.17"
 import { describe, it as test } from "jsr:@std/testing@1.0.16/bdd"
+import LZString from "npm:lz-string@1.5.0"
 import { extractPassages, type Passage } from "./passages.ts"
 
 /** The span of the first occurrence of `text` in `source`, running to `until` if given. */
@@ -231,10 +232,80 @@ describe("D2 diagrams", () => {
   })
 })
 
+describe("drawings", () => {
+  /** A text element, as Excalidraw saves one. */
+  const text = (id: string, x: number, y: number, value: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    type: "text",
+    x,
+    y,
+    width: 100,
+    height: 25,
+    text: value,
+    originalText: value,
+    ...extra,
+  })
+  const scene = {
+    type: "excalidraw",
+    version: 2,
+    elements: [
+      { id: "box", type: "rectangle", x: 0, y: 100, width: 200, height: 80, boundElements: [{ id: "label", type: "text" }] },
+      text("label", 20, 120, "Postgres", { containerId: "box" }),
+      { id: "arrow", type: "arrow", x: 200, y: 140, width: 100, height: 0, points: [[0, 0], [100, 0]] },
+      text("arrow-label", 230, 130, "reads from", { containerId: "arrow" }),
+      text("title", 0, 0, "Data flow"),
+      // Excalidraw adds line breaks to wrap text in a narrow shape; originalText is what was typed.
+      text("note", 0, 300, "Wrapped\nnote", { originalText: "Wrapped note" }),
+      text("gone", 0, 50, "Deleted words", { isDeleted: true }),
+      text("blank", 0, 60, "   "),
+    ],
+  }
+
+  test("a drawing is one passage of its text, top to bottom then left to right", () => {
+    const source = JSON.stringify(scene)
+    expect(extractPassages("flows/data.excalidraw", source)).toEqual([
+      { headings: [], text: "Data flow\nPostgres\nreads from\nWrapped note", start: 0, end: source.length },
+    ])
+  })
+
+  test("Obsidian drawings are read from their scene, compressed or plain", () => {
+    const json = JSON.stringify(scene)
+    // Obsidian's Text Elements section can be stale: the scene is what counts.
+    const markdown = "---\nexcalidraw-plugin: parsed\n---\n# Excalidraw Data\n\n## Text Elements\nOld words ^title\n\n%%\n## Drawing\n"
+    const compressed = `${markdown}\`\`\`compressed-json\n${LZString.compressToBase64(json)}\n\`\`\`\n%%`
+    const plain = `${markdown}\`\`\`json\n${json}\n\`\`\`\n%%`
+    for (const source of [compressed, plain]) {
+      expect(extractPassages("Sketch.excalidraw.md", source)).toEqual([
+        { headings: [], text: "Data flow\nPostgres\nreads from\nWrapped note", start: 0, end: source.length },
+      ])
+    }
+  })
+
+  test("a drawing with no text, or that cannot be read, has no passages", () => {
+    const shapes = { type: "excalidraw", elements: [{ id: "a", type: "rectangle", x: 0, y: 0 }] }
+    expect(extractPassages("shapes.excalidraw", JSON.stringify(shapes))).toEqual([])
+    expect(extractPassages("empty.excalidraw", '{"type":"excalidraw","version":2,"elements":[]}')).toEqual([])
+    expect(extractPassages("broken.excalidraw", '{"type":"excalidraw"}')).toEqual([])
+    expect(extractPassages("broken.excalidraw", "{not json")).toEqual([])
+    expect(extractPassages("prose.excalidraw.md", "# Just a note\n\nNo drawing here.")).toEqual([])
+  })
+
+  test("a drawing with a lot of text splits into passages under 1,500 characters", () => {
+    const labels = Array.from({ length: 60 }, (_, i) => `Label ${i} ${"word ".repeat(8).trim()}`)
+    const source = JSON.stringify({ elements: labels.map((label, i) => text(`t${i}`, 0, i * 30, label)) })
+    const passages = extractPassages("big.excalidraw", source)
+    expect(passages.length).toBe(2)
+    for (const passage of passages) {
+      expect(passage.text.length).toBeLessThanOrEqual(1500)
+      expect(passage).toMatchObject({ headings: [], start: 0, end: source.length })
+    }
+    expect(passages.map((passage) => passage.text).join("\n")).toBe(labels.join("\n"))
+  })
+})
+
 test("other files have no passages", () => {
   expect(extractPassages("notes.txt", "# Not a note\n\nText.")).toEqual([])
   expect(extractPassages("README", "# Not a note\n\nText.")).toEqual([])
-  expect(extractPassages("drawing.excalidraw", '{"type":"excalidraw"}')).toEqual([])
   expect(extractPassages("NOTES.MD", "Upper case works.")).toEqual([
     { headings: [], text: "Upper case works.", start: 0, end: 17 },
   ])
