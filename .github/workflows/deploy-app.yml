@@ -27,8 +27,10 @@ jobs:
       # Public values the build inlines. Supplied here, not committed, so forks
       # never build against the hosted project.
       VITE_SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT_ID }}.supabase.co
-      # A repository variable, or a repository secret of the same name.
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY }}
+      # A repository variable or secret; for this repository's own hosted
+      # project the key is written here, since a publishable key ships in the
+      # app to every browser anyway.
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY || (vars.SUPABASE_PROJECT_ID == 'njxjkmtvconypwujbiur' && 'sb_publishable_2xMwCVf3iXRdIXDYoWeFDg_OPys7AgH' || '') }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
