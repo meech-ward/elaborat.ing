@@ -19,12 +19,30 @@ export function projectHits(passages: SearchPassage[], projectId: string): FileS
 }
 
 /**
- * About `width` characters of `text` around the earliest word of `query` it
- * contains, split so the match can be shown in bold. A passage found by
- * meaning alone may contain no word of the query: then it is the start.
+ * Markdown or MDX as the words a reader sees: headings, list and quote marks,
+ * emphasis, code marks, links, tags and table rules are dropped.
+ */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/^\s*(```|~~~).*$/gm, "")
+    .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/gm, "")
+    .replace(/^\s*([-*_])(\s*\1){2,}\s*$/gm, "")
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<\/?[A-Za-z][^>]*>/g, " ")
+    .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, "$2")
+    .replace(/(?<!\w)([*_])(?=\S)([^*_\n]+?)(?<=\S)\1(?!\w)/g, "$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\|/g, " ")
+}
+
+/**
+ * About `width` characters of `text`, as plain text, around the earliest word
+ * of `query` it contains, split so the match can be shown in bold. A passage
+ * found by meaning alone may contain no word of the query: then it is the start.
  */
 export function snippet(text: string, query: string, width = 120): { before: string; match: string; after: string } {
-  const flat = text.replace(/\s+/g, " ").trim()
+  const flat = plainText(text).replace(/\s+/g, " ").trim()
   const lower = flat.toLowerCase()
   let at = -1
   let length = 0
