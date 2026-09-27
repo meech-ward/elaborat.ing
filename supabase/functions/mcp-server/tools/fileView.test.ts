@@ -4,7 +4,7 @@ import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcon
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_EDITOR_SCRIPT } from './cardEditorScript.ts'
-import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY } from './fileView.ts'
+import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { renderMarkdown, renderNote } from './markdown.ts'
@@ -287,13 +287,13 @@ Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it
     file('flows/new.d2', 'c -> d'),
     file('art/broken.excalidraw', '{"elements": 3}'),
   ])
-  // One more query, as the user, for the drawings and each diagram's source and companion.
+  // One more query, as the user, for the drawings and each diagram's source, companion and layout record.
   assertEquals(queries.length, 2)
   assertEquals(queries[1], [
     ['from', 'project_files'],
     ['select', 'path, content'],
     ['eq', 'project_id', PROJECT],
-    ['in', 'path', ['art/flow.excalidraw', 'flows/signup.d2', 'flows/signup.excalidraw', 'flows/new.d2', 'flows/new.excalidraw', 'art/gone.excalidraw', 'art/broken.excalidraw']],
+    ['in', 'path', ['art/flow.excalidraw', 'flows/signup.d2', 'flows/signup.excalidraw', 'flows/signup.d2.json', 'flows/new.d2', 'flows/new.excalidraw', 'flows/new.d2.json', 'art/gone.excalidraw', 'art/broken.excalidraw']],
   ])
   const view = result.structuredContent as { embeds: { kind: string; path: string; url: string; status: string }[] }
   assertEquals(view.embeds.map((embed) => [embed.kind, embed.path, embed.status]), [
@@ -385,4 +385,18 @@ Deno.test('the card saves with the version it showed, and a note changed since t
     assertEquals(conflict.conflicts[0].current, { version: 5, content: edited })
     assertEquals(files[0].content, edited)
   })
+})
+
+Deno.test('show_file marks a diagram drawn before its source changed, and still draws it', async () => {
+  // The app's fingerprint, as src/features/structured/sourceHash.ts computes it.
+  assertEquals(sourceHash('a -> b'), '294b0b8d')
+  for (const [recorded, status] of [[sourceHash('a -> b'), 'drawn'], [sourceHash('a -> c'), 'stale']]) {
+    const { result } = await showFile('flows/signup.d2', [
+      file('flows/signup.d2', 'a -> b'),
+      file('flows/signup.excalidraw', SCENE),
+      file('flows/signup.d2.json', JSON.stringify({ version: 1, sourceHash: recorded })),
+    ])
+    assertEquals((result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, status)
+    assert((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['flows/signup.d2'].startsWith('<svg '))
+  }
 })

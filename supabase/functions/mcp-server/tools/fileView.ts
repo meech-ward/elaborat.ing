@@ -20,13 +20,14 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v5.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v6.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
   'ui://elaborating/file-view-v2.html',
   'ui://elaborating/file-view-v3.html',
   'ui://elaborating/file-view-v4.html',
+  'ui://elaborating/file-view-v5.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -67,7 +68,34 @@ export function companionPath(path: string): string {
   return path.replace(/\.d2$/i, '.excalidraw')
 }
 
-export type EmbedStatus = 'drawn' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'not_shown' | 'unsupported'
+/** The diagram's layout record, which holds the hash of the source its canvas was drawn from. */
+export function sidecarPath(path: string): string {
+  return `${path}.json`
+}
+
+/** The app's fingerprint of a diagram's source (src/features/structured/sourceHash.ts). */
+export function sourceHash(source: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < source.length; i++) {
+    hash ^= source.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return ('0000000' + (hash >>> 0).toString(16)).slice(-8)
+}
+
+/** True when the diagram's layout record says its canvas was drawn from other source. */
+function drawnFromOtherSource(path: string, files: Map<string, string>): boolean {
+  const record = files.get(sidecarPath(path))
+  if (record === undefined) return false
+  try {
+    const hash = JSON.parse(record)?.sourceHash
+    return typeof hash === 'string' && hash !== sourceHash(files.get(path) ?? '')
+  } catch {
+    return false
+  }
+}
+
+export type EmbedStatus = 'drawn' | 'stale' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'not_shown' | 'unsupported'
 export type EmbedView = EmbedRef & { url: string; status: EmbedStatus }
 
 function drawOne(path: string, files: Map<string, string>, budget: number): { status: EmbedStatus; svg?: string } {
@@ -84,7 +112,8 @@ function drawOne(path: string, files: Map<string, string>, budget: number): { st
     return { status: 'unreadable' }
   }
   const drawn = drawingSvg(elements, Math.min(MAX_SVG_CHARS, budget))
-  return 'svg' in drawn ? { status: 'drawn', svg: drawn.svg } : { status: drawn.problem }
+  if (!('svg' in drawn)) return { status: drawn.problem }
+  return { status: kind === 'diagram' && drawnFromOtherSource(path, files) ? 'stale' : 'drawn', svg: drawn.svg }
 }
 
 /**
@@ -100,7 +129,7 @@ async function drawEmbeds(
 ): Promise<{ embeds: EmbedView[]; svgs: Record<string, string> }> {
   const drawn = [...new Set(refs.map((ref) => ref.path))].slice(0, MAX_EMBEDS)
   const files = new Map(Object.entries(known))
-  const wanted = new Set(drawn.flatMap((path) => (fileKind(path) === 'diagram' ? [path, companionPath(path)] : [path])))
+  const wanted = new Set(drawn.flatMap((path) => (fileKind(path) === 'diagram' ? [path, companionPath(path), sidecarPath(path)] : [path])))
   for (const path of files.keys()) wanted.delete(path)
   if (wanted.size > 0) {
     const { data, error } = await supabase

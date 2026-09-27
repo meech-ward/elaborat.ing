@@ -151,6 +151,7 @@ const SCRIPT = `
   }
   const EMBED_NOTES = {
     drawn: 'Open it in elaborat.ing to see it.',
+    stale: 'Its source changed after this was drawn. Open it in elaborat.ing to redraw it.',
     not_drawn: 'Open it in elaborat.ing to draw it.',
     missing: 'No file at this path.',
     unreadable: 'This drawing could not be read.',
@@ -233,7 +234,7 @@ const SCRIPT = `
 
   // The embed's drawing, or null when it has none to show.
   function artFor(embed, svgs) {
-    const svg = embed.status === 'drawn' ? svgs[embed.path] : null
+    const svg = embed.status === 'drawn' || embed.status === 'stale' ? svgs[embed.path] : null
     if (typeof svg !== 'string' || !svg.startsWith('<svg')) return null
     const art = document.createElement('div')
     art.className = 'art'
@@ -253,6 +254,13 @@ const SCRIPT = `
       art.className = 'note'
       art.textContent = noteFor(embed)
     }
+    const parts = [art]
+    if (embed.status === 'stale' && art.className === 'art') {
+      const stale = document.createElement('p')
+      stale.className = 'note'
+      stale.textContent = noteFor(embed)
+      parts.push(stale)
+    }
     const caption = document.createElement('figcaption')
     const kind = document.createElement('span')
     kind.className = 'kind'
@@ -261,7 +269,7 @@ const SCRIPT = `
     link.textContent = embed.path
     if (typeof embed.url === 'string' && embed.url.startsWith(APP)) link.href = embed.url
     caption.append(kind, link)
-    return [art, caption]
+    return [...parts, caption]
   }
 
   function fillFigures(doc, embeds, svgs) {
@@ -318,8 +326,9 @@ const SCRIPT = `
       const art = artFor(embeds[0], svgs)
       $('art').replaceChildren(...(art ? [art] : []))
       $('art').hidden = !art
-      $('note').textContent = art ? '' : noteFor(embeds[0])
-      $('note').hidden = !!art
+      const stale = !!art && embeds[0].status === 'stale'
+      $('note').textContent = art && !stale ? '' : noteFor(embeds[0])
+      $('note').hidden = !!art && !stale
     } else {
       doc.hidden = true
       $('note').textContent = CARD_NOTES[view.kind] || CARD_NOTES.file
