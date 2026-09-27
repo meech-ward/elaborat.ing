@@ -20,6 +20,8 @@ export default defineConfig({
     previewFrame(),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "../../../src") } },
+  // ES module workers, as in the app's config.
+  worker: { format: "es" },
   build: {
     outDir: "dist",
     emptyOutDir: true,

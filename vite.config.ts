@@ -85,6 +85,10 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
+  // Workers are ES modules. Firefox (at least the build the browser tests
+  // use) crashes the tab when a classic worker is stopped while it is still
+  // starting, as when a note closes right after it opens; module workers don't.
+  worker: { format: "es" },
   // The minifier drops license comments, so the build lists the licenses of
   // the third-party code it includes in one file, served at this path.
   build: { license: { fileName: "third-party-notices.txt" } },
