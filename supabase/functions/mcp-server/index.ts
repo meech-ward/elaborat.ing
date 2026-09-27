@@ -40,7 +40,13 @@ const SERVER_INSTRUCTIONS =
   `${SERVER_DESCRIPTION} ` +
   'Every tool runs as the signed-in Supabase user, so role grants and Row Level Security apply. ' +
   "Call tools/list to discover what this project exposes, and read a tool's description and " +
-  'annotations before calling it — some tools have side effects.'
+  'annotations before calling it — some tools have side effects. ' +
+  // How elaborat.ing files are written, so what agents create renders in the app.
+  'Projects hold notes, drawings and diagrams. Write new notes as MDX (.mdx): Markdown plus components. ' +
+  'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
+  "using the file's path in the project; the file must exist, so create it first. " +
+  'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
+  'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file.'
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',

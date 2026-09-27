@@ -140,7 +140,8 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description:
         'Create or replace one file. To create a new file, omit base_version. To change an existing file, pass the version you read. ' +
-        'If the result status is "conflict", someone changed the file first: read it again, merge, and retry.',
+        'If the result status is "conflict", someone changed the file first: read it again, merge, and retry. ' +
+        'New notes are .mdx; embed drawings and diagrams with <Drawing src="..." /> and <Diagram src="..." /> (see the server instructions).',
       inputSchema: z.object({
         project_id: projectId,
         path,

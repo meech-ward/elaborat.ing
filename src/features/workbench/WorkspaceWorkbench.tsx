@@ -825,8 +825,7 @@ export function WorkspaceWorkbench({
     ...(readOnly
       ? []
       : [
-          { name: "New note", run: () => { afterClose.current = () => startCreate("note"); } },
-          { name: "New MDX note", run: () => { afterClose.current = () => startCreate("mdx"); } },
+          { name: "New note", run: () => { afterClose.current = () => startCreate("mdx"); } },
           { name: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
           { name: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
           { name: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
@@ -843,11 +842,10 @@ export function WorkspaceWorkbench({
       return !keep;
     }} onClosed={runAfterClose}>
       {!readOnly && (
-        <button onClick={() => afterMenu(() => startCreate("note"))}>
+        <button onClick={() => afterMenu(() => startCreate("mdx"))}>
           <FilePlus size={14} /> New
         </button>
       )}
-      {!readOnly && <button onClick={() => afterMenu(() => startCreate("mdx"))}><FilePlus size={14} /> New MDX note</button>}
       {!readOnly && <button onClick={() => afterMenu(() => startCreate("drawing"))}><PenTool size={14} /> New drawing</button>}
       {!readOnly && <button onClick={() => afterMenu(() => startCreate("diagram"))}><Network size={14} /> New diagram</button>}
       {!readOnly && (
@@ -889,8 +887,7 @@ export function WorkspaceWorkbench({
       keepMenuFocus.current = false;
       return !keep;
     }} onClosed={runAfterClose}>
-      <button onClick={() => afterMenu(() => startCreate("note"))}>New note</button>
-      <button onClick={() => afterMenu(() => startCreate("mdx"))}>New MDX note</button>
+      <button onClick={() => afterMenu(() => startCreate("mdx"))}>New note</button>
       <button onClick={() => afterMenu(() => startCreate("drawing"))}>New drawing</button>
       <button onClick={() => afterMenu(() => startCreate("diagram"))}>New diagram</button>
     </ActionMenu>
@@ -1163,11 +1160,10 @@ export function WorkspaceWorkbench({
                           Open explorer
                         </button>
                         {!readOnly && (
-                          <button onClick={() => startCreate("note")}>
+                          <button onClick={() => startCreate("mdx")}>
                             New note
                           </button>
                         )}
-                        {!readOnly && <button onClick={() => startCreate("mdx")}>New MDX note</button>}
                       </div>
                     )}
                   </div>

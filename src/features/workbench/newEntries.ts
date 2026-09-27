@@ -17,7 +17,8 @@ export function newEntryExtension(kind: NewEntryKind): string {
 
 /** How the field and its messages name the kind. */
 export function newEntryNoun(kind: NewEntryKind): string {
-  return kind === "mdx" ? "MDX note" : kind;
+  // Notes are created as MDX; there is one kind of note to create.
+  return kind === "mdx" ? "note" : kind;
 }
 
 /**
@@ -78,7 +79,7 @@ export function newFilePath(
   // (a drawing is `.excalidraw`, never `.excalidraw.md`, which is a note-like wrapper).
   const wanted = kind === "mdx" ? "note" : kind;
   if (validateWorkspacePath(path) !== path || !path.toLowerCase().endsWith(extension) || kindForPath(path) !== wanted) {
-    return { error: `${kind === "mdx" ? "An" : "A"} ${newEntryNoun(kind)}'s name ends with ${extension}.` };
+    return { error: `A ${newEntryNoun(kind)}'s name ends with ${extension}.` };
   }
   const lower = path.toLowerCase();
   if (taken.files.some((file) => file.toLowerCase() === lower) || taken.dirs.some((folder) => folder.toLowerCase() === lower)) {

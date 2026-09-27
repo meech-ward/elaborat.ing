@@ -49,7 +49,7 @@ async function expectNoAxeViolations(page: Page, selector: string) {
 }
 
 const kinds = [
-  { item: "New", noun: "note", proposed: "untitled.md", name: "ideas", path: "ideas.md", existing: "# Ideas\n" },
+  { item: "New", noun: "note", proposed: "untitled.mdx", name: "ideas", path: "ideas.mdx", existing: "# Ideas\n" },
   { item: "New drawing", noun: "drawing", proposed: "untitled.excalidraw", name: "sketch", path: "sketch.excalidraw", existing: DRAWING },
   { item: "New diagram", noun: "diagram", proposed: "untitled.d2", name: "flow", path: "flow.d2", existing: "a -> b\n" },
 ]
@@ -147,19 +147,19 @@ test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
   test("a dialog asks for the new note's name, and axe finds nothing in it", async ({ page }) => {
-    const { fake, id } = await openProject(page, { "a.md": "a\n" }, [], true)
+    const { fake, id } = await openProject(page, { "a.mdx": "a\n" }, [], true)
     await page.getByRole("button", { name: "Back to files and projects" }).click()
     await fromMenu(page, "New")
     const dialog = page.getByRole("dialog", { name: "New note in Workspace root" })
     await expect(dialog.getByLabel("Name")).toBeFocused()
-    await expect(dialog.getByLabel("Name")).toHaveValue("untitled.md")
+    await expect(dialog.getByLabel("Name")).toHaveValue("untitled.mdx")
     await expectNoAxeViolations(page, ".wb-rename")
     await page.keyboard.type("a")
     await page.keyboard.press("Enter")
-    await expect(dialog.getByRole("alert")).toHaveText("a.md already exists here. Choose another name.")
-    await dialog.getByLabel("Name").fill("ideas.md")
+    await expect(dialog.getByRole("alert")).toHaveText("a.mdx already exists here. Choose another name.")
+    await dialog.getByLabel("Name").fill("ideas.mdx")
     await dialog.getByRole("button", { name: "Create" }).click()
     await expect(dialog).toBeHidden()
-    await expect.poll(() => serverPaths(fake, id)).toEqual(["a.md", "ideas.md"])
+    await expect.poll(() => serverPaths(fake, id)).toEqual(["a.mdx", "ideas.mdx"])
   })
 })

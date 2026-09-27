@@ -18,8 +18,8 @@ async function openProject(page: Page, files: Record<string, string>, phone: boo
   await signedIn(page)
   await page.goto(new URL(`projects/${id}/index.md`, APP_URL).href)
   if (phone) {
-    await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
-    await page.getByRole("button", { name: "Navigation" }).first().click()
+    await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Back to files and projects" }).click()
   } else {
     await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
     // A desktop opens with the explorer shown.

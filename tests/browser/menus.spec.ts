@@ -22,7 +22,7 @@ async function openProject(page: Page, files: Record<string, string>, path?: str
   for (const [file, content] of Object.entries(files)) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: file, content }])
   await signedIn(page)
   await page.goto(projectUrl(id, path))
-  if (phone) await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
+  if (phone) await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }
@@ -148,7 +148,7 @@ for (const [width, scheme] of [
 
     test("axe finds nothing in an open file menu", async ({ page }) => {
       await openProject(page, { "a.md": "# A\n", "b.md": "# B\n" }, "a.md", phone)
-      if (phone) await page.getByRole("button", { name: "Navigation" }).first().click()
+      if (phone) await page.getByRole("button", { name: "Back to files and projects" }).click()
       const files = await explorer(page)
       await files.getByRole("button", { name: "Actions for b.md", exact: true }).click()
       const menu = page.getByRole("menu", { name: "Actions for b.md" })

@@ -44,7 +44,7 @@ describe("newFilePath", () => {
     expect(newFilePath("note", "", "a/b", taken)).toEqual({ error: "Use one file name without separators, leading dots, or control characters." })
     expect(newFilePath("note", "", ".hidden", taken)).toEqual({ error: "Use one file name without separators, leading dots, or control characters." })
     expect(newFilePath("note", "", "ideas.d2", taken)).toEqual({ error: "A note's name ends with .md." })
-    expect(newFilePath("mdx", "", "ideas.md", taken)).toEqual({ error: "An MDX note's name ends with .mdx." })
+    expect(newFilePath("mdx", "", "ideas.md", taken)).toEqual({ error: "A note's name ends with .mdx." })
     expect(newFilePath("drawing", "", "sketch.excalidraw.md", taken)).toEqual({ error: "A drawing's name ends with .excalidraw." })
     expect(newFilePath("note", "", "sketch.excalidraw.md", taken)).toEqual({ error: "A note's name ends with .md." })
     expect(newFilePath("note", "", "my.notes", taken)).toEqual({ error: "A note's name ends with .md." })
