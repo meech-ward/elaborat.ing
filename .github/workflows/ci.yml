@@ -6,11 +6,11 @@ on:
   pull_request:
   push:
 
-# A newer push to the same branch cancels the older run; the newest commit is
-# the one that gets checked (and, on main, deployed).
+# A newer push to a branch cancels the older run there. On main every run
+# finishes, because the app deploys only after a run on main passes.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   app:
