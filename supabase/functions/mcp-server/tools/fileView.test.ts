@@ -84,7 +84,7 @@ Deno.test('the view is self-contained: no URL but elaborat.ing, nothing loaded f
   for (const pattern of [/\bsrc\s*=/i, /<link\b/i, /@import/i, /url\(/, /\/\/[a-z0-9.-]+\.[a-z]{2,}/i, /\bfetch\(|XMLHttpRequest|WebSocket|EventSource/]) {
     assertFalse(pattern.test(FILE_VIEW_HTML.replaceAll(/https:\/\/elaborat\.ing\/?/g, '')), `view matches ${pattern}`)
   }
-  assertFalse(FILE_VIEW_HTML.includes('—'), 'no em dashes in the view copy')
+  assertFalse(FILE_VIEW_HTML.includes('\u2014'), 'no em dashes in the view copy')
 })
 
 Deno.test('rendered Markdown shows raw HTML as text and drops unsafe links and images', () => {
