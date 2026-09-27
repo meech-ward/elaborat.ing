@@ -221,14 +221,14 @@ function CustomControls(props: {__slot?: number; inline?: boolean; children?: Re
   const slot = typeof props.__slot === 'number' ? slotByIndex(props.__slot) : undefined;
   return <span className="custom-component not-prose" style={{display:props.inline ? 'inline-block' : 'block',maxWidth:'100%'}}>
     {props.children}
-    {slot?.supported && slot.props.length ? <fieldset className="custom-component-controls not-prose" style={{display:'flex',flexWrap:'wrap',gap:'.6rem',minWidth:0,maxWidth:'100%',border:'1px solid var(--line)',borderRadius:'.5rem',padding:'.5rem',margin:'.5rem 0'}}>
+    {slot?.supported && slot.props.length ? <fieldset className="custom-component-controls not-prose" style={{display:'flex',flexWrap:'wrap',gap:'.6rem',minWidth:0,maxWidth:'100%',border:'1px solid var(--line)',borderRadius:10,padding:'.5rem',margin:'.5rem 0'}}>
       <legend>{slot.element} properties</legend>
       {slot.props.map(prop => {
         const label = `${slot.element} ${prop.name}`;
         const commit = (value: string | number | boolean) => commitProp(slot.index,prop.name,value);
         return <span key={prop.name+':'+prop.expected} style={{maxWidth:'100%',display:'inline-flex',alignItems:'center'}}>
-          {prop.kind === 'boolean' ? <label style={{display:'inline-flex',alignItems:'center',gap:'.3rem',minHeight:40}}><input aria-label={label} type="checkbox" checked={prop.value === true} onChange={e => commit(e.target.checked)} />{prop.name}</label>
-            : prop.choices ? <label>{prop.name}<select aria-label={label} value={String(prop.value ?? '')} onChange={e => commit(e.target.value)} style={{minHeight:40,maxWidth:'100%'}}>{prop.choices.map(choice => <option key={choice}>{choice}</option>)}</select></label>
+          {prop.kind === 'boolean' ? <label style={{display:'inline-flex',alignItems:'center',gap:'.3rem'}}><input aria-label={label} type="checkbox" checked={prop.value === true} onChange={e => commit(e.target.checked)} />{prop.name}</label>
+            : prop.choices ? <label>{prop.name}<select aria-label={label} value={String(prop.value ?? '')} onChange={e => commit(e.target.value)} style={{maxWidth:'100%'}}>{prop.choices.map(choice => <option key={choice}>{choice}</option>)}</select></label>
             : prop.kind === 'number' ? <NumberControl label={label} value={Number(prop.value)} onCommit={commit} />
             : <StringControl label={label} value={String(prop.value ?? '')} onCommit={commit} />}
         </span>;

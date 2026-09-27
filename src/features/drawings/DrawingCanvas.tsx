@@ -281,7 +281,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
     >
       <CanvasErrorBoundary onError={onError}>
-        <Suspense fallback={<div aria-label="Loading drawing canvas">Loading drawing canvas…</div>}>
+        <Suspense fallback={<div aria-label="Loading drawing canvas" className="p-3 text-[13px] text-muted-foreground">Loading drawing canvas…</div>}>
           <NativeCanvas
             initialData={initialData}
             theme={theme ?? 'light'}

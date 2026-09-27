@@ -22,10 +22,15 @@ export function UpdateReady() {
   })
   if (!needRefresh) return null
   return (
-    <div role="status" className="fixed right-4 bottom-12 z-40">
+    // The info banner look: a panel with the menu shadow around a strip in
+    // the selection colour with link text.
+    <div
+      role="status"
+      className="fixed right-4 bottom-12 z-40 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-1.5 shadow-[0_16px_40px_var(--shadow)]"
+    >
       <Button
-        size="sm"
-        className="shadow-lg"
+        variant="ghost"
+        className="h-auto rounded-[10px] bg-[var(--selection)] px-3 py-2.5 text-[var(--link)] hover:bg-[var(--selection)] hover:text-[var(--link)] hover:underline active:bg-[var(--selection)]"
         onClick={() => {
           chosen.current = true
           void navigator.serviceWorker.getRegistration().then((registration) => {

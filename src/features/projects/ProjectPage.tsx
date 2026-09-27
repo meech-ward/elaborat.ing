@@ -159,7 +159,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   if (opened === "opening") {
     return (
       <PanelPage>
-        <p role="status" className="text-muted-foreground">
+        <p role="status" className="text-[13px] text-muted-foreground">
           Opening project...
         </p>
       </PanelPage>
@@ -216,7 +216,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     <Suspense
       fallback={
         <PanelPage>
-          <p role="status" className="text-muted-foreground">
+          <p role="status" className="text-[13px] text-muted-foreground">
             Loading the editor...
           </p>
         </PanelPage>

@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
+import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -109,6 +110,19 @@ test("Compare shows a note's two versions as a diff, and Keep mine from there re
   await expect(page.getByRole("alert").filter({ hasText: "was changed on another device too" })).toHaveCount(0)
   await expect.poll(() => fake.server.content(id, "a.md")).toContain("My line")
   expect(fake.server.content(id, "a.md")).not.toContain("Their line")
+})
+
+test("in Cherry Paper light, the conflict banner has the palette's warning background", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "cherry-paper", mode: "light" })))
+  const { fake, id } = await openProject(page, { "a.md": NOTE }, "a.md")
+  await saveMyLine(page, fake)
+  await changeOnServer(fake, id, "a.md", `${NOTE}Their line\n`)
+  await reconnect(page, fake)
+
+  const hex = palettes.find((palette) => palette.id === "cherry-paper")!.light.warnBg
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const banner = page.getByRole("alert").filter({ hasText: "was changed on another device too" })
+  await expect(banner).toHaveCSS("background-color", `rgb(${r}, ${g}, ${b})`)
 })
 
 test("Compare says so when the server deleted the note, instead of a diff", async ({ page }) => {
