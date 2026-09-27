@@ -8,6 +8,13 @@
 export { StyleGuidePage } from "./guide/StyleGuidePage"
 
 // --- Controls (guide/ControlsSection.tsx) ---
+export { ActionContextMenu, ActionMenu, type MenuEntry } from "./ui/ActionMenu"
+export { Banner, BannerAction, Callout, type BannerTone } from "./ui/Banner"
+export { ButtonShortcut } from "./ui/ButtonShortcut"
+export { EmptyState } from "./ui/EmptyState"
+export { Hint } from "./ui/Hint"
+export { LoadingLine } from "./ui/LoadingLine"
+export { DirtyDot, StatusDot, type SaveStatus } from "./ui/StatusDot"
 // --- end Controls ---
 
 // --- Navigation (guide/NavigationSection.tsx) ---

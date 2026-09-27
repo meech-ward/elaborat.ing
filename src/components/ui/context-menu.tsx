@@ -24,7 +24,8 @@
 // base-nova) over @base-ui/react/context-menu.
 // Upstream: https://ui.shadcn.com/docs/components/base/context-menu
 // Adaptations: `cn` via @/lib/utils. Restyled to the style guide's menu: a
-// panel 240 to 500 wide with a 1px border, radius 12, padding 6 and the
+// panel at least 240 wide inside its padding (254 in all) and at most 500,
+// with a 1px border, radius 12, padding 6 and the
 // panel shadow; items 30 high (40 on touch screens and phones), radius 7,
 // 13px; the highlighted item (pointer or keyboard) in accentSoft with
 // accentSoftText; destructive items in the danger colour; shortcuts in 11px
@@ -42,7 +43,7 @@ import { ChevronRightIcon, CheckIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const popupClass =
-  "max-h-(--available-height) min-w-[240px] max-w-[min(500px,calc(100vw-20px))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu border border-border bg-popover p-1.5 text-popover-foreground shadow-panel outline-none"
+  "max-h-(--available-height) min-w-[254px] max-w-[min(500px,calc(100vw-20px))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu border border-border bg-popover p-1.5 text-popover-foreground shadow-panel outline-none"
 const itemClass =
   "relative flex min-h-[30px] w-full cursor-default items-center gap-2.5 rounded-row px-2.5 text-left text-[13px] leading-5 outline-none select-none pointer-coarse:min-h-10 max-[650px]:min-h-10 data-highlighted:bg-accent data-highlighted:text-accent-foreground data-inset:pl-8 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
 

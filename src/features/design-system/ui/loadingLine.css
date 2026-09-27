@@ -1,0 +1,9 @@
+/* The indeterminate loading line: a third of the track slides across. */
+@keyframes design-system-loading-line {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
