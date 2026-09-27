@@ -87,13 +87,13 @@ export function ConnectedAgents() {
       {state.grants.length === 0 ? (
         <p className="text-sm">No agents are connected. When you approve one, such as Claude or ChatGPT, it shows here.</p>
       ) : (
-        <ul aria-label="Connected agents" className="flex flex-col divide-y rounded-lg border">
+        <ul aria-label="Connected agents" className="flex flex-col divide-y divide-border rounded-[10px] border border-border">
           {state.grants.map((grant) => (
             <li key={grant.client.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium break-words">{grant.client.name || "Unnamed agent"}</span>
                 {grant.client.uri ? (
-                  <a href={grant.client.uri} target="_blank" rel="noopener noreferrer" className="text-sm break-all underline underline-offset-4">
+                  <a href={grant.client.uri} target="_blank" rel="noopener noreferrer" className="text-sm break-all text-(--link) underline underline-offset-4">
                     {grant.client.uri}
                   </a>
                 ) : null}

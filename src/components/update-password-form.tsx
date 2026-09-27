@@ -4,20 +4,14 @@
  * Licensed under the Apache License 2.0
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
- * app's modules; after updating it goes to the home page.
+ * app's modules; after updating it goes to the home page; it sits in the sign-in
+ * pages' card, with the app's colours.
  */
 import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -45,34 +39,28 @@ export function UpdatePasswordForm({ className, ...props }: React.ComponentProps
   }
 
   return (
-    <div className={cn('flex flex-col gap-6', className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Reset Your Password</CardTitle>
-          <CardDescription>Please enter your new password below.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleForgotPassword}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="password">New password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="New password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Saving...' : 'Save new password'}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+    <div className={cn('flex flex-col gap-4', className)} {...props}>
+      <form onSubmit={handleForgotPassword} className="flex flex-col gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="password">New password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+          {isLoading ? 'Saving...' : 'Save new password'}
+        </Button>
+      </form>
     </div>
   )
 }

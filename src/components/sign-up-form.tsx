@@ -4,20 +4,14 @@
  * Licensed under the Apache License 2.0
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
- * app's modules; links point at `/sign-in`.
+ * app's modules; links point at `/sign-in`; it sits in the sign-in pages' card, with
+ * the app's colours.
  */
 import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -55,78 +49,62 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   }
 
   return (
-    <div className={cn('flex flex-col gap-6', className)} {...props}>
+    <div className={cn('flex flex-col gap-4', className)} {...props}>
       {success ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Thank you for signing up!</CardTitle>
-            <CardDescription>Check your email to confirm</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              You&apos;ve successfully signed up. Please check your email to confirm your account
-              before signing in.
-            </p>
-          </CardContent>
-        </Card>
+        <p role="status" className="text-sm">
+          Thank you for signing up! Check your email to confirm your account before signing in.
+        </p>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Sign up</CardTitle>
-            <CardDescription>Create a new account</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSignUp}>
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center">
-                    <Label htmlFor="password">Password</Label>
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center">
-                    <Label htmlFor="repeat-password">Repeat Password</Label>
-                  </div>
-                  <Input
-                    id="repeat-password"
-                    type="password"
-                    required
-                    value={repeatPassword}
-                    onChange={(e) => setRepeatPassword(e.target.value)}
-                  />
-                </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Creating an account...' : 'Sign up'}
-                </Button>
-              </div>
-              <div className="mt-4 text-center text-sm">
-                Already have an account?{' '}
-                <a href="/sign-in" className="underline underline-offset-4">
-                  Sign in
-                </a>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <form onSubmit={handleSignUp} className="flex flex-col gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="repeat-password">Repeat Password</Label>
+            <Input
+              id="repeat-password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={repeatPassword}
+              onChange={(e) => setRepeatPassword(e.target.value)}
+            />
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Creating an account...' : 'Sign up'}
+          </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{' '}
+            <a href="/sign-in" className="text-(--link) underline underline-offset-4">
+              Sign in
+            </a>
+          </p>
+        </form>
       )}
     </div>
   )

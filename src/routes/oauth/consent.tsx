@@ -14,7 +14,7 @@ export const Route = createFileRoute("/oauth/consent")({
 function Consent() {
   const { authorization_id } = Route.useSearch()
   return (
-    <AuthPage title="Allow an app to use your account">
+    <AuthPage title="Allow an app to use your account" hideTitle>
       <OAuthConsent authorizationId={authorization_id ?? null} signInPath="/sign-in" productName="elaborat.ing" />
     </AuthPage>
   )

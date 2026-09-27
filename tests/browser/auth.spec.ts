@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
-import { fakeSupabase, otpCode, person as user, SUPABASE } from "./fake-supabase.ts"
+import { fakeSupabase, otpCode, person as user, signedIn, SUPABASE } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // Sign-in and an agent's consent request, against the stand-in Supabase in
@@ -9,11 +9,20 @@ import { APP_URL } from "./urls.ts"
 const fakeAuth = async (page: import("@playwright/test").Page, decision?: { redirect: string }) =>
   (await fakeSupabase(page, { consentRedirect: decision?.redirect })).requests
 
-test("the sign-in page offers a password and an emailed link, with no accessibility problems", async ({ page }) => {
+/** Sign in with the password, the sign-in card's other option. */
+async function signInWithPassword(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Use a password instead" }).click()
+  await page.getByLabel("Email", { exact: true }).fill(user.email)
+  await page.getByLabel("Password", { exact: true }).fill("a password")
+  await page.getByRole("button", { name: "Sign in" }).click()
+}
+
+test("the sign-in page offers an emailed link, and a password instead, with no accessibility problems", async ({ page }) => {
   await fakeAuth(page)
   await page.goto(new URL("sign-in", APP_URL).href)
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible()
+  await page.getByRole("button", { name: "Use a password instead" }).click()
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible()
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
 })
@@ -29,9 +38,7 @@ for (const [choice, button] of [
 
     await page.goto(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
     await expect(page).toHaveURL(new URL("sign-in?next=%2Foauth%2Fconsent%3Fauthorization_id%3Dauth-123", APP_URL).href)
-    await page.getByLabel("Email", { exact: true }).first().fill(user.email)
-    await page.getByLabel("Password", { exact: true }).fill("a password")
-    await page.getByRole("button", { name: "Sign in" }).click()
+    await signInWithPassword(page)
 
     await expect(page).toHaveURL(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
     await expect(page.getByText("Authorize Claude")).toBeVisible()
@@ -145,9 +152,7 @@ test("a consent page without a request says so", async ({ page }) => {
 test("the home page shows who is signed in, and signing out forgets the account on this device", async ({ page }) => {
   const seen = await fakeAuth(page)
   await page.goto(new URL("sign-in", APP_URL).href)
-  await page.getByLabel("Email", { exact: true }).first().fill(user.email)
-  await page.getByLabel("Password", { exact: true }).fill("a password")
-  await page.getByRole("button", { name: "Sign in" }).click()
+  await signInWithPassword(page)
 
   await expect(page).toHaveURL(APP_URL)
   await expect(page.getByText(`Signed in as ${user.email}`)).toBeVisible()
@@ -159,3 +164,46 @@ test("the home page shows who is signed in, and signing out forgets the account 
   expect(await remembered()).toBeNull()
   expect(seen.some((request) => new URL(request.url()).pathname.endsWith("/logout"))).toBe(true)
 })
+
+test("the signed-out home says you are not signed in, and Sign in leads to the sign-in page", async ({ page }) => {
+  await fakeAuth(page)
+  await page.goto(APP_URL)
+  const banner = page.getByRole("banner")
+  await expect(banner.getByText("You're not signed in")).toBeVisible()
+  await expect(banner.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/sign-up")
+  await banner.getByRole("link", { name: "Sign in" }).click()
+  await expect(page).toHaveURL(new URL("sign-in", APP_URL).href)
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible()
+})
+
+for (const scheme of ["light", "dark"] as const) {
+  for (const width of [1280, 390]) {
+    test(`in Supabase Green ${scheme} at ${width}px, the home, sign-in and consent pages fit and axe finds nothing`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.emulateMedia({ colorScheme: scheme })
+      const fake = await fakeSupabase(page, { providers: { github: true } })
+      await fake.server.remote(user.id).createProject(crypto.randomUUID(), "Notes")
+      const check = async () => {
+        expect(await page.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.scheme])).toEqual(["supabase-green", scheme])
+        const results = await new AxeBuilder({ page }).analyze()
+        expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+      }
+
+      await page.goto(APP_URL)
+      await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible()
+      await check()
+      await page.goto(new URL("sign-in", APP_URL).href)
+      await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeVisible()
+      await check()
+
+      await signedIn(page)
+      await page.goto(APP_URL)
+      await expect(page.getByRole("link", { name: "Notes" })).toBeVisible()
+      await check()
+      await page.goto(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
+      await expect(page.getByText("Authorize Claude")).toBeVisible()
+      await check()
+    })
+  }
+}

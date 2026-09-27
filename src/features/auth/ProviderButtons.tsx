@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { parseConfig } from "@/lib/config"
 import { createClient } from "@/lib/supabase/client"
 import { enabledProviders, PROVIDERS, type ProviderId } from "./providers"
 import { emailLinkRedirect } from "./returnPath"
 
 /**
- * "Continue with GitHub" and "Continue with Google", for the providers Auth
- * has on. The provider sends the person back to the sign-in page with `next`,
- * as the emailed link does. Offline, or when Auth's settings cannot be read,
- * nothing shows.
+ * "Continue with GitHub" and "Continue with Google", under an "or", for the
+ * providers Auth has on. The provider sends the person back to the sign-in
+ * page with `next`, as the emailed link does. Offline, or when Auth's settings
+ * cannot be read, nothing shows.
  */
 export function ProviderButtons({ next }: { next: string | null }) {
   const [providers, setProviders] = useState<ProviderId[]>([])
@@ -38,19 +37,20 @@ export function ProviderButtons({ next }: { next: string | null }) {
     if (error) setError(error.message)
   }
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        {PROVIDERS.filter((provider) => providers.includes(provider.id)).map((provider) => (
-          <Button key={provider.id} type="button" variant="outline" onClick={() => void continueWith(provider.id)}>
-            {provider.label}
-          </Button>
-        ))}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-3">
+      <p className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+        or
+      </p>
+      {PROVIDERS.filter((provider) => providers.includes(provider.id)).map((provider) => (
+        <Button key={provider.id} type="button" variant="outline" size="lg" className="w-full" onClick={() => void continueWith(provider.id)}>
+          {provider.label}
+        </Button>
+      ))}
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
   )
 }

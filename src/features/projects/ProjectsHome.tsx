@@ -2,21 +2,10 @@ import { Link } from "@tanstack/react-router"
 import { ProjectList } from "./ProjectList"
 import { useProjectAccount } from "./account"
 
-/** The home page's projects section: the account's projects, or a way in. */
+/** The home page's projects section, for an account. The account header offers a way in to anyone else. */
 export function ProjectsHome() {
   const result = useProjectAccount()
-  if (result.kind === "account") return <ProjectList account={result.account} />
-  if (result.kind === "signed-out") {
-    return (
-      <p>
-        <Link to="/sign-in" className="underline underline-offset-4">
-          Sign in
-        </Link>{" "}
-        to see your projects.
-      </p>
-    )
-  }
-  return null
+  return result.kind === "account" ? <ProjectList account={result.account} /> : null
 }
 
 /** Shows the project page for the account, or the reason it cannot. */

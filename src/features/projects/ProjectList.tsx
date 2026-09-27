@@ -5,9 +5,11 @@ import { useCallback, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { panel } from "@/components/panel"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
+import { cn } from "@/lib/utils"
 import { libraryFor, useLibraryState, type ProjectAccount } from "./account"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { ImportProject } from "./ImportProject"
@@ -146,12 +148,12 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const active = state.entries.filter((entry) => !entry.archived)
   const archived = state.entries.filter((entry) => entry.archived)
   const row = (entry: ProjectEntry) => (
-    <li key={entry.id} className="flex items-center justify-between gap-4 px-4 py-3">
-      <Link to={projectHref(entry.id)} className="font-medium underline-offset-4 hover:underline">
+    <li key={entry.id} className="flex min-h-10 items-center justify-between gap-3 py-1">
+      <Link to={projectHref(entry.id)} className="min-w-0 font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline">
         {entry.title}
       </Link>
-      <span className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">{statusLabel(entry)}</span>
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="text-xs text-muted-foreground">{statusLabel(entry)}</span>
         {entry.role !== null ? (
           <ProjectMenu
             entry={entry}
@@ -170,8 +172,8 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   )
 
   return (
-    <section aria-labelledby="projects-heading" className="flex flex-col gap-4">
-      <h2 id="projects-heading" className="text-xl font-semibold">
+    <section aria-labelledby="projects-heading" className={cn(panel, "flex flex-col gap-4 p-5")}>
+      <h2 id="projects-heading" className="text-lg font-semibold">
         Your projects
       </h2>
       {!account.online || state.offline ? (
@@ -191,12 +193,12 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
       ) : null}
       {state.invitations.length > 0 ? (
         <section aria-labelledby="invitations-heading" className="flex flex-col gap-2">
-          <h3 id="invitations-heading" className="font-medium">
+          <h3 id="invitations-heading" className="text-sm font-semibold text-muted-foreground">
             Invitations
           </h3>
-          <ul className="flex flex-col divide-y rounded-lg border">
+          <ul className="flex flex-col divide-y divide-border">
             {state.invitations.map((invitation) => (
-              <li key={invitation.projectId} className="flex items-center justify-between gap-4 px-4 py-3">
+              <li key={invitation.projectId} className="flex min-h-10 items-center justify-between gap-3 py-1">
                 <span>
                   <span className="font-medium">{invitation.title}</span>
                   <span className="text-sm text-muted-foreground">, as {invitation.role}</span>
@@ -209,14 +211,14 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           </ul>
         </section>
       ) : null}
-      {state.loaded && state.entries.length === 0 ? <p className="text-sm">No projects yet.</p> : null}
-      {active.length > 0 ? <ul className="flex flex-col divide-y rounded-lg border">{active.map(row)}</ul> : null}
+      {state.loaded && state.entries.length === 0 ? <p className="text-sm text-muted-foreground">No projects yet.</p> : null}
+      {active.length > 0 ? <ul className="flex flex-col divide-y divide-border">{active.map(row)}</ul> : null}
       {archived.length > 0 ? (
         <section aria-labelledby="archived-heading" className="flex flex-col gap-2">
-          <h3 id="archived-heading" className="font-medium">
+          <h3 id="archived-heading" className="text-sm font-semibold text-muted-foreground">
             Archived
           </h3>
-          <ul className="flex flex-col divide-y rounded-lg border">{archived.map(row)}</ul>
+          <ul className="flex flex-col divide-y divide-border">{archived.map(row)}</ul>
         </section>
       ) : null}
       {membersOf ? (
@@ -237,7 +239,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           onClose={() => setDeleting(null)}
         />
       ) : null}
-      <form onSubmit={create} className="flex items-end gap-2">
+      <form onSubmit={create} className="flex items-end gap-2 border-t border-border pt-4">
         <div className="grid flex-1 gap-2">
           <Label htmlFor="new-project-title">New project</Label>
           <Input id="new-project-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" />
