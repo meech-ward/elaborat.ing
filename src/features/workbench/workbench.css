@@ -784,104 +784,6 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-@media (max-width: 650px) {
-  .wb-icon {
-    width: 40px;
-    height: 40px;
-  }
-  .wb-titlebar {
-    gap: 7px;
-    padding: 0 9px;
-  }
-  .wb-titlebar select {
-    height: 40px;
-    max-width: 90px;
-  }
-  .wb-command {
-    position: static;
-    transform: none;
-    width: 40px;
-    margin-left: auto;
-    justify-content: center;
-    padding: 0;
-    height: 40px;
-  }
-  .wb-command span,
-  .wb-command kbd,
-  .wb-layout-actions {
-    display: none;
-  }
-  .wb-rail {
-    width: 43px;
-    flex-shrink: 0;
-  }
-  .wb-explorer {
-    position: absolute;
-    left: 43px;
-    top: 0;
-    bottom: 0;
-    z-index: 20;
-    width: min(255px, calc(100% - 43px));
-    box-shadow: 12px 0 25px var(--shadow);
-  }
-  .wb-explorer-open {
-    min-height: 40px;
-  }
-  .wb-tree-toggle,
-  .wb-tree-select,
-  .wb-tree-root {
-    min-height: 40px;
-  }
-  .wb-tree-toggle {
-    width: 40px;
-  }
-  .wb-explorer-trigger > .wb-icon {
-    width: 40px;
-    height: 40px;
-  }
-  .wb-tabs {
-    height: 44px;
-  }
-  .wb-tab-close {
-    width: 40px;
-  }
-  .wb-view-toolbar {
-    height: 49px;
-    padding: 0 8px;
-    gap: 4px;
-  }
-  .wb-mode {
-    padding: 0;
-  }
-  .wb-mode button {
-    height: 40px;
-    padding: 0 8px;
-  }
-  .wb-breadcrumb {
-    font-size: 9px;
-    max-width: 115px;
-  }
-  .wb-session-status {
-    font-size: 9px;
-    gap: 8px;
-  }
-  .wb-native-toolbar {
-    height: 49px;
-    padding: 0 8px;
-    gap: 4px;
-  }
-  .wb-panel {
-    font-size: 10px;
-    padding: 0 12px 8px;
-  }
-  .wb-palette > div > button {
-    min-height: 44px;
-  }
-  .wb-status {
-    font-size: 8px;
-  }
-}
-
 .wb-horizontal-panels,
 .wb-vertical-panels {
   flex: 1;
@@ -979,73 +881,174 @@ above the choices. */
   border-radius: 4px;
 }
 
-/* One query owner sets data-compact on the shell and its navigation portal. */
+/* Phones and small landscape screens (one query sets data-compact): files
+   and projects are a screen of their own, and an open file fills the screen
+   with floating controls. */
 .wb-app[data-compact="true"] {
   display: flex;
   flex-direction: column;
+  position: relative;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .wb-app[data-compact="true"] > .wb-body { flex: 1; min-height: 0; }
 .wb-app[data-compact="true"] :is(.wb-rail, .wb-tabs, .wb-status) { display: none; }
-.wb-app[data-compact="true"] :is(.wb-view-toolbar, .wb-native-toolbar),
+.wb-app[data-compact="true"] .wb-icon { width: 40px; height: 40px; flex-shrink: 0; }
 .wb-compact-empty-toolbar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  height: 52px;
-  padding: 0 6px;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
+  gap: 8px;
+  padding: 12px 14px;
 }
-.wb-app[data-compact="true"] .wb-icon,
-.wb-navigation-sheet .wb-icon {
+.wb-compact-filename { display: none; }
+/* The open file: Back at the top left; the view switch, File actions and
+   Save (only with unsaved edits) at the top right, floating over it. */
+.wb-app[data-compact="true"] :is(.wb-session, .wb-native-view) { position: relative; }
+.wb-app[data-compact="true"] .wb-session { padding-top: 64px; }
+.wb-app[data-compact="true"] [data-compact-toolbar] {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  pointer-events: none;
+}
+.wb-app[data-compact="true"] [data-compact-toolbar] > * { pointer-events: auto; }
+.wb-app[data-compact="true"] [data-compact-toolbar] > [data-compact-nav] { margin-right: auto; }
+.wb-app[data-compact="true"] [data-compact-toolbar] > [role="group"] { margin-right: 0; }
+.wb-app[data-compact="true"] :is([data-compact-toolbar], .wb-compact-empty-toolbar) > :is(.wb-icon, .wb-mode) {
+  position: relative;
+  height: 40px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.wb-app[data-compact="true"] :is([data-compact-toolbar], .wb-compact-empty-toolbar) > .wb-icon {
+  width: 40px;
+  border-radius: 20px;
+}
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border-radius: 20px;
+}
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode button[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--text);
+}
+/* Save (shown only with unsaved edits) is a round save icon with a dot, at the far right. */
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save {
+  order: 1;
+  position: relative;
+  justify-content: center;
   width: 40px;
   height: 40px;
-  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 6px 18px var(--shadow);
+  gap: 0;
+  font-size: 0;
 }
-.wb-compact-filename {
-  min-width: 0;
-  flex: 1;
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save::before {
+  content: "";
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'/%3E%3Cpath d='M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7'/%3E%3Cpath d='M7 3v4a1 1 0 0 0 1 1h7'/%3E%3C/svg%3E") center / 20px no-repeat;
+}
+.wb-app[data-compact="true"] [data-compact-toolbar] > .wb-save::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+/* The saved state stays as a live region for screen readers only. */
+.wb-app[data-compact="true"] :is(.wb-session-status, .wb-native-view > [aria-live]) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip-path: inset(50%);
   white-space: nowrap;
-  font-size: 12px;
+  border: 0;
 }
-.wb-app[data-compact="true"] .wb-mode { padding: 0; margin: 0; }
-.wb-app[data-compact="true"] .wb-mode button { min-width: 40px; height: 40px; padding: 0 7px; font-size: 11px; }
-.wb-app[data-compact="true"] .wb-session-status { padding: 2px 10px; min-height: 22px; font-size: 11px; }
-.wb-app[data-compact="true"] :is([aria-label="cursor position"], .wb-native-detail) { display: none; }
-.wb-app[data-compact="true"] .wb-native-view > [aria-live] { flex-shrink: 0; min-height: 22px; padding: 2px 10px; font-size: 11px; }
-.wb-navigation-backdrop { position: fixed; inset: 0; z-index: 8999; background: color-mix(in srgb, var(--chrome) 65%, transparent); transition: opacity 150ms ease; }
-.wb-navigation-backdrop[data-starting-style],
-.wb-navigation-backdrop[data-ending-style] { opacity: 0; }
-.wb-navigation-sheet {
-  position: fixed;
-  z-index: 9000;
-  top: var(--sheet-top, 0px);
-  left: 0;
-  width: min(100%, 480px);
-  height: var(--sheet-height, 100dvh);
-  max-height: 100dvh;
+/* Code starts below the floating controls, a canvas fills the screen, and a
+   banner above a canvas sits below the controls. */
+.wb-app[data-compact="true"] .wb-native-stage:not(:has(.excalidraw)) { padding-top: 64px; }
+.wb-app[data-compact="true"] .wb-native-view > [aria-live] + :not(.wb-native-stage) { margin-top: 64px; }
+/* Excalidraw's own toolbar sits below the floating controls. */
+.wb-app[data-compact="true"] .excalidraw .App-top-bar { transform: translateY(56px); }
+/* The files screen: the project, the files and the account, stacked. */
+.wb-files-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
   display: flex;
   flex-direction: column;
-  background: var(--chrome);
-  color: var(--text);
-  font-family: var(--ui-font);
-  border-right: 1px solid var(--line);
-  box-shadow: 12px 0 35px var(--shadow);
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  transition: transform 200ms ease-in-out, opacity 200ms ease-in-out;
+  gap: 10px;
+  padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background-color: var(--chrome);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
 }
-/* Base UI emits data-starting-style on entry and data-ending-style on exit;
-   the sheet slides in from the left edge. Motion utilities on the Sheet
-   component carry the same offsets; these token rules are the fallback that
-   survives class overrides. */
-.wb-navigation-sheet[data-starting-style],
-.wb-navigation-sheet[data-ending-style] {
-  transform: translateX(-2.5rem);
-  opacity: 0;
-}
+.wb-files-screen .wb-float { box-shadow: none; }
+.wb-files-screen .wb-project-panel { min-height: 48px; padding: 8px 52px 8px 14px; }
+.wb-files-screen .wb-project-panel h1 { font-size: 17px; }
+.wb-files-screen .wb-project-panel > .wb-icon { top: 3px; right: 4px; width: 40px; height: 40px; }
+.wb-files-screen .wb-files-panel { flex: 1 0 auto; min-height: 240px; display: flex; flex-direction: column; }
+.wb-files-screen .wb-explorer { height: auto; flex: 1; overflow: visible; scrollbar-gutter: auto; }
+.wb-files-screen .wb-files-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 10px 4px; }
+.wb-files-screen .wb-files-actions .wb-button { justify-content: center; width: 100%; height: 40px; border-radius: 10px; font-size: 15px; font-weight: 600; }
+.wb-files-screen .wb-tree { padding: 4px 10px 10px; }
+.wb-files-screen .wb-explorer :is(.wb-explorer-open, .wb-tree-select, .wb-tree-root) { min-height: 40px; font-size: 15px; }
+.wb-files-screen .wb-explorer-open { padding-left: 33px; text-indent: -25px; }
+.wb-files-screen .wb-kind { width: 18px; font-size: 12px; }
+.wb-files-screen .wb-explorer :is(.wb-tree-toggle, .wb-icon) { width: 40px; height: 40px; min-height: 40px; }
+.wb-files-screen .wb-account-panel { flex-shrink: 0; font-size: 15px; }
+.wb-files-screen .wb-account-links { flex-wrap: wrap; row-gap: 4px; }
+.wb-files-screen .wb-account-links :is(a, .wb-link-button) { display: inline-flex; align-items: center; min-height: 40px; }
+.wb-files-screen .wb-account-links > .wb-icon { width: 40px; height: 40px; }
+.wb-files-screen .wb-avatar { width: 36px; height: 36px; }
+.wb-files-screen .wb-account-profile .wb-link-button { min-height: 40px; }
+.wb-files-screen :is(button, select, summary, input:not([type="file"])) { min-height: 40px; }
+.wb-navigation-tabs { padding: 4px 10px; }
+.wb-navigation-tabs h2 { padding: 6px 8px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.wb-navigation-tab { display: flex; align-items: center; border-radius: 9px; list-style: none; }
+.wb-navigation-tab > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; padding: 8px; font-size: 15px; }
+.wb-navigation-tab > button:first-child > span:first-child { overflow-wrap: anywhere; }
+.wb-navigation-tab:has([aria-current]) { background: var(--selection); }
+.wb-navigation-tab > [data-sidebar="menu-action"] { position: relative; top: auto; right: auto; flex-shrink: 0; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+.wb-navigation-diagnostics { flex-shrink: 0; padding: 8px 12px; font-size: 12px; overflow-wrap: anywhere; }
 .wb-palette {
   transition: opacity 100ms ease, transform 100ms ease;
 }
@@ -1055,50 +1058,15 @@ above the choices. */
   transform: translateX(-50%) translateY(4px);
 }
 @media (prefers-reduced-motion: reduce) {
-  .wb-navigation-sheet,
-  .wb-navigation-backdrop,
   .wb-palette {
     transition: none;
   }
-  .wb-navigation-sheet[data-starting-style],
-  .wb-navigation-sheet[data-ending-style],
   .wb-palette[data-starting-style],
   .wb-palette[data-ending-style] {
     transform: none;
     opacity: 1;
   }
 }
-.wb-navigation-heading { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 4px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-.wb-navigation-heading h2 { font-size: 16px; font-weight: 600; margin: 0; }
-.wb-navigation-scroll { overflow: auto; overscroll-behavior: contain; min-height: 0; flex: 1; padding-bottom: 12px; }
-.wb-navigation-sheet :is(button, select, summary, input:not([type="file"])) { min-height: 40px; }
-.wb-navigation-sheet button:where(:not([data-slot="button"])) { cursor: pointer; font: inherit; }
-.wb-navigation-sheet :focus-visible:where(:not([data-slot="button"])) { outline: 2px solid var(--accent); outline-offset: -2px; }
-.wb-navigation-sheet .wb-explorer { position: static; width: 100%; height: auto; border-right: 0; box-shadow: none; overflow: visible; }
-.wb-navigation-sheet .wb-explorer-title { position: static; }
-.wb-navigation-sheet .wb-tree-toggle { width: 40px; }
-.wb-navigation-sheet .wb-explorer-trigger > .wb-icon { width: 40px; height: 40px; }
-.wb-navigation-tabs { padding: 12px 8px; border-bottom: 1px solid var(--line); }
-.wb-navigation-tabs h3 { padding: 0 8px 8px; font-size: 13px; color: var(--muted); }
-.wb-navigation-tab { display: flex; align-items: center; border-radius: 5px; list-style: none; }
-.wb-navigation-tab > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; padding: 8px; font-size: 13px; }
-.wb-navigation-tab > button:first-child > span:first-child { overflow-wrap: anywhere; }
-.wb-navigation-tab:has([aria-current]) { background: var(--selection); }
-.wb-navigation-tools { padding: 8px; border-top: 1px solid var(--line); }
-.wb-navigation-tools .wb-titlebar { padding: 4px 0; gap: 8px; flex-wrap: wrap; border: 0; }
-.wb-navigation-tools :is(.wb-brand, .wb-layout-actions) { display: none; }
-.wb-navigation-tools .wb-command { position: static; transform: none; width: 40px; height: 40px; margin: 0; padding: 0; justify-content: center; }
-.wb-navigation-tools .wb-command :is(span, kbd) { display: none; }
-.wb-navigation-tools .wb-titlebar select { height: 40px; max-width: 140px; font-size: 13px; }
-.wb-navigation-tools > .ph-btn { display: inline-flex; align-items: center; gap: 6px; margin: 4px; }
-.wb-navigation-diagnostics { padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
-.wb-navigation-sheet .ph-header { padding: 10px; }
-.wb-navigation-sheet .ph-bar { flex-basis: 100%; }
-.wb-navigation-sheet :is(.ph-note, .ps-status) { white-space: normal; max-width: 100%; }
-.wb-navigation-sheet .ps-select { height: 40px; font-size: 13px; max-width: 260px; }
-.ph-compact-recovery { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; max-height: 30dvh; overflow: auto; flex-shrink: 0; border-bottom: 1px solid var(--line); font-size: 12px; }
-.ph-compact-recovery > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.ph-compact-recovery .ph-btn { min-height: 40px; }
 
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */

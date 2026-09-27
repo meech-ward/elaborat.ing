@@ -30,7 +30,7 @@ async function openProject(page: Page, files: Record<string, string>, folders: s
   for (const [file, content] of Object.entries(files)) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: file, content }])
   await signedIn(page)
   await page.goto(projectUrl(id, path))
-  if (phone) await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
+  if (phone) await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }
@@ -297,7 +297,7 @@ test.describe("on a phone", () => {
 
   test("the move dialog fits, and axe finds nothing in it", async ({ page }) => {
     await openProject(page, { "notes/a.md": "# A\n", "index.md": "[a](notes/a.md)\n" }, ["archive"], undefined, true)
-    await page.getByRole("button", { name: "Navigation" }).first().click()
+    await page.getByRole("button", { name: "Back to files and projects" }).click()
     await fileAction(page, "notes/a.md", "Move to folder")
     const dialog = page.getByRole("dialog", { name: "Move to folder" })
     await dialog.getByLabel("Destination folder").selectOption("archive")

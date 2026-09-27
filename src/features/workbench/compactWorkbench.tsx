@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 export const compactWorkbenchQuery = "(max-width: 650px), (pointer: coarse) and (max-width: 950px) and (max-height: 500px)";
 
@@ -36,26 +36,4 @@ export function useWorkbenchOnline() {
 export function CompactFileIdentity({ navigation, path }: { navigation?: ReactNode; path: string }) {
   if (!navigation) return null;
   return <>{navigation}<span className="wb-compact-filename" title={path} aria-label={path}>{path.split("/").pop()}</span></>;
-}
-
-// The keyboard can shrink/pan the visual viewport without changing layout
-// viewport units. Keep the sheet header and its scroll area inside that space.
-export function useSheetViewport(open: boolean) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const viewport = window.visualViewport;
-    const update = () => {
-      ref.current?.style.setProperty("--sheet-height", `${viewport?.height ?? window.innerHeight}px`);
-      ref.current?.style.setProperty("--sheet-top", `${viewport?.offsetTop ?? 0}px`);
-    };
-    update();
-    viewport?.addEventListener("resize", update);
-    viewport?.addEventListener("scroll", update);
-    return () => {
-      viewport?.removeEventListener("resize", update);
-      viewport?.removeEventListener("scroll", update);
-    };
-  }, [open]);
-  return ref;
 }

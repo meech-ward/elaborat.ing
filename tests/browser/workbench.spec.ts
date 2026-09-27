@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -20,8 +21,8 @@ async function openProject(page: Page, files: Record<string, string>, path?: str
   await signedIn(page)
   await page.goto(projectUrl(id, path))
   // Opening downloads and syncs first, which takes longer on a cold start.
-  // On a phone the project header (and its status) is in the navigation sheet.
-  if (phone) await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
+  // On a phone the open file fills the screen; its Back button leads to the files screen.
+  if (phone) await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }
@@ -304,17 +305,46 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test("files open from the navigation sheet, and nothing scrolls sideways", async ({ page }) => {
+  test("files open from the files screen, and nothing scrolls sideways", async ({ page }) => {
     await openProject(page, { "notes/a.md": "# First\n", "notes/b.md": "# On a phone\n" }, undefined, true)
-    await page.getByRole("button", { name: "Navigation" }).first().click()
-    const sheet = page.getByRole("dialog", { name: "Navigation" })
-    await expect(sheet).toBeVisible()
-    await expect(sheet.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
-    const expand = sheet.getByRole("button", { name: "Expand notes", exact: true })
+    await page.getByRole("button", { name: "Back to files and projects" }).click()
+    const screen = page.getByRole("region", { name: "Files and projects" })
+    await expect(screen).toBeVisible()
+    await expect(screen.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
+    const expand = screen.getByRole("button", { name: "Expand notes", exact: true })
     if (await expand.count()) await expand.click()
-    await sheet.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "notes/b.md", exact: true }).click()
-    await expect(sheet).toBeHidden()
+    await screen.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "notes/b.md", exact: true }).click()
+    await expect(screen).toBeHidden()
     await expect(editorText(page)).toContainText("# On a phone")
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+  })
+
+  test("Save shows only with unsaved edits and saves, and Back keeps the file open", async ({ page }) => {
+    const { fake, id } = await openProject(page, { "a.md": "# Title\n" }, "a.md", true)
+    const save = page.getByRole("button", { name: "Save", exact: true })
+    await expect(save).toHaveCount(0)
+    await typeAtEnd(page, "Typed on a phone.")
+    await save.click()
+    await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\nTyped on a phone.")
+    await expect(save).toHaveCount(0)
+
+    await page.getByRole("button", { name: "Rendered" }).click()
+    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true")
+    await page.getByRole("button", { name: "Source" }).click()
+    await expect(editorText(page)).toContainText("Typed on a phone.")
+
+    await page.getByRole("button", { name: "Back to files and projects" }).click()
+    const screen = page.getByRole("region", { name: "Files and projects" })
+    const open = screen.getByRole("region", { name: "Open files" }).getByRole("button", { name: "a.md", exact: true })
+    await expect(open).toBeVisible()
+    // Axe finds nothing on the files screen, in light and in dark.
+    for (let scheme = 0; scheme < 2; scheme++) {
+      const results = await new AxeBuilder({ page }).include(".wb-files-screen").analyze()
+      expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
+      await screen.getByRole("button", { name: /^Switch to (dark|light) mode$/ }).click()
+    }
+    await open.click()
+    await expect(screen).toBeHidden()
+    await expect(editorText(page)).toContainText("Typed on a phone.")
   })
 })

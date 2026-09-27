@@ -48,8 +48,8 @@ async function openProject(page: Page, files: Record<string, string>, path: stri
   await remote.saveFiles(id, crypto.randomUUID(), Object.entries(files).map(([file, content]) => ({ op: "put" as const, path: file, content })))
   await signedIn(page)
   await page.goto(projectUrl(id, path))
-  // On a phone the project header (and its status) is in the navigation sheet.
-  if (phone) await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
+  // On a phone the open file fills the screen; its Back button leads to the files screen.
+  if (phone) await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }

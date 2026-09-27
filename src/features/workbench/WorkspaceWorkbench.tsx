@@ -20,13 +20,6 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTabReorder } from "./useTabReorder";
 import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetDescription,
-  SheetClose,
-} from "@/components/ui/sheet";
-import {
   SidebarProvider,
   Sidebar,
   SidebarContent,
@@ -46,13 +39,13 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import {
+  ChevronLeft,
   Diamond,
   Maximize2,
   Minimize2,
   Plus,
   Search,
   PanelLeft,
-  PanelBottom,
   Sun,
   X,
   FolderPlus,
@@ -65,7 +58,7 @@ import {
 import { useAppearance } from "@/features/appearance";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { Link } from "@tanstack/react-router";
-import { AccountMenu, signOut, useAuth } from "@/features/auth";
+import { signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
@@ -75,7 +68,7 @@ import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { ActionMenu } from "./WorkbenchChrome";
 import { TablineSlotProvider } from "./tabline";
-import { useCompactWorkbench, useSheetViewport } from "./compactWorkbench";
+import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
 import { SignUpTo } from "@/features/projects/LocalProject";
@@ -131,7 +124,8 @@ import "./sidePanels.css";
  * command palette. On a desktop it sits in floating panels on a dotted
  * background: the project (`projectHeader`), the files and the account with
  * the sync state (`syncStatus`) down the side, and the editor. On a phone the
- * same controls are in the navigation sheet.
+ * same panels are a files screen of their own, and an open file fills the
+ * screen with a floating Back button that returns to it.
  */
 export function WorkspaceWorkbench({
   client,
@@ -191,11 +185,10 @@ export function WorkspaceWorkbench({
   const [listError, setListError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const narrow = useCompactWorkbench();
-  // The side panels start open on a desktop; on a phone they are a sheet, closed.
+  // The side panels start open on a desktop; on a phone `sidebar` is the files
+  // screen, which shows over the open file until a file is opened.
   const [sidebar, setSidebar] = useState(() => !narrow);
   const [panel, setPanel] = useState(false);
-  const navigationButton = useRef<HTMLButtonElement>(null);
-  const sheetClose = useRef<HTMLButtonElement>(null);
   // Element that opened the command palette; Escape/focus return goes here.
   const paletteInvoker = useRef<HTMLElement | null>(null);
   const workbenchMenuButton = useRef<HTMLButtonElement>(null);
@@ -204,7 +197,6 @@ export function WorkspaceWorkbench({
     setPaletteFiles(false);
     setPalette(true);
   };
-  const sheetViewport = useSheetViewport(narrow && sidebar);
   const explorerPanel = usePanelRef();
   const bottomPanel = usePanelRef();
   const [explorerWidth, setExplorerWidth] = useState(264);
@@ -874,6 +866,7 @@ export function WorkspaceWorkbench({
       <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
       <button onClick={() => afterMenu(openSettings)}>Settings</button>
       <button onClick={() => afterMenu(openSettings)}>Reading preferences</button>
+      {narrow && <button onClick={() => setPanel((v) => !v)}>Diagnostics</button>}
     </ActionMenu>
   );
   const importInput = (
@@ -889,45 +882,6 @@ export function WorkspaceWorkbench({
         if (file) void importFile(file);
       }}
     />
-  );
-  const workbenchControls = (
-      <header className="wb-titlebar">
-        <span className="wb-brand">
-          <Diamond size={19} /> elaborat.ing
-        </span>
-        {/* On a phone the navigation sheet shows the project header at its top instead. */}
-        {!narrow && projectHeader}
-        <button
-          className="wb-command"
-          aria-label="Open workspace commands"
-          onClick={(e) => openPalette(e.currentTarget)}
-        >
-          <Search size={14} />
-          <span>Workspace</span>
-          <kbd>⌘ K</kbd>
-        </button>
-        <div className="wb-layout-actions">
-          <button
-            className="wb-icon"
-            aria-label="Toggle explorer"
-            aria-pressed={sidebar}
-            onClick={() => setSidebar(!sidebar)}
-          >
-            <PanelLeft size={17} />
-          </button>
-          <button
-            className="wb-icon"
-            aria-label="Toggle bottom panel"
-            aria-pressed={panel}
-            onClick={() => setPanel(!panel)}
-          >
-            <PanelBottom size={17} />
-          </button>
-        </div>
-        {workbenchMenu}
-        <AccountMenu />
-        {importInput}
-      </header>
   );
   const newFileMenu = (
     <ActionMenu label="New file" trigger={<><Plus size={15} /> New file</>} triggerClassName="wb-button wb-button-primary" align="start" finalFocus={() => {
@@ -967,11 +921,14 @@ export function WorkspaceWorkbench({
       )}
     </section>
   );
-  const navigation = narrow ? <button type="button" ref={navigationButton} className="wb-icon" data-compact-nav="" aria-label="Navigation" aria-haspopup="dialog" aria-expanded={sidebar} onClick={() => setSidebar(true)}><PanelLeft size={20} /></button> : null;
+  // On a phone: the open file's floating Back button, and the files screen,
+  // which shows when it is asked for or when no file is open.
+  const navigation = narrow ? <button type="button" className="wb-icon" data-compact-nav="" aria-label="Back to files and projects" onClick={() => setSidebar(true)}><ChevronLeft size={20} /></button> : null;
+  const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
     <div className="wb-app" data-compact={narrow} data-focus={focus && !narrow} ref={shell}>
-      <div className="wb-body">
+      <div className="wb-body" inert={filesScreen}>
         <ResizablePanelGroup
           orientation="horizontal"
           className="wb-horizontal-panels"
@@ -1033,7 +990,7 @@ export function WorkspaceWorkbench({
             className="wb-main-panel"
           >
             <main className="wb-main">
-              {narrow && (!state.tabs.length || navigationOutsideSession) && <div className="wb-compact-empty-toolbar">{navigation}<span>Workspace</span></div>}
+              {narrow && navigationOutsideSession && <div className="wb-compact-empty-toolbar">{navigation}</div>}
               {/* Close buttons are sibling commands, not tabs. Explicit ownership
               groups only the file tabs without changing the mixed-control strip.
               Sessions stay mounted below inside TabsContent keepMounted panels. */}
@@ -1263,49 +1220,55 @@ export function WorkspaceWorkbench({
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
-      <Sheet open={narrow && sidebar} onOpenChange={setSidebar}>
-          <SheetContent ref={sheetViewport} side="left" showCloseButton={false} overlayClassName="wb-navigation-backdrop" className="wb-navigation-sheet" data-compact-sheet="" data-compact="true" initialFocus={sheetClose} finalFocus={() => { navigationButton.current?.focus({ preventScroll: true }); return false; }}>
-            <div className="wb-navigation-heading">
-              <SheetTitle>Navigation</SheetTitle>
-              <SheetClose ref={sheetClose} className="wb-icon" data-compact-sheet-close="" aria-label="Close navigation"><X size={20} /></SheetClose>
-            </div>
-            <SheetDescription className="sr-only">Open files, project files and controls.</SheetDescription>
-            <div className="wb-navigation-scroll">
-              {projectHeader}
-              {syncStatus}
-              <section aria-label="Open files" className="wb-navigation-tabs">
-                <h3>Open files</h3>
-                {state.tabs.length > 0 && (
-                <SidebarMenu>
-                {state.tabs.map((tab) => <SidebarMenuItem className="wb-navigation-tab" key={tab.path}>
-                  <SidebarMenuButton type="button" data-open-file={tab.path} isActive={tab.path === state.active} aria-current={tab.path === state.active ? "page" : undefined} onClick={() => { selectTab(tab.path); setSidebar(false); }}>
-                    <span>{tab.path}</span>{tab.dirty && <span aria-label="unsaved changes">●</span>}
-                  </SidebarMenuButton>
-                  <SidebarMenuAction type="button" aria-label={`Close ${tab.path}`} onClick={() => closeTab(tab.path)}><X size={16} /></SidebarMenuAction>
-                </SidebarMenuItem>)}
-                </SidebarMenu>
+      {filesScreen && (
+        <section className="wb-files-screen" aria-label="Files and projects">
+          <header className="wb-float wb-project-panel">
+            {projectHeader}
+            {workbenchMenu}
+            {importInput}
+          </header>
+          <div className="wb-float wb-files-panel">
+            <nav className="wb-explorer" aria-label="Workspace files">
+              <FileSearch
+                search={local ? null : searchFiles}
+                unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
+                onOpen={(path) => void openFromNavigation(path)}
+                actions={!readOnly && (
+                  <div className="wb-files-actions">
+                    {newFileMenu}
+                    <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
+                      <FolderPlus size={15} /> New folder
+                    </button>
+                  </div>
                 )}
-                {!state.tabs.length && <p>No open files.</p>}
-              </section>
-              <nav className="wb-explorer" aria-label="Workspace files">
-                <div className="wb-explorer-title">Files {!readOnly && <button className="wb-icon" aria-label="New folder" onClick={() => startCreate("folder")}><FolderPlus size={18} /></button>}</div>
+              >
+                {state.tabs.length > 0 && (
+                  <section aria-label="Open files" className="wb-navigation-tabs">
+                    <h2>Open</h2>
+                    <SidebarMenu>
+                      {state.tabs.map((tab) => <SidebarMenuItem className="wb-navigation-tab" key={tab.path}>
+                        <SidebarMenuButton type="button" data-open-file={tab.path} isActive={tab.path === state.active} aria-current={tab.path === state.active ? "page" : undefined} onClick={() => { selectTab(tab.path); setSidebar(false); }}>
+                          <span>{tab.path}</span>{tab.dirty && <span aria-label="unsaved changes">●</span>}
+                        </SidebarMenuButton>
+                        <SidebarMenuAction type="button" aria-label={`Close ${tab.path}`} onClick={() => closeTab(tab.path)}><X size={16} /></SidebarMenuAction>
+                      </SidebarMenuItem>)}
+                    </SidebarMenu>
+                  </section>
+                )}
                 {renderExplorerBody()}
-              </nav>
-              <section className="wb-navigation-tools" aria-label="Workbench controls">
-                {workbenchControls}
-                <button type="button" className="ph-btn" aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`} onClick={toggleScheme}><Sun size={18} /> {appearance.scheme === "dark" ? "Light" : "Dark"} mode</button>
-                <button type="button" className="ph-btn" aria-expanded={panel} onClick={() => setPanel(!panel)}>Diagnostics</button>
-                {panel && <section aria-label="Bottom panel" className="wb-navigation-diagnostics">
-                  <p>Project files · {files.length} files · {state.tabs.length} open</p>
-                  <p>{state.active ? `${state.active}: ${state.tabs.find(tab => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
-                  {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
-                  <p>File saves use revision checks. This panel does not execute commands.</p>
-                </section>}
-              </section>
-              {notice && <p role="status" className="wb-notice">{notice}</p>}
-            </div>
-          </SheetContent>
-      </Sheet>
+              </FileSearch>
+            </nav>
+          </div>
+          {accountPanel}
+          {panel && <section aria-label="Bottom panel" className="wb-float wb-navigation-diagnostics">
+            <p>Project files · {files.length} files · {state.tabs.length} open</p>
+            <p>{state.active ? `${state.active}: ${state.tabs.find(tab => tab.path === state.active)?.dirty ? "unsaved changes" : "saved"}` : "No active file"}</p>
+            {state.active && messages[state.active] && <p>{messages[state.active]}</p>}
+            <p>File saves use revision checks. This panel does not execute commands.</p>
+          </section>}
+          {notice && <p role="status" className="wb-notice">{notice}</p>}
+        </section>
+      )}
       <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>
         <Dialog.Portal>
           <Dialog.Backdrop className="wb-backdrop" />

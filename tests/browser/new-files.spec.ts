@@ -29,7 +29,7 @@ async function openProject(page: Page, files: Record<string, string>, folders: s
   for (const [path, content] of Object.entries(files)) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path, content }])
   await signedIn(page)
   await page.goto(projectUrl(id))
-  if (phone) await expect(page.getByRole("button", { name: "Navigation" }).first()).toBeVisible({ timeout: 15_000 })
+  if (phone) await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }
@@ -148,7 +148,7 @@ test.describe("on a phone", () => {
 
   test("a dialog asks for the new note's name, and axe finds nothing in it", async ({ page }) => {
     const { fake, id } = await openProject(page, { "a.md": "a\n" }, [], true)
-    await page.getByRole("button", { name: "Navigation" }).first().click()
+    await page.getByRole("button", { name: "Back to files and projects" }).click()
     await fromMenu(page, "New")
     const dialog = page.getByRole("dialog", { name: "New note in Workspace root" })
     await expect(dialog.getByLabel("Name")).toBeFocused()
