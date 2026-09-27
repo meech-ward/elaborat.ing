@@ -1,14 +1,21 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // A static single-page app on Cloudflare Workers static assets. There is no
-  // Worker script: every request is served from ./dist, and unknown paths fall
-  // back to index.html so client-side routes work.
+  // A single-page app on Cloudflare Workers static assets: files come from
+  // ./dist, and unknown paths fall back to index.html so client-side routes
+  // work. The small Worker (worker/index.ts) runs first only for the MCP
+  // server's paths, which it passes to the Supabase Edge Function.
   "name": "elaborating",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp"]
   },
+  // The hosted instance's MCP server. Self-hosters: your project's
+  // https://<ref>.supabase.co/functions/v1/mcp-server, or remove it.
+  "vars": { "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server" },
   // The hosted instance's domain. Self-hosters: change or remove this route.
   "routes": [{ "pattern": "elaborat.ing", "custom_domain": true }]
 }

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "bun test src vite-plugins",
+    "test": "bun test src vite-plugins worker",
     "build:harness": "vite build --config tests/browser/harness/vite.config.ts",
     "build:browser-test": "vite build --mode browser-test",
     "build:next-version": "vite build --mode browser-test --config tests/browser/next-version/vite.config.ts",
