@@ -160,7 +160,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
         {error ? (
-          <p role="alert" className="text-danger">
+          <p role="alert" className="text-destructive">
             {error}
           </p>
         ) : null}

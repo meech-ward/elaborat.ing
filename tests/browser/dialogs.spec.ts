@@ -22,7 +22,9 @@ async function openProject(page: Page, files: Record<string, string>, phone: boo
     await page.getByRole("button", { name: "Navigation" }).first().click()
   } else {
     await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
-    await page.getByRole("button", { name: "Toggle explorer" }).click()
+    // A desktop opens with the explorer shown.
+    const toggle = page.getByRole("button", { name: "Toggle explorer" })
+    if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
   }
   const explorer = page.getByRole("navigation", { name: "Workspace files" }).first()
   await explorer.getByRole("button", { name: "Expand notes", exact: true }).click()
@@ -55,7 +57,7 @@ for (const { width, phone } of [
       // The field, Cancel and Rename: Tab and Shift+Tab go round them and never leave.
       for (const key of ["Tab", "Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {
         await page.keyboard.press(key)
-        expect(await holdsFocus(dialog)).toBe(true)
+        await expect.poll(() => holdsFocus(dialog)).toBe(true)
       }
       await page.keyboard.press("Escape")
       await expect(dialog).toBeHidden()

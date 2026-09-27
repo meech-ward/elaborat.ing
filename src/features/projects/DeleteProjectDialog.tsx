@@ -69,7 +69,7 @@ export function DeleteProjectDialog({ title, unsynced, onDelete, onClose }: {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-destructive">
               {error}
             </p>
           ) : null}

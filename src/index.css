@@ -32,12 +32,7 @@
   --color-sidebar-accent-foreground: var(--text);
   --color-sidebar-ring: var(--focus);
   --color-danger: var(--danger);
-}
-:root {
-  --color-destructive: #f0837f;
-}
-:root[data-scheme="light"] {
-  --color-destructive: #b3352b;
+  --color-destructive: var(--danger);
 }
 
 /* Every page follows the chosen appearance. */
