@@ -32,9 +32,6 @@ export function LocalProjectHeader({ error }: { error: string | null }) {
         <li>
           <SignUpTo>Sign up to comment</SignUpTo>
         </li>
-        <li>
-          <SignUpTo>Sign up to search</SignUpTo>
-        </li>
       </ul>
       {error ? (
         <p role="alert" className="text-destructive">
