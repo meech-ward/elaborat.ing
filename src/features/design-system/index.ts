@@ -18,6 +18,13 @@ export { DirtyDot, StatusDot, type SaveStatus } from "./ui/StatusDot"
 // --- end Controls ---
 
 // --- Navigation (guide/NavigationSection.tsx) ---
+export { IconRow, PersonRow, initialFor } from "./ui/AccountRows"
+export { FloatingPanel, floatingPanelVariants, type FloatingPanelProps } from "./ui/FloatingPanel"
+export { KindBadge, kindBadgeVariants, type FileKind } from "./ui/KindBadge"
+export { PanelRow, panelRowVariants, type PanelRowProps, type PanelRowSize } from "./ui/PanelRow"
+export { ProjectHeader } from "./ui/ProjectHeader"
+export { SearchField, type SearchFieldProps } from "./ui/SearchField"
+export { TreeFileRow, TreeFolderRow, TreeRowMenu } from "./ui/TreeRows"
 // --- end Navigation ---
 
 // --- Editor chrome (guide/EditorChromeSection.tsx) ---
