@@ -642,8 +642,9 @@ found when a page loads).
 
 ## Manual steps
 
-Settings with no file-based home yet. Each is a one-time step, to be written up
-in the self-host guide (phase 3), until the platform supports it as code.
+Settings with no file-based home yet. Each is a one-time step until the
+platform supports it as code; the [self-host guide](self-host.md) walks through
+the ones a new copy needs.
 (SMTP and SMS providers are not on this list: they go in `config.toml`, with
 secrets supplied through `env()` from GitHub secrets.)
 

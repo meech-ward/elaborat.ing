@@ -8,8 +8,8 @@ work with.
 - Draw on native Excalidraw canvases, and write diagrams as D2 code.
 - Connect Claude, ChatGPT or any MCP client to your account, and work on the
   same documents together.
-- Run your own copy on a free Supabase project, or use the hosted one at
-  https://elaborat.ing.
+- Run your own copy on a free Supabase project ([self-host guide](docs/self-host.md)),
+  or use the hosted one at https://elaborat.ing.
 
 **Status:** early and being built in public. You can try it at
 https://elaborat.ing, without an account (your work stays in that browser) or
@@ -33,6 +33,7 @@ organize your projects' files, search them, and show a file in the chat.
 - [Product](docs/product.md): what it does and who it is for
 - [Architecture](docs/architecture.md): how it fits together, and the decisions behind it
 - [Roadmap](docs/roadmap.md)
+- [Self-host guide](docs/self-host.md): from a new free Supabase project to a running copy
 - [Platform notes](docs/platform-notes.md): Supabase and Cloudflare details we rely on
 
 ## Develop

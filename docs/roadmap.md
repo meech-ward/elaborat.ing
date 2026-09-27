@@ -162,7 +162,9 @@ Also done in this phase: the comment anchoring library (see the task below).
 - **Connected agents page** to see and revoke agent access (done: `/agents`,
   linked from the account header and menu; it lists grants once the OAuth
   server is on).
-- **Self-host guide:** from a new free Supabase project to a running copy.
+- **Self-host guide:** from a new free Supabase project to a running copy
+  (done: [self-host.md](self-host.md); its database, functions, app, sign-in
+  and agent steps were checked on a local Supabase stack).
 - **Hosted launch** at https://elaborat.ing on a paid Supabase plan, so the
   project never pauses.
 
