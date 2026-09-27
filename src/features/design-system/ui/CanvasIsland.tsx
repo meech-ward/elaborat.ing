@@ -64,14 +64,16 @@ export function CanvasIsland({
  * A tool button's look: 34 square with radius 8 and a 16px icon on desktop,
  * 40 with radius 9 and a 20px icon on touch screens; toolInk, and the
  * pressed tool (or an open More tools menu's current tool, data-active) on
- * toolOn with toolOnInk.
+ * toolOn with toolOnInk. The desktop size is 40 square on touch screens
+ * too, like every Button, so the island's tools and its More tools and zoom
+ * buttons stay one size.
  */
 export const toolButtonVariants = cva(
   "inline-flex min-w-0 shrink-0 items-center justify-center bg-transparent p-0 font-normal text-tool-ink hover:bg-seg hover:text-tool-ink aria-pressed:bg-tool-on aria-pressed:text-tool-on-ink data-[active=true]:bg-tool-on data-[active=true]:text-tool-on-ink",
   {
     variants: {
       size: {
-        default: "size-[34px] rounded-[8px] [&_svg:not([class*='size-'])]:size-4",
+        default: "size-[34px] rounded-[8px] pointer-coarse:size-10 [&_svg:not([class*='size-'])]:size-4",
         touch: "size-10 rounded-button [&_svg:not([class*='size-'])]:size-5",
       },
     },
