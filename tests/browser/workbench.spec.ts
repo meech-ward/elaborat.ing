@@ -288,14 +288,15 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   await page.getByRole("button", { name: "Source", exact: true }).click()
   await expect(page.locator(".monaco-editor:visible")).toBeVisible()
 
+  // No Enter after a name: the suggestions it opens could take the key.
+  await typeInTab(page, "flow.d2", "y -> z")
   await typeInTab(page, "a.md", "note")
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("a\nnote")
-  // The diagram, which has unsaved generated files, was not saved instead.
-  expect(serverContent(fake, id, "flow.excalidraw")).toBeUndefined()
+  // The diagram, which has an unsaved code edit, was not saved instead.
+  expect(serverContent(fake, id, "flow.d2")).toBe("x -> y\n")
 
-  // No Enter after a name: the suggestions it opens could take the key.
-  await typeInTab(page, "flow.d2", "y -> z")
+  await typeInTab(page, "flow.d2", "")
   await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tabpanel", { name: "flow.d2" }).getByText("Saved flow.d2 and its generated files.")).toBeVisible()
   await expect.poll(() => serverContent(fake, id, "flow.d2")).toBe("x -> y\ny -> z")

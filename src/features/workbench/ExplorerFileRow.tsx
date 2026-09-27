@@ -163,6 +163,7 @@ export function ExplorerFileRow({
                 ●
               </span>
             )}
+            {dirty && !draft && <span aria-hidden="true" className="wb-tab-dirty wb-explorer-dirty" />}
           </button>
           {/* For users who cannot open a context menu: the same actions
           through an ordinary menu button. */}
