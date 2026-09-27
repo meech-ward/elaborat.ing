@@ -1498,3 +1498,14 @@ above the choices. */
   font-size: 13px !important;
   color: var(--tool-ink);
 }
+/* The top line keeps room for tabs: a saved file and the cursor position say
+   nothing there (Save shows while there are edits), so they are read out but
+   not shown. */
+.wb-tabline-actions .wb-session-status :is([data-state="saved"], [aria-label="cursor position"]) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -39,6 +39,8 @@ export function TabStrip({
   const activeRef = useRef(active);
   // Tabs not wholly in view, in tab order, and the empty width after the
   // last tab in view (where a clipped tab is), which "+N" moves over.
+  // The tab picked from "+N", which gets focus when the menu closes.
+  const picked = useRef<string | null>(null);
   const [strip, setStrip] = useState<{ clipped: readonly string[]; gap: number }>({ clipped: [], gap: 0 });
   const { clipped, gap } = strip;
 
@@ -172,9 +174,23 @@ export function TabStrip({
           >
             +{hidden.length}
           </MenuTrigger>
-          <MenuContent className="wb-tabs-menu">
+          <MenuContent
+            className="wb-tabs-menu"
+            finalFocus={() => {
+              // After a pick, focus goes to that tab (which brings it into
+              // view), not back to a tab that had focus before.
+              const path = picked.current;
+              picked.current = null;
+              if (!path) return true;
+              const tab = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-tab-path]") ?? [])]
+                .find((node) => node.dataset.tabPath === path)
+                ?.querySelector<HTMLElement>('[role="tab"]');
+              tab?.focus();
+              return false;
+            }}
+          >
             {hidden.map((tab) => (
-              <MenuItem key={tab.path} onClick={() => onSelect(tab.path)}>
+              <MenuItem key={tab.path} onClick={() => { picked.current = tab.path; onSelect(tab.path); }}>
                 <KindBadge path={tab.path} />
                 <span className="min-w-0 truncate">{fileName(tab.path)}</span>
                 {tab.path.includes("/") && (

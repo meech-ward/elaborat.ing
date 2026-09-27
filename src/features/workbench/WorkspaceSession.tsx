@@ -667,7 +667,7 @@ export function WorkspaceSession({
           </ActionMenu>
         </div>
         <div className="wb-session-status" aria-live="polite">
-          <span>
+          <span data-state={renderedPending ? "pending" : overallDirty ? "unsaved" : "saved"}>
             {renderedPending
               ? "Finishing edit…"
               : overallDirty
