@@ -1,0 +1,28 @@
+/* Excalidraw's own controls that the canvas controls (CanvasControls.tsx)
+   replace: its toolbar and hint, main menu, library button, help, zoom and
+   undo and redo. They stay in the page, hidden (More tools clicks its undo
+   and redo); its selection properties stay as they are. */
+[data-slot="drawing-canvas"] .excalidraw :is(
+  .App-toolbar-container,
+  .App-top-bar,
+  .main-menu-trigger,
+  .default-sidebar-trigger,
+  .HintViewer,
+  .help-icon,
+  .zoom-actions,
+  .undo-redo-buttons,
+  [data-testid="button-undo"],
+  [data-testid="button-redo"]
+) {
+  display: none !important;
+}
+
+/* On a phone, Excalidraw's bottom bar holds the selection's style,
+   duplicate and delete: it shows while something is selected, above the
+   tool island. */
+[data-slot="drawing-canvas"]:not(:has(> [data-slot="canvas-controls"][data-selection])) .excalidraw .App-bottom-bar {
+  display: none;
+}
+[data-slot="drawing-canvas"] .excalidraw .App-bottom-bar {
+  bottom: 72px;
+}

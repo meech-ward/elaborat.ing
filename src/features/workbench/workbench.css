@@ -389,8 +389,8 @@ above the choices. */
    banner above a canvas sits below the controls. */
 .wb-app[data-compact="true"] .wb-native-stage:not(:has(.excalidraw)) { padding-top: 64px; }
 .wb-app[data-compact="true"] .wb-native-view > [aria-live] + :not(.wb-native-stage) { margin-top: 64px; }
-/* Excalidraw's own toolbar sits below the floating controls. */
-.wb-app[data-compact="true"] .excalidraw .App-top-bar { transform: translateY(56px); }
+/* A canvas's visible area (CanvasControls.tsx) starts below the floating controls. */
+.wb-app[data-compact="true"] [data-canvas-stage] { --canvas-area-top: 64px; }
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {
@@ -529,44 +529,32 @@ above the choices. */
   width: auto;
   margin: 8px 16px 0 calc(50% + 16px);
 }
-/* Excalidraw's own controls keep to the canvas area: right of the side
-   panels and below the top line (the tool island's top is 76). In focus
-   mode they use the whole window, clear of the top-right panel. */
+/* The canvas area: right of the side panels and below the top line (the
+   tool island's top is 76), or in Split right of the source. The canvas
+   controls float over it (CanvasControls.tsx) and Excalidraw's selection
+   properties keep to it. In focus mode it is the whole window, except in
+   Split, where the uncovered half is too narrow to share its top with the
+   focus panel. */
+.wb-native-view[data-canvas-bleed] > [data-canvas-stage] {
+  --canvas-area-top: 60px;
+  --canvas-area-left: var(--canvas-left, 0px);
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] > [data-canvas-stage] {
+  --canvas-area-left: var(--canvas-split, 50%);
+}
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed]:not([data-view="split"]) > [data-canvas-stage] {
+  --canvas-area-top: 0px;
+}
 .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper {
-  top: 60px;
-  left: var(--canvas-left, 0px);
-  width: calc(100% - var(--canvas-left, 0px));
-  height: calc(100% - 60px);
+  top: var(--canvas-area-top);
+  left: var(--canvas-area-left);
+  width: calc(100% - var(--canvas-area-left));
+  height: calc(100% - var(--canvas-area-top));
 }
-.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper {
-  left: var(--canvas-split, 50%);
-  width: calc(100% - var(--canvas-split, 50%));
-}
-/* In focus mode the uncovered half is too narrow to share its top with the
-   focus panel, so the controls stay below it. */
-.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper {
-  top: 60px;
-  height: calc(100% - 60px);
-}
-.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper__top-right {
-  margin-top: 0;
-}
-/* The uncovered half can be narrower than the tool island: the tools take
-   the room between the menu and the library, and wrap when they must. */
-.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-menu_top {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-gap: 8px;
-}
-.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .shapes-section > * {
-  max-width: 100%;
-}
-.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-toolbar-container {
-  grid-auto-columns: fit-content(100%);
-}
-.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-toolbar > .Stack_horizontal {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+/* In Split the selection properties start below the tool island, which
+   the uncovered half is too narrow to have beside them. */
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-menu_top__left {
+  margin-top: 58px;
 }
 .wb-native-view[data-canvas-bleed] .excalidraw .sidebar {
   top: 76px;
@@ -574,14 +562,11 @@ above the choices. */
   bottom: 16px;
   border-radius: 12px;
 }
-.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper {
-  top: 0;
-  height: 100%;
-}
-.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper__top-right {
+/* In focus mode Excalidraw's top right (its stats) keeps clear of the focus panel. */
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed]:not([data-view="split"]) .excalidraw .layer-ui__wrapper__top-right {
   margin-top: 60px;
 }
-/* The tool and zoom islands in the palette's island colours. */
+/* Excalidraw's own panels (the selection's properties) in the palette's island colours. */
 .wb-native-view[data-canvas-bleed] .excalidraw {
   --island-bg-color: var(--island);
   --shadow-island: 0 1px 4px var(--island-shadow), 0 0 0 1px var(--island-ring);
@@ -589,21 +574,4 @@ above the choices. */
   --color-surface-primary-container: var(--tool-on);
   --color-on-primary-container: var(--tool-on-ink);
   --color-surface-low: var(--island);
-  --lg-button-size: 34px;
-}
-.wb-native-view[data-canvas-bleed] .excalidraw .App-toolbar.Island {
-  border-radius: 10px;
-}
-.wb-native-view[data-canvas-bleed] .excalidraw .App-toolbar-container .ToolIcon__icon {
-  border-radius: 8px;
-}
-.wb-native-view[data-canvas-bleed] .excalidraw :is(.zoom-actions, .undo-redo-buttons) {
-  border-radius: 10px;
-  box-shadow: var(--shadow-island);
-}
-.wb-native-view[data-canvas-bleed] .excalidraw .reset-zoom-button {
-  width: 52px !important;
-  font-family: var(--code-font);
-  font-size: 13px !important;
-  color: var(--tool-ink);
 }

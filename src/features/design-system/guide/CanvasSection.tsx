@@ -49,11 +49,13 @@ const files: QuickOpenFile[] = [
 
 const allTools = Object.values(canvasTools)
 
-/** An island that works: pick a tool, or one from More tools. */
+/** An island that works: pick a tool, or one from More tools, where Keep tool active is a checkbox. */
 function LiveToolIsland({ size = "default", className }: { size?: IslandSize; className?: string }) {
   const [tool, setTool] = useState("select")
+  const [locked, setLocked] = useState(false)
   const shown = islandTools[size]
   const more = allTools.filter((candidate) => !shown.includes(candidate))
+  const lock = { label: "Keep tool active", shortcut: "Q", group: "lock", checked: locked, onSelect: () => setLocked((on) => !on) }
   return (
     <CanvasIsland size={size} className={className}>
       <ToolGroup value={tool} onValueChange={setTool} aria-label="Drawing tools">
@@ -61,7 +63,7 @@ function LiveToolIsland({ size = "default", className }: { size?: IslandSize; cl
           <ToolButton key={candidate.id} tool={candidate} />
         ))}
       </ToolGroup>
-      <MoreTools entries={toolEntries(more, setTool)} active={more.some((candidate) => candidate.id === tool)} />
+      <MoreTools entries={[...toolEntries(more, setTool), lock]} active={more.some((candidate) => candidate.id === tool)} />
     </CanvasIsland>
   )
 }
@@ -86,7 +88,7 @@ function IslandDemos() {
       <Fit>
         <LiveToolIsland />
       </Fit>
-      <GuideValue>Tools 34 square, radius 8, 16px icons; island padding 4, radius 10, island shadow and ring. Point at a tool for its name and key.</GuideValue>
+      <GuideValue>Tools 34 square, radius 8, 16px icons; island padding 4, radius 10, island shadow and ring. Point at a tool for its name and key. More tools has the rest, and a setting as a checkbox.</GuideValue>
       <GuideLabel>Tool states</GuideLabel>
       <CanvasIsland>
         <ToolGroup value="select" onValueChange={noop} aria-label="Tool states">

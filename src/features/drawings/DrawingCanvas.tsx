@@ -2,9 +2,12 @@
 //
 // The shell owns the scene, saves and revisions: it passes `scene` in and
 // persists what `onChange` returns. Native tools, labels, arrows,
-// freehand, undo/redo and zoom all come from the real component; this
-// wrapper adds only controlled-state semantics with the raw authored scene
-// as the authority:
+// freehand, undo/redo and zoom all come from the real component, driven
+// from the design system's tool and zoom islands (CanvasControls.tsx) in
+// place of its own toolbar and footer, which stay hidden. The scene fits
+// into the visible part of the canvas when it opens and when it is shown
+// again. Otherwise this wrapper adds only controlled-state semantics with
+// the raw authored scene as the authority:
 //
 // - initialData loads the scene once; later scene identities (e.g. an
 //   agent edit arriving while open) are applied via updateScene.
@@ -36,11 +39,15 @@
 
 import { Component, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { ComponentProps, ComponentType, ReactNode } from 'react';
+import { Banner, BannerAction } from '@/features/design-system';
 import { mergeLibraryUpdate, snapshotLibraryState } from './merge.ts';
 import type { LibrarySnapshot } from './merge.ts';
 import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
+import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
+import { canvasUiFrom, createCanvasUiStore, fitViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
+import './drawingCanvas.css';
 
 type NativeExcalidraw = typeof import('@excalidraw/excalidraw')['Excalidraw'];
 type NativeProps = ComponentProps<NativeExcalidraw>;
@@ -50,6 +57,7 @@ type NativeElements = Parameters<NativeOnChange>[0];
 type NativeAppState = Parameters<NativeOnChange>[1];
 type NativeFiles = Parameters<NativeOnChange>[2];
 type NativeFile = NativeFiles[string];
+type NativeTool = Exclude<NativeAppState['activeTool']['type'], 'image' | 'custom'>;
 
 /** Scene push accepted by the vendor updateScene (collaborators never synced). */
 interface NativeUpdateScene {
@@ -58,12 +66,14 @@ interface NativeUpdateScene {
   captureUpdate?: 'NEVER';
 }
 
-// The vendor's element restore, once the package has loaded.
+// The vendor's element restore and scene bounds, once the package has loaded.
 let restoreNative: typeof import('@excalidraw/excalidraw')['restoreElements'] | null = null;
+let boundsNative: typeof import('@excalidraw/excalidraw')['getCommonBounds'] | null = null;
 
 const NativeCanvas = lazy(() =>
   Promise.all([import('@excalidraw/excalidraw'), ensureGeneratedNativeFont()]).then(([mod]) => {
     restoreNative = mod.restoreElements;
+    boundsNative = mod.getCommonBounds;
     // React's own Memo wrapper is not a ComponentType statically.
     return { default: mod.Excalidraw as unknown as ComponentType<NativeProps> };
   }),
@@ -89,13 +99,9 @@ class CanvasErrorBoundary extends Component<
   render(): ReactNode {
     if (this.state.failed !== null) {
       return (
-        <div role="alert">
-          <p>Drawing canvas failed to load.</p>
-          <p>{this.state.failed}</p>
-          <button type="button" className="wb-button" onClick={() => this.setState({ failed: null })}>
-            Try again
-          </button>
-        </div>
+        <Banner tone="danger" className="m-4 w-auto" action={<BannerAction onClick={() => this.setState({ failed: null })}>Try again</BannerAction>}>
+          Drawing canvas failed to load: {this.state.failed}
+        </Banner>
       );
     }
     return this.props.children;
@@ -175,6 +181,14 @@ function presented(present: DrawingCanvasProps['present'], scene: DrawingScene):
   return present ? present(scene) : scene;
 }
 
+/** Pan and zoom the canvas, outside undo. */
+function setViewport(api: NativeAPI, view: CanvasViewport): void {
+  (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+    appState: { zoom: { value: view.zoom as NativeAppState['zoom']['value'] }, scrollX: view.scrollX, scrollY: view.scrollY },
+    captureUpdate: 'NEVER',
+  });
+}
+
 /**
  * Redraw with a new presentation of the same raw scene: only what the
  * presentation changes, and never recorded for undo.
@@ -197,8 +211,12 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, coveredLeft = 0, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, coveredLeft = 0, compact = false, onError } = props;
   const apiRef = useRef<NativeAPI | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // The canvas controls' layer, which covers the part of the canvas a person can see.
+  const areaRef = useRef<HTMLDivElement | null>(null);
+  const [ui] = useState(createCanvasUiStore);
   // Raw authored authority: the only state ever forwarded or saved.
   const rawRef = useRef<DrawingScene>(scene);
   // Last library report per load identity; null until the first event
@@ -264,10 +282,50 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     }
   }, [scene, present]);
 
+  /** The visible part of the canvas, relative to the canvas; null while it is hidden. */
+  const visibleArea = (): CanvasArea | null => {
+    const wrapper = wrapperRef.current;
+    const area = areaRef.current;
+    if (!wrapper || !area) return null;
+    const box = wrapper.getBoundingClientRect();
+    const view = area.getBoundingClientRect();
+    if (view.width === 0 || view.height === 0) return null;
+    return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
+  };
+
+  // The scene fits into the visible area when it first loads and whenever
+  // the canvas is shown again (another tab or the source was in front),
+  // once it can be measured.
+  const loadedRef = useRef(false);
+  const fitWantedRef = useRef(true);
+  const coverRef = useRef({ wanted: coveredLeft, applied: 0 });
+  const fitScene = () => {
+    const api = apiRef.current;
+    if (!api || !loadedRef.current || !fitWantedRef.current || !boundsNative) return;
+    const area = visibleArea();
+    if (!area) return;
+    fitWantedRef.current = false;
+    const elements = api.getSceneElements();
+    const view = elements.length > 0 ? fitViewport(boundsNative(elements), area) : null;
+    if (!view) return;
+    setViewport(api, view);
+    // The area already leaves out what the source covers.
+    coverRef.current.applied = coverRef.current.wanted;
+  };
+  const shownRef = useRef(props.active !== false);
+  useEffect(() => {
+    const shown = props.active !== false;
+    const wasShown = shownRef.current;
+    shownRef.current = shown;
+    if (!shown || wasShown) return;
+    fitWantedRef.current = true;
+    // After the page has placed the canvas area (its effects run after this
+    // one). Once unmounted there is no area, so the fit does nothing.
+    requestAnimationFrame(fitScene);
+  });
+
   // The cover the view's scroll allows for, applied once the first scene
   // (with its scroll to content) has loaded.
-  const loadedRef = useRef(false);
-  const coverRef = useRef({ wanted: coveredLeft, applied: 0 });
   const applyCover = () => {
     const api = apiRef.current;
     const cover = coverRef.current;
@@ -289,6 +347,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   }, []);
 
   const handleLibraryChange: NativeOnChange = (elements, appState, files) => {
+    ui.set(canvasUiFrom(appState));
     let current: LibrarySnapshot;
     try {
       // Workbench appearance is presentation-only, never an authored theme edit.
@@ -301,6 +360,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       baselineRef.current = current;
       if (!loadedRef.current) {
         loadedRef.current = true;
+        fitScene();
         applyCover();
       }
       return;
@@ -315,9 +375,51 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     onChangeRef.current?.(next, 'authored');
   };
 
+  const historyButton = (name: 'undo' | 'redo') => wrapperRef.current?.querySelector<HTMLButtonElement>(`[data-testid="button-${name}"]`) ?? null;
+  const canvasElement = () => wrapperRef.current?.querySelector<HTMLElement>('.excalidraw') ?? null;
+  const commands: CanvasCommands = {
+    pickTool: (tool) => {
+      const api = apiRef.current;
+      if (!api) return;
+      if (tool === 'image') api.setActiveTool({ type: 'image', insertOnCanvasDirectly: compact });
+      else api.setActiveTool({ type: tool as NativeTool });
+      // As Excalidraw's own toolbar does: the canvas takes the keyboard.
+      canvasElement()?.focus();
+    },
+    toggleLock: () => {
+      const api = apiRef.current;
+      if (!api) return;
+      const tool = api.getAppState().activeTool;
+      if (tool.locked) api.setActiveTool({ type: 'selection', locked: false });
+      else (api.updateScene as (sceneData: NativeUpdateScene) => void)({ appState: { activeTool: { ...tool, locked: true } }, captureUpdate: 'NEVER' });
+    },
+    // Excalidraw's history is not in its API: its own (hidden) buttons run it.
+    undo: () => historyButton('undo')?.click(),
+    redo: () => historyButton('redo')?.click(),
+    history: () => ({ undo: historyButton('undo')?.disabled === false, redo: historyButton('redo')?.disabled === false }),
+    toggleLibrary: () => {
+      apiRef.current?.toggleSidebar({ name: 'default', tab: 'library' });
+    },
+    openMermaid: () => {
+      const api = apiRef.current;
+      if (api) (api.updateScene as (sceneData: NativeUpdateScene) => void)({ appState: { openDialog: { name: 'ttd', tab: 'mermaid' } } });
+    },
+    zoomTo: (zoom) => {
+      const api = apiRef.current;
+      const area = visibleArea();
+      if (!api || !area) return;
+      const state = api.getAppState();
+      setViewport(api, zoomViewport({ zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }, area, zoom));
+    },
+    canvas: canvasElement,
+  };
+
   return (
     <div
+      ref={wrapperRef}
       data-testid="drawing-canvas"
+      data-slot="drawing-canvas"
+      className="relative"
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
     >
       <CanvasErrorBoundary onError={onError}>
@@ -341,6 +443,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
             onChange={handleLibraryChange}
             onScrollChange={(scrollX, scrollY, zoom) => onScrollRef.current?.(scrollX, scrollY, zoom.value)}
           />
+          <CanvasControls store={ui} commands={commands} areaRef={areaRef} size={compact ? 'touch' : 'default'} viewOnly={viewOnly ?? false} />
         </Suspense>
       </CanvasErrorBoundary>
     </div>

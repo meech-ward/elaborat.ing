@@ -502,6 +502,7 @@ export function DrawingView({
             present={present}
             onScrollChange={onStageScroll}
             coveredLeft={coveredLeft}
+            compact={!desktop}
             active={active && view !== "source"}
             viewOnly={canvasViewOnly}
           />

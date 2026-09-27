@@ -15,6 +15,8 @@ export interface MenuEntry {
   group?: string
   /** The item the menu is on now, such as the open project: marked, and aria-current. */
   current?: boolean
+  /** A setting that is on or off, such as Keep tool active: a checkbox item, with a check while on. */
+  checked?: boolean
 }
 
 export type MenuRow = { kind: "item"; entry: MenuEntry } | { kind: "separator"; key: string }

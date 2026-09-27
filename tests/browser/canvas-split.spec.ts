@@ -72,7 +72,7 @@ test("a drawing in Split: the source over the left half, source edits reach the 
   expect(Math.abs(panel.x - editor.x)).toBeLessThan(2)
   expect(Math.abs(panel.x + panel.width - (editor.x + editor.width / 2))).toBeLessThan(2)
   // The tool island sits over the uncovered canvas, right of the panel.
-  const tools = (await page.locator(".App-toolbar").boundingBox())!
+  const tools = (await page.getByRole("group", { name: "Drawing tools" }).boundingBox())!
   expect(tools.x).toBeGreaterThan(panel.x + panel.width)
 
   // A text element typed in the source appears on the canvas (the editor closes each brace and quote as it opens).

@@ -189,12 +189,18 @@ test("on a desktop the canvas fills the window behind the panels, and the side p
   await expect(canvas(page)).toBeVisible()
   await expect.poll(() => canvas(page).boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
 
-  // The rectangle tool, selected, takes the palette's selected-tool colour.
-  await page.mouse.click(900, 600)
-  await page.keyboard.press("2")
+  // The tool island stands in for Excalidraw's own toolbar and footer, and
+  // the drawing opens fitted at 100% or less.
+  await expect(page.locator(".App-toolbar")).toBeHidden()
+  await expect(page.locator(".zoom-actions")).toBeHidden()
+  await expect(page.getByRole("button", { name: "Reset zoom, now 100%" })).toBeVisible()
+  // The island's rectangle picks Excalidraw's tool, pressed in the palette's selected-tool colour.
+  const rectangle = page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Rectangle" })
+  await rectangle.click()
+  await expect(rectangle).toHaveAttribute("aria-pressed", "true")
   const scheme = await page.evaluate(() => (document.documentElement.dataset.scheme === "light" ? "light" : "dark"))
   const rgb = (hex: string) => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`
-  await expect(page.locator(".App-toolbar .ToolIcon_type_radio:checked + .ToolIcon__icon")).toHaveCSS("background-color", rgb(palettes[0][scheme].toolOn))
+  await expect(rectangle).toHaveCSS("background-color", rgb(palettes[0][scheme].toolOn))
 
   // A drag over the side panel stays there and draws nothing.
   const files = (await page.getByRole("navigation", { name: "Workspace files" }).boundingBox())!
@@ -214,6 +220,23 @@ test("on a desktop the canvas fills the window behind the panels, and the side p
   await page.mouse.move(900, 570, { steps: 8 })
   await page.mouse.up()
   await expect(status(page)).toContainText("Unsaved changes")
+  // Excalidraw's selection tool is current again after the shape.
+  await expect(page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true")
+
+  // Undo and redo are in More tools.
+  await page.getByRole("button", { name: "More tools" }).click()
+  await page.getByRole("menuitem", { name: "Undo" }).click()
+  await expect(status(page)).toContainText("1 elements")
+  await page.getByRole("button", { name: "More tools" }).click()
+  await page.getByRole("menuitem", { name: "Redo" }).click()
+  await expect(status(page)).toContainText("2 elements")
+  // Keep tool active is a checkbox there, and turns Excalidraw's tool lock on.
+  await page.getByRole("button", { name: "More tools" }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Keep tool active" }).click()
+  await page.getByRole("button", { name: "More tools" }).click()
+  await expect(page.getByRole("menuitemcheckbox", { name: "Keep tool active" })).toHaveAttribute("aria-checked", "true")
+  await page.keyboard.press("Escape")
+
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => elements(fake.server.content(id, "sketch.excalidraw")).length).toBe(2)
 })
@@ -235,5 +258,10 @@ test.describe("on a phone", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
     const box = await canvas(page).boundingBox()
     expect(box && box.width <= 390 && box.height > 200).toBe(true)
+    // The touch-sized tool island at the bottom stands in for Excalidraw's own toolbar.
+    await expect(page.locator(".App-top-bar")).toBeHidden()
+    const island = (await page.getByRole("group", { name: "Drawing tools" }).boundingBox())!
+    expect(island.y + island.height).toBeGreaterThan(844 - 90)
+    expect(Math.abs(island.x + island.width / 2 - 195)).toBeLessThan(40)
   })
 })

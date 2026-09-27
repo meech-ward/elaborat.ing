@@ -194,5 +194,7 @@ export interface DrawingCanvasProps {
    * of the uncovered part stays there. Default 0.
    */
   coveredLeft?: number;
+  /** Phone controls: the touch-sized tool island at the bottom, and no zoom island. Default false. */
+  compact?: boolean;
   onError?: (message: string) => void;
 }

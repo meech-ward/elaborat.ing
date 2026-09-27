@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactElement, ReactNode } from "react"
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -9,6 +10,7 @@ import {
 } from "@/components/ui/context-menu"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -27,7 +29,7 @@ export type ActionMenuProps = Pick<ComponentProps<typeof ActionMenu>, "onOpenCha
 // ActionContextMenu on right-click (or a long press on touch screens). Both
 // are the shadcn dropdown and context menus, so Base UI owns keyboard, focus,
 // typeahead and dismissal; destructive entries go last, in the danger
-// colour, after a separator.
+// colour, after a separator. An entry with `checked` is a checkbox item.
 
 type DropdownRootProps = Pick<ComponentProps<typeof DropdownMenu>, "open" | "defaultOpen" | "onOpenChange" | "onOpenChangeComplete" | "modal">
 type DropdownContentProps = Omit<ComponentProps<typeof DropdownMenuContent>, "children">
@@ -57,6 +59,18 @@ export function ActionMenu({
         {menuRows(entries).map((row) =>
           row.kind === "separator" ? (
             <DropdownMenuSeparator key={row.key} />
+          ) : row.entry.checked !== undefined ? (
+            <DropdownMenuCheckboxItem
+              key={row.entry.id ?? row.entry.label}
+              checked={row.entry.checked}
+              closeOnClick
+              disabled={row.entry.disabled}
+              aria-keyshortcuts={row.entry.keyShortcuts}
+              onClick={row.entry.onSelect}
+            >
+              {row.entry.label}
+              {row.entry.shortcut && <DropdownMenuShortcut>{row.entry.shortcut}</DropdownMenuShortcut>}
+            </DropdownMenuCheckboxItem>
           ) : (
             <DropdownMenuItem
               key={row.entry.id ?? row.entry.label}
@@ -113,6 +127,18 @@ export function ActionContextMenu({
         {menuRows(entries).map((row) =>
           row.kind === "separator" ? (
             <ContextMenuSeparator key={row.key} />
+          ) : row.entry.checked !== undefined ? (
+            <ContextMenuCheckboxItem
+              key={row.entry.id ?? row.entry.label}
+              checked={row.entry.checked}
+              closeOnClick
+              disabled={row.entry.disabled}
+              aria-keyshortcuts={row.entry.keyShortcuts}
+              onClick={row.entry.onSelect}
+            >
+              {row.entry.label}
+              {row.entry.shortcut && <ContextMenuShortcut>{row.entry.shortcut}</ContextMenuShortcut>}
+            </ContextMenuCheckboxItem>
           ) : (
             <ContextMenuItem
               key={row.entry.id ?? row.entry.label}

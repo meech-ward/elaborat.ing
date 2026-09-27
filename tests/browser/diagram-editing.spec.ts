@@ -121,9 +121,10 @@ type SceneElement = { id: string; x: number; y: number; width: number; height: n
 
 /**
  * Where an element's middle is on screen, from the scene in the saved
- * `flow.excalidraw`. The canvas opens at zoom 1 with the middle of the
- * drawing's bounds in the middle of the canvas (Excalidraw's scroll to
- * content), and nothing here scrolls or zooms it.
+ * `flow.excalidraw`. The canvas opens with the middle of the drawing's
+ * bounds in the middle of the visible canvas area (the canvas controls'
+ * layer), at the zoom its zoom island shows, and nothing here scrolls or
+ * zooms it.
  */
 async function onScreen(page: Page, elements: SceneElement[], id: string) {
   const extent = (element: SceneElement) => {
@@ -134,10 +135,12 @@ async function onScreen(page: Page, elements: SceneElement[], id: string) {
   const all = elements.filter((element) => !element.isDeleted).map(extent)
   const middle = { x: (Math.min(...all.map((e) => e.x1)) + Math.max(...all.map((e) => e.x2))) / 2, y: (Math.min(...all.map((e) => e.y1)) + Math.max(...all.map((e) => e.y2))) / 2 }
   const target = extent(elements.find((element) => element.id === id)!)
-  const canvas = (await page.locator(".excalidraw.excalidraw-container").boundingBox())!
+  const area = (await page.locator('[data-slot="canvas-controls"]').boundingBox())!
+  const reset = await page.getByRole("button", { name: /^Reset zoom, now \d+%$/ }).getAttribute("aria-label")
+  const zoom = Number(/(\d+)%/.exec(reset!)![1]) / 100
   return {
-    x: canvas.x + canvas.width / 2 + (target.x1 + target.x2) / 2 - middle.x,
-    y: canvas.y + canvas.height / 2 + (target.y1 + target.y2) / 2 - middle.y,
+    x: area.x + area.width / 2 + ((target.x1 + target.x2) / 2 - middle.x) * zoom,
+    y: area.y + area.height / 2 + ((target.y1 + target.y2) / 2 - middle.y) * zoom,
   }
 }
 
