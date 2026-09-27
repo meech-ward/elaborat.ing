@@ -57,13 +57,20 @@ function embedNode(index: number): Node {
   return { type: 'embed', data: { hName: 'figure', hProperties: { className: ['embed'], dataEmbed: String(index) } } }
 }
 
-function transform(node: Node, embeds: EmbedRef[]): void {
+const textOf = (node: Node): string =>
+  node.type === 'text' ? String(node.value ?? '') : (node.children ?? []).map(textOf).join('')
+
+/** MDX's import and export lines: code for the app, not part of what the note says. */
+const isModuleSyntax = (node: Node) => node.type === 'paragraph' && /^(import|export)\s/.test(textOf(node))
+
+function transform(node: Node, embeds: EmbedRef[], root = false): void {
   const place = (refs: EmbedRef[]) =>
     refs.map((ref) => {
       embeds.push(ref)
       return embedNode(embeds.length - 1)
     })
   node.children = node.children?.flatMap((child): Node[] => {
+    if (root && isModuleSyntax(child)) return []
     if (child.type === 'html') {
       const refs = embedsIn(String(child.value ?? ''))
       return refs ? place(refs) : [{ type: 'text', value: String(child.value ?? '') }]
@@ -96,7 +103,7 @@ export function renderNote(source: string): { html: string; embeds: EmbedRef[] }
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .use(remarkGfm)
-    .use(() => (tree) => transform(tree as Node, embeds))
+    .use(() => (tree) => transform(tree as Node, embeds, true))
     .use(remarkRehype)
     .use(rehypeSanitize, schema)
     .use(rehypeStringify)

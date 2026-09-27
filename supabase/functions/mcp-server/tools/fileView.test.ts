@@ -192,7 +192,7 @@ const SCENE = JSON.stringify({
   ],
 })
 
-Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays text', () => {
+Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays text, imports go', () => {
   const { html, embeds } = renderNote(
     [
       'import Chart from "./chart.tsx"',
@@ -224,7 +224,8 @@ Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays tex
     { kind: 'diagram', path: 'in/list.d2' },
   ])
   for (let i = 0; i < embeds.length; i++) assertStringIncludes(html, `<figure class="embed" data-embed="${i}"></figure>`)
-  assertStringIncludes(html, 'import Chart from "./chart.tsx"')
+  // MDX import lines are code, not content: dropped.
+  assertFalse(html.includes('chart.tsx'))
   assertStringIncludes(html, '&#x3C;Callout>hi&#x3C;/Callout>')
   assertStringIncludes(html, '&#x3C;Drawing src="../outside.excalidraw" />')
   assertStringIncludes(html, '&#x3C;Drawing src={path} />')
@@ -301,4 +302,12 @@ Deno.test(`show_file draws at most ${MAX_EMBEDS} different files for a note`, as
   const statuses = (result.structuredContent as { embeds: { status: string }[] }).embeds.map((embed) => embed.status)
   assertEquals(statuses, [...Array(MAX_EMBEDS).fill('drawn'), 'not_shown', 'not_shown', 'drawn'])
   assertEquals(Object.keys((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]).length, MAX_EMBEDS)
+})
+
+Deno.test('a note drops MDX import and export lines but keeps prose that starts with those words', () => {
+  const html = renderMarkdown('import { Chart } from "./chart.tsx"\nexport const x = 1\n\n# Plan\n\nImport the data first.\n')
+  assertFalse(html.includes('chart.tsx'))
+  assertFalse(html.includes('export const'))
+  assertStringIncludes(html, 'Plan')
+  assertStringIncludes(html, 'Import the data first.')
 })
