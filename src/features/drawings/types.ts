@@ -188,5 +188,11 @@ export interface DrawingCanvasProps {
   present?: (scene: DrawingScene) => DrawingScene;
   /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */
   onScrollChange?: (scrollX: number, scrollY: number, zoom: number) => void;
+  /**
+   * Pixels at the canvas's left edge covered by an opaque panel (Split). When
+   * it changes, the view pans by half the change, so what was in the middle
+   * of the uncovered part stays there. Default 0.
+   */
+  coveredLeft?: number;
   onError?: (message: string) => void;
 }

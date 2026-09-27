@@ -18,6 +18,7 @@ import {
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
+import type { SourcePatch } from "@/features/document";
 import { CompactFileIdentity } from "./compactWorkbench";
 import { ConflictBanner } from "./ConflictBanner";
 import { downloadBlob, downloadText } from "./download";
@@ -30,6 +31,7 @@ import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { duplicateShortcutLabel } from "./viewShortcuts";
 import { useCanvasStage } from "./canvasStage";
+import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
@@ -50,9 +52,31 @@ function tryParse(content: string, path: string): { parsed: ParsedDrawing | null
   }
 }
 
+/** One edit that turns `before` into `after`: the changed middle, with the shared start and end kept. */
+function patchBetween(before: string, after: string): SourcePatch {
+  let start = 0;
+  const shortest = Math.min(before.length, after.length);
+  while (start < shortest && before[start] === after[start]) start += 1;
+  let end = 0;
+  while (end < shortest - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end += 1;
+  return { from: start, to: before.length - end, expected: before.slice(start, before.length - end), insert: after.slice(start, after.length - end) };
+}
+
+/** The offset of a line and column in `text`, each clamped to what the text has. */
+function offsetAt(text: string, line: number, column: number): number {
+  const lines = text.split("\n");
+  const row = Math.min(Math.max(line, 1), lines.length);
+  let offset = 0;
+  for (let index = 0; index < row - 1; index += 1) offset += lines[index].length + 1;
+  return offset + Math.min(Math.max(column, 1), lines[row - 1].length + 1) - 1;
+}
+
 /**
  * One open drawing (`.excalidraw`, or Obsidian's `.excalidraw.md`): the
- * Excalidraw canvas, or its file as text. Saving writes the file on this
+ * Excalidraw canvas, its file as text, or on a desktop both (Split: the text
+ * over the left half of the canvas, each following the other's edits while
+ * the text parses; while it does not, the canvas is view-only and keeps the
+ * last valid scene). Saving writes the file on this
  * device, checked against the saved copy the edits started from. An
  * untouched drawing is never rewritten, and a file that does not parse opens
  * as text with the error shown, so it can be fixed here.
@@ -98,12 +122,15 @@ export function DrawingView({
   const [baseRevision, setBaseRevision] = useState<string | null>(initial.revision);
   // The saved copy that "unsaved" compares against: it moves on every save and adopted change.
   const [savedText, setSavedText] = useState(initial.savedContent !== undefined ? initial.savedContent ?? "" : initial.revision ? initial.content : "");
-  const [view, setView] = useState<"canvas" | "source">(() =>
-    !opened.parsed || readProjectView(client.persistenceKey, path) === "source" ? "source" : "canvas",
-  );
+  const [mode, setMode] = useState<CanvasView>(() => {
+    const stored = canvasViewFrom(readProjectView(client.persistenceKey, path));
+    return !opened.parsed && stored === "canvas" ? "source" : stored;
+  });
   useEffect(() => {
-    writeProjectView(client.persistenceKey, path, view);
-  }, [client.persistenceKey, path, view]);
+    writeProjectView(client.persistenceKey, path, mode);
+  }, [client.persistenceKey, path, mode]);
+  const selectRef = useRef<(next: CanvasView) => void>(() => {});
+  const { view, options: viewOptions } = useCanvasViews(mode, active, (next) => selectRef.current(next));
   const [sourceDraft, setSourceDraft] = useState(initial.content);
   const [sourceError, setSourceError] = useState<string | null>(opened.error);
   const [notice, setNotice] = useState<string | null>(null);
@@ -121,7 +148,7 @@ export function DrawingView({
     return canvasDirty || sourceDraft !== savedText;
   }, [original, scene, sourceDraft, savedText]);
 
-  /** The file's text as it stands: the canvas serialized, or the source being edited. */
+  /** The file's text as it stands: the canvas serialized, or the source being edited (Split keeps them the same). */
   const currentText = useCallback(() => {
     if (!dirty) return savedText;
     return view === "canvas" && scene && original ? saveDrawingFile(scene, original).text : sourceDraft;
@@ -160,17 +187,59 @@ export function DrawingView({
 
   const summary = useMemo(() => (scene ? summarizeDrawing(scene) : null), [scene]);
   const sourceApi = useRef<SourceEditorApi | null>(null);
-  const latest = useRef({ scene, sourceDraft });
+  const latest = useRef({ scene, sourceDraft, original });
   useEffect(() => {
-    latest.current = { scene, sourceDraft };
-  }, [scene, sourceDraft]);
+    latest.current = { scene, sourceDraft, original };
+  }, [scene, sourceDraft, original]);
+
+  // Split: canvas edits rewrite the source a moment later, as one undo step
+  // that keeps the cursor on its line. The text written is remembered so it
+  // is not read back into the canvas.
+  const cursor = useRef({ line: 1, column: 1 });
+  const fromCanvas = useRef<string | null>(opened.parsed ? initial.content : null);
+  const canvasTimer = useRef<number | null>(null);
+  const writeCanvasToSource = useCallback((): string => {
+    const { scene: current, original: base, sourceDraft: before } = latest.current;
+    // Only a canvas edit still waiting to be written; otherwise the source
+    // is current (and may be text being fixed, which is never overwritten).
+    if (canvasTimer.current === null) return before;
+    window.clearTimeout(canvasTimer.current);
+    canvasTimer.current = null;
+    if (!current || !base || frozen.current) return before;
+    const saved = saveDrawingFile(current, base);
+    const text = saved.noop ? base.originalSource : saved.text;
+    if (text === before) return before;
+    fromCanvas.current = text;
+    latest.current = { ...latest.current, sourceDraft: text };
+    sourceApi.current?.applyExternalPatches([patchBetween(before, text)], {
+      after: { anchor: offsetAt(text, cursor.current.line, cursor.current.column), head: offsetAt(text, cursor.current.line, cursor.current.column) },
+    });
+    setSourceDraft(text);
+    return text;
+  }, []);
+  useEffect(() => () => {
+    if (canvasTimer.current !== null) window.clearTimeout(canvasTimer.current);
+  }, []);
+  // Split: source edits reach the canvas while the source parses.
+  const readSource = useCallback((text: string) => {
+    if (text === fromCanvas.current) {
+      // Text the canvas wrote is the canvas already.
+      setSourceError(null);
+      return;
+    }
+    const { parsed, error } = tryParse(text, path);
+    setSourceError(error);
+    if (!parsed) return;
+    setOriginal(parsed);
+    setScene(parsed.scene);
+  }, [path]);
 
   const adopt = useCallback((content: string, revision: string) => {
     const { parsed, error } = tryParse(content, path);
     setOriginal(parsed);
     if (parsed) setScene(parsed.scene);
     setSourceError(error);
-    if (!parsed) setView("source");
+    if (!parsed) setMode("source");
     setSourceDraft(content);
     setSavedText(content);
     setBaseRevision(revision);
@@ -178,31 +247,51 @@ export function DrawingView({
     setChangedElsewhere(null);
   }, [path]);
 
-  const switchToSource = useCallback(() => {
-    if (original && scene) {
-      const saved = saveDrawingFile(scene, original);
-      setSourceDraft(saved.noop ? original.originalSource : saved.text);
-    }
-    setSourceError(null);
-    setView("source");
-  }, [original, scene]);
-
-  const switchToCanvas = useCallback(() => {
-    const { parsed, error } = tryParse(sourceDraft, path);
-    if (!parsed) {
-      // The canvas keeps its last valid scene; the text is fixed in place.
-      setSourceError(error);
+  const selectView = useCallback((next: CanvasView) => {
+    if (next === view) return;
+    if (view === "canvas") {
+      // The source takes the canvas as it stands.
+      if (original && scene) {
+        const saved = saveDrawingFile(scene, original);
+        const text = saved.noop ? original.originalSource : saved.text;
+        fromCanvas.current = text;
+        setSourceDraft(text);
+      }
+      setSourceError(null);
+      setMode(next);
       return;
     }
-    setOriginal(parsed);
-    setScene(parsed.scene);
-    setSourceError(null);
-    setView("canvas");
-  }, [sourceDraft, path]);
+    if (view === "split") {
+      // Split keeps the canvas and a source that parses the same; one that
+      // does not parse stays in place, with the canvas on its last valid scene.
+      writeCanvasToSource();
+      if (next === "canvas" && sourceError !== null) return;
+      setMode(next);
+      return;
+    }
+    if (next === "split") {
+      // The canvas takes the source when it parses.
+      readSource(sourceDraft);
+    } else {
+      const { parsed, error } = tryParse(sourceDraft, path);
+      if (!parsed) {
+        // The canvas keeps its last valid scene; the text is fixed in place.
+        setSourceError(error);
+        return;
+      }
+      setOriginal(parsed);
+      setScene(parsed.scene);
+      setSourceError(null);
+    }
+    setMode(next);
+  }, [view, original, scene, sourceDraft, sourceError, path, writeCanvasToSource, readSource]);
+  useEffect(() => {
+    selectRef.current = selectView;
+  }, [selectView]);
 
   const save = useCallback(async (overwrite?: string) => {
     if (frozen.current || saving) return;
-    const text = view === "source" ? sourceDraft : scene && original ? saveDrawingFile(scene, original).text : null;
+    const text = view === "split" ? writeCanvasToSource() : view === "source" ? sourceDraft : scene && original ? saveDrawingFile(scene, original).text : null;
     if (text === null) return;
     const { parsed, error } = tryParse(text, path);
     if (!parsed) {
@@ -240,7 +329,7 @@ export function DrawingView({
     } finally {
       setSaving(false);
     }
-  }, [view, sourceDraft, scene, original, path, savedText, baseRevision, client, saving]);
+  }, [view, sourceDraft, scene, original, path, savedText, baseRevision, client, saving, writeCanvasToSource]);
 
   // Ctrl or Cmd+S saves the active drawing (the source editor handles its own).
   useEffect(() => {
@@ -297,7 +386,7 @@ export function DrawingView({
     }
   }, [scene, baseName]);
   const exportNative = useCallback(() => {
-    const result = buildNativeDownload({ view, scene, sourceDraft, path });
+    const result = buildNativeDownload({ view: view === "canvas" ? "canvas" : "source", scene, sourceDraft, path });
     if (!result.ok) {
       setNotice(`Excalidraw export failed: ${result.error}`);
       return;
@@ -306,23 +395,17 @@ export function DrawingView({
     setNotice(`Exported ${result.filename}.`);
   }, [view, scene, sourceDraft, path]);
 
-  const fullBleed = desktop && active && view === "canvas" && scene !== null;
-  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
+  const fullBleed = desktop && active && view !== "source" && scene !== null;
+  const [stageRef, onStageScroll, coveredLeft] = useCanvasStage(fullBleed, view === "split");
+  // In Split the canvas is view-only while the source does not parse.
+  const canvasViewOnly = Boolean(readOnly) || (view === "split" && sourceError !== null);
 
   return (
-    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined}>
+    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined} data-view={view}>
       <TablineActions active={active}>
       <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
         <CompactFileIdentity navigation={navigation} path={path} />
-        <ViewSwitcher
-          ariaLabel="Drawing view"
-          options={[
-            { value: "canvas" as const, label: "Canvas" },
-            { value: "source" as const, label: "Source" },
-          ]}
-          active={view}
-          onSelect={(value) => (value === "canvas" ? switchToCanvas() : switchToSource())}
-        />
+        <ViewSwitcher ariaLabel="Drawing view" options={viewOptions} active={view} onSelect={selectView} />
         {!readOnly && dirty && (
           <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
             Save
@@ -427,33 +510,44 @@ export function DrawingView({
       )}
 
       {scene && (
-        <div hidden={view !== "canvas"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
+        <div hidden={view === "source"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
           <DrawingCanvas
             scene={scene}
             onChange={(next) => {
-              if (!frozen.current) setScene(next);
+              if (frozen.current || canvasViewOnly) return;
+              latest.current = { ...latest.current, scene: next };
+              setScene(next);
+              if (view !== "split") return;
+              if (canvasTimer.current !== null) window.clearTimeout(canvasTimer.current);
+              canvasTimer.current = window.setTimeout(writeCanvasToSource, 150);
             }}
             theme={theme}
             present={present}
             onScrollChange={onStageScroll}
-            active={active && view === "canvas"}
-            viewOnly={Boolean(readOnly)}
+            coveredLeft={coveredLeft}
+            active={active && view !== "source"}
+            viewOnly={canvasViewOnly}
           />
         </div>
       )}
-      <div hidden={view !== "source"} className="wb-native-stage">
+      <div hidden={view === "canvas"} className="wb-native-stage wb-native-source">
         <SourceEditor
           initialText={initial.content}
           documentText={sourceDraft}
           format="md"
           documentId={1}
           editorLanguage="json"
-          visible={active && view === "source"}
+          visible={active && view !== "canvas"}
           renderError={sourceError}
           onChange={(text) => {
-            if (!frozen.current) setSourceDraft(text);
+            if (frozen.current) return;
+            latest.current = { ...latest.current, sourceDraft: text };
+            setSourceDraft(text);
+            if (view === "split") readSource(text);
           }}
-          onCursor={() => {}}
+          onCursor={(line, column) => {
+            cursor.current = { line, column };
+          }}
           onSave={() => (readOnly ? setNotice(readOnly) : void save())}
           apiRef={sourceApi}
           readOnly={readOnly}
@@ -463,7 +557,7 @@ export function DrawingView({
         {view === "canvas" ? <Pencil className="size-3.5" aria-hidden /> : <FileJson className="size-3.5" aria-hidden />}
         {view === "canvas"
           ? "Canvas: tools, labels, arrows and freehand, with undo. Opening a drawing never rewrites it."
-          : "The file as text. Switch to Canvas to check it; if it does not parse, the canvas keeps the last valid scene."}
+          : "The file as text. Switch to Rendered to check it; if it does not parse, the canvas keeps the last valid scene."}
       </p>
     </div>
   );

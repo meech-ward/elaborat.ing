@@ -85,7 +85,7 @@ test("when a generated file changed elsewhere, a save keeps all three files as t
   await page.getByRole("button", { name: "Sync now" }).click()
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
 
-  await page.getByRole("button", { name: "Code" }).click()
+  await page.getByRole("button", { name: "Source", exact: true }).click()
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("b -> c\n")
@@ -101,7 +101,7 @@ test("a code change reaches the canvas on Regenerate, and a syntax error keeps t
   await compiled(page)
   const first = await elementCount(page)
 
-  await page.getByRole("button", { name: "Code" }).click()
+  await page.getByRole("button", { name: "Source", exact: true }).click()
   const code = page.locator(".monaco-editor:visible .view-lines").first()
   await code.click()
   await page.keyboard.press("ControlOrMeta+End")
@@ -171,7 +171,7 @@ test("renaming a node's text on the canvas writes its label into the code, and S
   const node = await onScreen(page, elements, "d2:a:label")
   await page.mouse.dblclick(node.x, node.y)
   await replaceText(page, "a", "Alpha")
-  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Code" }).click()
+  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Source", exact: true }).click()
   const code = page.locator(".monaco-editor:visible .view-lines").first()
   // The label sync's own form: a quoted scalar marked as the canvas's, after the untouched source.
   const expected = `${source}a.label: "Alpha" # canvas-label\n`
@@ -195,7 +195,7 @@ test("renaming a connection's label on the canvas stays a canvas-only change, wi
   await page.keyboard.press("Enter")
   await replaceText(page, "hello", "goodbye")
   await expect(status(page)).toContainText("This generated text stays a canvas-only change. Only node labels update the D2 code.")
-  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Code" }).click()
+  await page.locator(".wb-native-toolbar").getByRole("button", { name: "Source", exact: true }).click()
   const code = page.locator(".monaco-editor:visible .view-lines").first()
   await expect(code).toContainText("a -> b: hello")
   await expect(code).not.toContainText("label")

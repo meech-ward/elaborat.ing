@@ -285,7 +285,7 @@ test("Ctrl+S saves the note whose editor has focus, with a diagram's code open t
   await openFromExplorer(page, "flow.d2")
   await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
   // The code editor is created after the note's.
-  await page.getByRole("button", { name: "Code" }).click()
+  await page.getByRole("button", { name: "Source", exact: true }).click()
   await expect(page.locator(".monaco-editor:visible")).toBeVisible()
 
   await typeInTab(page, "a.md", "note")

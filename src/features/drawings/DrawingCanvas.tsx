@@ -58,11 +58,15 @@ interface NativeUpdateScene {
   captureUpdate?: 'NEVER';
 }
 
+// The vendor's element restore, once the package has loaded.
+let restoreNative: typeof import('@excalidraw/excalidraw')['restoreElements'] | null = null;
+
 const NativeCanvas = lazy(() =>
-  Promise.all([import('@excalidraw/excalidraw'), ensureGeneratedNativeFont()]).then(([mod]) => ({
+  Promise.all([import('@excalidraw/excalidraw'), ensureGeneratedNativeFont()]).then(([mod]) => {
+    restoreNative = mod.restoreElements;
     // React's own Memo wrapper is not a ComponentType statically.
-    default: mod.Excalidraw as unknown as ComponentType<NativeProps>,
-  })),
+    return { default: mod.Excalidraw as unknown as ComponentType<NativeProps> };
+  }),
 );
 
 class CanvasErrorBoundary extends Component<
@@ -105,6 +109,17 @@ function toNativeElements(elements: DrawingScene['elements']): NativeElements {
 }
 
 /**
+ * Elements for updateScene, restored the way Excalidraw restores a scene it
+ * opens: defaults filled in and unknown types left out, so a half-written
+ * element (for example one being typed in the source) cannot break the
+ * canvas. Display only; the raw scene is unchanged.
+ */
+function toShownElements(elements: DrawingScene['elements']): NativeElements {
+  const native = toNativeElements(elements);
+  return restoreNative ? restoreNative(native, null, { repairBindings: true }) : native;
+}
+
+/**
  * Project app state into the vendor partial. Unknown preserved keys ride
  * along at runtime; the vendor type only names its own prefs.
  */
@@ -140,7 +155,7 @@ function pushScene(api: NativeAPI, target: DrawingScene, onError?: (message: str
     // The vendor updateScene is generic over the app-state keys it
     // accepts; this narrower signature keeps the actual call strict.
     (api.updateScene as (sceneData: NativeUpdateScene) => void)({
-      elements: toNativeElements(target.elements),
+      elements: toShownElements(target.elements),
       appState: toNativeAppState(target.appState),
     });
     const fileList = toNativeFileList(target.files);
@@ -164,7 +179,7 @@ function presented(present: DrawingCanvasProps['present'], scene: DrawingScene):
 function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene, onError?: (message: string) => void): void {
   try {
     (api.updateScene as (sceneData: NativeUpdateScene) => void)({
-      ...(shown.elements === raw.elements ? {} : { elements: toNativeElements(shown.elements) }),
+      ...(shown.elements === raw.elements ? {} : { elements: toShownElements(shown.elements) }),
       appState: toNativeAppState(shown.appState),
       captureUpdate: 'NEVER',
     });
@@ -179,7 +194,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, coveredLeft = 0, onError } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   // Raw authored authority: the only state ever forwarded or saved.
   const rawRef = useRef<DrawingScene>(scene);
@@ -246,6 +261,24 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     }
   }, [scene, present]);
 
+  // The cover the view's scroll allows for, applied once the first scene
+  // (with its scroll to content) has loaded.
+  const loadedRef = useRef(false);
+  const coverRef = useRef({ wanted: coveredLeft, applied: 0 });
+  const applyCover = () => {
+    const api = apiRef.current;
+    const cover = coverRef.current;
+    if (!api || !loadedRef.current || cover.wanted === cover.applied) return;
+    const state = api.getAppState();
+    const scrollX = state.scrollX + (cover.wanted - cover.applied) / 2 / state.zoom.value;
+    cover.applied = cover.wanted;
+    (api.updateScene as (sceneData: NativeUpdateScene) => void)({ appState: { scrollX }, captureUpdate: 'NEVER' });
+  };
+  useEffect(() => {
+    coverRef.current.wanted = coveredLeft;
+    applyCover();
+  });
+
   // Reset only when this canvas lifecycle ends, not on every controlled
   // scene echo. StrictMode's effect replay still gets a fresh baseline.
   useEffect(() => () => {
@@ -263,6 +296,10 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     }
     if (baselineRef.current === null) {
       baselineRef.current = current;
+      if (!loadedRef.current) {
+        loadedRef.current = true;
+        applyCover();
+      }
       return;
     }
     const { next, dirty } = mergeLibraryUpdate(rawRef.current, baselineRef.current, current);

@@ -34,6 +34,7 @@ import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { ActionMenu } from "./WorkbenchChrome";
 import { duplicateShortcutLabel } from "./viewShortcuts";
 import { useCanvasStage } from "./canvasStage";
+import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
@@ -60,6 +61,9 @@ async function compileOrThrow(source: string) {
  * sidecar with the generation baseline. They save on the device as one change,
  * so sync sends them as one `save_files` call. D2 compiles in the browser. A
  * compile error keeps the last valid canvas and never touches saved files.
+ * On a desktop, Split shows the code over the left half of the canvas, and
+ * code changes reach the canvas as they are typed (the canvas is view-only
+ * while the code does not compile).
  */
 export function DiagramView({
   client,
@@ -117,10 +121,13 @@ export function DiagramView({
   const [baseline, setBaseline] = useState<GeneratedBaseline | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
-  const [view, setView] = useState<"code" | "canvas">(() => (readProjectView(client.persistenceKey, path) === "code" ? "code" : "canvas"));
+  const [mode, setMode] = useState<CanvasView>(() => canvasViewFrom(readProjectView(client.persistenceKey, path)));
   useEffect(() => {
-    writeProjectView(client.persistenceKey, path, view);
-  }, [client.persistenceKey, path, view]);
+    writeProjectView(client.persistenceKey, path, mode);
+  }, [client.persistenceKey, path, mode]);
+  const { view, options: viewOptions } = useCanvasViews(mode, active, setMode);
+  /** The code the canvas was last generated from. */
+  const generatedFrom = useRef<string | null>(null);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -187,6 +194,7 @@ export function DiagramView({
           return;
         }
         // The code editor records the change in its own undo history.
+        generatedFrom.current = result.source;
         if (result.source !== source) {
           sourceApi.current?.applyExternalPatches([{ from: 0, to: source.length, expected: source, insert: result.source }]);
           changeSource(result.source);
@@ -283,7 +291,8 @@ export function DiagramView({
         setSavedScene(native?.savedContent ? parseDrawingFile(native.savedContent, nativePath).scene : null);
         setSavedSidecarText(sidecar?.savedContent ? writeSidecarFile(readSidecarFile(sidecar.savedContent)) : null);
         setPendingLabels(result.pendingLabels);
-        if (!result.ok) setView("code");
+        generatedFrom.current = opened.source;
+        if (!result.ok) setMode("source");
         setBootError(null);
       } catch (error) {
         if (alive) setBootError(message(error));
@@ -315,6 +324,7 @@ export function DiagramView({
         setNotice("Newer edits arrived while regenerating, so they were kept. Regenerate again.");
         return;
       }
+      generatedFrom.current = source;
       setScene(result.scene);
       setBaseline(result.baseline);
       setDiagnostics(result.diagnostics);
@@ -351,6 +361,7 @@ export function DiagramView({
         setNotice("Newer edits arrived while resetting, so they were kept. Reset again.");
         return;
       }
+      generatedFrom.current = source;
       const merged = resetOverrides({
         currentScene: toNativeScene(scene),
         freshScene: toNativeScene(fresh.scene),
@@ -367,6 +378,34 @@ export function DiagramView({
       setRegenerating(false);
     }
   }, [scene, regenerating, pendingLabels.length, source]);
+
+  // Split: code changes reach the canvas as they are typed, as Regenerate
+  // does, without its notices.
+  useEffect(() => {
+    if (view !== "split" || !booted || !scene || regenerating || pendingLabels.length || source === generatedFrom.current) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        if (frozen.current) return;
+        const compiled = await compileD2Diagram(source);
+        const result = await regenerateDiagram(compiled.ok ? compiled.diagram : null, compiled.ok ? null : compiled.error, {
+          source,
+          prior: { baseline, scene },
+          baseScene: scene,
+        });
+        if (!alive || latest.current.source !== source || latest.current.scene !== scene) return;
+        generatedFrom.current = source;
+        setScene(result.scene);
+        setBaseline(result.baseline);
+        setDiagnostics(result.diagnostics);
+        setConflicts(result.conflicts);
+      })();
+    }, 300);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [view, booted, scene, regenerating, pendingLabels.length, source, baseline]);
 
   /** Save the source and both generated files as one change. `overwrite` saves over files that changed meanwhile. */
   const save = useCallback(async (overwrite = false) => {
@@ -489,8 +528,8 @@ export function DiagramView({
     }
   }, [scene, baseName]);
 
-  const fullBleed = desktop && active && view === "canvas" && booted && !bootError && scene !== null;
-  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
+  const fullBleed = desktop && active && view !== "source" && booted && !bootError && scene !== null;
+  const [stageRef, onStageScroll, coveredLeft] = useCanvasStage(fullBleed, view === "split");
 
   if (!booted) {
     return (
@@ -525,21 +564,15 @@ export function DiagramView({
 
   const errors = diagnostics.filter((entry) => entry.severity === "error");
   const warnings = diagnostics.filter((entry) => entry.severity !== "error");
+  // In Split the canvas is view-only while the code does not compile.
+  const canvasViewOnly = Boolean(readOnly) || (view === "split" && errors.length > 0);
 
   return (
-    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined}>
+    <div className="wb-native-view" data-canvas-bleed={fullBleed || undefined} data-view={view}>
       <TablineActions active={active}>
       <div className="wb-native-toolbar" data-compact-toolbar={navigation ? "" : undefined}>
         <CompactFileIdentity navigation={navigation} path={path} />
-        <ViewSwitcher
-          ariaLabel="Diagram view"
-          options={[
-            { value: "code" as const, label: "Code" },
-            { value: "canvas" as const, label: "Canvas" },
-          ]}
-          active={view}
-          onSelect={setView}
-        />
+        <ViewSwitcher ariaLabel="Diagram view" options={viewOptions} active={view} onSelect={setMode} />
         {!readOnly && dirty && (
           <button type="button" className="wb-button wb-button-primary wb-save" aria-keyshortcuts="Meta+S Control+S" title="Save (Cmd+S)" disabled={saving} onClick={() => void save()}>
             Save
@@ -660,14 +693,14 @@ export function DiagramView({
         </div>
       )}
 
-      <div hidden={view !== "code"} className="wb-native-stage">
+      <div hidden={view === "canvas"} className="wb-native-stage wb-native-source">
         <SourceEditor
           initialText={opened.source}
           documentText={source}
           format="md"
           documentId={1}
           editorLanguage="d2"
-          visible={active && view === "code"}
+          visible={active && view !== "canvas"}
           renderError={errors[0]?.message ?? null}
           onChange={changeSource}
           onCursor={() => {}}
@@ -676,15 +709,16 @@ export function DiagramView({
           readOnly={readOnly}
         />
       </div>
-      <div hidden={view !== "canvas"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
+      <div hidden={view === "source"} className="wb-native-stage" data-canvas-stage="" ref={stageRef}>
         <DrawingCanvas
           scene={scene}
           onChange={changeCanvas}
           theme={theme}
           present={present}
           onScrollChange={onStageScroll}
-          active={active && view === "canvas"}
-          viewOnly={Boolean(readOnly)}
+          coveredLeft={coveredLeft}
+          active={active && view !== "source"}
+          viewOnly={canvasViewOnly}
         />
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">

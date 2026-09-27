@@ -1448,6 +1448,33 @@ above the choices. */
   box-shadow: 0 1px 4px var(--island-shadow), 0 0 0 1px var(--island-ring);
   font-size: 11px;
 }
+/* Split: the source is an opaque panel over the left half of the canvas
+   area, under the top line. The canvas stays behind it and shows to its
+   right, where the banners, errors and Excalidraw's controls sit. */
+.wb-native-view[data-canvas-bleed][data-view="split"] {
+  position: relative;
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] > .wb-native-source {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  width: 50%;
+  margin: 0 !important;
+  background: var(--bg);
+  border: 1px solid var(--line) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 30px var(--shadow);
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] > :not([data-canvas-stage], [aria-live], .wb-native-source) {
+  width: auto;
+  margin: 8px 16px 0 calc(50% + 16px);
+}
+/* The saved state wraps rather than run under the zoom and undo islands. */
+.wb-native-view[data-canvas-bleed][data-view="split"] > [aria-live] {
+  max-width: max(120px, calc(100vw - var(--canvas-split, 50vw) - 290px));
+}
 /* Excalidraw's own controls keep to the canvas area: right of the side
    panels and below the top line (the tool island's top is 76). In focus
    mode they use the whole window, clear of the top-right panel. */
@@ -1456,6 +1483,36 @@ above the choices. */
   left: var(--canvas-left, 0px);
   width: calc(100% - var(--canvas-left, 0px));
   height: calc(100% - 60px);
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper {
+  left: var(--canvas-split, 50%);
+  width: calc(100% - var(--canvas-split, 50%));
+}
+/* In focus mode the uncovered half is too narrow to share its top with the
+   focus panel, so the controls stay below it. */
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper {
+  top: 60px;
+  height: calc(100% - 60px);
+}
+.wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .layer-ui__wrapper__top-right {
+  margin-top: 0;
+}
+/* The uncovered half can be narrower than the tool island: the tools take
+   the room between the menu and the library, and wrap when they must. */
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-menu_top {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-gap: 8px;
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .shapes-section > * {
+  max-width: 100%;
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-toolbar-container {
+  grid-auto-columns: fit-content(100%);
+}
+.wb-native-view[data-canvas-bleed][data-view="split"] .excalidraw .App-toolbar > .Stack_horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .wb-native-view[data-canvas-bleed] .excalidraw .sidebar {
   top: 76px;
