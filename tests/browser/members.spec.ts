@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -21,6 +21,12 @@ async function sharedProject(server: FakeProjectServer, owner: string, title: st
   server.share(id, MEMBER, role)
   server.invite(id, INVITED, "commenter")
   return id
+}
+
+/** Pick a role in a role select (the shadcn select). */
+async function chooseRole(scope: Locator, label: string, role: string) {
+  await scope.getByLabel(label).click()
+  await scope.page().getByRole("option", { name: role, exact: true }).click()
 }
 
 async function openMembers(page: Page, title: string) {
@@ -49,18 +55,18 @@ test("the owner sees a member and an invitation, changes the member's role, and 
   await expect(entries.nth(0)).toHaveText("person@example.com (you)Owner")
   await expect(entries).toContainText(["person@example.com", "member@example.com", "invited@example.com"])
   await expect(entries.nth(2)).toContainText("Invited, not yet accepted")
-  await expect(dialog.getByLabel("Role for member@example.com")).toHaveValue("editor")
-  await expect(dialog.getByLabel("Role for invited@example.com")).toHaveValue("commenter")
+  await expect(dialog.getByLabel("Role for member@example.com")).toContainText("Editor")
+  await expect(dialog.getByLabel("Role for invited@example.com")).toContainText("Commenter")
   // The owner's own entry has no controls.
   await expect(entries.nth(0).getByRole("combobox")).toHaveCount(0)
   await expect(entries.nth(0).getByRole("button")).toHaveCount(0)
   await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused()
   await expectNoAxeViolations(page)
 
-  await dialog.getByLabel("Role for member@example.com").selectOption("viewer")
+  await chooseRole(dialog, "Role for member@example.com", "Viewer")
   await expect(dialog.getByRole("status")).toHaveText("member@example.com is now a viewer.")
   expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("viewer")
-  await expect(dialog.getByLabel("Role for member@example.com")).toHaveValue("viewer")
+  await expect(dialog.getByLabel("Role for member@example.com")).toContainText("Viewer")
 
   // Dismissing the confirmation keeps the member.
   page.once("dialog", (confirmation) => void confirmation.dismiss())
@@ -100,9 +106,9 @@ test("the owner invites an email without an account, after a warning for an edit
   const dialog = await openMembers(page, "Team notes")
   const form = dialog.getByRole("form", { name: "Invite people" })
   await expect(form).toContainText("People without an account get an email to join.")
-  await expect(form.getByLabel("Role for the invitation")).toHaveValue("viewer")
+  await expect(form.getByLabel("Role for the invitation")).toContainText("Viewer")
   await form.getByLabel("Invite by email").fill("new@example.com")
-  await form.getByLabel("Role for the invitation").selectOption("editor")
+  await chooseRole(form, "Role for the invitation", "Editor")
 
   // Dismissing the warning invites nobody.
   let question = ""
@@ -123,7 +129,7 @@ test("the owner invites an email without an account, after a warning for an edit
   await expect(entries).toHaveCount(4)
   await expect(entries.nth(3)).toContainText("new@example.com")
   await expect(entries.nth(3)).toContainText("Invited, not yet accepted")
-  await expect(dialog.getByLabel("Role for new@example.com")).toHaveValue("editor")
+  await expect(dialog.getByLabel("Role for new@example.com")).toContainText("Editor")
   await expect(form.getByLabel("Invite by email")).toHaveValue("")
   await expectNoAxeViolations(page)
 })
@@ -167,13 +173,13 @@ test("making a member an editor asks first", async ({ page }) => {
     question = confirmation.message()
     void confirmation.dismiss()
   })
-  await dialog.getByLabel("Role for member@example.com").selectOption("editor")
+  await chooseRole(dialog, "Role for member@example.com", "Editor")
   await expect.poll(() => question).toBe(`Make member@example.com an editor of Team notes? ${EDITOR_WARNING}`)
-  await expect(dialog.getByLabel("Role for member@example.com")).toHaveValue("viewer")
+  await expect(dialog.getByLabel("Role for member@example.com")).toContainText("Viewer")
   expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("viewer")
 
   page.once("dialog", (confirmation) => void confirmation.accept())
-  await dialog.getByLabel("Role for member@example.com").selectOption("editor")
+  await chooseRole(dialog, "Role for member@example.com", "Editor")
   await expect(dialog.getByRole("status")).toHaveText("member@example.com is now an editor.")
   expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("editor")
 })

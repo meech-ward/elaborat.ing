@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import type { OAuthGrant } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
+import { Banner, BannerAction } from "@/features/design-system"
 import { createClient } from "@/lib/supabase/client"
 
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; grants: OAuthGrant[] }
@@ -58,20 +59,21 @@ export function ConnectedAgents() {
   }
   if (state.status === "error") {
     return (
-      <div className="flex flex-col items-start gap-3">
-        <p role="alert" className="text-sm">
-          Could not load connected agents: {state.message}
-        </p>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setState({ status: "loading" })
-            setAttempt((value) => value + 1)
-          }}
-        >
-          Try again
-        </Button>
-      </div>
+      <Banner
+        tone="danger"
+        action={
+          <BannerAction
+            onClick={() => {
+              setState({ status: "loading" })
+              setAttempt((value) => value + 1)
+            }}
+          >
+            Try again
+          </BannerAction>
+        }
+      >
+        Could not load connected agents: {state.message}
+      </Banner>
     )
   }
   return (
@@ -79,11 +81,7 @@ export function ConnectedAgents() {
       <p className="text-sm text-muted-foreground">
         An agent you approve acts as you: it can open and change every project you can. Disconnect one to stop that at once.
       </p>
-      {notice ? (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <Banner tone="info">{notice}</Banner> : null}
       {state.grants.length === 0 ? (
         <p className="text-sm">No agents are connected. When you approve one, such as Claude or ChatGPT, it shows here.</p>
       ) : (

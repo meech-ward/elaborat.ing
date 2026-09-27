@@ -1,6 +1,7 @@
 import { useRef } from "react"
 import { useRegisterSW } from "virtual:pwa-register/react"
 import { Button } from "@/components/ui/button"
+import { FloatingPanel } from "@/features/design-system"
 
 /**
  * Registers the service worker and, once a new version of the app has
@@ -22,15 +23,12 @@ export function UpdateReady() {
   })
   if (!needRefresh) return null
   return (
-    // The info banner look: a panel with the menu shadow around a strip in
-    // the selection colour with link text.
-    <div
-      role="status"
-      className="fixed right-4 bottom-12 z-40 rounded-[12px] border border-[var(--panel-border)] bg-[var(--panel)] p-1.5 shadow-[0_16px_40px_var(--shadow)]"
-    >
+    // A small floating panel at the bottom right holding the button in the
+    // callout's colours (accentSoft), as the library draws news to act on.
+    <FloatingPanel render={<div role="status" />} className="fixed right-4 bottom-12 z-40 p-1.5">
       <Button
         variant="ghost"
-        className="h-auto rounded-[10px] bg-[var(--accent-soft)] px-3 py-2.5 text-[var(--accent-soft-text)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-soft-text)] hover:underline active:bg-[var(--accent-soft)]"
+        className="h-auto rounded-tile bg-accent-soft px-3 py-2.5 text-accent-soft-text hover:bg-accent-soft hover:text-accent-soft-text hover:underline active:bg-accent-soft"
         onClick={() => {
           chosen.current = true
           void navigator.serviceWorker.getRegistration().then((registration) => {
@@ -42,6 +40,6 @@ export function UpdateReady() {
       >
         Update ready
       </Button>
-    </div>
+    </FloatingPanel>
   )
 }

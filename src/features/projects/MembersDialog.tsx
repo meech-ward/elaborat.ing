@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Member, ProjectLibrary } from "@/features/project-storage/library"
 import type { MemberRole } from "@/features/project-storage/remote"
 
@@ -13,6 +14,33 @@ const roleName = { owner: "Owner", editor: "Editor", commenter: "Commenter", vie
 const aRole = (role: MemberRole) => (role === "editor" ? "an editor" : `a ${role}`)
 /** Asked before anyone is made an editor, by invitation or by a role change. */
 const EDITOR_WARNING = "Editors can change and delete files, and their agents can too."
+const ROLE_ITEMS = ROLES.map((role) => ({ value: role, label: roleName[role] }))
+
+/** A role picked from the shadcn select, named by `label` ("Role for ..."). */
+function RoleSelect({ label, value, onChange }: { label: string; value: MemberRole; onChange: (role: MemberRole) => void }) {
+  return (
+    <Select
+      items={ROLE_ITEMS}
+      value={value}
+      onValueChange={(next) => {
+        const role = ROLES.find((entry) => entry === next)
+        if (role) onChange(role)
+      }}
+    >
+      <SelectTrigger aria-label={label} size="sm" className="min-w-28">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {ROLE_ITEMS.map((item) => (
+          <SelectItem key={item.value} value={item.value}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 /** An account without an email address is named by the start of its id. */
 const nameOf = (member: Member) => member.email ?? `Account ${member.userId.slice(0, 8)}`
 
@@ -155,21 +183,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
                 onChange={(event) => setEmail(event.target.value)}
                 className="min-w-0 flex-1 basis-48"
               />
-              <select
-                aria-label="Role for the invitation"
-                value={inviteRole}
-                onChange={(event) => {
-                  const role = ROLES.find((entry) => entry === event.target.value)
-                  if (role) setInviteRole(role)
-                }}
-                className="h-8 rounded-lg border border-input bg-panel px-2 text-sm"
-              >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {roleName[role]}
-                  </option>
-                ))}
-              </select>
+              <RoleSelect label="Role for the invitation" value={inviteRole} onChange={setInviteRole} />
               <Button type="submit" size="sm" disabled={pending}>
                 Invite
               </Button>
@@ -183,7 +197,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
             tabIndex={-1}
             aria-label="Members"
             aria-busy={pending}
-            className="flex flex-col divide-y rounded-lg border outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex flex-col divide-y divide-border rounded-lg border border-border outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {members.map((member) => {
               const name = nameOf(member)
@@ -203,21 +217,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
                   </span>
                   {editable ? (
                     <span className="flex items-center gap-2">
-                      <select
-                        aria-label={`Role for ${name}`}
-                        value={member.role}
-                        onChange={(event) => {
-                          const role = ROLES.find((entry) => entry === event.target.value)
-                          if (role) changeRole(member, role)
-                        }}
-                        className="h-8 rounded-lg border border-input bg-panel px-2 text-sm"
-                      >
-                        {ROLES.map((role) => (
-                          <option key={role} value={role}>
-                            {roleName[role]}
-                          </option>
-                        ))}
-                      </select>
+                      <RoleSelect label={`Role for ${name}`} value={member.role as MemberRole} onChange={(role) => changeRole(member, role)} />
                       <Button
                         variant="outline"
                         size="sm"
