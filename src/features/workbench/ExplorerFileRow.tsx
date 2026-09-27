@@ -37,6 +37,7 @@ export function ExplorerFileRow({
   active,
   dirty,
   unsavedDraft,
+  neverSaved = false,
   draft,
   onOpen,
   onFeedback,
@@ -54,8 +55,10 @@ export function ExplorerFileRow({
   active: boolean;
   /** True when the file is open with unsaved changes (rename refused). */
   dirty: boolean;
-  /** True when the file is open as a never-saved draft (rename refused). */
+  /** True when the file is open as a never-saved draft (rename refused, unless `neverSaved`). */
   unsavedDraft: boolean;
+  /** The file has no saved copy at all: a rename moves its draft, unsaved edits included. */
+  neverSaved?: boolean;
   /** True for an open unsaved tab shown in the tree before its first save. */
   draft?: boolean;
   onOpen: () => void;
@@ -97,6 +100,11 @@ export function ExplorerFileRow({
     }
   };
   const requestRename = () => {
+    if (neverSaved) {
+      setRenameKey((key) => key + 1);
+      setRenameOpen(true);
+      return;
+    }
     if (dirty) {
       onFeedback(
         `Rename refused: ${path} has unsaved changes. Save or discard them first, then rename again.`,

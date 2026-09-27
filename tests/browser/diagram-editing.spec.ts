@@ -211,6 +211,9 @@ test("a new diagram from the menu is saved with an example and compiles", async 
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, "a.md")
   await page.getByRole("button", { name: "Workbench menu" }).click()
   await page.getByRole("menuitem", { name: "New diagram" }).click()
+  // It asks for a name first; Enter takes the one proposed.
+  await expect(page.getByRole("textbox", { name: /^Name of the new diagram in / })).toHaveValue("untitled.d2")
+  await page.keyboard.press("Enter")
   await expect(page.getByRole("tab", { name: "untitled.d2" })).toHaveAttribute("aria-selected", "true")
   await compiled(page)
   await expect.poll(() => fake.server.content(id, "untitled.d2")).toContain("->")

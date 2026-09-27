@@ -66,16 +66,19 @@ import {
 } from "lucide-react";
 import { themes, useAppearance, type ThemeName } from "@/features/appearance";
 import { AccountMenu } from "@/features/auth";
+import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { parseDrawingFile } from "@/features/drawings/parse";
 import { readChosenFile } from "@/lib/fileAdapter";
-import { kindForPath, suggestUntitledName } from "./session";
+import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { ActionMenu } from "./WorkbenchChrome";
 import { useCompactWorkbench, useSheetViewport } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
-import { CreateFolderDialog } from "./CreateFolderDialog";
+import { NewEntryField } from "./NewEntryField";
+import { nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
+import { RenameDialog } from "./RenameDialog";
 import { prepareProjectLeave, type PrepareProjectLeave } from "./projectLeave";
 import type { OperationSession } from "./operationSession";
 import type { WorkspaceFileRef, WorkspaceStore } from "./workspaceStore";
@@ -212,9 +215,24 @@ export function WorkspaceWorkbench({
       return defaultFolderPreferences();
     }
   });
-  const [folderDialog, setFolderDialog] = useState(false);
-  const [folderPending, setFolderPending] = useState(false);
-  const [folderError, setFolderError] = useState<string | null>(null);
+  // A new file or folder being named: in the explorer, or in a dialog on a phone.
+  const [creating, setCreating] = useState<{ kind: NewEntryKind; dir: string; initial: string; key: number } | null>(null);
+  // A new key for each name field, so each one starts from its proposed name.
+  const creatingKey = useRef(0);
+  // Runs once the workbench menu or the palette has closed, such as a new
+  // file's name field, which then keeps the focus they would give back.
+  const afterClose = useRef<(() => void) | null>(null);
+  const runAfterClose = () => {
+    const run = afterClose.current;
+    afterClose.current = null;
+    run?.();
+  };
+  // The menu gives focus back after it finishes closing, so its own flag says not to.
+  const keepMenuFocus = useRef(false);
+  const afterMenu = (run: () => void) => {
+    afterClose.current = run;
+    keepMenuFocus.current = true;
+  };
   // Last active file whose ancestors were revealed: reveal runs once per
   // actual file change, never reopening a folder the user just collapsed.
   const revealedFor = useRef<string | null>(null);
@@ -459,68 +477,96 @@ export function WorkspaceWorkbench({
     if (narrow) setSidebar(false);
     if (restoreDone.current) setPersistReady(true);
   }, [narrow]);
-  const createFile = useCallback(
-    async (kind: "note" | "mdx" | "drawing" | "diagram") => {
-      const existing = [
-        ...files.map((file) => file.path),
-        ...state.tabs.map((tab) => tab.path),
-      ];
-      // The selected folder ("", the explicit root, included) is where new
-      // files go. Collision checks cover saved files and open tabs.
-      const dir = folderPrefs.selectedFolder ?? "";
-      const suffix = kind === "mdx" ? ".mdx" : kind === "drawing" ? ".excalidraw" : kind === "diagram" ? ".d2" : ".md";
-      const path = suggestUntitledName(existing, suffix, dir);
-      try {
-        if (kind === "drawing" || kind === "diagram") {
-          // A drawing or diagram starts saved: an empty scene, or a small
-          // example diagram whose generated files appear on its first save.
-          const content = kind === "drawing" ? '{"type":"excalidraw","version":2,"elements":[]}' : FLOW_D2_EXAMPLE;
-          const saved = await client.write(path, { content, expectedRevision: null });
-          await refreshList();
-          addDraft({ path, content, revision: saved.revision });
-          return;
-        }
-        await client.persistDrafts([{ path, content: "", baseRevision: null }]);
-        addDraft({ path, content: "", revision: null });
-      } catch (error) { setNotice(`Create failed: ${error instanceof Error ? error.message : String(error)}`); }
-    },
-    [addDraft, client, files, folderPrefs.selectedFolder, refreshList, state.tabs],
+  /** Names new files and folders must not take: every file, open unsaved tab and folder. */
+  const takenNames = useCallback(
+    () => ({ files: [...files.map((file) => file.path), ...stateRef.current.tabs.map((tab) => tab.path)], dirs: directories }),
+    [directories, files],
   );
-  const openFolderDialog = useCallback(() => {
-    setFolderError(null);
-    setFolderDialog(true);
-  }, []);
-  // One named child of the selected existing directory (or the root).
-  // Success refreshes the authoritative list, reveals the new folder, and
-  // selects it for subsequent creation; refusal stays visible in the open
-  // dialog and changes no file.
-  const createFolder = useCallback(
-    async (name: string) => {
-      const parent = folderPrefs.selectedFolder ?? "";
-      setFolderPending(true);
-      setFolderError(null);
-      try {
-        const created = await client.createDirectory(joinFolder(parent, name));
+  /**
+   * Ask for a new file or folder's name, in the selected folder (or the
+   * root): an inline field in the explorer, which opens if it is hidden, or
+   * a dialog on a phone.
+   */
+  const startCreate = useCallback(
+    (kind: NewEntryKind) => {
+      const selected = folderPrefs.selectedFolder ?? "";
+      const dir = selected === "" || directories.includes(selected) ? selected : "";
+      const taken = takenNames();
+      setCreating({ kind, dir, initial: proposedName(kind, dir, [...taken.files, ...taken.dirs]), key: ++creatingKey.current });
+      if (narrow) return;
+      setSidebar(true);
+      // Open the folder the field shows in.
+      if (dir !== "") setFolderPrefs((prev) => ({ ...prev, expanded: revealAncestors(prev.expanded, joinFolder(dir, "untitled")) }));
+    },
+    [directories, folderPrefs.selectedFolder, narrow, takenNames],
+  );
+  /** Create what `creating` names, saved at once, and open a file in its tab. A refusal is thrown for the field to show. */
+  const createEntry = useCallback(
+    async (target: { kind: NewEntryKind; dir: string }, name: string) => {
+      const taken = takenNames();
+      if (target.kind === "folder") {
+        const problem = newFolderError(target.dir, name, taken);
+        if (problem) throw new Error(problem);
+        const created = await client.createDirectory(joinFolder(target.dir, name));
         await refreshList();
         setFolderPrefs((prev) => ({
           selectedFolder: created.path,
           // Reveal the new folder itself by revealing a file inside it.
-          expanded: revealAncestors(
-            prev.expanded,
-            joinFolder(created.path, "untitled"),
-          ),
+          expanded: revealAncestors(prev.expanded, joinFolder(created.path, "untitled")),
         }));
-        setFolderDialog(false);
+        setCreating(null);
         setNotice(`Created folder ${created.path}.`);
+        return;
+      }
+      const checked = newFilePath(target.kind, target.dir, name, taken);
+      if ("error" in checked) throw new Error(checked.error);
+      // A drawing starts as an empty scene, a diagram as a small example
+      // whose generated files appear on its first save, and a note empty.
+      const content = target.kind === "drawing" ? '{"type":"excalidraw","version":2,"elements":[]}' : target.kind === "diagram" ? FLOW_D2_EXAMPLE : "";
+      let saved;
+      try {
+        saved = await client.write(checked.path, { content, expectedRevision: null });
+      } catch (cause) {
+        if (cause instanceof LocalConflictError) throw new Error(`${checked.path} already exists. Choose another name.`);
+        throw cause;
+      }
+      await refreshList();
+      setCreating(null);
+      addDraft({ path: checked.path, content, revision: saved.revision });
+    },
+    [addDraft, client, refreshList, takenNames],
+  );
+  const validateNew = (target: { kind: NewEntryKind; dir: string }) => (name: string) => {
+    if (target.kind === "folder") return newFolderError(target.dir, name, takenNames());
+    const checked = newFilePath(target.kind, target.dir, name, takenNames());
+    return "error" in checked ? checked.error : null;
+  };
+  /**
+   * Rename a new file that was never saved: its draft takes the new name,
+   * with the latest text in its editor, and its tab follows. It is saved
+   * under that name when it is saved.
+   */
+  const renameNewFile = useCallback(
+    async (path: string, name: string) => {
+      const slash = path.lastIndexOf("/");
+      const to = slash === -1 ? name : `${path.slice(0, slash)}/${name}`;
+      const session = leaveSessions.current.get(path);
+      session?.freeze();
+      try {
+        await session?.persistDraft?.();
+        await client.flushLocalDrafts();
+        await client.renameDraft(path, to);
+        const renamed = await client.read(to);
+        dispatch({ type: "draft-renamed", from: path, to, content: renamed.content });
+        await refreshList();
+        setNotice(`Renamed ${path} to ${to}. It is not saved yet.`);
       } catch (error) {
-        setFolderError(
-          `Could not create the folder: ${error instanceof Error ? error.message : String(error)} No files were changed.`,
-        );
+        setNotice(`Rename refused: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
-        setFolderPending(false);
+        session?.release();
       }
     },
-    [client, folderPrefs.selectedFolder, refreshList],
+    [client, refreshList],
   );
   const importFile = useCallback(
     async (file: File) => {
@@ -637,6 +683,8 @@ export function WorkspaceWorkbench({
     directories,
     draftPaths,
   );
+  // A file with no saved copy: renaming it only changes the name it will be saved under.
+  const neverSaved = (path: string) => draftPaths.includes(path) || files.some((file) => file.path === path && file.revision === null);
   const treeIsEmpty =
     tree.folders.length === 0 && tree.rootFiles.length === 0;
   // One explorer implementation for the desktop sidebar and the 390px
@@ -666,12 +714,27 @@ export function WorkspaceWorkbench({
           onSelectFolder={selectFolder}
           onOpenFile={(path) => void openFromNavigation(path)}
           onFeedback={setNotice}
-          onRenameFile={readOnly ? undefined : moves.rename}
+          onRenameFile={readOnly ? undefined : (path, name) => (neverSaved(path) ? renameNewFile(path, name) : moves.rename(path, name))}
+          isNeverSaved={neverSaved}
           onMoveFile={readOnly ? undefined : moves.open}
           onRenameFolder={readOnly ? undefined : moves.renameFolder}
           onMoveFolder={readOnly ? undefined : moves.openFolder}
           onDeleteFile={readOnly ? undefined : deletes.deleteFile}
           onDeleteFolder={readOnly ? undefined : deletes.deleteFolder}
+          newEntry={creating && !narrow ? {
+            dir: creating.dir,
+            field: (
+              <NewEntryField
+                key={creating.key}
+                kind={creating.kind}
+                dir={creating.dir}
+                initial={creating.initial}
+                validate={validateNew(creating)}
+                onCreate={(name) => createEntry(creating, name)}
+                onCancel={() => setCreating(null)}
+              />
+            ),
+          } : null}
         />
       )}
       {listed && !listError && treeIsEmpty && (
@@ -685,11 +748,11 @@ export function WorkspaceWorkbench({
     ...(readOnly
       ? []
       : [
-          { name: "New note", run: () => void createFile("note") },
-          { name: "New MDX note", run: () => void createFile("mdx") },
-          { name: "New drawing", run: () => void createFile("drawing") },
-          { name: "New diagram", run: () => void createFile("diagram") },
-          { name: "New folder", run: openFolderDialog },
+          { name: "New note", run: () => { afterClose.current = () => startCreate("note"); } },
+          { name: "New MDX note", run: () => { afterClose.current = () => startCreate("mdx"); } },
+          { name: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
+          { name: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
+          { name: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
         ]),
     ...files.map((file) => ({
       name: `Open ${file.path}`,
@@ -741,22 +804,26 @@ export function WorkspaceWorkbench({
             <PanelBottom size={17} />
           </button>
         </div>
-        <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton}>
+        <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton} finalFocus={() => {
+          const keep = keepMenuFocus.current;
+          keepMenuFocus.current = false;
+          return !keep;
+        }} onClosed={runAfterClose}>
           {!readOnly && (
-            <button onClick={() => void createFile("note")}>
+            <button onClick={() => afterMenu(() => startCreate("note"))}>
               <FilePlus size={14} /> New
             </button>
           )}
-          {!readOnly && <button onClick={() => void createFile("mdx")}><FilePlus size={14} /> New MDX note</button>}
-          {!readOnly && <button onClick={() => void createFile("drawing")}><PenTool size={14} /> New drawing</button>}
-          {!readOnly && <button onClick={() => void createFile("diagram")}><Network size={14} /> New diagram</button>}
+          {!readOnly && <button onClick={() => afterMenu(() => startCreate("mdx"))}><FilePlus size={14} /> New MDX note</button>}
+          {!readOnly && <button onClick={() => afterMenu(() => startCreate("drawing"))}><PenTool size={14} /> New drawing</button>}
+          {!readOnly && <button onClick={() => afterMenu(() => startCreate("diagram"))}><Network size={14} /> New diagram</button>}
           {!readOnly && (
             <button onClick={() => fileInput.current?.click()}>
               <FileUp size={14} /> Import
             </button>
           )}
           {!readOnly && (
-            <button onClick={openFolderDialog}>
+            <button onClick={() => afterMenu(() => startCreate("folder"))}>
               <FolderPlus size={14} /> New folder
             </button>
           )}
@@ -851,7 +918,7 @@ export function WorkspaceWorkbench({
                         className="wb-icon"
                         aria-label="New folder"
                         title="New folder"
-                        onClick={openFolderDialog}
+                        onClick={() => startCreate("folder")}
                       >
                         <FolderPlus size={15} />
                       </button>
@@ -1037,11 +1104,11 @@ export function WorkspaceWorkbench({
                           Open explorer
                         </button>
                         {!readOnly && (
-                          <button onClick={() => void createFile("note")}>
+                          <button onClick={() => startCreate("note")}>
                             New note
                           </button>
                         )}
-                        {!readOnly && <button onClick={() => void createFile("mdx")}>New MDX note</button>}
+                        {!readOnly && <button onClick={() => startCreate("mdx")}>New MDX note</button>}
                       </div>
                     )}
                   </div>
@@ -1117,7 +1184,7 @@ export function WorkspaceWorkbench({
                 {!state.tabs.length && <p>No open files.</p>}
               </section>
               <nav className="wb-explorer" aria-label="Workspace files">
-                <div className="wb-explorer-title">Files {!readOnly && <button className="wb-icon" aria-label="New folder" onClick={openFolderDialog}><FolderPlus size={18} /></button>}</div>
+                <div className="wb-explorer-title">Files {!readOnly && <button className="wb-icon" aria-label="New folder" onClick={() => startCreate("folder")}><FolderPlus size={18} /></button>}</div>
                 {renderExplorerBody()}
               </nav>
               <section className="wb-navigation-tools" aria-label="Workbench controls">
@@ -1142,10 +1209,10 @@ export function WorkspaceWorkbench({
           {appearance.theme} / {appearance.scheme}
         </span>
       </footer>
-      <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }}>
+      <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>
         <Dialog.Portal>
           <Dialog.Backdrop className="wb-backdrop" />
-          <Dialog.Popup className="wb-palette" finalFocus={() => { paletteInvoker.current?.focus({ preventScroll: true }); return false; }}>
+          <Dialog.Popup className="wb-palette" finalFocus={() => { if (afterClose.current === null) paletteInvoker.current?.focus({ preventScroll: true }); return false; }}>
             <Dialog.Title>Go anywhere</Dialog.Title>
             <Dialog.Description className="sr-only">
               Find a workspace file or command.
@@ -1187,19 +1254,24 @@ export function WorkspaceWorkbench({
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
-      <CreateFolderDialog
-        open={folderDialog}
-        parent={folderPrefs.selectedFolder ?? ""}
-        existingDirs={directories}
-        filePaths={files.map((file) => file.path)}
-        pending={folderPending}
-        serverError={folderError}
-        onSubmit={(name) => void createFolder(name)}
-        onOpenChange={(next) => {
-          if (!next) setFolderError(null);
-          setFolderDialog(next);
-        }}
-      />
+      {creating && narrow && (
+        <RenameDialog
+          key={creating.key}
+          open
+          title={`New ${newEntryNoun(creating.kind)} in ${creating.dir === "" ? "Workspace root" : creating.dir}`}
+          description={creating.kind === "folder" ? "Choose a name for the new folder." : `Choose a name for the new ${newEntryNoun(creating.kind)}. It is saved at once.`}
+          label="Name"
+          initial={creating.initial}
+          selectLength={nameStemLength(creating.kind, creating.initial)}
+          validate={validateNew(creating)}
+          onRename={(name) => createEntry(creating, name)}
+          onOpenChange={(open) => {
+            if (!open) setCreating(null);
+          }}
+          submitLabel="Create"
+          pendingLabel="Creating…"
+        />
+      )}
       {moves.target && <MoveDialog path={moves.target} kind={moves.kind} folders={directories} folder={moves.folder}
         plan={moves.plan} pending={moves.pending} error={moves.error} stale={moves.stale}
         onFolder={moves.changeFolder} onPreview={() => void moves.preview()}
