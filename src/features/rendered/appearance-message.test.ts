@@ -4,7 +4,7 @@ test("appearance is bounded presentation input bound to the established frame se
   const data = {
     kind: "appearance",
     session: "session-accepted",
-    theme: "paper",
+    theme: "cherry-paper",
     scheme: "light",
   };
   const check = (
@@ -17,6 +17,7 @@ test("appearance is bounded presentation input bound to the established frame se
   expect(check(data, "session-other").ok).toBe(false);
   expect(check(data, "session-accepted", null).ok).toBe(false);
   expect(check({ ...data, theme: "url(https://example.com)" }).ok).toBe(false);
+  expect(check({ ...data, theme: "paper" }).ok).toBe(false);
   expect(check({ ...data, scheme: "system" }).ok).toBe(false);
   expect(PREVIEW_CHILD_CSP).toContain("font-src data:;");
   expect(PREVIEW_CHILD_CSP).toContain("connect-src 'none';");

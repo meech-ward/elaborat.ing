@@ -767,7 +767,7 @@ export function WorkspaceWorkbench({
         {/* On a phone the navigation sheet shows the project header at its top instead. */}
         {!narrow && projectHeader}
         <select
-          aria-label="Theme direction"
+          aria-label="Palette"
           value={appearance.theme}
           onChange={(e) => setTheme(e.target.value as ThemeName)}
         >
@@ -1206,7 +1206,7 @@ export function WorkspaceWorkbench({
         <span>Workspace</span>
         <span>
           {state.tabs.filter((tab) => tab.dirty).length} unsaved ·{" "}
-          {appearance.theme} / {appearance.scheme}
+          {themes.find((theme) => theme.id === appearance.theme)?.label} / {appearance.scheme}
         </span>
       </footer>
       <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>

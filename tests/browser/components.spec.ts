@@ -355,7 +355,7 @@ for (const [width, scheme] of [
 
     test("components and their prop controls fit, with no accessibility problems", async ({ page }) => {
       await page.addInitScript((scheme) => {
-        localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "studio", scheme }))
+        localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "supabase-green", scheme }))
       }, scheme)
       await openProject(page, { [MODULE]: releaseCard(), "notes/aliases.mdx": aliased }, "notes/aliases.mdx", phone)
       await rendered(page)

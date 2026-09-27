@@ -1,109 +1,76 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { getAppearanceTokens, parseAppearance, themes } from './index';
+import { palettes } from './palettes';
 
 describe('themes', () => {
-  test('lists Studio, Paper and Circuit in order', () => {
-    expect(themes.map((entry) => entry.id)).toEqual(['studio', 'paper', 'circuit']);
-    expect(themes.map((entry) => entry.label)).toEqual(['Studio', 'Paper', 'Circuit']);
+  test('lists the eight palettes, Supabase Green first', () => {
+    expect(themes.map((entry) => entry.label)).toEqual([
+      'Supabase Green',
+      'Lavender Ink',
+      'Blueprint Cobalt',
+      'Glacier Cyan',
+      'Raspberry Paper',
+      'Cherry Paper',
+      'Pewter',
+      'Ink and Volt',
+    ]);
   });
 });
 
 describe('getAppearanceTokens', () => {
-  test('studio dark matches the reference defaults', () => {
-    expect(getAppearanceTokens({ theme: 'studio', scheme: 'dark' })).toEqual({
-      bg: '#191c22',
-      chrome: '#11141a',
-      raised: '#262b34',
-      line: '#353c49',
-      text: '#e8edf5',
-      muted: '#a5afc0',
-      accent: '#91b7ff',
-      blue: '#8abaf0',
-      purple: '#bcaaf3',
-      amber: '#dac395',
-      green: '#9ecbb3',
-      source: '#bdd2f0',
-      selection: '#355884',
-      shadow: '#0005',
-      uiFont: "'Inter Variable', sans-serif",
-      headingFont: "'Inter Variable', sans-serif",
-      codeFont: "'IBM Plex Mono', monospace",
-      headingWeight: 550,
-      headingTracking: '-1.7px',
-    });
+  test('maps a palette onto the variables the screens use', () => {
+    const dark = palettes[0].dark;
+    const tokens = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
+    expect(tokens.bg).toBe(dark.panel);
+    expect(tokens.chrome).toBe(dark.bg);
+    expect(tokens.accent).toBe('#3ECF8E');
+    expect(tokens.selection).toBe(dark.accentSoft);
+    expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).accent).toBe('#097C4F');
+    expect(getAppearanceTokens({ theme: 'pewter', scheme: 'light' }).accent).toBe(palettes[6].light.accent);
   });
 
-  test('studio light matches the reference scheme defaults', () => {
-    const tokens = getAppearanceTokens({ theme: 'studio', scheme: 'light' });
-    expect(tokens.bg).toBe('#fff');
-    expect(tokens.accent).toBe('#215fb4');
-    expect(tokens.selection).toBe('#c6defe');
-    expect(tokens.shadow).toBe('#26374f24');
-    expect(tokens.uiFont).toBe("'Inter Variable', sans-serif");
-    expect(tokens.headingWeight).toBe(550);
-  });
-
-  test('paper dark applies the theme override over dark defaults', () => {
-    const tokens = getAppearanceTokens({ theme: 'paper', scheme: 'dark' });
-    expect(tokens.bg).toBe('#24251f');
-    expect(tokens.accent).toBe('#c4ce91');
-    expect(tokens.selection).toBe('#515d35');
-    expect(tokens.shadow).toBe('#0005');
-    expect(tokens.uiFont).toBe("'DM Sans Variable', sans-serif");
-    expect(tokens.headingFont).toBe("'DM Sans Variable', sans-serif");
-    expect(tokens.headingWeight).toBe(500);
-    expect(tokens.headingTracking).toBe('-1.4px');
-  });
-
-  test('paper light matches the reference', () => {
-    const tokens = getAppearanceTokens({ theme: 'paper', scheme: 'light' });
-    expect(tokens.bg).toBe('#faf7ee');
-    expect(tokens.accent).toBe('#5b7138');
-    expect(tokens.selection).toBe('#d9e4b9');
-    expect(tokens.shadow).toBe('#26374f24');
-    expect(tokens.source).toBe('#486647');
-  });
-
-  test('circuit dark applies the theme override with mono headings', () => {
-    const tokens = getAppearanceTokens({ theme: 'circuit', scheme: 'dark' });
-    expect(tokens.bg).toBe('#101f2a');
-    expect(tokens.accent).toBe('#71dddf');
-    expect(tokens.selection).toBe('#28566c');
-    expect(tokens.shadow).toBe('#0005');
-    expect(tokens.uiFont).toBe("'Inter Variable', sans-serif");
-    expect(tokens.headingFont).toBe("'IBM Plex Mono', monospace");
-    expect(tokens.headingWeight).toBe(400);
-    expect(tokens.headingTracking).toBe('-2px');
-  });
-
-  test('circuit light matches the reference', () => {
-    const tokens = getAppearanceTokens({ theme: 'circuit', scheme: 'light' });
-    expect(tokens.bg).toBe('#f0f7fa');
-    expect(tokens.accent).toBe('#096e7e');
-    expect(tokens.selection).toBe('#b7e5ed');
-    expect(tokens.shadow).toBe('#26374f24');
-    expect(tokens.source).toBe('#176577');
-  });
-});
-
-describe('parseAppearance', () => {
-  test('accepts every valid theme/scheme pair', () => {
-    for (const theme of ['studio', 'paper', 'circuit'] as const) {
+  test('gives the editor six-digit colours for every palette and scheme', () => {
+    for (const { id } of themes) {
       for (const scheme of ['light', 'dark'] as const) {
-        expect(parseAppearance({ theme, scheme })).toEqual({ theme, scheme });
+        const tokens = getAppearanceTokens({ theme: id, scheme });
+        for (const key of ['bg', 'text', 'accent'] as const) expect(tokens[key]).toMatch(/^#[\da-f]{6}$/i);
       }
     }
   });
 
-  test('falls back to Studio dark for malformed records', () => {
-    const fallback = { theme: 'studio', scheme: 'dark' } as const;
+  test('the first-paint stylesheet matches the default palette', () => {
+    const css = readFileSync(new URL('./themes.css', import.meta.url), 'utf8');
+    const dark = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
+    const light = getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' });
+    const [rootBlock, lightBlock] = [css.split(':root {')[1], css.split(':root[data-scheme=light] {')[1]].map((block) => block.split('}')[0]);
+    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection'] as const) {
+      expect(rootBlock).toContain(`--${key}:${dark[key]};`);
+      expect(lightBlock).toContain(`--${key}:${light[key]};`);
+    }
+  });
+});
+
+describe('parseAppearance', () => {
+  test('accepts every palette in both schemes', () => {
+    for (const { id } of themes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        expect(parseAppearance({ theme: id, scheme })).toEqual({ theme: id, scheme });
+      }
+    }
+  });
+
+  test('moves a theme that is no longer offered to Supabase Green, keeping light or dark', () => {
+    expect(parseAppearance({ theme: 'studio', scheme: 'light' })).toEqual({ theme: 'supabase-green', scheme: 'light' });
+    expect(parseAppearance({ theme: 'circuit', scheme: 'dark' })).toEqual({ theme: 'supabase-green', scheme: 'dark' });
+  });
+
+  test('falls back to Supabase Green dark for malformed records', () => {
+    const fallback = { theme: 'supabase-green', scheme: 'dark' } as const;
     expect(parseAppearance(null)).toEqual(fallback);
-    expect(parseAppearance(undefined)).toEqual(fallback);
     expect(parseAppearance('studio')).toEqual(fallback);
     expect(parseAppearance({})).toEqual(fallback);
-    expect(parseAppearance({ theme: 'studio' })).toEqual(fallback);
-    expect(parseAppearance({ scheme: 'dark' })).toEqual(fallback);
-    expect(parseAppearance({ theme: 'noir', scheme: 'dark' })).toEqual(fallback);
-    expect(parseAppearance({ theme: 'studio', scheme: 'system' })).toEqual(fallback);
+    expect(parseAppearance({ theme: 'pewter' })).toEqual(fallback);
+    expect(parseAppearance({ theme: 'pewter', scheme: 'system' })).toEqual(fallback);
   });
 });

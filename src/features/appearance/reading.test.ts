@@ -36,7 +36,7 @@ test("valid reading records round-trip; unknown and invalid settings recover to 
 });
 
 test("old appearance records retain themes while reading preferences default independently", () => {
-  const old = { theme: "paper", scheme: "light" } as const;
+  const old = { theme: "pewter", scheme: "light" } as const;
   const storage = {
     getItem: (key: string) =>
       key === APPEARANCE_STORAGE_KEY ? JSON.stringify(old) : null,

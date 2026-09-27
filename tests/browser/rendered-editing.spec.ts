@@ -363,7 +363,7 @@ for (const [width, scheme] of [
 ] as const) {
   test(`at ${width}px in ${scheme}, the page and the note have no serious accessibility problems`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
-    await page.evaluate((scheme) => window.renderedHarness.appearance("studio", scheme), scheme)
+    await page.evaluate((scheme) => window.renderedHarness.appearance("supabase-green", scheme), scheme)
     await fresh(page)
     await clickAt(page, plain, 0)
     await press(page, "Home")

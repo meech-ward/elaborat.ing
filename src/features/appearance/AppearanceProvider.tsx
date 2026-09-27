@@ -43,7 +43,11 @@ function readStoredAppearance(): Appearance {
       return { ...DEFAULT_APPEARANCE };
     }
     const raw = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
-    if (raw == null) return { ...DEFAULT_APPEARANCE };
+    // A first visit follows the device's light or dark setting.
+    if (raw == null) {
+      const light = window.matchMedia?.("(prefers-color-scheme: light)").matches;
+      return { ...DEFAULT_APPEARANCE, scheme: light ? "light" : "dark" };
+    }
     return parseAppearance(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_APPEARANCE };

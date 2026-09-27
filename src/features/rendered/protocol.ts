@@ -12,6 +12,7 @@
  * parser into the frame.
  */
 import { z } from "zod";
+import { PALETTE_IDS } from "../appearance/palettes";
 import { readingPreferencesSchema } from "../appearance/reading";
 
 /** Sandbox attribute for the preview iframe. allow-scripts ONLY. */
@@ -305,7 +306,7 @@ export type ResourcesMessage = z.infer<typeof resourcesMessageSchema>;
 export const appearanceMessageSchema = z.object({
   kind: z.literal("appearance"),
   session: z.string().min(8),
-  theme: z.enum(["studio", "paper", "circuit"]),
+  theme: z.enum(PALETTE_IDS),
   scheme: z.enum(["light", "dark"]),
 });
 export type AppearanceMessage = z.infer<typeof appearanceMessageSchema>;
