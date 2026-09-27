@@ -79,7 +79,7 @@ export function AccountMenu() {
           Sign out
         </MenuItem>
         {error ? (
-          <p role="alert" className="px-2.5 py-1.5 text-xs text-destructive">
+          <p role="alert" className="px-2.5 py-1.5 text-xs text-(--danger)">
             Not signed out: {error}
           </p>
         ) : null}
