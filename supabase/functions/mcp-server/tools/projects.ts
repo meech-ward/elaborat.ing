@@ -9,8 +9,8 @@ import type { ToolContext } from './types.ts'
 // database's rules apply: agents can archive a project but never permanently
 // delete one, and cannot accept invitations on the user's behalf.
 
-const projectId = z.uuid().describe('The project id, from list_projects.')
-const path = z
+export const projectId = z.uuid().describe('The project id, from list_projects.')
+export const path = z
   .string()
   .min(1)
   .describe('A path inside the project, such as notes/plan.md. No leading slash.')
