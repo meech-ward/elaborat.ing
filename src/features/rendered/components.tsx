@@ -51,7 +51,7 @@ export function Callout(props: {
   const Icon = { info: Info, warn: TriangleAlert, error: CircleAlert }[tone];
   return (
     <aside
-      className={cn('not-prose m-0 flex gap-3 rounded-[10px] px-3.5 py-3 text-[15px] leading-[1.55]', toneClasses)}
+      className={cn('not-prose m-0 flex gap-3 rounded-tile px-3.5 py-3 text-[15px] leading-[1.55]', toneClasses)}
       data-component="Callout"
       data-tone={tone}
     >

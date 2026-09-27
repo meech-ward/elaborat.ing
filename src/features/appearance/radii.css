@@ -1,0 +1,20 @@
+/* The style guide's radii, one scale for the app (index.css) and the
+   isolated preview frame (src/preview/tailwind.css). Each is a Tailwind
+   utility (rounded-row ... rounded-pill) and, being static, a CSS variable
+   too (var(--radius-row)) for the few rules written in plain CSS.
+
+   Rows 7, buttons and fields 9, menus 12, panels 14, pills. The screens
+   also use 5 for keycaps and the small buttons that sit inside a row or a
+   tab (chip), 8 for icon buttons and canvas tools (tool) and 10 for
+   banners, callouts, canvas islands, colour chips and phone buttons
+   (tile). */
+@theme static {
+  --radius-chip: 5px;
+  --radius-row: 7px;
+  --radius-tool: 8px;
+  --radius-button: 9px;
+  --radius-tile: 10px;
+  --radius-menu: 12px;
+  --radius-panel: 14px;
+  --radius-pill: 999px;
+}

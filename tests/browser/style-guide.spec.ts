@@ -127,6 +127,41 @@ test.describe("on a phone", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   })
 
+  test("the desktop screens show whole, scaled down to the column", async ({ page }) => {
+    await page.goto(styleGuideUrl)
+    for (const label of ["C5 note in Split", "C5 drawing, full screen", "C5 diagram, full screen", "Tool island"]) {
+      const specimen = page.getByText(label, { exact: true }).last().locator("xpath=following-sibling::*[1]")
+      await specimen.scrollIntoViewIfNeeded()
+      await expect(specimen).toHaveAttribute("data-slot", "scale-to-fit")
+      // The screen lies inside the page's 16px gutters, so none of it is cut off.
+      await expect
+        .poll(() => specimen.evaluate((node) => node.firstElementChild?.getBoundingClientRect().right ?? Infinity), { message: label })
+        .toBeLessThanOrEqual(390 - 16)
+    }
+    // On the full screens the tools and the header keep apart, as at 1440.
+    const screen = page.getByText("C5 drawing, full screen", { exact: true }).locator("xpath=following-sibling::*[1]")
+    const tools = await screen.getByRole("group", { name: "Drawing tools" }).boundingBox()
+    const save = await screen.getByRole("button", { name: /^Save/ }).boundingBox()
+    expect(tools && save && tools.x + tools.width < save.x).toBe(true)
+  })
+
+  test("fields, the brand link and a phone row's actions are at least 40 on a touch screen", async ({ page }) => {
+    await page.goto(styleGuideUrl)
+    test.skip(!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)), "this browser reports no coarse pointer")
+    const targets = [
+      page.getByPlaceholder("Project title"),
+      page.getByRole("link", { name: "elaborat.ing" }).first(),
+      page.getByRole("button", { name: "Actions for docs/customer-model.mdx, phone sample" }),
+    ]
+    for (const target of targets) {
+      await target.scrollIntoViewIfNeeded()
+      const box = await target.boundingBox()
+      expect(box?.height, String(target)).toBeGreaterThanOrEqual(40)
+    }
+    const actions = await targets[2].boundingBox()
+    expect(actions?.width).toBeGreaterThanOrEqual(40)
+  })
+
   test("buttons are at least 40 high on a touch screen", async ({ page }) => {
     await page.goto(styleGuideUrl)
     test.skip(!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)), "this browser reports no coarse pointer")

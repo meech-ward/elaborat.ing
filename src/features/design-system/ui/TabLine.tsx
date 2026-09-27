@@ -241,7 +241,7 @@ export function TabLine({
               // Over the active tab's right end, 5 in, on its seg fill; seen
               // with the pointer on the tab or on it, with keyboard focus,
               // while its menu is open, and always on touch screens.
-              className="absolute top-1/2 -translate-x-[calc(100%+5px)] -translate-y-1/2 rounded-[6px] bg-seg text-muted-foreground opacity-0 group-has-[[data-tab-value][data-active]:hover]/tabline:opacity-100 group-has-[[data-tab-value][data-active]:focus-visible]/tabline:opacity-100 hover:bg-[color-mix(in_oklab,var(--text)_12%,var(--seg))] hover:text-foreground hover:opacity-100 focus-visible:opacity-100 data-popup-open:bg-[color-mix(in_oklab,var(--text)_12%,var(--seg))] data-popup-open:text-foreground data-popup-open:opacity-100 pointer-coarse:size-8 pointer-coarse:opacity-100"
+              className="absolute top-1/2 -translate-x-[calc(100%+5px)] -translate-y-1/2 rounded-chip bg-seg text-muted-foreground opacity-0 group-has-[[data-tab-value][data-active]:hover]/tabline:opacity-100 group-has-[[data-tab-value][data-active]:focus-visible]/tabline:opacity-100 hover:bg-seg-strong hover:text-foreground hover:opacity-100 focus-visible:opacity-100 data-popup-open:bg-seg-strong data-popup-open:text-foreground data-popup-open:opacity-100 pointer-coarse:size-8 pointer-coarse:opacity-100"
             >
               <MoreHorizontal />
             </Button>

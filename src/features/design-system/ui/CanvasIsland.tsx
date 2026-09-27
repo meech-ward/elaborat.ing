@@ -40,7 +40,7 @@ const IslandSizeContext = createContext<IslandSize>("default")
 export const canvasIslandVariants = cva("inline-flex w-fit items-center gap-0.5 bg-island p-1 text-tool-ink", {
   variants: {
     size: {
-      default: "rounded-[10px] shadow-island",
+      default: "rounded-tile shadow-island",
       touch: "rounded-panel border border-border shadow-[0_6px_18px_var(--shadow)]",
     },
   },
@@ -73,7 +73,7 @@ export const toolButtonVariants = cva(
   {
     variants: {
       size: {
-        default: "size-[34px] rounded-[8px] pointer-coarse:size-10 [&_svg:not([class*='size-'])]:size-4",
+        default: "size-[34px] rounded-tool pointer-coarse:size-10 [&_svg:not([class*='size-'])]:size-4",
         touch: "size-10 rounded-button [&_svg:not([class*='size-'])]:size-5",
       },
     },
@@ -225,7 +225,7 @@ export function ZoomControl({
           variant="ghost"
           aria-label={`Reset zoom, now ${percent}`}
           onClick={onReset}
-          className={cn(value, "min-w-0 rounded-[8px] p-0 font-normal hover:bg-seg hover:text-tool-ink")}
+          className={cn(value, "min-w-0 rounded-tool p-0 font-normal hover:bg-seg hover:text-tool-ink")}
         >
           {percent}
         </Button>

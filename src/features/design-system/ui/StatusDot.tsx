@@ -22,18 +22,28 @@ const DOT: Record<SaveStatus, string | null> = {
   failed: null,
 }
 
-/** A status with its dot: Synced, Unsaved, Not saved, Offline. The text takes the parent's colour. */
+/**
+ * A status with its dot: Synced, Unsaved, Not saved, Offline. The text takes
+ * the parent's colour and size; `touch` is the phone's, where the status
+ * sits in the person's row: 13px in the dim colour.
+ */
 export function StatusDot({
   status,
+  size = "default",
   children,
   className,
   ...props
-}: ComponentProps<"span"> & { status: SaveStatus }) {
+}: ComponentProps<"span"> & { status: SaveStatus; size?: "default" | "touch" }) {
   const dot = DOT[status]
   return (
     <span
       data-status={status}
-      className={cn("inline-flex items-center gap-1.5 whitespace-nowrap", status === "failed" && "text-destructive", className)}
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap",
+        size === "touch" && "text-[13px] leading-[normal] text-dim",
+        status === "failed" && "text-destructive",
+        className,
+      )}
       {...props}
     >
       {dot && <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", dot)} />}

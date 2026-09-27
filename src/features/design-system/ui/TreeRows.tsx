@@ -56,8 +56,8 @@ const fileIndent: Record<PanelRowSize, string> = {
 // From the md breakpoint up, SidebarMenuAction shows a row's actions only on
 // hover or focus, so the row keeps the design's padding and the actions
 // cover its end; on narrower screens they always show, and the row makes
-// room for them (a phone row's 32 wide button, 40 with its gap). A phone's
-// rows have them only while selected (TreeRowProps.actions).
+// room for them (a phone row's 40 wide button at its end). A phone's rows
+// have them only while selected (TreeRowProps.actions).
 const roomForActions: Record<PanelRowSize, string> = {
   default: "md:group-has-data-[sidebar=menu-action]/menu-item:pr-2",
   touch: "group-has-data-[sidebar=menu-action]/menu-item:pr-10 md:group-has-data-[sidebar=menu-action]/menu-item:pr-2.5",
@@ -173,7 +173,7 @@ export function TreeNameField({
         className={cn(
           size === "touch"
             ? "ml-[calc(8px+var(--tree-depth)*18px)] h-10 w-[calc(100%-8px-var(--tree-depth)*18px)] rounded-button px-2.5 md:text-[15px]"
-            : "ml-[calc(7px+var(--tree-depth)*16px)] h-7 w-[calc(100%-7px-var(--tree-depth)*16px)] rounded-row px-2 pointer-coarse:h-10",
+            : "ml-[calc(7px+var(--tree-depth)*16px)] h-7 w-[calc(100%-7px-var(--tree-depth)*16px)] rounded-row px-2",
           className,
         )}
         {...props}
@@ -199,7 +199,8 @@ export function TreeNameField({
  * SidebarMenuAction) that opens the entries as an ActionMenu. It shows on
  * hover and focus, while its menu is open, and always on phones. Its fill
  * matches the row under it, so it covers the dirty dot. On a phone's rows
- * (`touch`) it is a quiet dim ellipsis with no fill, beside the dot.
+ * (`touch`) it is a quiet dim ellipsis with no fill, beside the dot. On
+ * touch screens it is 40 square, the row's height, at the row's end.
  */
 export function TreeRowMenu({
   label,
@@ -221,10 +222,10 @@ export function TreeRowMenu({
           aria-label={label}
           title={label}
           className={cn(
-            "top-1/2 right-1 -translate-y-1/2 rounded-[6px] bg-seg text-muted-foreground peer-data-[size=default]/menu-button:top-1/2 hover:bg-panel hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid peer-data-active/menu-button:bg-accent-soft peer-data-active/menu-button:hover:bg-panel",
+            "top-1/2 -translate-y-1/2 rounded-chip bg-seg text-muted-foreground peer-data-[size=default]/menu-button:top-1/2 hover:bg-panel hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid peer-data-active/menu-button:bg-accent-soft peer-data-active/menu-button:hover:bg-panel",
             size === "touch"
-              ? "w-8 rounded-row bg-transparent text-dim peer-data-active/menu-button:bg-transparent peer-data-active/menu-button:text-accent-soft-text"
-              : "w-5 pointer-coarse:w-8",
+              ? "right-0 w-10 rounded-row bg-transparent text-dim peer-data-active/menu-button:bg-transparent peer-data-active/menu-button:text-accent-soft-text"
+              : "right-1 w-5 pointer-coarse:right-0 pointer-coarse:w-10",
           )}
         >
           <Ellipsis aria-hidden="true" />

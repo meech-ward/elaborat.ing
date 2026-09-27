@@ -11,6 +11,7 @@
 @import "../features/rendered/codeFence.css";
 @import "../features/rendered/documentCharts.css";
 @import "./inlineLiteral.css";
+@import "../features/appearance/radii.css";
 @plugin "@tailwindcss/typography";
 
 @source "../features/rendered/components.tsx";

@@ -82,7 +82,7 @@ export function OAuthConsentCard({
 }: OAuthConsentCardProps) {
   return (
     <ConsentCardShell clientName={clientName} productName={productName} {...props}>
-      <dl className="divide-y divide-border rounded-[10px] border border-border text-sm">
+      <dl className="divide-y divide-border rounded-tile border border-border text-sm">
         <div className="flex items-center justify-between gap-6 px-3 py-2.5">
           <dt className="shrink-0 text-muted-foreground">Client</dt>
           <dd className="min-w-0 break-all text-right font-medium">{clientName}</dd>

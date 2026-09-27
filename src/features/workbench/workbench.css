@@ -173,7 +173,7 @@ above the choices. */
   height: min(60dvh, 36rem);
   min-height: 12rem;
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: var(--radius-tool);
   overflow: hidden;
 }
 .wb-compare-pictures {
@@ -193,9 +193,13 @@ above the choices. */
   width: 100%;
   max-height: 50dvh;
   object-fit: contain;
-  background: #fff;
+  background: var(--bg);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: var(--radius-tool);
+}
+/* A drawing's picture in dark mode, as a rendered note shows it (reading.css). */
+:root[data-scheme="dark"] .wb-compare-pictures img {
+  filter: invert(93%) hue-rotate(180deg);
 }
 
 /* Phones and small landscape screens (one query sets data-compact): files
@@ -230,7 +234,7 @@ above the choices. */
 .wb-app:not([data-compact="true"]) .wb-main-panel {
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
   box-shadow: 0 10px 30px var(--shadow);
   overflow: hidden;
 }
@@ -265,14 +269,14 @@ above the choices. */
 .wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-diagnostics-panel {
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: var(--radius-menu);
 }
 .wb-app:not([data-compact="true"]):not([data-focus="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-tabline {
   position: relative;
   z-index: 1;
   min-height: 46px;
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
   box-shadow: 0 10px 30px var(--shadow);
 }
 .wb-native-view[data-canvas-bleed] {
@@ -315,7 +319,7 @@ above the choices. */
   margin: 0 !important;
   background: var(--panel);
   border: 1px solid var(--panel-border) !important;
-  border-radius: 14px !important;
+  border-radius: var(--radius-panel) !important;
   box-shadow: 0 10px 30px var(--shadow);
 }
 .wb-native-view[data-canvas-bleed][data-view="split"] > :not([data-canvas-stage], [aria-live], .wb-native-source) {
@@ -353,7 +357,7 @@ above the choices. */
   top: 76px;
   right: 16px;
   bottom: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-menu);
 }
 /* In focus mode Excalidraw's top right (its stats) keeps clear of the focus panel. */
 .wb-app[data-focus="true"] .wb-native-view[data-canvas-bleed]:not([data-view="split"]) .excalidraw .layer-ui__wrapper__top-right {

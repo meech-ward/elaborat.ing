@@ -52,7 +52,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 const inputGroupAddonVariants = cva(
-  "flex h-auto cursor-text items-center justify-center gap-2 py-1.5 text-[13px] font-medium text-dim select-none group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[4px] [&>svg:not([class*='size-'])]:size-4",
+  "flex h-auto cursor-text items-center justify-center gap-2 py-1.5 text-[13px] font-medium text-dim select-none group-data-[disabled=true]/input-group:opacity-50 [&>svg:not([class*='size-'])]:size-4",
   {
     variants: {
       align: {
@@ -99,9 +99,9 @@ const inputGroupButtonVariants = cva(
   {
     variants: {
       size: {
-        xs: "h-6 gap-1 rounded-[6px] px-1.5 [&>svg:not([class*='size-'])]:size-3.5",
+        xs: "h-6 gap-1 rounded-chip px-1.5 [&>svg:not([class*='size-'])]:size-3.5",
         sm: "",
-        "icon-xs": "size-6 rounded-[6px] p-0 has-[>svg]:p-0",
+        "icon-xs": "size-6 rounded-chip p-0 has-[>svg]:p-0",
         "icon-sm": "size-8 p-0 has-[>svg]:p-0",
       },
     },
@@ -152,7 +152,7 @@ function InputGroupInput({
     <Input
       data-slot="input-group-control"
       className={cn(
-        "h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:outline-none disabled:bg-transparent disabled:opacity-100",
+        "h-full flex-1 rounded-none border-0 pointer-coarse:h-full bg-transparent shadow-none focus-visible:outline-none disabled:bg-transparent disabled:opacity-100",
         className
       )}
       {...props}

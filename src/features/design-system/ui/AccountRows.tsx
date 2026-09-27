@@ -18,7 +18,7 @@ import { PanelRow, type PanelRowProps, type PanelRowSize } from "./PanelRow"
 const iconRowVariants = cva("text-muted-foreground", {
   variants: {
     size: {
-      default: "h-8 gap-[9px] rounded-[8px] pointer-coarse:h-10",
+      default: "h-8 gap-[9px] rounded-tool pointer-coarse:h-10",
       touch: "h-11 gap-3 [&_svg]:size-5",
     },
   },

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * The search field at the top of the files panel: shadcn's InputGroup with a
- * search icon and the input. 34 high (the design's 32 plus its border),
+ * search icon and the input. 34 high (the design's 32 plus its border; 40 on touch screens),
  * radius 9, the field fill, a dim icon 8px from the text, 13px. `touch` is
  * the phone field: 46 high, radius 12, 15px text and a 10px gap. (On touch
  * screens the app sets every field to 16px, so iOS does not zoom.)
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 const searchFieldVariants = cva("", {
   variants: {
     size: {
-      default: "h-[34px]",
+      default: "h-[34px] pointer-coarse:h-10",
       touch: "h-[46px] rounded-menu has-[>[data-align=inline-start]]:[&>input]:pl-2.5",
     },
   },

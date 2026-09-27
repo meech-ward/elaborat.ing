@@ -38,10 +38,10 @@
   gap: 2px;
   padding: 4px;
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: var(--radius-menu);
   background: var(--seg);
   color: var(--text);
-  box-shadow: 0 2px 12px #0001;
+  box-shadow: 0 2px 12px var(--shadow);
 }
 .rv-control { min-width: 40px; height: 40px; flex-shrink: 0; }
 .rv-scale { min-width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -82,7 +82,7 @@
   color: var(--muted);
   background: var(--panel);
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-chip);
   font-size: 12px;
   pointer-events: none;
 }

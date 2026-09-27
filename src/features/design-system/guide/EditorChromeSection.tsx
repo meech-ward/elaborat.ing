@@ -14,6 +14,7 @@ import { KindBadge, type FileKind } from "../ui/KindBadge"
 import { NoteProse } from "../ui/NoteProse"
 import { PhoneHeader } from "../ui/PhoneHeader"
 import { SaveButton } from "../ui/SaveButton"
+import { ScaleToFit } from "../ui/ScaleToFit"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { SourceLines, type SourcePart } from "../ui/SourceLines"
 import { SplitPanes } from "../ui/SplitPanes"
@@ -260,7 +261,7 @@ function RenderedNote() {
         <li>Create a project.</li>
         <li>Connect an agent.</li>
       </ol>
-      <figure className="flex h-[150px] items-center justify-center rounded-[10px] border border-border bg-(--bg) bg-[radial-gradient(var(--dot)_1px,transparent_1.4px)] bg-size-[22px_22px]">
+      <figure className="flex h-[150px] items-center justify-center rounded-tile border border-border bg-(--bg) bg-[radial-gradient(var(--dot)_1px,transparent_1.4px)] bg-size-[22px_22px]">
         <DiagramInNote />
       </figure>
     </NoteProse>
@@ -302,9 +303,9 @@ function DesktopTopLine() {
   return (
     <>
       <GuideLabel>C5 note in Split</GuideLabel>
-      {/* A desktop screen: narrower pages scroll it sideways rather than squeeze it. */}
-      <div className="-m-1 overflow-x-auto p-1">
-        <FloatingPanel className="max-w-[1128px] min-w-[900px] overflow-hidden">
+      {/* The editor 1128 wide, as on the 1440 screen: a narrower page shows it whole, scaled down. */}
+      <ScaleToFit width={1128}>
+        <FloatingPanel className="overflow-hidden">
           <EditorHeader>
             <TabLine
               items={open.map((path) => tabItem(path, dirty))}
@@ -323,7 +324,7 @@ function DesktopTopLine() {
             <NoteBody view={view} />
           </div>
         </FloatingPanel>
-      </div>
+      </ScaleToFit>
       <GuideValue>
         Source: 13 on 22 in the code font, numbers in faint, the current line in lineHi. Split: a 1px divider that turns accent under the pointer or with focus (arrow keys move it). Rendered: H1 32, body 15.5 on 1.6 in a 680 column, the callout with its icon.
       </GuideValue>

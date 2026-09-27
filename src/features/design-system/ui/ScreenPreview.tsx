@@ -1,5 +1,4 @@
 import { Bot, FolderPlus, Info, Maximize2, Plus, Sun } from "lucide-react"
-import { useEffect, useState } from "react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { SidebarMenu, SidebarProvider } from "@/components/ui/sidebar"
@@ -14,6 +13,7 @@ import { KindBadge, type FileKind } from "./KindBadge"
 import { NoteProse } from "./NoteProse"
 import { ProjectHeader } from "./ProjectHeader"
 import { SaveButton } from "./SaveButton"
+import { ScaleToFit } from "./ScaleToFit"
 import { SearchField } from "./SearchField"
 import { SourceLines, type SourcePart } from "./SourceLines"
 import { SplitPanes } from "./SplitPanes"
@@ -68,19 +68,6 @@ const SOURCE: readonly (readonly SourcePart[])[] = [
   [["key", "<Drawing"], " src=", ["str", '"art/flow.excalidraw"'], " ", ["key", "/>"]],
 ]
 
-/** The width the frame has, as a scale from the 1440 wide screen; 0 until it is measured. */
-function useFitScale() {
-  const [frame, setFrame] = useState<HTMLDivElement | null>(null)
-  const [scale, setScale] = useState(0)
-  useEffect(() => {
-    if (!frame) return
-    const observer = new ResizeObserver(([entry]) => setScale(entry.contentRect.width / WIDTH))
-    observer.observe(frame)
-    return () => observer.disconnect()
-  }, [frame])
-  return [setFrame, scale] as const
-}
-
 function Sidebar() {
   return (
     <SidebarProvider className="flex min-h-0 w-[264px] shrink-0 flex-col">
@@ -88,11 +75,11 @@ function Sidebar() {
       <FloatingPanel className="mb-[9px] flex min-h-0 flex-1 flex-col px-2 py-2.5">
         <SearchField placeholder="Search" className="mx-0.5 mb-1.5 w-auto" />
         <div className="mx-0.5 mb-2 grid grid-cols-2 gap-1.5">
-          <Button size="sm" className="rounded-[8px]">
+          <Button size="sm" className="rounded-tool">
             <Plus strokeWidth={2.4} />
             New file
           </Button>
-          <Button size="sm" variant="secondary" className="rounded-[8px]">
+          <Button size="sm" variant="secondary" className="rounded-tool">
             <FolderPlus />
             New folder
           </Button>
@@ -152,7 +139,7 @@ function Editor() {
               <li>Create a project.</li>
               <li>Connect an agent.</li>
             </ol>
-            <figure className="flex h-[150px] items-center justify-center rounded-[10px] border border-border bg-(--bg) bg-[radial-gradient(var(--dot)_1px,transparent_1.4px)] bg-size-[22px_22px]">
+            <figure className="flex h-[150px] items-center justify-center rounded-tile border border-border bg-(--bg) bg-[radial-gradient(var(--dot)_1px,transparent_1.4px)] bg-size-[22px_22px]">
               <DiagramInNote />
             </figure>
           </NoteProse>
@@ -170,21 +157,19 @@ function Editor() {
  * is not the app.
  */
 export function ScreenPreview({ className }: { className?: string }) {
-  const [frame, scale] = useFitScale()
   return (
     <div
-      ref={frame}
       aria-hidden="true"
       inert
       data-slot="screen-preview"
-      className={cn("relative aspect-[1440/900] w-full overflow-hidden rounded-panel border border-border bg-(--bg) shadow-panel select-none", className)}
+      className={cn("w-full overflow-hidden rounded-panel border border-border bg-(--bg) shadow-panel select-none", className)}
     >
-      <div className="absolute top-0 left-0 origin-top-left" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${scale})` }}>
-        <DottedPage className="flex h-full min-h-0 gap-4 p-4">
+      <ScaleToFit width={WIDTH}>
+        <DottedPage className="flex min-h-0 gap-4 p-4" style={{ height: HEIGHT }}>
           <Sidebar />
           <Editor />
         </DottedPage>
-      </div>
+      </ScaleToFit>
     </div>
   )
 }

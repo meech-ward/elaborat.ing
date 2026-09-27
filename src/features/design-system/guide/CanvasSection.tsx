@@ -15,6 +15,7 @@ import {
   type IslandSize,
 } from "../ui/CanvasIsland"
 import { QuickOpen, type QuickOpenCommand, type QuickOpenFile, type QuickOpenMode } from "../ui/QuickOpen"
+import { ScaleToFit } from "../ui/ScaleToFit"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { C5FocusHeader, DiagramInNote, phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
@@ -29,11 +30,6 @@ const hover = "bg-seg"
 const focus = "outline-2 outline-offset-2 outline-ring outline-solid"
 
 const noop = () => {}
-
-/** Desktop islands are wider than a phone's column: they scroll sideways there, keeping room for their shadow. */
-function Fit({ children }: { children: ReactNode }) {
-  return <div className="-m-1 max-w-[calc(100%+8px)] overflow-x-auto p-1">{children}</div>
-}
 
 /** The C5 project's files, most recent first. */
 const files: QuickOpenFile[] = [
@@ -85,9 +81,10 @@ function IslandDemos() {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <GuideLabel>Tool island</GuideLabel>
-      <Fit>
+      {/* Wider than a phone's column: there it shows whole, scaled down. */}
+      <ScaleToFit>
         <LiveToolIsland />
-      </Fit>
+      </ScaleToFit>
       <GuideValue>Tools 34 square, radius 8, 16px icons; island padding 4, radius 10, island shadow and ring. Point at a tool for its name and key. More tools has the rest, and a setting as a checkbox.</GuideValue>
       <GuideLabel>Tool states</GuideLabel>
       <CanvasIsland>
@@ -165,7 +162,7 @@ function CanvasColours() {
         </text>
       </svg>
       <GuideLabel>Diagram in a note</GuideLabel>
-      <DottedPage className="flex h-[150px] min-h-0 items-center justify-center rounded-[10px] border border-border">
+      <DottedPage className="flex h-[150px] min-h-0 items-center justify-center rounded-tile border border-border">
         <DiagramInNote />
       </DottedPage>
       <GuideValue>D2 boxes in d2Fill and d2Fill2 on the dotted page, as a note shows a diagram.</GuideValue>
@@ -260,18 +257,20 @@ function QuickOpenDemo() {
 /**
  * A 1440 by 900 screen in focus mode: the drawing or diagram fills it, the
  * tools at the top centre, the header at the top right, zoom at the bottom
- * left.
+ * left. A narrower page shows the whole screen, scaled down.
  */
 function FullScreen({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <GuideLabel>{label}</GuideLabel>
-      <DottedPage className="relative h-[900px] min-h-0 w-full max-w-[1440px] overflow-hidden rounded-[4px]">
-        {children}
-        <C5ToolIsland />
-        <C5FocusHeader names="canvas" className="absolute top-4 right-4" />
-        <ZoomControl zoom={1} onZoomOut={noop} onZoomIn={noop} onReset={noop} className="absolute bottom-4 left-4" />
-      </DottedPage>
+      <ScaleToFit width={1440} className="overflow-hidden rounded-[4px]">
+        <DottedPage className="relative h-[900px] min-h-0 overflow-hidden">
+          {children}
+          <C5ToolIsland />
+          <C5FocusHeader names="canvas" className="absolute top-4 right-4" />
+          <ZoomControl zoom={1} onZoomOut={noop} onZoomIn={noop} onReset={noop} className="absolute bottom-4 left-4" />
+        </DottedPage>
+      </ScaleToFit>
     </div>
   )
 }

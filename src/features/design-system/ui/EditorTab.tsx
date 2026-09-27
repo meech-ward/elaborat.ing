@@ -77,7 +77,7 @@ export function EditorTab({
             event.stopPropagation()
             onClose()
           }}
-          className="absolute top-1/2 left-[9px] grid size-[18px] -translate-y-1/2 cursor-pointer place-items-center rounded-[5px] bg-(--tab-fill) text-muted-foreground opacity-0 group-hover/tab:opacity-100 group-focus-visible/tab:opacity-100 group-data-active/tab:[@media(hover:none)]:opacity-100 hover:bg-[color-mix(in_oklab,var(--text)_12%,var(--tab-fill))] hover:text-foreground"
+          className="absolute top-1/2 left-[9px] grid size-[18px] -translate-y-1/2 cursor-pointer place-items-center rounded-chip bg-(--tab-fill) text-muted-foreground opacity-0 group-hover/tab:opacity-100 group-focus-visible/tab:opacity-100 group-data-active/tab:[@media(hover:none)]:opacity-100 hover:bg-seg-strong hover:text-foreground"
         >
           <X className="size-3" strokeWidth={2.25} />
         </span>

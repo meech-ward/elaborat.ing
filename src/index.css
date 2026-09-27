@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./features/appearance/radii.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -90,18 +91,12 @@
   --font-sans: var(--ui-font);
   --font-mono: var(--code-font);
 
-  /* The style guide's radii: rows 7, buttons 9, menus 12, panels 14, pills.
-     Its screens also use 8 for icon buttons and canvas tools (tool) and 10
-     for banners, callouts, canvas islands, colour chips and phone buttons
-     (tile). Its space scale (4, 6, 8, 12, 16, 24, 32) is Tailwind's own: 1,
-     1.5, 2, 3, 4, 6, 8. */
-  --radius-row: 7px;
-  --radius-tool: 8px;
-  --radius-button: 9px;
-  --radius-tile: 10px;
-  --radius-menu: 12px;
-  --radius-panel: 14px;
-  --radius-pill: 999px;
+  /* A small control's fill under the pointer where it sits on the seg fill
+     (a tab's close, the active tab's actions): seg 12% towards the text. */
+  --color-seg-strong: color-mix(in oklab, var(--text) 12%, var(--seg));
+
+  /* The radii are in radii.css. The style guide's space scale (4, 6, 8, 12,
+     16, 24, 32) is Tailwind's own: 1, 1.5, 2, 3, 4, 6, 8. */
 
   /* Elevation: panels and menus float on a soft shadow; canvas islands on a
      small shadow and a 1px ring. */

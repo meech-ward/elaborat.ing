@@ -11,7 +11,7 @@ const sizes = {
   default: {
     panel: "h-11 gap-2 pr-1.5 pl-3",
     mark: "size-4",
-    name: "h-8 rounded-[8px] px-1 text-sm",
+    name: "h-8 rounded-tool px-1 text-sm",
     share: "icon" as const,
     shareClass: "",
   },
@@ -19,9 +19,9 @@ const sizes = {
   touch: {
     panel: "h-[50px] gap-2 pr-1.5 pl-3",
     mark: "size-5",
-    name: "h-10 rounded-[10px] px-1 text-[17px]",
+    name: "h-10 rounded-tile px-1 text-[17px]",
     share: "icon-lg" as const,
-    shareClass: "rounded-[10px]",
+    shareClass: "rounded-tile",
   },
 }
 

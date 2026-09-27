@@ -7,6 +7,7 @@ import { IconRow, PersonRow } from "../ui/AccountRows"
 import type { MenuEntry } from "../ui/ActionMenu"
 import { FloatingPanel } from "../ui/FloatingPanel"
 import { KindBadge } from "../ui/KindBadge"
+import { PanelMessage } from "../ui/PanelMessage"
 import { PanelRow } from "../ui/PanelRow"
 import { ProjectHeader } from "../ui/ProjectHeader"
 import { SearchField } from "../ui/SearchField"
@@ -135,6 +136,10 @@ function States() {
           </SidebarMenuItem>
         </SidebarMenu>
         <GuideValue>28 high, radius 7, 13px; hover seg; selected accentSoft 600.</GuideValue>
+        <GuideLabel>Panel messages</GuideLabel>
+        <PanelMessage className="px-2">Loading files…</PanelMessage>
+        <PanelMessage size="touch" className="px-2">No files yet. Create a note to start.</PanelMessage>
+        <GuideValue>Words in place of rows: muted, 13px, and 15px on a phone.</GuideValue>
         <GuideLabel>Floating panels</GuideLabel>
         <div className="grid grid-cols-2 gap-4">
           <FloatingPanel className="flex h-16 items-center justify-center">
@@ -157,11 +162,11 @@ function DesktopSidebar() {
       <FloatingPanel render={<nav aria-label="Files, desktop sample" />} className="mb-[9px] flex min-h-0 flex-1 flex-col px-2 py-2.5">
         <SearchField placeholder="Search" aria-label="Search notes, drawings and diagrams" className="mx-0.5 mb-1.5 w-auto" />
         <div className="mx-0.5 mb-2 grid grid-cols-2 gap-1.5">
-          <Button size="sm" className="rounded-[8px]">
+          <Button size="sm" className="rounded-tool">
             <Plus aria-hidden="true" strokeWidth={2.4} />
             New file
           </Button>
-          <Button size="sm" variant="secondary" className="rounded-[8px]">
+          <Button size="sm" variant="secondary" className="rounded-tool">
             <FolderPlus aria-hidden="true" />
             New folder
           </Button>
@@ -207,8 +212,8 @@ function PhoneFiles() {
       >
         <SearchField size="touch" placeholder="Search" aria-label="Search notes, drawings and diagrams" className="mb-2" />
         <div className="mb-2 grid grid-cols-2 gap-2">
-          <Button className="h-10 rounded-[10px] text-[15px]">New file</Button>
-          <Button variant="secondary" className="h-10 rounded-[10px] text-[15px]">
+          <Button size="touch">New file</Button>
+          <Button variant="secondary" size="touch">
             New folder
           </Button>
         </div>
@@ -232,7 +237,7 @@ function PhoneFiles() {
           name="Person"
           email="person@example.com"
           menu={personMenu}
-          trailing={<StatusDot status="synced" className="text-[13px] leading-[normal] text-dim" />}
+          trailing={<StatusDot status="synced" size="touch" />}
         />
       </FloatingPanel>
     </DottedPage>

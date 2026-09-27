@@ -17,7 +17,7 @@ export function DottedPage({ className, ...props }: React.ComponentProps<"div">)
 }
 
 /** A floating panel: the palette's panel colour, a 1px border, radius 14 and the panel shadow. */
-export const panel = "rounded-[14px] border border-border bg-panel shadow-panel"
+export const panel = "rounded-panel border border-border bg-panel shadow-panel"
 
 /** A short message on its own page: one small panel in the middle of the dotted background. */
 export function PanelPage({ className, ...props }: React.ComponentProps<"main">) {
