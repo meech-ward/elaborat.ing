@@ -134,6 +134,7 @@ export function WorkspaceWorkbench({
   syncStatus,
   onResolveConflict,
   readOnly = null,
+  local = false,
 }: {
   client: WorkspaceStore;
   onLeaveGuard?: (guard: PrepareProjectLeave | null) => void;
@@ -147,6 +148,8 @@ export function WorkspaceWorkbench({
    * create, import, rename, move or delete them; the project header says why.
    */
   readOnly?: string | null;
+  /** The local project of someone without an account: what needs one is shown locked, linking to sign-up. */
+  local?: boolean;
 }) {
   const { href, target, navigate } = useFileLocation();
   const locationRef = useRef({ href, target, navigate });
@@ -884,7 +887,7 @@ export function WorkspaceWorkbench({
       {syncStatus}
       {unsaved > 0 && <p className="wb-account-unsaved">{unsaved} unsaved</p>}
       <div className="wb-account-links">
-        <Link to="/agents">Connected agents</Link>
+        {local ? <Link to="/sign-up">Sign up to connect agents</Link> : <Link to="/agents">Connected agents</Link>}
         <button type="button" className="wb-link-button" onClick={openSettings}>Settings</button>
         <button type="button" className="wb-icon" aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`} onClick={toggleScheme}>
           <Sun size={15} />

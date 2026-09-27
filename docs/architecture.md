@@ -346,6 +346,14 @@ device remembers the last account signed in, so its projects can open offline;
 this marker selects local data only and is never a credential. Someone signed
 in stays signed in while the Auth server cannot be reached.
 
+**Decision: without an account, one local project.** "Start writing" opens a
+project kept in its own partition (`local`) of the same on-device store, at a
+fixed id, that never syncs; what needs an account is shown locked. After
+sign-in, the home page moves it, if it has files, into the account's partition
+as a new, not yet created project named "Local project" and opens it, so the
+usual sync (`create_project`, then `save_files`) uploads it. The move runs once
+under a cross-tab lock; `src/features/project-storage/localProject.ts`.
+
 **Decision:** hosted limits are generous and exist only to stop abuse.
 Numbers are set when accounts ship.
 

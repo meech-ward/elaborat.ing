@@ -8,7 +8,8 @@ import { canEdit } from "@/features/project-storage/model"
 import { projectWorkspace } from "@/features/workbench/workspaceStore"
 import { loadWorkbench } from "@/features/workbench/load"
 import { createClient } from "@/lib/supabase/client"
-import { fileStoreFor, libraryFor, useLibraryState, type ProjectAccount } from "./account"
+import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
+import { LocalProjectHeader } from "./LocalProject"
 import { readOnlyReason } from "./readOnly"
 import { statusLabel } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
@@ -65,8 +66,8 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   // Download on first open, then sync.
   useEffect(() => {
     let active = true
-    library
-      .open(projectId)
+    const opening = account.local ? openLocalProject() : library.open(projectId)
+    opening
       .then((found) => {
         if (!active) return
         setOpened(found ? "open" : "missing")
@@ -76,7 +77,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     return () => {
       active = false
     }
-  }, [account.online, library, projectId, syncNow])
+  }, [account.local, account.online, library, projectId, syncNow])
 
   // Hear about changes made elsewhere while the project is open.
   useEffect(() => {
@@ -141,7 +142,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   }
 
   const readOnly = readOnlyReason(entry)
-  const header = (
+  const header = account.local ? <LocalProjectHeader error={departureError ?? error} /> : (
     <div className="flex min-w-0 items-center gap-3 text-sm">
       <Link to="/" className="underline underline-offset-4">
         Your projects
@@ -162,7 +163,11 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   )
 
   // The sync state sits with the account on a desktop, and in the phone menu.
-  const syncStatus = (
+  const syncStatus = account.local ? (
+    <p role="status" className="text-sm text-muted-foreground">
+      Saved in this browser
+    </p>
+  ) : (
     <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
       <p role="status" className="truncate text-muted-foreground">
         {entry ? statusLabel(entry) : ""}
@@ -192,6 +197,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         onLeaveGuard={registerLeaveGuard}
         onResolveConflict={resolveConflict}
         readOnly={readOnly}
+        local={account.local}
       />
     </Suspense>
   )

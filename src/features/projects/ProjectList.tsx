@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { Ellipsis } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +10,7 @@ import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
 import { cn } from "@/lib/utils"
-import { libraryFor, useLibraryState, type ProjectAccount } from "./account"
+import { libraryFor, moveLocalProjectTo, useLibraryState, type ProjectAccount } from "./account"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { ImportProject } from "./ImportProject"
 import { MembersDialog } from "./MembersDialog"
@@ -71,6 +71,18 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [membersOf, setMembersOf] = useState<ProjectEntry | null>(null)
   const onError = useCallback((text: string) => setError(text), [])
   useBackgroundRefresh(library, onError, { invitations: true })
+
+  // Just signed in with work in the local project: it joins the account's projects and opens (the project page uploads it).
+  useEffect(() => {
+    if (!account.online) return
+    let active = true
+    moveLocalProjectTo(library)
+      .then((id) => (id && active ? navigate({ href: projectHref(id) }) : undefined))
+      .catch((cause: unknown) => active && setError(`The local project did not move to your account: ${message(cause)}`))
+    return () => {
+      active = false
+    }
+  }, [account.online, library, navigate])
 
   const accept = async (invitation: Invitation) => {
     setError(null)

@@ -1,6 +1,8 @@
-import { Link } from "@tanstack/react-router"
+import { Link, useLocation } from "@tanstack/react-router"
+import { parseProjectLocation } from "@/features/navigation"
+import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { ProjectList } from "./ProjectList"
-import { useProjectAccount } from "./account"
+import { LOCAL_ACCOUNT, useProjectAccount } from "./account"
 
 /** The home page's projects section, for an account. The account header offers a way in to anyone else. */
 export function ProjectsHome() {
@@ -8,10 +10,13 @@ export function ProjectsHome() {
   return result.kind === "account" ? <ProjectList account={result.account} /> : null
 }
 
-/** Shows the project page for the account, or the reason it cannot. */
+/** Shows the project page for the account (the local project without one), or the reason it cannot. */
 export function ProjectRoute({ children }: { children: (account: import("./account").ProjectAccount) => React.ReactNode }) {
   const result = useProjectAccount()
+  const href = useLocation({ select: (location) => location.href })
   if (result.kind === "account") return <>{children(result.account)}</>
+  const location = parseProjectLocation(href)
+  if (result.kind === "signed-out" && location.kind === "project" && location.projectId === LOCAL_PROJECT_ID) return <>{children(LOCAL_ACCOUNT)}</>
   if (result.kind === "loading") {
     return (
       <p role="status" className="p-6 text-sm text-muted-foreground">

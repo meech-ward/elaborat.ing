@@ -3,6 +3,8 @@ import { Bot, Settings } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { panel } from "@/components/panel"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { projectHref } from "@/features/navigation"
+import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { useOpenSettings } from "@/features/settings/SettingsDialog"
 import { cn } from "@/lib/utils"
 import { signOut, useAuth } from "./useAuth"
@@ -10,7 +12,8 @@ import { signOut, useAuth } from "./useAuth"
 /**
  * The page's header: `children` (the name, or a way back to it), then a panel
  * that makes plain whether you are signed in. Signed in, it shows the account
- * with Settings, Connected agents and Sign out; signed out, a way in. The
+ * with Settings, Connected agents and Sign out; signed out, a way in, and a
+ * way to start writing without an account (in the local project). The
  * panel is left out when the build has no Supabase project.
  */
 export function AccountHeader({ children }: { children?: ReactNode }) {
@@ -52,20 +55,26 @@ function AccountPanel() {
           ) : (
             <div className="flex flex-col gap-1">
               <p className="text-base font-semibold">You're not signed in</p>
-              <p className="text-muted-foreground">Sign in to see your projects, or create an account to start one.</p>
+              <p className="text-muted-foreground">Start writing without an account, or sign in to see your projects.</p>
             </div>
           )}
           {settings}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link to="/sign-in" className={buttonVariants()}>
+          <Link to={projectHref(LOCAL_PROJECT_ID)} className={buttonVariants()}>
+            Start writing
+          </Link>
+          <Link to="/sign-in" className={buttonVariants({ variant: "outline" })}>
             Sign in
           </Link>
           <Link to="/sign-up" className="text-(--link) underline underline-offset-4">
             Create an account
           </Link>
-          {/* Guest mode's "Start writing without an account" goes here. */}
         </div>
+        <p className="text-muted-foreground">
+          Without an account, your work is saved in this browser only, and is lost if the browser clears this site's data. Sign up and it moves to your
+          account.
+        </p>
       </div>
     )
   }
