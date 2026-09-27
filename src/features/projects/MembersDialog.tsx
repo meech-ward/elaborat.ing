@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import type { Member, ProjectLibrary } from "@/features/project-storage/library"
 import type { MemberRole } from "@/features/project-storage/remote"
 
@@ -9,14 +11,17 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const ROLES: readonly MemberRole[] = ["viewer", "commenter", "editor"]
 const roleName = { owner: "Owner", editor: "Editor", commenter: "Commenter", viewer: "Viewer" } as const
 const aRole = (role: MemberRole) => (role === "editor" ? "an editor" : `a ${role}`)
+/** Asked before anyone is made an editor, by invitation or by a role change. */
+const EDITOR_WARNING = "Editors can change and delete files, and their agents can too."
 /** An account without an email address is named by the start of its id. */
 const nameOf = (member: Member) => member.email ?? `Account ${member.userId.slice(0, 8)}`
 
 /**
- * Who a project is shared with. Its owner can change a member's role, and
- * remove a member or an invitation after a confirmation; anyone else sees the
- * list only. Each change goes to the server at once, then the list is read
- * again, so it always shows what the server holds.
+ * Who a project is shared with. Its owner can invite people by email, change
+ * a member's role, and remove a member or an invitation after a confirmation;
+ * making someone an editor is confirmed first too. Anyone else sees the list
+ * only. Each change goes to the server at once, then the list is read again,
+ * so it always shows what the server holds.
  */
 export function MembersDialog({ library, projectId, title, owner, you, onClose }: {
   library: ProjectLibrary
@@ -32,6 +37,9 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [email, setEmail] = useState("")
+  const [inviteRole, setInviteRole] = useState<MemberRole>("viewer")
+  const emailId = useId()
   const list = useRef<HTMLUListElement>(null)
   const close = useRef<HTMLButtonElement>(null)
 
@@ -70,9 +78,33 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
   const changeRole = (member: Member, role: MemberRole) => {
     if (pending || role === member.role) return
     const name = nameOf(member)
+    if (role === "editor" && !window.confirm(`Make ${name} an editor of ${title}? ${EDITOR_WARNING}`)) return
     // Show the choice at once; the list is read again once the server answers.
     setMembers((current) => current?.map((entry) => (entry.userId === member.userId ? { ...entry, role } : entry)) ?? null)
     void change(member, role, member.invited ? `${name} is now invited as ${aRole(role)}.` : `${name} is now ${aRole(role)}.`, "Role not changed")
+  }
+
+  const invite = async () => {
+    const address = email.trim()
+    if (pending || !address) return
+    if (members?.some((member) => member.email?.toLowerCase() === address.toLowerCase())) {
+      setNotice(null)
+      setError(`${address} already has access. Change their role in the list.`)
+      return
+    }
+    if (inviteRole === "editor" && !window.confirm(`Invite ${address} to ${title} as an editor? ${EDITOR_WARNING}`)) return
+    setPending(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await library.invite(projectId, address, inviteRole)
+      setNotice(`Invited ${address}.`)
+      setEmail("")
+    } catch (cause) {
+      setError(`Not invited: ${message(cause)}`)
+    }
+    await load()
+    setPending(false)
   }
 
   const remove = async (member: Member) => {
@@ -97,11 +129,54 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
           <DialogTitle>Members of {title}</DialogTitle>
           <DialogDescription>
             {owner
-              ? "Change a member's role, or remove a member or an invitation. Changes apply at once."
+              ? "Invite people by email, change a member's role, or remove a member or an invitation. Changes apply at once."
               : "Who this project is shared with. Only its owner can change this."}
           </DialogDescription>
         </DialogHeader>
         {members === null && error === null ? <p role="status">Loading members…</p> : null}
+        {owner && members ? (
+          <form
+            aria-label="Invite people"
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void invite()
+            }}
+          >
+            <Label htmlFor={emailId}>Invite by email</Label>
+            <span className="flex flex-wrap items-center gap-2">
+              <Input
+                id={emailId}
+                type="email"
+                required
+                autoComplete="off"
+                placeholder="name@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="min-w-0 flex-1 basis-48"
+              />
+              <select
+                aria-label="Role for the invitation"
+                value={inviteRole}
+                onChange={(event) => {
+                  const role = ROLES.find((entry) => entry === event.target.value)
+                  if (role) setInviteRole(role)
+                }}
+                className="h-8 rounded-lg border border-input bg-panel px-2 text-sm"
+              >
+                {ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {roleName[role]}
+                  </option>
+                ))}
+              </select>
+              <Button type="submit" size="sm" disabled={pending}>
+                Invite
+              </Button>
+            </span>
+            <p className="text-sm text-muted-foreground">People without an account get an email to join.</p>
+          </form>
+        ) : null}
         {members ? (
           <ul
             ref={list}

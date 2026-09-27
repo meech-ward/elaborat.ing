@@ -261,10 +261,12 @@ pass = "env(SES_SMTP_PASSWORD)"
 admin_email = "no-reply@elaborat.ing"
 sender_name = "elaborat.ing"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# elaborat.ing: sent by the `share` Edge Function when an owner invites an
+# email with no account yet. It names who invited them and the project, from
+# the data the function passes to Auth's invite.
+[auth.email.template.invite]
+subject = "You're invited to a project on elaborat.ing"
+content_path = "./supabase/templates/invite.html"
 
 # elaborat.ing: the emailed sign-in link also carries the one-time code
 # ({{ .Token }}), which the sign-in page accepts too.
@@ -434,6 +436,10 @@ verify_jwt = false
 # Called for a signed-in person, so the gateway verifies their token too.
 # Declared so that deploys which only take declared functions include it.
 [functions.search]
+verify_jwt = true
+
+# Called by the app for a signed-in person, to share a project by email.
+[functions.share]
 verify_jwt = true
 
 [edge_runtime]

@@ -246,6 +246,19 @@ export class ProjectLibrary {
     }
   }
 
+  /**
+   * Invite someone by email. An account gets the usual invitation; an email
+   * without one gets an email to join. Owner only; needs a connection.
+   */
+  async invite(projectId: string, email: string, role: MemberRole): Promise<void> {
+    try {
+      await this.remote.inviteByEmail(projectId, email, role)
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") throw new Error("Inviting someone needs a connection. Try again when you are online.")
+      throw error
+    }
+  }
+
   /** Archive a project: it stays readable, and refuses changes until it is unarchived. */
   async archive(projectId: string): Promise<void> {
     await this.setArchived(projectId, true)

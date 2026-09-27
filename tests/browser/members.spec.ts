@@ -1,7 +1,7 @@
 import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
-import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"
+import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // Who a project is shared with, from its menu on the projects home: the owner
@@ -88,6 +88,96 @@ test("the owner sees a member and an invitation, changes the member's role, and 
   await expect(dialog).toBeHidden()
 })
 
+const EDITOR_WARNING = "Editors can change and delete files, and their agents can too."
+const shareCalls = (fake: FakeSupabase) =>
+  fake.requests.filter((request) => request.url().endsWith("/functions/v1/share")).map((request) => request.postDataJSON())
+
+test("the owner invites an email without an account, after a warning for an editor", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server, person.id, "Team notes")
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  const dialog = await openMembers(page, "Team notes")
+  const form = dialog.getByRole("form", { name: "Invite people" })
+  await expect(form).toContainText("People without an account get an email to join.")
+  await expect(form.getByLabel("Role for the invitation")).toHaveValue("viewer")
+  await form.getByLabel("Invite by email").fill("new@example.com")
+  await form.getByLabel("Role for the invitation").selectOption("editor")
+
+  // Dismissing the warning invites nobody.
+  let question = ""
+  page.once("dialog", (confirmation) => {
+    question = confirmation.message()
+    void confirmation.dismiss()
+  })
+  await form.getByRole("button", { name: "Invite" }).click()
+  await expect.poll(() => question).toBe(`Invite new@example.com to Team notes as an editor? ${EDITOR_WARNING}`)
+  expect(shareCalls(fake)).toEqual([])
+
+  page.once("dialog", (confirmation) => void confirmation.accept())
+  await form.getByRole("button", { name: "Invite" }).click()
+  await expect(dialog.getByRole("status")).toHaveText("Invited new@example.com.")
+  expect(shareCalls(fake)).toEqual([{ projectId: id, email: "new@example.com", role: "editor" }])
+  expect(server.invitationEmails).toEqual([{ to: "new@example.com", projectId: id, role: "editor" }])
+  const entries = dialog.getByRole("list", { name: "Members" }).getByRole("listitem")
+  await expect(entries).toHaveCount(4)
+  await expect(entries.nth(3)).toContainText("new@example.com")
+  await expect(entries.nth(3)).toContainText("Invited, not yet accepted")
+  await expect(dialog.getByLabel("Role for new@example.com")).toHaveValue("editor")
+  await expect(form.getByLabel("Invite by email")).toHaveValue("")
+  await expectNoAxeViolations(page)
+})
+
+test("the owner invites an existing account as a viewer without a warning, and not someone who already has access", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server, person.id, "Team notes")
+  const FRIEND = "8091a2b3-cd4e-4f5a-8b6c-7d8e9fa0b1c2"
+  server.emails.set(FRIEND, "friend@example.com")
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  const dialog = await openMembers(page, "Team notes")
+  const form = dialog.getByRole("form", { name: "Invite people" })
+  let asked = false
+  page.on("dialog", (confirmation) => {
+    asked = true
+    void confirmation.dismiss()
+  })
+
+  await form.getByLabel("Invite by email").fill("Friend@Example.com")
+  await form.getByRole("button", { name: "Invite" }).click()
+  await expect(dialog.getByRole("status")).toHaveText("Invited Friend@Example.com.")
+  expect(asked).toBe(false)
+  expect(server.projects.get(id)!.members.get(FRIEND)).toMatchObject({ role: "viewer", acceptedAt: null })
+  expect(server.invitationEmails).toEqual([])
+
+  await form.getByLabel("Invite by email").fill("member@example.com")
+  await form.getByRole("button", { name: "Invite" }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("member@example.com already has access. Change their role in the list.")
+  expect(shareCalls(fake)).toEqual([{ projectId: id, email: "Friend@Example.com", role: "viewer" }])
+})
+
+test("making a member an editor asks first", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server, person.id, "Team notes", "viewer")
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  const dialog = await openMembers(page, "Team notes")
+  let question = ""
+  page.once("dialog", (confirmation) => {
+    question = confirmation.message()
+    void confirmation.dismiss()
+  })
+  await dialog.getByLabel("Role for member@example.com").selectOption("editor")
+  await expect.poll(() => question).toBe(`Make member@example.com an editor of Team notes? ${EDITOR_WARNING}`)
+  await expect(dialog.getByLabel("Role for member@example.com")).toHaveValue("viewer")
+  expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("viewer")
+
+  page.once("dialog", (confirmation) => void confirmation.accept())
+  await dialog.getByLabel("Role for member@example.com").selectOption("editor")
+  await expect(dialog.getByRole("status")).toHaveText("member@example.com is now an editor.")
+  expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("editor")
+})
+
 test("a member sees who has access, without controls or invitations", async ({ page }) => {
   const server = new FakeProjectServer()
   const id = await sharedProject(server, OWNER, "Their notes", "viewer")
@@ -102,6 +192,7 @@ test("a member sees who has access, without controls or invitations", async ({ p
     "person@example.com (you)Editor",
   ])
   await expect(dialog.getByRole("combobox")).toHaveCount(0)
+  await expect(dialog.getByRole("form")).toHaveCount(0)
   await expect(dialog.getByRole("button")).toHaveText(["Close"])
   await expectNoAxeViolations(page)
 })

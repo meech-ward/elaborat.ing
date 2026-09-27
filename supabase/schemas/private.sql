@@ -6,6 +6,8 @@ create schema private;
 
 revoke all on schema private from public;
 grant usage on schema private to authenticated;
+-- For the few functions only the service role may execute (email_invitations.sql).
+grant usage on schema private to service_role;
 
 -- A valid path inside a project: 1 to 1024 bytes of NFC-normalized text; no
 -- leading, trailing or doubled slash; no segment starting with a dot; no

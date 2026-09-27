@@ -168,7 +168,10 @@ Also done in this phase: the comment anchoring library (see the task below).
 
 ## Phase 4: sharing and comments
 
-- Share by email, including people without an account yet.
+- Share by email, including people without an account yet (done: the owner
+  invites any email from the members dialog, through the `share` Edge
+  Function; an email without an account gets an invitation email to join, and
+  the invitation waits for them once they sign in).
 - Accepting invitations and leaving a shared project in the app (done:
   invitations are listed on the projects home, and a shared project's menu
   there has "Leave project"; leaving is refused while this device holds
@@ -176,7 +179,8 @@ Also done in this phase: the comment anchoring library (see the task below).
 - Member list (done: a project's menu on the projects home has "Members",
   listing its owner and members with their email and role; the owner changes
   a role or removes a member or an invitation there, and agents can read the
-  list with the `list_members` tool), and a warning before sharing as editor.
+  list with the `list_members` tool), and a warning before sharing as editor
+  (done: inviting as an editor, or making someone one, asks first).
 - The commenter role, and comments on documents, sections, text selections and
   drawing elements.
 

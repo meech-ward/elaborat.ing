@@ -12,7 +12,8 @@ browser: static Vite + React SPA on Cloudflare Workers (static assets)
   ├─ Supabase Auth ........ sign-in, and the OAuth 2.1 server agents connect through
   ├─ Postgres + RLS ....... projects, files, versions, members, comments, search
   ├─ Realtime ............. "something changed" signals, then authoritative re-reads
-  └─ Edge Functions ....... mcp (agents), embed (search indexing), search (query embedding)
+  └─ Edge Functions ....... mcp (agents), embed (search indexing), search (query embedding),
+                            share (invite by email)
 
 MCP clients (Claude, ChatGPT, ...) ── OAuth ──> mcp Edge Function ──> same database functions, as the user
 
@@ -172,6 +173,22 @@ person can accept, never an agent. Members can leave a project (or decline an
 invitation) themselves. The owner and accepted members can see who a project
 is shared with, each person's email included (`list_members`); only the owner
 sees invitations not yet accepted, and only the owner changes them.
+
+**Decision: sharing by email goes through one Edge Function.** The owner
+invites an email with the `share` Edge Function, which refuses agents' tokens
+(people share, agents don't) and checks, as the caller, that they own the
+project. An email that has an account gets the usual invitation
+(`share_project`, as the caller), and no email. For an email without one, the
+function calls Auth's admin invite with its own service key, which creates the
+account and sends the invite email (`supabase/templates/invite.html`, naming
+who invited them and the project), then records the invitation for the new
+account. The function answers the same either way. Looking an account up by
+email, counting the owner's invitations against their daily limit (see
+Limits) and recording that invitation are database functions only the service
+role may execute (`supabase/schemas/email_invitations.sql`), so the Data API
+never says whether an email has an account. The invited person follows the
+link, or signs in later with the same email, and finds the invitation waiting
+on the projects home.
 
 **Decision: project ids are chosen by the client**, so projects can be created
 offline. If `create_project` answers "Project unavailable", the id already
@@ -394,6 +411,7 @@ files panel's search shows it; the MCP server returns it to the agent as is.
 | Saves | 300 a minute | `save_files` (every call, retries included; the app's save, every MCP write tool) |
 | Searches | 120 a minute | `hybrid_search` (the `search` function, which answers 429, and the MCP `search` tool) |
 | Agent tool calls | 300 a minute | the MCP server calls `count_tool_call()` before every tool runs |
+| Invitations by email | 50 a day | `prepare_email_invitation`, which the `share` function calls for every invitation, for the owner |
 
 Limits that were there already, kept as they are:
 

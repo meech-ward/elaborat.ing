@@ -50,6 +50,8 @@ export class FakeProjectServer {
   maxFiles = MAX_ENTRIES
   /** Each account's email, as `auth.users` holds it; an account without one lists as null. */
   readonly emails = new Map<string, string>()
+  /** Emails sent to invite people who had no account, oldest first, as the `share` Edge Function sends them. */
+  readonly invitationEmails: Array<{ to: string; projectId: string; role: MemberRole }> = []
   /** Orders invitations and acceptances, newest last, as their times would. */
   private ticks = 0
 
@@ -90,6 +92,7 @@ export class FakeProjectServer {
       listMembers: (projectId) => call("listMembers", [projectId], () => this.members(user, projectId)),
       shareProject: (projectId, memberId, role) =>
         call("shareProject", [projectId, memberId, role], () => this.setMember(user, projectId, memberId, role)),
+      inviteByEmail: (projectId, email, role) => call("inviteByEmail", [projectId, email, role], () => this.inviteByEmail(user, projectId, email, role)),
       archiveProject: (projectId) => call("archiveProject", [projectId], () => this.setArchived(user, projectId, true)),
       unarchiveProject: (projectId) => call("unarchiveProject", [projectId], () => this.setArchived(user, projectId, false)),
       deleteProject: (projectId) => call("deleteProject", [projectId], () => this.remove(user, projectId)),
@@ -189,6 +192,26 @@ export class FakeProjectServer {
       member.role = role
       project.revision++
     }
+  }
+
+  /**
+   * The owner invites an email, as the `share` Edge Function does: an account
+   * with that email gets the usual invitation; otherwise an account is made
+   * for it and an invitation email sent. The answer is the same either way.
+   */
+  private inviteByEmail(user: string, projectId: string, email: string, role: MemberRole): void {
+    const project = this.projects.get(projectId)
+    if (!project || project.owner !== user) throw new RemoteError("access", "Only the project owner can change sharing")
+    const address = email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+$/.test(address)) throw new RemoteError("invalid", "Enter an email address")
+    let member = [...this.emails].find(([, known]) => known.toLowerCase() === address)?.[0]
+    if (member === project.owner) throw new RemoteError("invalid", "You own this project already")
+    if (member === undefined) {
+      member = crypto.randomUUID()
+      this.emails.set(member, address)
+      this.invitationEmails.push({ to: address, projectId, role })
+    }
+    this.setMember(user, projectId, member, role)
   }
 
   /** Owners and editors archive and unarchive, whether or not the project is archived already (42501 for anyone else). */

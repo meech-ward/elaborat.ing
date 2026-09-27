@@ -175,6 +175,19 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       }
     }
 
+    // The share Edge Function: invite an email, with or without an account.
+    if (path === "/functions/v1/share") {
+      const { projectId, email, role } = request.postDataJSON() ?? {}
+      try {
+        await remote.inviteByEmail(projectId, email, role)
+        return await json(route, { projectId, email, role })
+      } catch (error) {
+        if (!(error instanceof RemoteError)) throw error
+        if (error.kind === "network") return route.abort("internetdisconnected")
+        return json(route, { error: error.message }, error.kind === "access" || error.kind === "account-limit" ? errorStatus[error.kind] : 400)
+      }
+    }
+
     // The search Edge Function: a passage for each file, in the projects the
     // person can read (or the one asked for), whose text has every word of the query.
     if (path === "/functions/v1/search") {

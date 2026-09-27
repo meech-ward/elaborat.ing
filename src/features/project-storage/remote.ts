@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js"
+import { FunctionsHttpError, type SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 import { ProjectPath, Role, SaveChange } from "./model"
 
@@ -121,6 +121,18 @@ function classify(error: PostgrestLikeError): RemoteError {
   }
 }
 
+/** A refusal from an Edge Function, whose body is `{ error }`, in the same terms as the database's. */
+async function classifyFunctionError(error: unknown): Promise<RemoteError> {
+  if (!(error instanceof FunctionsHttpError)) return new RemoteError("network", error instanceof Error ? error.message : String(error))
+  const response = error.context as Response
+  const body: unknown = await response.json().catch(() => null)
+  const parsed = z.object({ error: z.string() }).safeParse(body)
+  const message = parsed.success ? parsed.data.error : error.message
+  if (response.status === 401 || response.status === 403) return new RemoteError("access", message)
+  if (response.status === 429) return new RemoteError("account-limit", message)
+  return new RemoteError("invalid", message)
+}
+
 /** Rows per request; the API returns at most 1000 (`max_rows` in config.toml). */
 const PAGE = 500
 
@@ -151,6 +163,13 @@ export interface ProjectRemote {
   listMembers(projectId: string): Promise<RemoteMember[]>
   /** Invite someone, change their role, or remove them or their invitation (role null). Owner only. */
   shareProject(projectId: string, memberId: string, role: MemberRole | null): Promise<void>
+  /**
+   * Invite someone by email (the `share` Edge Function). An email with an
+   * account gets the usual invitation; one without gets an account and an
+   * email to join. The answer does not say which. Owner only, and never with
+   * an agent's token.
+   */
+  inviteByEmail(projectId: string, email: string, role: MemberRole): Promise<void>
   /** Archive a project, so it refuses changes (55000) until unarchived. Owners and editors, agents included. */
   archiveProject(projectId: string): Promise<RemoteProject>
   unarchiveProject(projectId: string): Promise<RemoteProject>
@@ -218,6 +237,17 @@ export class SupabaseProjectRemote implements ProjectRemote {
     z.object({ project_id: z.uuid(), member_id: z.uuid() }).parse(
       await this.rpc("share_project", { project_id: projectId, member_id: memberId, member_role: role }),
     )
+  }
+
+  async inviteByEmail(projectId: string, email: string, role: MemberRole) {
+    let response
+    try {
+      response = await this.supabase.functions.invoke("share", { body: { projectId, email, role } })
+    } catch (error) {
+      throw new RemoteError("network", error instanceof Error ? error.message : String(error))
+    }
+    if (response.error) throw await classifyFunctionError(response.error)
+    z.object({ projectId: z.uuid(), email: z.string() }).parse(response.data)
   }
 
   async archiveProject(projectId: string) {
