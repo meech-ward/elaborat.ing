@@ -24,7 +24,9 @@ const model = new Supabase.ai.Session('gte-small')
 const embed = async (text: string) => (await model.run(text, { mean_pool: true, normalize: true })) as number[]
 
 export default {
-  fetch: withSupabase({ auth: 'secret' }, async (req) => {
+  // 'secret:*' accepts any of the project's secret keys, so the database can
+  // have its own (a bare 'secret' accepts only the key named `default`).
+  fetch: withSupabase({ auth: 'secret:*' }, async (req) => {
     if (req.method !== 'POST') return new Response('expected POST request', { status: 405 })
     const jobs = z.array(JobSchema).safeParse(await req.json().catch(() => null))
     if (!jobs.success) return new Response(`invalid request body: ${jobs.error.message}`, { status: 400 })

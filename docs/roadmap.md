@@ -19,12 +19,13 @@ user's files through MCP, on the hosted Supabase project.
    archive and unarchive, permanently delete (people only, never OAuth
    clients), invite, accept (people only) and leave. RLS, explicit grants and
    70 pgTAP tests, passing on the hosted project.
-2. **Deploys from GitHub (open for contributors).** A GitHub Actions workflow
-   that, on merge to `main`, runs `supabase config push`, `supabase db push` and
-   `supabase functions deploy --use-api` against the project named in repository
-   secrets, using Supabase CLI 2.118.0, after `supabase link` and with
-   `supabase config diff` printed before the config push. Test it from a fork
-   against your own project. (The pull request check that fails when committed
+2. **Deploys from GitHub.** Written: `.github/workflows/deploy-supabase.yml`
+   runs `supabase functions deploy --use-api`, `supabase db push`, then
+   `supabase config diff` and `supabase config push` with Supabase CLI 2.118.0,
+   two scoped tokens and no `supabase link` (see Deploys in
+   `architecture.md`). It runs by hand until the first config diff has been
+   read and pushed, then on merge to `main`. (The pull request check that
+   fails when committed
    migrations are out of date with `supabase/schemas/` is done: the
    `migrations` job in `ci.yml`.)
 3. **Sign-in and consent.** Email sign-in, the OAuth 2.1 server enabled in

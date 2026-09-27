@@ -86,10 +86,9 @@ supabase/
   comment saying why.
 - **Data is not schema.** DML never goes in `schemas/`. Vault secrets (such as
   the key the database uses to call Edge Functions) are declared in
-  `config.toml` under `[db.vault]` with `env()` values. **To verify on the first
-  deploy:** that `env()` values reach the hosted Vault, and how to rotate a
-  secret when no migration is pending (`db push` only syncs Vault when it
-  applies migrations; the fallback is a documented `vault.update_secret` step).
+  `config.toml` under `[db.vault]` with `env()` values. `db push` writes them
+  to Vault only when it applies a migration, so rotating one means updating
+  its GitHub secret and committing an empty migration.
 - **`config.toml` holds the hosted project's values.** There is no local stack,
   so the file describes the real project: site URL, redirect URLs, email
   confirmation and so on. Self-hosters change these for their own copy.
@@ -101,14 +100,31 @@ supabase/
 
 ## Deploys
 
-**Decision:** GitHub Actions run the Supabase CLI against the hosted project on
-merge to `main`: `supabase link --project-ref`, `supabase config push`,
-`supabase db push`, then `supabase functions deploy --use-api`. This extends
-Supabase's documented link-and-push pattern for environments with config and
-functions, works on every plan, and self-hosters can run the same steps from
-their own fork. The access token, database password and project ref are GitHub
-repository secrets. The workflow shows `supabase config diff` before pushing
-config.
+**Decision:** GitHub Actions run the pinned Supabase CLI against the hosted
+project (`.github/workflows/deploy-supabase.yml`): `supabase functions deploy
+--use-api`, then `supabase db push`, then `supabase config diff` and `supabase
+config push`. It works on every plan, and self-hosters can run the same steps
+from their own fork.
+
+- **No `supabase link`.** Linking reads the project's API keys, which needs a
+  token that can see every secret key. Each command takes `--project-ref`
+  instead, which also makes `db push` connect through the IPv4 pooler.
+- **Two scoped access tokens**, one per job. The deploy token has Edge
+  Functions Read-write and Connection Pooling Read. The config token has
+  Project Settings and Auth Config Read-write, Add-ons Read, and Read on
+  Database Config, Database, SSL Enforcement, Network Restrictions, Data API
+  Config, Realtime Config and Storage Config. Project Settings Read-write can
+  also delete or pause the project, so it stays out of the deploy job.
+- **Where the values live.** The config token and the SMTP credentials are
+  secrets of a `supabase-config` environment limited to `main`, which only the
+  config job uses. The deploy token, database password and embed secret key are
+  repository secrets, and the project ref is the `SUPABASE_PROJECT_ID`
+  repository variable.
+- **Not Supabase's GitHub integration.** On production it ignores Auth config
+  unless the project ref is written into `config.toml`.
+- **`config push` is not atomic** (Auth is written before Storage), so the
+  workflow runs by hand until the first diff has been read and pushed, and
+  checks that no credential was left out.
 
 **Decision:** pull requests get a CI check that regenerates migrations from
 `schemas/` and fails if the committed migrations are out of date.
@@ -257,15 +273,17 @@ schema is `supabase/schemas/search.sql`.
   Functions with no API key and no extra cost, on any Supabase Cloud project.
 - **Function auth:** `embed` is called by the database, not a user, so it sets
   `verify_jwt = false` and accepts only a secret API key on `apikey`
-  (`withSupabase({ auth: 'secret' })`, the documented pattern for cron-called
-  functions). The cron job reads the key and the project URL from Vault.
+  (`withSupabase({ auth: 'secret:*' })`, the documented pattern for
+  cron-called functions, accepting any of the project's secret keys so the
+  database gets its own). The cron job reads the key and the project URL from
+  Vault.
 - **Query embedding:** the `search` Edge Function (and the MCP `search` tool)
   embeds the query with the same model and calls `hybrid_search` as the user.
-- **Turning it on for a project:** store the project's API URL as
-  `project_url` and a secret API key as `embed_secret_key` in Vault (for
-  example `select vault.create_secret('<value>', 'embed_secret_key');` in the
-  SQL editor), and deploy `embed` and `search`. Until then, saved files wait in
-  the queue and nothing is sent.
+- **Turning it on for a project:** create a secret API key for the database
+  and store it as the `EMBED_SECRET_KEY` repository secret. The deploy workflow
+  deploys `embed` and `search`, and `db push` writes the key and the project's
+  API URL to Vault (`[db.vault]` in `config.toml`). Until then, saved files
+  wait in the queue and nothing is sent.
 
 ## Comments
 
@@ -506,8 +524,17 @@ found when a page loads).
 Settings with no file-based home yet. Each is a one-time step, to be written up
 in the self-host guide (phase 3), until the platform supports it as code.
 (SMTP and SMS providers are not on this list: they go in `config.toml`, with
-secrets supplied through `env()` from GitHub repository secrets.)
+secrets supplied through `env()` from GitHub secrets.)
 
+- **Access tokens:** create the two scoped tokens described under Deploys, for
+  this project only. Scoped tokens expire after at most a year, so recreate
+  them before then.
+- **Secret API key for the database:** create one (the hosted project names it
+  `embed_worker`) for the embed pipeline. The platform creates keys; the CLI
+  can only list them.
+- **Email provider:** an account with a verified sending domain and SMTP
+  credentials. The hosted instance uses AWS SES, which sends only to verified
+  addresses until AWS grants production access.
 - **JWT signing keys:** the project must sign with an asymmetric key. New
   projects already do (the hosted project publishes an ES256 key); older
   projects switch in the dashboard.
