@@ -460,6 +460,9 @@ instance deploys with `wrangler deploy`, using a Cloudflare API token from the
 
 The build only needs public values (the Supabase URL and publishable key).
 Self-hosters can deploy the same static build to any host.
+`.github/workflows/deploy-app.yml` deploys it after CI passes on `main`, with
+the `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` repository variables
+and the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 
 **Decision: Excalidraw's fonts are served from this site.** Left alone,
 Excalidraw fetches fonts from a public CDN. The build copies the pinned
