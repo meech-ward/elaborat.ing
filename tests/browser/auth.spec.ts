@@ -42,7 +42,7 @@ for (const [choice, button] of [
 
     await expect(page).toHaveURL(new URL("oauth/consent?authorization_id=auth-123", APP_URL).href)
     await expect(page.getByText("Authorize Claude")).toBeVisible()
-    await expect(page.getByText(user.email)).toBeVisible()
+    await expect(page.getByRole("main").getByText(user.email)).toBeVisible()
     await page.getByRole("button", { name: button }).click()
     await expect(page).toHaveURL(back)
     const consent = seen.find((request) => new URL(request.url()).pathname.endsWith("/consent"))
@@ -159,18 +159,22 @@ test("the home page shows who is signed in, and signing out forgets the account 
   const remembered = () => page.evaluate(() => localStorage.getItem("elaborating.offline-account.v1"))
   expect(JSON.parse((await remembered())!)).toMatchObject({ userId: user.id, email: user.email })
 
-  await page.getByRole("button", { name: "Sign out" }).click()
+  // Sign out is in the account's menu, which the account in the top bar opens.
+  await page.getByRole("banner").getByRole("button", { name: `Signed in as ${user.email}` }).click()
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText(["Settings", "Connected agents", "Sign out"])
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
   await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible()
   expect(await remembered()).toBeNull()
   expect(seen.some((request) => new URL(request.url()).pathname.endsWith("/logout"))).toBe(true)
 })
 
-test("the signed-out home says you are not signed in, and Sign in leads to the sign-in page", async ({ page }) => {
+test("the signed-out home offers Sign in, Start writing and sign up, and Sign in leads to the sign-in page", async ({ page }) => {
   await fakeAuth(page)
   await page.goto(APP_URL)
   const banner = page.getByRole("banner")
-  await expect(banner.getByText("You're not signed in")).toBeVisible()
-  await expect(banner.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/sign-up")
+  await expect(banner.getByRole("button", { name: /^Signed in as/ })).toHaveCount(0)
+  await expect(banner.getByRole("link", { name: "Start writing" })).toHaveAttribute("href", "/projects/6c0ca1a0-0000-4000-8000-000000000001")
+  await expect(page.getByRole("main").getByRole("link", { name: "sign up" })).toHaveAttribute("href", "/sign-up")
   await banner.getByRole("link", { name: "Sign in" }).click()
   await expect(page).toHaveURL(new URL("sign-in", APP_URL).href)
   await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible()

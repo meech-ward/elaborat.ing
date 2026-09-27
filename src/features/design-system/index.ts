@@ -62,3 +62,10 @@ export {
 export { QuickOpen, type QuickOpenCommand, type QuickOpenFile, type QuickOpenMode, type QuickOpenProps } from "./ui/QuickOpen"
 export { quickOpenMatches, type QuickOpenMatch } from "./ui/quickOpenMatch"
 // --- end Canvas ---
+
+// --- Pages outside a project (guide/HomeSection.tsx) ---
+export { AccountPill } from "./ui/AccountPill"
+export { AppBar, BrandMark } from "./ui/AppBar"
+export { NewProjectCard, ProjectCard, ProjectGrid } from "./ui/ProjectCard"
+export { ScreenPreview } from "./ui/ScreenPreview"
+// --- end Pages outside a project ---

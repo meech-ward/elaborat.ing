@@ -5,7 +5,7 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; after updating it goes to the home page; it sits in the sign-in
- * pages' card, with the app's colours.
+ * pages' card, with the app's colours and banners.
  */
 import { useState } from 'react'
 
@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Banner } from '@/features/design-system'
 
 export function UpdatePasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<'div'>) {
   const [password, setPassword] = useState('')
@@ -52,11 +53,7 @@ export function UpdatePasswordForm({ className, ...props }: React.ComponentProps
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <Banner tone="danger">{error}</Banner>}
         <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
           {isLoading ? 'Saving...' : 'Save new password'}
         </Button>

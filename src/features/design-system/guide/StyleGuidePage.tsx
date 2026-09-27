@@ -7,6 +7,7 @@ import { ColourTokensSection } from "./ColourTokensSection"
 import { ComponentsSheet } from "./ComponentsSheet"
 import { ControlsSection } from "./ControlsSection"
 import { EditorChromeSection } from "./EditorChromeSection"
+import { HomeSection } from "./HomeSection"
 import { NavigationSection } from "./NavigationSection"
 import { GuideCard, GuidePortal, GuideValue } from "./parts"
 import { SpaceSection } from "./SpaceSection"
@@ -63,6 +64,9 @@ export function StyleGuidePage() {
             <GuideCard title="C5 components" className="gap-7 max-sm:overflow-visible">
               <EditorChromeSection />
               <CanvasSection />
+            </GuideCard>
+            <GuideCard title="Pages outside a project" className="gap-7">
+              <HomeSection />
             </GuideCard>
           </div>
           <div ref={portal} />

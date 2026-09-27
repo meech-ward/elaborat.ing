@@ -1,4 +1,3 @@
-import { Diamond } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -26,15 +25,5 @@ export function PanelPage({ className, ...props }: React.ComponentProps<"main">)
     <DottedPage className="flex items-center justify-center px-4 py-10">
       <main className={cn(panel, "flex w-full max-w-[400px] flex-col gap-2 p-5 text-sm", className)} {...props} />
     </DottedPage>
-  )
-}
-
-/** The diamond mark and the name. */
-export function Brand({ className }: { className?: string }) {
-  return (
-    <span className={cn("inline-flex items-center gap-2 font-bold tracking-tight", className)}>
-      <Diamond aria-hidden="true" className="size-[0.8em] shrink-0 text-primary" strokeWidth={2.4} />
-      elaborat.ing
-    </span>
   )
 }

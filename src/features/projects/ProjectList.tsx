@@ -2,19 +2,15 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { Ellipsis } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { panel } from "@/components/panel"
-import { ActionMenu, type MenuEntry } from "@/features/design-system"
+import { ActionMenu, Banner, FloatingPanel, NewProjectCard, ProjectCard, ProjectGrid, StatusDot, type MenuEntry } from "@/features/design-system"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
-import { cn } from "@/lib/utils"
 import { libraryFor, moveLocalProjectTo, useLibraryState, type ProjectAccount } from "./account"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
-import { ImportProject } from "./ImportProject"
+import { ImportProjectButton, ImportReport, useProjectImport } from "./ImportProject"
 import { MembersDialog } from "./MembersDialog"
-import { statusLabel } from "./statusLabel"
+import { statusLabel, syncDot } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -50,7 +46,7 @@ function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
   )
 }
 
-/** The account's projects and invitations, and ways to start a new one or import one. */
+/** The account's projects as cards, its invitations, and ways to start a new one or import one. */
 export function ProjectList({ account }: { account: ProjectAccount }) {
   const library = libraryFor(account)
   const state = useLibraryState(library)
@@ -62,6 +58,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [deleting, setDeleting] = useState<{ entry: ProjectEntry; unsynced: number } | null>(null)
   // The project whose members are shown.
   const [membersOf, setMembersOf] = useState<ProjectEntry | null>(null)
+  const importing = useProjectImport(library)
   const onError = useCallback((text: string) => setError(text), [])
   useBackgroundRefresh(library, onError, { invitations: true })
 
@@ -150,16 +147,19 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
     }
   }
 
+  const offline = !account.online || state.offline
   const active = state.entries.filter((entry) => !entry.archived)
   const archived = state.entries.filter((entry) => entry.archived)
-  const row = (entry: ProjectEntry) => (
-    <li key={entry.id} className="flex min-h-10 items-center justify-between gap-3 py-1">
-      <Link to={projectHref(entry.id)} className="min-w-0 font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline">
-        {entry.title}
-      </Link>
-      <span className="flex shrink-0 items-center gap-2">
-        <span className="text-xs text-muted-foreground">{statusLabel(entry)}</span>
-        {entry.role !== null ? (
+  const card = (entry: ProjectEntry) => (
+    <ProjectCard
+      key={entry.id}
+      title={entry.title}
+      link={<Link to={projectHref(entry.id)} />}
+      meta={
+        <StatusDot status={syncDot(entry, offline).status}>{statusLabel(entry)}</StatusDot>
+      }
+      actions={
+        entry.role !== null ? (
           <ProjectMenu
             entry={entry}
             onMembers={() => {
@@ -171,59 +171,60 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
             onDelete={() => void askToDelete(entry)}
             onLeave={() => void leave(entry)}
           />
-        ) : null}
-      </span>
-    </li>
+        ) : null
+      }
+    />
   )
 
   return (
-    <section aria-labelledby="projects-heading" className={cn(panel, "flex flex-col gap-4 p-5")}>
-      <h2 id="projects-heading" className="text-lg font-semibold">
-        Your projects
-      </h2>
-      {!account.online || state.offline ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Offline: showing the projects on this device. Changes sync when you are back online.
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
+    <section aria-labelledby="projects-heading" className="mx-auto flex w-full max-w-[1100px] flex-col gap-6 px-3 pt-4 pb-16 sm:px-6 sm:pt-8">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-col gap-1">
+          <h1 id="projects-heading" className="text-[28px] leading-tight font-bold tracking-[-0.01em] sm:text-[32px]">
+            Your projects
+          </h1>
+          {state.loaded && state.entries.length === 0 ? <p className="text-[15px] text-muted-foreground">No projects yet.</p> : null}
+        </div>
+        <ImportProjectButton state={importing.state} onChoose={(input) => void importing.choose(input)} />
+      </div>
+      {offline || error || notice || importing.state.kind !== "idle" ? (
+        <div className="flex flex-col gap-2">
+          {offline ? <Banner tone="info">Offline: showing the projects on this device. Changes sync when you are back online.</Banner> : null}
+          {error ? <Banner tone="danger">{error}</Banner> : null}
+          {notice ? <Banner tone="info">{notice}</Banner> : null}
+          <ImportReport state={importing.state} />
+        </div>
       ) : null}
       {state.invitations.length > 0 ? (
-        <section aria-labelledby="invitations-heading" className="flex flex-col gap-2">
-          <h3 id="invitations-heading" className="text-sm font-semibold text-muted-foreground">
+        <FloatingPanel render={<section aria-labelledby="invitations-heading" />} className="flex flex-col gap-1 p-4">
+          <h2 id="invitations-heading" className="text-[11px] font-semibold tracking-[0.07em] text-dim uppercase">
             Invitations
-          </h3>
+          </h2>
           <ul className="flex flex-col divide-y divide-border">
             {state.invitations.map((invitation) => (
-              <li key={invitation.projectId} className="flex min-h-10 items-center justify-between gap-3 py-1">
-                <span>
-                  <span className="font-medium">{invitation.title}</span>
-                  <span className="text-sm text-muted-foreground">, as {invitation.role}</span>
+              <li key={invitation.projectId} className="flex min-h-11 items-center justify-between gap-3 py-1.5">
+                <span className="min-w-0 text-[15px] [overflow-wrap:anywhere]">
+                  <span className="font-semibold">{invitation.title}</span>
+                  <span className="text-muted-foreground">, as {invitation.role}</span>
                 </span>
-                <Button size="sm" aria-label={`Accept the invitation to ${invitation.title}`} onClick={() => void accept(invitation)}>
+                <Button aria-label={`Accept the invitation to ${invitation.title}`} onClick={() => void accept(invitation)}>
                   Accept
                 </Button>
               </li>
             ))}
           </ul>
-        </section>
+        </FloatingPanel>
       ) : null}
-      {state.loaded && state.entries.length === 0 ? <p className="text-sm text-muted-foreground">No projects yet.</p> : null}
-      {active.length > 0 ? <ul className="flex flex-col divide-y divide-border">{active.map(row)}</ul> : null}
+      <ProjectGrid aria-labelledby="projects-heading">
+        <NewProjectCard id="new-project-title" value={title} onValueChange={setTitle} onSubmit={(event) => void create(event)} />
+        {active.map(card)}
+      </ProjectGrid>
       {archived.length > 0 ? (
-        <section aria-labelledby="archived-heading" className="flex flex-col gap-2">
-          <h3 id="archived-heading" className="text-sm font-semibold text-muted-foreground">
+        <section aria-labelledby="archived-heading" className="flex flex-col gap-3">
+          <h2 id="archived-heading" className="text-[11px] font-semibold tracking-[0.07em] text-dim uppercase">
             Archived
-          </h3>
-          <ul className="flex flex-col divide-y divide-border">{archived.map(row)}</ul>
+          </h2>
+          <ProjectGrid aria-labelledby="archived-heading">{archived.map(card)}</ProjectGrid>
         </section>
       ) : null}
       {membersOf ? (
@@ -244,14 +245,6 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           onClose={() => setDeleting(null)}
         />
       ) : null}
-      <form onSubmit={create} className="flex items-end gap-2 border-t border-border pt-4">
-        <div className="grid flex-1 gap-2">
-          <Label htmlFor="new-project-title">New project</Label>
-          <Input id="new-project-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" />
-        </div>
-        <Button type="submit">Create</Button>
-      </form>
-      <ImportProject library={library} />
     </section>
   )
 }

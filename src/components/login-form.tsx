@@ -6,16 +6,20 @@
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; after signing in it goes to the home page unless a `next` path is given;
  * it is one card that emails a sign-in link and code first, with the password
- * as the other option and the enabled providers below.
+ * as the other option and the enabled providers below; messages and links
+ * are the app's banners and link buttons.
  */
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 
 import { safeNextPath } from '@/lib/safe-next-path'
 import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 import { EmailCodeStep, ProviderButtons, sendSignInEmail } from '@/features/auth'
+import { Banner } from '@/features/design-system'
 
 export function LoginForm({ next }: { next: string | null }) {
   const [email, setEmail] = useState('')
@@ -79,9 +83,9 @@ export function LoginForm({ next }: { next: string | null }) {
           <div className="grid gap-2">
             <div className="flex items-center">
               <Label htmlFor="password">Password</Label>
-              <a href="/forgot-password" className="ml-auto text-sm text-(--accent-soft-text) underline-offset-4 hover:underline">
+              <Link to="/forgot-password" className={cn(buttonVariants({ variant: 'link', size: 'inline' }), 'ml-auto')}>
                 Forgot your password?
-              </a>
+              </Link>
             </div>
             <Input
               id="password"
@@ -93,36 +97,34 @@ export function LoginForm({ next }: { next: string | null }) {
             />
           </div>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
+        {error ? <Banner tone="danger">{error}</Banner> : null}
         <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
           {usePassword ? (isLoading ? 'Signing in...' : 'Sign in') : isLoading ? 'Sending...' : 'Email me a sign-in link'}
         </Button>
         {usePassword ? null : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] leading-normal text-muted-foreground">
             No password needed. We&apos;ll email you a link that signs you in, and a code you can enter here instead.
           </p>
         )}
-        <button
+        <Button
           type="button"
-          className="self-start text-sm text-(--accent-soft-text) underline underline-offset-4"
+          variant="link"
+          size="sm"
+          className="-my-1 self-start px-0"
           onClick={() => {
             setUsePassword(!usePassword)
             setError(null)
           }}
         >
           {usePassword ? 'Email me a link instead' : 'Use a password instead'}
-        </button>
+        </Button>
       </form>
       <ProviderButtons next={next} />
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
         Don&apos;t have an account?{' '}
-        <a href="/sign-up" className="text-(--accent-soft-text) underline underline-offset-4">
+        <Link to="/sign-up" className={buttonVariants({ variant: 'link', size: 'inline' })}>
           Sign up
-        </a>
+        </Link>
       </p>
     </>
   )

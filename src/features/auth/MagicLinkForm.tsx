@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Banner } from "@/features/design-system"
 import { createClient } from "@/lib/supabase/client"
 import { emailLinkRedirect } from "./returnPath"
 
@@ -45,11 +46,11 @@ export function EmailCodeStep({ email, next, onBack }: { email: string; next: st
 
   return (
     <form onSubmit={verify} className="flex flex-col gap-4">
-      <p role="status" className="text-sm [overflow-wrap:anywhere]">
+      <Banner tone="info" className="[overflow-wrap:anywhere]">
         {resent
           ? `Sent a new link and code to ${email}.`
           : `Check ${email} for your sign-in link. It works once, for one hour. The email also has a code you can enter here.`}
-      </p>
+      </Banner>
       <div className="grid gap-2">
         <Label htmlFor="magic-code">Code from the email</Label>
         <Input
@@ -61,20 +62,16 @@ export function EmailCodeStep({ email, next, onBack }: { email: string; next: st
           onChange={(event) => setCode(event.target.value)}
         />
       </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Banner tone="danger">{error}</Banner> : null}
       <Button type="submit" size="lg" className="w-full" disabled={verifying}>
         {verifying ? "Signing in..." : "Sign in with the code"}
       </Button>
       <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => void resend()}>
         Send a new link and code
       </Button>
-      <button type="button" className="self-start text-sm text-(--accent-soft-text) underline underline-offset-4" onClick={onBack}>
+      <Button type="button" variant="link" size="sm" className="-my-1 self-start px-0" onClick={onBack}>
         Use a different email
-      </button>
+      </Button>
     </form>
   )
 }

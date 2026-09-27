@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Brand, DottedPage, panel } from "@/components/panel"
+import { DottedPage, panel } from "@/components/panel"
 import { ConnectedAgents } from "@/features/agents"
 import { AccountHeader, AuthGate } from "@/features/auth"
 import { cn } from "@/lib/utils"
@@ -12,12 +12,8 @@ export const Route = createFileRoute("/agents")({
 function Agents() {
   return (
     <DottedPage>
-      <div className="mx-auto flex max-w-[640px] flex-col gap-4 px-4 py-10 sm:py-16">
-        <AccountHeader>
-          <Link to="/" className="self-start px-1 text-xl">
-            <Brand />
-          </Link>
-        </AccountHeader>
+      <AccountHeader />
+      <div className="mx-auto flex max-w-[640px] flex-col gap-4 px-4 pt-4 pb-10 sm:pb-16">
         <main className={cn(panel, "flex flex-col gap-4 p-5")}>
           <Link to="/" className="self-start text-sm text-(--accent-soft-text) underline underline-offset-4">
             Your projects

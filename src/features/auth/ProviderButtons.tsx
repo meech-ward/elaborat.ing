@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { Banner } from "@/features/design-system"
 import { parseConfig } from "@/lib/config"
 import { createClient } from "@/lib/supabase/client"
 import { enabledProviders, PROVIDERS, type ProviderId } from "./providers"
@@ -38,19 +40,17 @@ export function ProviderButtons({ next }: { next: string | null }) {
   }
   return (
     <div className="flex flex-col gap-3">
-      <p className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+      <div className="flex items-center gap-3 text-xs text-dim">
+        <Separator className="h-px flex-1" />
         or
-      </p>
+        <Separator className="h-px flex-1" />
+      </div>
       {PROVIDERS.filter((provider) => providers.includes(provider.id)).map((provider) => (
         <Button key={provider.id} type="button" variant="outline" size="lg" className="w-full" onClick={() => void continueWith(provider.id)}>
           {provider.label}
         </Button>
       ))}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Banner tone="danger">{error}</Banner> : null}
     </div>
   )
 }

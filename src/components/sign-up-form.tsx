@@ -5,15 +5,17 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; links point at `/sign-in`; it sits in the sign-in pages' card, with
- * the app's colours.
+ * the app's colours, banners and link buttons.
  */
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Banner } from '@/features/design-system'
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<'div'>) {
   const [email, setEmail] = useState('')
@@ -51,9 +53,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   return (
     <div className={cn('flex flex-col gap-4', className)} {...props}>
       {success ? (
-        <p role="status" className="text-sm">
-          Thank you for signing up! Check your email to confirm your account before signing in.
-        </p>
+        <Banner tone="info">Thank you for signing up! Check your email to confirm your account before signing in.</Banner>
       ) : (
         <form onSubmit={handleSignUp} className="flex flex-col gap-4">
           <div className="grid gap-2">
@@ -80,7 +80,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="repeat-password">Repeat Password</Label>
+            <Label htmlFor="repeat-password">Repeat password</Label>
             <Input
               id="repeat-password"
               type="password"
@@ -90,19 +90,15 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
               onChange={(e) => setRepeatPassword(e.target.value)}
             />
           </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          {error && <Banner tone="danger">{error}</Banner>}
           <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
             {isLoading ? 'Creating an account...' : 'Sign up'}
           </Button>
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
             Already have an account?{' '}
-            <a href="/sign-in" className="text-(--accent-soft-text) underline underline-offset-4">
+            <Link to="/sign-in" className={buttonVariants({ variant: 'link', size: 'inline' })}>
               Sign in
-            </a>
+            </Link>
           </p>
         </form>
       )}

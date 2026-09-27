@@ -18,7 +18,7 @@ function SignIn() {
     if (auth.status === "ready") window.location.replace(safeNextPath(next, "/"))
   }, [auth.status, next])
   return (
-    <AuthPage title="Sign in">
+    <AuthPage title="Sign in" description="Your projects, on any device, and the agents you connect.">
       <LoginForm next={next ?? null} />
     </AuthPage>
   )

@@ -65,11 +65,12 @@ test("a signed-out visitor is asked to sign in and brought back", async ({ page 
   await expect(page.getByRole("link", { name: "Sign in" }).last()).toHaveAttribute("href", /\/sign-in\?next=%2Fagents/)
 })
 
-test("the account header links to the page", async ({ page }) => {
+test("the account menu in the top bar leads to the page", async ({ page }) => {
   await fakeSupabase(page, { grants: [] })
   await signedIn(page)
   await page.goto(APP_URL)
-  await page.getByRole("link", { name: "Connected agents" }).click()
+  await page.getByRole("banner").getByRole("button", { name: /^Signed in as/ }).click()
+  await page.getByRole("menuitem", { name: "Connected agents" }).click()
   await expect(page.getByRole("heading", { level: 1, name: "Connected agents" })).toBeVisible()
 })
 

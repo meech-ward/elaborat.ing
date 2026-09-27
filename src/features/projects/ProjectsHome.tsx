@@ -3,12 +3,19 @@ import { PanelPage } from "@/components/panel"
 import { parseProjectLocation } from "@/features/navigation"
 import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { ProjectList } from "./ProjectList"
+import { Welcome } from "./Welcome"
 import { LOCAL_ACCOUNT, useProjectAccount } from "./account"
 
-/** The home page's projects section, for an account. The account header offers a way in to anyone else. */
+/**
+ * The home page's body: the account's projects, or, signed out, what the
+ * app is and the ways in. Nothing while the session is checked (the top bar
+ * says so).
+ */
 export function ProjectsHome() {
   const result = useProjectAccount()
-  return result.kind === "account" ? <ProjectList account={result.account} /> : null
+  if (result.kind === "account") return <ProjectList account={result.account} />
+  if (result.kind === "loading") return null
+  return <Welcome configured={result.kind !== "unconfigured"} />
 }
 
 /** Shows the project page for the account (the local project without one), or the reason it cannot. */

@@ -4,7 +4,7 @@ import { AuthPage } from "@/features/auth"
 
 export const Route = createFileRoute("/update-password")({
   component: () => (
-    <AuthPage title="Choose a new password">
+    <AuthPage title="Choose a new password" description="Save a new password to use from now on.">
       <UpdatePasswordForm />
     </AuthPage>
   ),
