@@ -109,24 +109,6 @@
 .wb-sidebar-provider {
   display: contents;
 }
-/* A file's kind before its name: M notes, D drawings, 2 diagrams. */
-.wb-kind {
-  display: inline-block;
-  width: 16px;
-  margin-right: 7px;
-  text-indent: 0;
-  text-align: center;
-  font: 700 11px/1 var(--code-font);
-}
-.wb-kind[data-kind="note"] {
-  color: var(--note);
-}
-.wb-kind[data-kind="drawing"] {
-  color: var(--drawing);
-}
-.wb-kind[data-kind="diagram"] {
-  color: var(--diagram);
-}
 .wb-main {
   display: flex;
   flex-direction: column;
