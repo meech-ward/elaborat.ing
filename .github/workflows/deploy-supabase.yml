@@ -67,6 +67,11 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_CONFIG_TOKEN }}
       SES_SMTP_USER: ${{ secrets.SES_SMTP_USER }}
       SES_SMTP_PASSWORD: ${{ secrets.SES_SMTP_PASSWORD }}
+      # GitHub and Google sign-in: used once [auth.external.*] enabled = true in config.toml.
+      SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID: ${{ secrets.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID }}
+      SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET: ${{ secrets.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET }}
+      SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: ${{ secrets.SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID }}
+      SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET: ${{ secrets.SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET }}
     steps:
       # config push leaves out an unset secret (the password) and has no such
       # check for the SMTP user, so an unset one would break sign-in email.
