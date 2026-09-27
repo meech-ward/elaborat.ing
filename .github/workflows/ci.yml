@@ -1,9 +1,10 @@
 name: CI
 
+# Pushes to any branch in this repository run the checks too, so a branch is
+# checked before it has a pull request.
 on:
   pull_request:
   push:
-    branches: [main]
 
 jobs:
   app:
