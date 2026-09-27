@@ -177,7 +177,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   )
 
   return (
-    <section aria-labelledby="projects-heading" className="mx-auto flex w-full max-w-[1100px] flex-col gap-6 px-3 pt-4 pb-16 sm:px-6 sm:pt-8">
+    <section aria-labelledby="projects-heading" className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-3 pt-4 pb-16 sm:px-6 sm:pt-8">
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="flex flex-col gap-1">
           <h1 id="projects-heading" className="text-[28px] leading-tight font-bold tracking-[-0.01em] sm:text-[32px]">

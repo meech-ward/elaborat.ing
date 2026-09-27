@@ -1,18 +1,16 @@
 // The canvas controls' view of Excalidraw, without React or the package:
 // which tool is current (in the tool island's names), the zoom, and the
-// scroll that fits a scene into the part of the canvas a person can see.
+// scroll that opens a scene in the part of the canvas a person can see and
+// keeps it there when that part moves.
 //
 // Excalidraw draws a scene point at `(x + scrollX) * zoom` from its
-// container's left edge (and the same for y), so fitting and zooming are
-// both about keeping one scene point at one place on screen.
+// container's left edge (and the same for y), so opening, following and
+// zooming are all about keeping one scene point at one place on screen.
 
 /** Excalidraw's zoom limits and its zoom buttons' step. */
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 30;
 export const ZOOM_STEP = 0.1;
-
-/** Room kept clear around a fitted scene: the sides, and the top and bottom where the islands float. */
-export const FIT_MARGIN = { x: 40, y: 72 } as const;
 
 /** The part of the canvas a person can see, relative to the canvas's top left corner. */
 export interface CanvasArea {
@@ -33,20 +31,33 @@ export interface CanvasViewport {
 
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
+const centre = (area: CanvasArea) => ({ x: area.left + area.width / 2, y: area.top + area.height / 2 });
+
 /**
- * The zoom and scroll that show the whole scene centred in the area, at
- * 100% or less (smaller when it does not fit), keeping FIT_MARGIN clear.
- * Null when the area has no room.
+ * The zoom and scroll a scene opens at: 100%, with the middle of the scene
+ * in the middle of the area. A scene larger than the area shows its middle,
+ * readable, as Excalidraw opens one. Null when the area has no room.
  */
-export function fitViewport(bounds: SceneBounds, area: CanvasArea): CanvasViewport | null {
-  const width = area.width - 2 * FIT_MARGIN.x;
-  const height = area.height - 2 * FIT_MARGIN.y;
-  if (width <= 0 || height <= 0) return null;
+export function openingViewport(bounds: SceneBounds, area: CanvasArea): CanvasViewport | null {
+  if (area.width <= 0 || area.height <= 0) return null;
   const [minX, minY, maxX, maxY] = bounds;
-  const zoom = clampZoom(Math.min(1, width / Math.max(1, maxX - minX), height / Math.max(1, maxY - minY)));
-  const centreX = area.left + area.width / 2;
-  const centreY = area.top + area.height / 2;
-  return { zoom, scrollX: centreX / zoom - (minX + maxX) / 2, scrollY: centreY / zoom - (minY + maxY) / 2 };
+  const { x, y } = centre(area);
+  return { zoom: 1, scrollX: x - (minX + maxX) / 2, scrollY: y - (minY + maxY) / 2 };
+}
+
+/**
+ * The viewport after the area moved or changed size (focus mode, Split, the
+ * side panel, the window), keeping the scene point that was at its middle
+ * at its new middle.
+ */
+export function followArea(current: CanvasViewport, from: CanvasArea, to: CanvasArea): CanvasViewport {
+  const before = centre(from);
+  const after = centre(to);
+  return {
+    zoom: current.zoom,
+    scrollX: current.scrollX + (after.x - before.x) / current.zoom,
+    scrollY: current.scrollY + (after.y - before.y) / current.zoom,
+  };
 }
 
 /** The viewport at another zoom (within Excalidraw's limits), with the area's centre on the same scene point. */

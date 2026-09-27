@@ -489,14 +489,17 @@ above the choices. */
   overflow: visible;
   padding-top: 68px;
 }
-.wb-native-view[data-canvas-bleed] > [data-canvas-stage] {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
+/* A canvas's dots, desktop and phone: the canvas itself is clear (viewTheme.ts). */
+.wb-native-view > [data-canvas-stage] {
   background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: var(--canvas-dot-size, 22px) var(--canvas-dot-size, 22px);
   background-position: var(--canvas-dot-x, 0) var(--canvas-dot-y, 0);
+}
+.wb-native-view[data-canvas-bleed] > [data-canvas-stage] {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
 }
 /* Banners and conflicts sit under the tool island (the saved state is for
    screen readers only). */

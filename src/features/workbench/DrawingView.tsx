@@ -110,7 +110,7 @@ export function DrawingView({
   const path = initial.path;
   const theme = useCanvasTheme();
   const desktop = useDesktopFrame();
-  const present = useCanvasPresentation("drawing", desktop);
+  const present = useCanvasPresentation("drawing");
   const [opened] = useState(() => tryParse(initial.content, path));
   const [original, setOriginal] = useState<ParsedDrawing | null>(opened.parsed);
   const [scene, setScene] = useState<DrawingScene | null>(opened.parsed?.scene ?? null);
@@ -392,7 +392,7 @@ export function DrawingView({
 
   const duplicateKey = commandShortcut("D", isApplePlatform());
   const fullBleed = desktop && active && view !== "source" && scene !== null;
-  const [stageRef, onStageScroll, coveredLeft] = useCanvasStage(fullBleed, view === "split");
+  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
   // In Split the canvas is view-only while the source does not parse.
   const canvasViewOnly = Boolean(readOnly) || (view === "split" && sourceError !== null);
 
@@ -501,7 +501,6 @@ export function DrawingView({
             theme={theme}
             present={present}
             onScrollChange={onStageScroll}
-            coveredLeft={coveredLeft}
             compact={!desktop}
             active={active && view !== "source"}
             viewOnly={canvasViewOnly}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FIT_MARGIN, canvasUiFrom, createCanvasUiStore, fitViewport, islandTool, nativeTool, zoomViewport, type CanvasArea, type CanvasViewport } from "./canvasView";
+import { canvasUiFrom, createCanvasUiStore, followArea, islandTool, nativeTool, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from "./canvasView";
 
 /** Where a scene point lands on the canvas. */
 const onScreen = (view: CanvasViewport, x: number, y: number) => ({ x: (x + view.scrollX) * view.zoom, y: (y + view.scrollY) * view.zoom });
@@ -7,25 +7,35 @@ const onScreen = (view: CanvasViewport, x: number, y: number) => ({ x: (x + view
 // A 1440 by 900 canvas with the side panel's 280 and the top line's 60 covering it.
 const area: CanvasArea = { left: 280, top: 60, width: 1160, height: 840 };
 
-describe("fitViewport", () => {
+describe("openingViewport", () => {
   test("centres a small scene in the visible area at 100%", () => {
-    const view = fitViewport([100, 100, 300, 200], area)!;
+    const view = openingViewport([100, 100, 300, 200], area)!;
     expect(view.zoom).toBe(1);
     expect(onScreen(view, 200, 150)).toEqual({ x: 280 + 580, y: 60 + 420 });
   });
 
-  test("zooms out until a large scene fits inside the margins, still centred", () => {
-    const view = fitViewport([0, 0, 2000, 500], area)!;
-    expect(view.zoom).toBeCloseTo((1160 - 2 * FIT_MARGIN.x) / 2000);
-    const left = onScreen(view, 0, 0);
-    const right = onScreen(view, 2000, 500);
-    expect(left.x).toBeCloseTo(280 + FIT_MARGIN.x);
-    expect(right.x).toBeCloseTo(280 + 1160 - FIT_MARGIN.x);
-    expect((left.y + right.y) / 2).toBeCloseTo(60 + 420);
+  test("opens a scene larger than the area at 100% too, its middle in the middle", () => {
+    const view = openingViewport([0, 0, 2000, 1500], area)!;
+    expect(view.zoom).toBe(1);
+    expect(onScreen(view, 1000, 750)).toEqual({ x: 280 + 580, y: 60 + 420 });
   });
 
-  test("has nothing to fit into when the canvas is hidden", () => {
-    expect(fitViewport([0, 0, 10, 10], { left: 0, top: 0, width: 0, height: 0 })).toBeNull();
+  test("has nothing to open into when the canvas is hidden", () => {
+    expect(openingViewport([0, 0, 10, 10], { left: 0, top: 0, width: 0, height: 0 })).toBeNull();
+  });
+});
+
+describe("followArea", () => {
+  test("keeps the scene point at the area's middle there when the side panel and top line go (focus mode) and come back", () => {
+    const full: CanvasArea = { left: 0, top: 0, width: 1440, height: 900 };
+    const start: CanvasViewport = { zoom: 0.5, scrollX: 300, scrollY: -20 };
+    const middle = { x: (860 / start.zoom) - start.scrollX, y: (480 / start.zoom) - start.scrollY };
+    const focused = followArea(start, area, full);
+    expect(focused.zoom).toBe(0.5);
+    expect(onScreen(focused, middle.x, middle.y)).toEqual({ x: 720, y: 450 });
+    const back = followArea(focused, full, area);
+    expect(back.scrollX).toBeCloseTo(start.scrollX);
+    expect(back.scrollY).toBeCloseTo(start.scrollY);
   });
 });
 

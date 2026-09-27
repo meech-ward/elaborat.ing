@@ -4,9 +4,9 @@
 // persists what `onChange` returns. Native tools, labels, arrows,
 // freehand, undo/redo and zoom all come from the real component, driven
 // from the design system's tool and zoom islands (CanvasControls.tsx) in
-// place of its own toolbar and footer, which stay hidden. The scene fits
-// into the visible part of the canvas when it opens and when it is shown
-// again. Otherwise this wrapper adds only controlled-state semantics with
+// place of its own toolbar and footer, which stay hidden. The scene opens
+// at 100% in the middle of the visible part of the canvas, again whenever it
+// is shown again, and keeps its middle there while that part moves. Otherwise this wrapper adds only controlled-state semantics with
 // the raw authored scene as the authority:
 //
 // - initialData loads the scene once; later scene identities (e.g. an
@@ -46,7 +46,7 @@ import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
-import { canvasUiFrom, createCanvasUiStore, fitViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
+import { canvasUiFrom, createCanvasUiStore, followArea, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
 import './drawingCanvas.css';
 
 type NativeExcalidraw = typeof import('@excalidraw/excalidraw')['Excalidraw'];
@@ -211,7 +211,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, coveredLeft = 0, compact = false, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, compact = false, onError } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   // The canvas controls' layer, which covers the part of the canvas a person can see.
@@ -293,24 +293,32 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
   };
 
-  // The scene fits into the visible area when it first loads and whenever
-  // the canvas is shown again (another tab or the source was in front),
-  // once it can be measured.
+  // The scene opens at 100% in the middle of the visible area when it first
+  // loads and whenever the canvas is shown again (another tab or the source
+  // was in front), once it can be measured. While it shows, the scene point
+  // in the middle of the area stays there when the area moves or changes
+  // size: focus mode, Split, the side panel, the window.
   const loadedRef = useRef(false);
-  const fitWantedRef = useRef(true);
-  const coverRef = useRef({ wanted: coveredLeft, applied: 0 });
-  const fitScene = () => {
+  const openWantedRef = useRef(true);
+  // The area the view was last placed for; null while it cannot be measured.
+  const placedRef = useRef<CanvasArea | null>(null);
+  const placeScene = () => {
     const api = apiRef.current;
-    if (!api || !loadedRef.current || !fitWantedRef.current || !boundsNative) return;
+    if (!api || !loadedRef.current || !boundsNative) return;
     const area = visibleArea();
+    const placed = placedRef.current;
+    placedRef.current = area;
     if (!area) return;
-    fitWantedRef.current = false;
-    const elements = api.getSceneElements();
-    const view = elements.length > 0 ? fitViewport(boundsNative(elements), area) : null;
-    if (!view) return;
-    setViewport(api, view);
-    // The area already leaves out what the source covers.
-    coverRef.current.applied = coverRef.current.wanted;
+    if (openWantedRef.current) {
+      openWantedRef.current = false;
+      const elements = api.getSceneElements();
+      const view = elements.length > 0 ? openingViewport(boundsNative(elements), area) : null;
+      if (view) setViewport(api, view);
+      return;
+    }
+    if (!placed || (placed.left === area.left && placed.top === area.top && placed.width === area.width && placed.height === area.height)) return;
+    const state = api.getAppState();
+    setViewport(api, followArea({ zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }, placed, area));
   };
   const shownRef = useRef(props.active !== false);
   useEffect(() => {
@@ -318,27 +326,24 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     const wasShown = shownRef.current;
     shownRef.current = shown;
     if (!shown || wasShown) return;
-    fitWantedRef.current = true;
+    openWantedRef.current = true;
     // After the page has placed the canvas area (its effects run after this
-    // one). Once unmounted there is no area, so the fit does nothing.
-    requestAnimationFrame(fitScene);
+    // one). Once unmounted there is no area, so this does nothing.
+    requestAnimationFrame(placeScene);
   });
-
-  // The cover the view's scroll allows for, applied once the first scene
-  // (with its scroll to content) has loaded.
-  const applyCover = () => {
-    const api = apiRef.current;
-    const cover = coverRef.current;
-    if (!api || !loadedRef.current || cover.wanted === cover.applied) return;
-    const state = api.getAppState();
-    const scrollX = state.scrollX + (cover.wanted - cover.applied) / 2 / state.zoom.value;
-    cover.applied = cover.wanted;
-    (api.updateScene as (sceneData: NativeUpdateScene) => void)({ appState: { scrollX }, captureUpdate: 'NEVER' });
+  // The area (the controls' layer) loads with the canvas, so it is watched
+  // from the first load on.
+  const areaObserverRef = useRef<ResizeObserver | null>(null);
+  const watchArea = () => {
+    const area = areaRef.current;
+    if (!area || areaObserverRef.current) return;
+    areaObserverRef.current = new ResizeObserver(placeScene);
+    areaObserverRef.current.observe(area);
   };
-  useEffect(() => {
-    coverRef.current.wanted = coveredLeft;
-    applyCover();
-  });
+  useEffect(() => () => {
+    areaObserverRef.current?.disconnect();
+    areaObserverRef.current = null;
+  }, []);
 
   // Reset only when this canvas lifecycle ends, not on every controlled
   // scene echo. StrictMode's effect replay still gets a fresh baseline.
@@ -360,8 +365,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       baselineRef.current = current;
       if (!loadedRef.current) {
         loadedRef.current = true;
-        fitScene();
-        applyCover();
+        placeScene();
+        watchArea();
       }
       return;
     }

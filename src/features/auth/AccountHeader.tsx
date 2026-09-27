@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link, useMatchRoute, useNavigate } from "@tanstack/react-router"
 import { Settings } from "lucide-react"
 import { useState } from "react"
 import { buttonVariants } from "@/components/ui/button"
@@ -13,13 +13,15 @@ import { signOut, useAuth } from "./useAuth"
  * The top bar of the pages outside a project, which makes plain whether you
  * are signed in. Signed in, the account (its avatar and email) opens a menu
  * with Settings, Connected agents and Sign out; signed out, Settings, a way
- * in, and a way to start writing without an account (in the local project).
+ * in (except on the sign-in page itself), and a way to start writing without
+ * an account (in the local project).
  * The right side is left out when the build has no Supabase project.
  */
 export function AccountHeader() {
   const state = useAuth()
   const openSettings = useOpenSettings()
   const navigate = useNavigate()
+  const onSignIn = Boolean(useMatchRoute()({ to: "/sign-in" }))
   const [error, setError] = useState<string | null>(null)
   const home = <Link to="/" />
   if (state.status === "unconfigured") return <AppBar home={home} />
@@ -75,9 +77,11 @@ export function AccountHeader() {
       actions={
         <>
           {settings}
-          <Link to="/sign-in" className={cn(buttonVariants({ variant: "ghost" }), "aria-[current=page]:bg-seg aria-[current=page]:text-foreground")}>
-            Sign in
-          </Link>
+          {!onSignIn && (
+            <Link to="/sign-in" className={buttonVariants({ variant: "ghost" })}>
+              Sign in
+            </Link>
+          )}
           {/* Phones have Start writing on the page, under the headline. */}
           <Link to={projectHref(LOCAL_PROJECT_ID)} className={cn(buttonVariants(), "max-sm:hidden")}>
             Start writing

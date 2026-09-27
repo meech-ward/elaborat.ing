@@ -190,7 +190,7 @@ test("on a desktop the canvas fills the window behind the panels, and the side p
   await expect.poll(() => canvas(page).boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
 
   // The tool island stands in for Excalidraw's own toolbar and footer, and
-  // the drawing opens fitted at 100% or less.
+  // the drawing opens at 100%.
   await expect(page.locator(".App-toolbar")).toBeHidden()
   await expect(page.locator(".zoom-actions")).toBeHidden()
   await expect(page.getByRole("button", { name: "Reset zoom, now 100%" })).toBeVisible()

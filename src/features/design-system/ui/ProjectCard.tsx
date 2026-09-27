@@ -83,7 +83,8 @@ export function ProjectCard({
 /**
  * The card that starts a project: the same size, flat, its border dashed a
  * shade darker, with a title field (labelled `label`) and the primary
- * Create button beside it.
+ * Create button beside it, the field as high as the button (40 on touch
+ * screens).
  */
 export function NewProjectCard({
   id,
@@ -120,7 +121,14 @@ export function NewProjectCard({
           {label}
         </Label>
         <div className="flex gap-2">
-          <Input id={id} value={value} onChange={(event) => onValueChange(event.target.value)} placeholder={placeholder} disabled={disabled} />
+          <Input
+            id={id}
+            value={value}
+            onChange={(event) => onValueChange(event.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            className="pointer-coarse:h-10"
+          />
           <Button type="submit" disabled={disabled}>
             {submitLabel}
           </Button>

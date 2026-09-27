@@ -93,7 +93,7 @@ export function DiagramView({
   const path = initial.path;
   const theme = useCanvasTheme();
   const desktop = useDesktopFrame();
-  const present = useCanvasPresentation("diagram", desktop);
+  const present = useCanvasPresentation("diagram");
   const nativePath = useMemo(() => nativePathFor(path), [path]);
   const sidecarPath = useMemo(() => sidecarPathFor(path), [path]);
 
@@ -542,7 +542,7 @@ export function DiagramView({
   }, [scene, baseName]);
 
   const fullBleed = desktop && active && view !== "source" && booted && !bootError && scene !== null;
-  const [stageRef, onStageScroll, coveredLeft] = useCanvasStage(fullBleed, view === "split");
+  const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
 
   if (!booted) {
     return (
@@ -697,7 +697,6 @@ export function DiagramView({
           theme={theme}
           present={present}
           onScrollChange={onStageScroll}
-          coveredLeft={coveredLeft}
           compact={!desktop}
           active={active && view !== "source"}
           viewOnly={canvasViewOnly}
