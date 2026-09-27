@@ -128,9 +128,8 @@ Realtime's own source in `supabase/realtime`.
   optional), a queueing trigger, a cron job every 10 seconds and an `embed` Edge
   Function. The guide assumes an integer `id` key; adapt the payload for uuids.
   [Automatic embeddings](https://supabase.com/docs/guides/ai/automatic-embeddings)
-- **The guide's function call has an auth gap** when pg_cron is the caller. The
-  current guidance for database-called functions is `verify_jwt = false` plus a
-  secret key checked in the function, with the key stored in Vault.
+- **Functions the database calls** (from pg_cron) use `verify_jwt = false`
+  plus a secret key checked in the function, with the key stored in Vault.
   [Function auth](https://supabase.com/docs/guides/functions/auth),
   [scheduling functions](https://supabase.com/docs/guides/functions/schedule-functions)
 - **Built-in embeddings:** `Supabase.ai.Session('gte-small')`, 384 dimensions,
