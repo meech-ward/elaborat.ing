@@ -79,7 +79,7 @@ export function LoginForm({ next }: { next: string | null }) {
           <div className="grid gap-2">
             <div className="flex items-center">
               <Label htmlFor="password">Password</Label>
-              <a href="/forgot-password" className="ml-auto text-sm text-(--link) underline-offset-4 hover:underline">
+              <a href="/forgot-password" className="ml-auto text-sm text-(--accent-soft-text) underline-offset-4 hover:underline">
                 Forgot your password?
               </a>
             </div>
@@ -108,7 +108,7 @@ export function LoginForm({ next }: { next: string | null }) {
         )}
         <button
           type="button"
-          className="self-start text-sm text-(--link) underline underline-offset-4"
+          className="self-start text-sm text-(--accent-soft-text) underline underline-offset-4"
           onClick={() => {
             setUsePassword(!usePassword)
             setError(null)
@@ -120,7 +120,7 @@ export function LoginForm({ next }: { next: string | null }) {
       <ProviderButtons next={next} />
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{' '}
-        <a href="/sign-up" className="text-(--link) underline underline-offset-4">
+        <a href="/sign-up" className="text-(--accent-soft-text) underline underline-offset-4">
           Sign up
         </a>
       </p>

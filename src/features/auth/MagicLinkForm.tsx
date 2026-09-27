@@ -72,7 +72,7 @@ export function EmailCodeStep({ email, next, onBack }: { email: string; next: st
       <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => void resend()}>
         Send a new link and code
       </Button>
-      <button type="button" className="self-start text-sm text-(--link) underline underline-offset-4" onClick={onBack}>
+      <button type="button" className="self-start text-sm text-(--accent-soft-text) underline underline-offset-4" onClick={onBack}>
         Use a different email
       </button>
     </form>

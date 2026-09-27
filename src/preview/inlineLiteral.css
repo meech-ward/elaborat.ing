@@ -17,7 +17,7 @@
   min-width: 0;
   padding: 0;
   border: 0;
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
   font: inherit;
   line-height: inherit;

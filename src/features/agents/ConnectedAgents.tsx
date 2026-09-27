@@ -93,7 +93,7 @@ export function ConnectedAgents() {
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium break-words">{grant.client.name || "Unnamed agent"}</span>
                 {grant.client.uri ? (
-                  <a href={grant.client.uri} target="_blank" rel="noopener noreferrer" className="text-sm break-all text-(--link) underline underline-offset-4">
+                  <a href={grant.client.uri} target="_blank" rel="noopener noreferrer" className="text-sm break-all text-(--accent-soft-text) underline underline-offset-4">
                     {grant.client.uri}
                   </a>
                 ) : null}

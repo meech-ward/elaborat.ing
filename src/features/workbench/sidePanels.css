@@ -7,9 +7,9 @@
   height: 32px;
   margin: 12px 12px 0;
   padding: 0 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 9px;
-  background: var(--chrome);
+  background: var(--bg);
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -58,7 +58,7 @@
 }
 .wb-search-results button:hover,
 .wb-search-results button:focus-visible {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 .wb-search-path {
   font-family: var(--code-font);

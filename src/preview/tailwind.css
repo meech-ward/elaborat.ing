@@ -21,22 +21,22 @@
 @theme inline {
   --font-sans: var(--ui-font);
   --font-mono: var(--code-font);
-  --color-background: var(--bg);
+  --color-background: var(--panel);
   --color-foreground: var(--text);
-  --color-card: var(--raised);
+  --color-card: var(--seg);
   --color-card-foreground: var(--text);
-  --color-popover: var(--raised);
+  --color-popover: var(--seg);
   --color-popover-foreground: var(--text);
   --color-primary: var(--accent);
-  --color-primary-foreground: var(--bg);
-  --color-secondary: var(--raised);
+  --color-primary-foreground: var(--panel);
+  --color-secondary: var(--seg);
   --color-secondary-foreground: var(--text);
-  --color-muted: var(--raised);
+  --color-muted: var(--seg);
   --color-muted-foreground: var(--muted);
-  --color-accent: var(--blue);
-  --color-accent-foreground: var(--bg);
-  --color-border: var(--line);
-  --color-input: var(--line);
+  --color-accent: var(--code-key);
+  --color-accent-foreground: var(--panel);
+  --color-border: var(--panel-border);
+  --color-input: var(--panel-border);
   --color-ring: var(--accent);
 }
 
@@ -52,16 +52,16 @@
   --tw-prose-links: var(--accent);
   --tw-prose-bold: var(--text);
   --tw-prose-counters: var(--muted);
-  --tw-prose-bullets: var(--line);
-  --tw-prose-hr: var(--line);
+  --tw-prose-bullets: var(--panel-border);
+  --tw-prose-hr: var(--panel-border);
   --tw-prose-quotes: var(--text);
   --tw-prose-quote-borders: var(--accent);
   --tw-prose-captions: var(--muted);
   --tw-prose-code: var(--text);
   --tw-prose-pre-code: var(--text);
-  --tw-prose-pre-bg: var(--raised);
-  --tw-prose-th-borders: var(--line);
-  --tw-prose-td-borders: var(--line);
+  --tw-prose-pre-bg: var(--seg);
+  --tw-prose-th-borders: var(--panel-border);
+  --tw-prose-td-borders: var(--panel-border);
 }
 
 /* Document typography cadence, translated to the editor's existing
@@ -69,7 +69,7 @@
  * component roots, authoring controls, and embedded Drawing/Diagram pixels
  * untouched. */
 .preview-prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--panel-border);
   margin-top: 2.5em;
   padding-top: 1.25rem;
   scroll-margin-top: 1rem;
@@ -82,17 +82,17 @@
   text-underline-offset: 0.18em;
 }
 .preview-prose :where(pre):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 0.75rem;
   box-shadow: 0 1px 2px var(--shadow);
 }
 .preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  background: var(--raised);
+  background: var(--seg);
   border-radius: 0.3rem;
   padding: 0.1em 0.35em;
 }
 .preview-prose .reading-table {
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 0.75rem;
   box-shadow: 0 1px 2px var(--shadow);
 }
@@ -100,5 +100,5 @@
   margin-block: 0;
 }
 .preview-prose .reading-table th {
-  background: var(--raised);
+  background: var(--seg);
 }

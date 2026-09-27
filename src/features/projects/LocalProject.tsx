@@ -4,7 +4,7 @@ import { Lock } from "lucide-react"
 /** Something that needs an account, shown locked: its reason links to sign-up. */
 export function SignUpTo({ children }: { children: string }) {
   return (
-    <Link to="/sign-up" className="inline-flex items-center gap-1.5 text-(--link) underline underline-offset-4">
+    <Link to="/sign-up" className="inline-flex items-center gap-1.5 text-(--accent-soft-text) underline underline-offset-4">
       <Lock size={13} aria-hidden="true" />
       {children}
     </Link>

@@ -3,7 +3,7 @@
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr) 25px;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   font-family: var(--ui-font);
 }
@@ -19,8 +19,8 @@
   align-items: center;
   gap: 14px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--chrome);
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--bg);
 }
 .wb-brand {
   display: flex;
@@ -35,8 +35,8 @@
 .wb-titlebar select {
   font: inherit;
   font-size: 11px;
-  border: 1px solid var(--line);
-  background: var(--raised);
+  border: 1px solid var(--panel-border);
+  background: var(--seg);
   color: var(--text);
   border-radius: 4px;
   height: 28px;
@@ -51,8 +51,8 @@
   align-items: center;
   gap: 10px;
   font-size: 11px !important;
-  border: 1px solid var(--line);
-  background: var(--raised);
+  border: 1px solid var(--panel-border);
+  background: var(--seg);
   color: var(--muted);
   border-radius: 5px;
   height: 27px;
@@ -76,7 +76,7 @@
 }
 .wb-icon:hover,
 .wb-icon[aria-pressed="true"] {
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
 }
 .wb-body {
@@ -88,8 +88,8 @@
 .wb-rail {
   width: 46px;
   flex-shrink: 0;
-  background: var(--chrome);
-  border-right: 1px solid var(--line);
+  background: var(--bg);
+  border-right: 1px solid var(--panel-border);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -115,8 +115,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--chrome);
-  border-right: 1px solid var(--line);
+  background: var(--bg);
+  border-right: 1px solid var(--panel-border);
   overflow: hidden;
   scrollbar-gutter: stable;
 }
@@ -134,7 +134,7 @@
   font-weight: 600;
   letter-spacing: normal;
   color: var(--muted);
-  background: var(--chrome);
+  background: var(--bg);
 }
 .wb-explorer-row {
   display: flex;
@@ -143,13 +143,13 @@
   border-radius: 7px;
 }
 .wb-explorer-row:hover {
-  background: var(--raised);
+  background: var(--seg);
 }
 .wb-explorer-row[data-active="true"] {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 .wb-explorer-row[data-active="true"] .wb-explorer-open {
-  color: var(--link);
+  color: var(--accent-soft-text);
   font-weight: 600;
 }
 .wb-explorer-trigger {
@@ -241,10 +241,10 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   margin-bottom: 4px;
 }
 .wb-tree-root:hover {
-  background: var(--raised);
+  background: var(--seg);
 }
 .wb-tree-root[aria-pressed="true"] {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 .wb-tree-list,
 .wb-tree-nested {
@@ -260,7 +260,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   margin-block-start: 2px;
   margin-inline-start: 8px;
   padding-inline-start: 7px;
-  border-inline-start: 1px solid var(--line);
+  border-inline-start: 1px solid var(--panel-border);
 }
 /* A new file or folder's name field, where the entry will appear. */
 .wb-new-entry {
@@ -275,7 +275,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   padding: 7px 6px 7px 32px;
   border: 1px solid var(--accent);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   font-size: 14px;
   line-height: 20px;
@@ -287,7 +287,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   margin: 0;
   padding: 6px 8px;
   border-radius: 4px;
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
   font-size: 12px;
   overflow-wrap: anywhere;
@@ -300,10 +300,10 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   border-radius: 7px;
 }
 .wb-tree-row:hover {
-  background: var(--raised);
+  background: var(--seg);
 }
 .wb-tree-row[data-selected="true"] {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 /* A folder's always-visible action menu, sized like a file's. */
 .wb-tree-row > .wb-icon {
@@ -375,7 +375,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   }
 }
 .wb-explorer-draft {
-  color: var(--link);
+  color: var(--accent-soft-text);
 }
 /* The tab's unsaved dot, after the name in the tree. */
 .wb-explorer-dirty {
@@ -387,9 +387,9 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 .wb-explorer-error {
   margin: 8px 12px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 5px;
-  background: var(--raised);
+  background: var(--seg);
 }
 .wb-explorer-error p {
   padding: 0 0 8px;
@@ -398,9 +398,9 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 .wb-explorer-error button {
   min-height: 36px;
   padding: 6px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 5px;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   font-size: 12px;
 }
@@ -424,8 +424,8 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   align-items: center;
   /* Tabs that don't fit are clipped, not scrolled by hand: "+N" lists them. */
   overflow: hidden;
-  background: var(--chrome);
-  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  border-bottom: 1px solid var(--panel-border);
 }
 /* One open file: 32 high, radius 9, 13px muted text after its kind badge;
    the active tab raised, in text colour and semibold. The wrapper's 1px
@@ -450,8 +450,8 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   padding: 0 10px;
   box-sizing: border-box;
   color: var(--text);
-  background: var(--raised);
-  border: 1px solid var(--line);
+  background: var(--seg);
+  border: 1px solid var(--panel-border);
   border-radius: 9px;
   box-shadow: 0 5px 14px var(--shadow);
   font-size: 13px;
@@ -476,11 +476,11 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   white-space: nowrap;
 }
 .wb-tab > button[role="tab"]:hover {
-  background: color-mix(in oklab, var(--raised) 60%, transparent);
+  background: color-mix(in oklab, var(--seg) 60%, transparent);
   color: var(--text);
 }
 .wb-tab[data-selected="true"] > button[role="tab"] {
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
   font-weight: 600;
 }
@@ -531,7 +531,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-app .wb-tabs-more:hover,
 .wb-app .wb-tabs-more[data-popup-open] {
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
 }
 .wb-app[data-focus="true"] .wb-tabs-more { display: none; }
@@ -563,7 +563,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--panel-border);
 }
 .wb-breadcrumb {
   font-size: 10px;
@@ -575,8 +575,8 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-mode {
   display: flex;
-  background: var(--chrome);
-  border: 1px solid var(--line);
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
   border-radius: 5px;
   padding: 3px;
   flex-shrink: 0;
@@ -589,7 +589,7 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-mode button[aria-pressed="true"] {
   color: var(--text);
-  background: var(--raised);
+  background: var(--seg);
 }
 .wb-session-status {
   display: flex;
@@ -633,15 +633,15 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
 }
 .wb-editor-stage[data-view="split"] > .wb-source-stage {
   padding: 14px 0;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--panel-border);
 }
 .wb-status {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 12px;
-  background: var(--chrome);
-  border-top: 1px solid var(--line);
+  background: var(--bg);
+  border-top: 1px solid var(--panel-border);
   color: var(--muted);
   font-size: 9px;
 }
@@ -655,8 +655,8 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   height: 100%;
   flex-shrink: 0;
   padding: 0 18px 10px;
-  background: var(--chrome);
-  border-top: 1px solid var(--line);
+  background: var(--bg);
+  border-top: 1px solid var(--panel-border);
   overflow: auto;
   font-family: var(--code-font);
   font-size: 11px;
@@ -674,10 +674,10 @@ colors only; names wrap inside the narrow panel instead of overflowing. */
   margin: 6px 0;
 }
 .wb-palette {
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
   font-family: var(--ui-font);
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   box-shadow: 0 15px 45px var(--shadow);
   border-radius: 6px;
 }
@@ -699,7 +699,7 @@ the request runs, keeping the renamed session inert. */
 .wb-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--chrome) 65%, transparent);
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
   z-index: 20000;
 }
 .wb-palette {
@@ -717,8 +717,8 @@ the request runs, keeping the renamed session inert. */
 }
 .wb-palette input {
   padding: 12px;
-  border: 1px solid var(--line);
-  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
   color: var(--text);
   width: 100%;
   border-radius: 4px;
@@ -739,13 +739,13 @@ the request runs, keeping the renamed session inert. */
   cursor: pointer;
 }
 .wb-palette [data-slot="command-item"][aria-selected="true"] {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 .wb-palette [data-slot="command-empty"] {
   color: var(--muted);
 }
 .wb-palette button:hover {
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 .wb-palette > button {
   font-size: 11px;
@@ -789,7 +789,7 @@ the request runs, keeping the renamed session inert. */
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--panel-border);
 }
 /* Native headers have no breadcrumb, so the shared switcher keeps the
 file-actions menu right-aligned exactly as the MDX breadcrumb does. */
@@ -814,7 +814,7 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   max-height: 70px;
   overflow: auto;
   color: var(--muted);
-  border-color: var(--line);
+  border-color: var(--panel-border);
 }
 .wb-native-view > [role="alert"] {
   flex-shrink: 0;
@@ -825,12 +825,12 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
 }
 .wb-app .excalidraw {
   --color-primary: var(--accent);
-  --color-primary-light: var(--selection);
-  --color-surface-low: var(--chrome);
-  --color-surface-mid: var(--raised);
-  --color-surface-high: var(--raised);
+  --color-primary-light: var(--accent-soft);
+  --color-surface-low: var(--bg);
+  --color-surface-mid: var(--seg);
+  --color-surface-high: var(--seg);
   --color-on-surface: var(--text);
-  --color-border: var(--line);
+  --color-border: var(--panel-border);
 }
 .wb-app :focus-visible:where(:not([data-slot="button"])),
 .wb-palette :focus-visible {
@@ -857,7 +857,7 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   overflow: hidden;
 }
 .wb-resize-handle {
-  background: var(--line);
+  background: var(--panel-border);
   z-index: 25;
 }
 .wb-resize-handle:hover,
@@ -882,7 +882,7 @@ file-actions menu right-aligned exactly as the MDX breadcrumb does. */
   padding: 0 8px;
   color: inherit;
   background: transparent;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
   font: inherit;
 }
@@ -908,7 +908,7 @@ above the choices. */
 .wb-compare-diff {
   height: min(60dvh, 36rem);
   min-height: 12rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -930,7 +930,7 @@ above the choices. */
   max-height: 50dvh;
   object-fit: contain;
   background: #fff;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 4px;
 }
 
@@ -979,8 +979,8 @@ above the choices. */
 .wb-app[data-compact="true"] :is([data-compact-toolbar], .wb-compact-empty-toolbar) > :is(.wb-icon, .wb-mode) {
   position: relative;
   height: 40px;
-  border: 1px solid var(--line);
-  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
   color: var(--text);
   box-shadow: 0 6px 18px var(--shadow);
 }
@@ -1004,7 +1004,7 @@ above the choices. */
   color: var(--muted);
 }
 .wb-app[data-compact="true"] [data-compact-toolbar] > .wb-mode button[aria-pressed="true"] {
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
 }
 /* Save (shown only with unsaved edits) is a round save icon with a dot, at the far right. */
@@ -1015,9 +1015,9 @@ above the choices. */
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 20px;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   box-shadow: 0 6px 18px var(--shadow);
   gap: 0;
@@ -1070,7 +1070,7 @@ above the choices. */
   padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
   overflow-y: auto;
   overscroll-behavior: contain;
-  background-color: var(--chrome);
+  background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: 22px 22px;
 }
@@ -1099,7 +1099,7 @@ above the choices. */
 .wb-navigation-tab { display: flex; align-items: center; border-radius: 9px; list-style: none; }
 .wb-navigation-tab > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; padding: 8px; font-size: 15px; }
 .wb-navigation-tab > button:first-child > span:first-child { overflow-wrap: anywhere; }
-.wb-navigation-tab:has([aria-current]) { background: var(--selection); }
+.wb-navigation-tab:has([aria-current]) { background: var(--accent-soft); }
 .wb-navigation-tab > [data-sidebar="menu-action"] { position: relative; top: auto; right: auto; flex-shrink: 0; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; }
 .wb-navigation-diagnostics { flex-shrink: 0; padding: 8px 12px; font-size: 12px; overflow-wrap: anywhere; }
 .wb-palette {
@@ -1125,7 +1125,7 @@ above the choices. */
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {
   grid-template-rows: minmax(0, 1fr);
-  background-color: var(--chrome);
+  background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: 22px 22px;
 }
@@ -1134,8 +1134,8 @@ above the choices. */
 }
 .wb-float,
 .wb-app:not([data-compact="true"]) .wb-main-panel {
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
   border-radius: 14px;
   box-shadow: 0 10px 30px var(--shadow);
   overflow: hidden;
@@ -1185,7 +1185,7 @@ above the choices. */
   flex: 1;
   min-height: 0;
   width: 100% !important;
-  background: var(--bg);
+  background: var(--panel);
 }
 .wb-files-panel .wb-explorer {
   background: transparent;
@@ -1203,8 +1203,8 @@ above the choices. */
   height: 30px;
   padding: 0 10px;
   border-radius: 9px;
-  border: 1px solid var(--line);
-  background: var(--raised);
+  border: 1px solid var(--panel-border);
+  background: var(--seg);
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
@@ -1261,8 +1261,8 @@ above the choices. */
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--selection);
-  color: var(--link);
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
   font-weight: 600;
 }
 .wb-account-email {
@@ -1282,8 +1282,8 @@ above the choices. */
   min-height: 46px;
   padding: 0 6px;
   gap: 6px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel);
 }
 .wb-tabline > .wb-icon {
   width: 32px;
@@ -1333,7 +1333,7 @@ above the choices. */
   color: var(--muted);
 }
 .wb-tabline-actions .wb-mode {
-  background: var(--raised);
+  background: var(--seg);
   border: 0;
   border-radius: 9px;
   padding: 2px;
@@ -1344,8 +1344,8 @@ above the choices. */
   border-radius: 7px;
 }
 .wb-tabline-actions .wb-mode button[aria-pressed="true"] {
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line);
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--panel-border);
 }
 .wb-tabline-actions .wb-icon {
   width: 30px;
@@ -1362,7 +1362,7 @@ above the choices. */
   top: 8px;
   right: 8px;
   z-index: 30;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 12px;
   box-shadow: 0 10px 30px var(--shadow);
   padding: 0 6px;
@@ -1377,18 +1377,18 @@ above the choices. */
 .wb-tabline-actions .wb-save { order: 1; }
 /* Banners and their buttons, in the palette's warning and danger colours. */
 .wb-banner-warn {
-  border: 1px solid color-mix(in oklab, var(--amber) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn-text) 35%, transparent);
   background: var(--warn-bg);
-  color: var(--amber);
+  color: var(--warn-text);
 }
 .wb-banner-danger {
   border: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
-  background: var(--bg);
+  background: var(--panel);
   color: var(--danger);
 }
 .wb-app .wb-banner-button {
-  border: 1px solid color-mix(in oklab, var(--amber) 50%, transparent);
-  background: var(--bg);
+  border: 1px solid color-mix(in oklab, var(--warn-text) 50%, transparent);
+  background: var(--panel);
   color: var(--text);
 }
 
@@ -1408,15 +1408,15 @@ above the choices. */
   z-index: 1;
 }
 .wb-app:not([data-compact="true"]):has(.wb-native-view[data-canvas-bleed]) :is(.wb-diagnostics-panel, .wb-notice) {
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
   border-radius: 12px;
 }
 .wb-app:not([data-compact="true"]):not([data-focus="true"]):has(.wb-native-view[data-canvas-bleed]) .wb-tabline {
   position: relative;
   z-index: 1;
   min-height: 46px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 14px;
   box-shadow: 0 10px 30px var(--shadow);
 }
@@ -1428,7 +1428,7 @@ above the choices. */
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-color: var(--chrome);
+  background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: var(--canvas-dot-size, 22px) var(--canvas-dot-size, 22px);
   background-position: var(--canvas-dot-x, 0) var(--canvas-dot-y, 0);
@@ -1468,8 +1468,8 @@ above the choices. */
   z-index: 1;
   width: 50%;
   margin: 0 !important;
-  background: var(--bg);
-  border: 1px solid var(--line) !important;
+  background: var(--panel);
+  border: 1px solid var(--panel-border) !important;
   border-radius: 14px !important;
   box-shadow: 0 10px 30px var(--shadow);
 }

@@ -100,7 +100,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{' '}
-            <a href="/sign-in" className="text-(--link) underline underline-offset-4">
+            <a href="/sign-in" className="text-(--accent-soft-text) underline underline-offset-4">
               Sign in
             </a>
           </p>

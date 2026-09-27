@@ -112,7 +112,7 @@ function AppearanceSection() {
   )
 }
 
-const field = "h-8 rounded-lg border border-border bg-background px-2 text-sm"
+const field = "h-8 rounded-lg border border-border bg-panel px-2 text-sm"
 
 /** How rendered notes read in this browser; files are unchanged. */
 function ReadingSection() {

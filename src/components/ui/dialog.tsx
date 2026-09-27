@@ -23,7 +23,7 @@
 // shadcn Dialog generated with shadcn@4.21.0, base-nova.
 // https://ui.shadcn.com/docs/components/base/dialog
 // Adaptation: resolve cn through the existing app alias. Restyled as the
-// app's one dialog shell: the panel colour with radius 12, padding 20 and
+// app's one dialog shell: the panel colour (popover) with radius 12, padding 20 and
 // the menu shadow over the background at 70%; the title at 15/600; the
 // actions at the bottom right, Cancel first. It stacks above the phone
 // navigation sheet, which can open a dialog.
@@ -64,7 +64,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-[20000] bg-[color-mix(in_srgb,var(--chrome)_70%,transparent)] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[20000] bg-[color-mix(in_srgb,var(--bg)_70%,transparent)] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -86,7 +86,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[20001] grid grid-cols-[minmax(0,1fr)] max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-[12px] border border-border bg-background p-5 text-sm text-foreground shadow-[0_16px_40px_var(--shadow)] duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-[20001] grid grid-cols-[minmax(0,1fr)] max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-menu border border-border bg-popover p-5 text-sm text-foreground shadow-[0_16px_40px_var(--shadow)] duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

@@ -1,54 +1,16 @@
 @font-face {font-family:'Space Grotesk Variable';font-style:normal;font-display:swap;font-weight:300 700;src:url('@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2') format('woff2')}
 @font-face {font-family:'JetBrains Mono Variable';font-style:normal;font-display:swap;font-weight:100 800;src:url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2')}
 
-/* Tokens live above the React root so Base UI portals inherit the same theme.
-   The provider sets the chosen palette as root inline variables (palettes.ts,
-   mapped in tokens.ts); this stylesheet is the first-paint fallback, in the
-   default palette (Supabase Green), and owns font-face, color-scheme and
-   selection. */
+/* Tokens live on the root element so Base UI portals inherit the same theme.
+   The colours are in palettes.css (generated from palettes.ts), selected by
+   the data-theme and data-scheme attributes AppearanceProvider sets. This
+   file owns the fonts and the text selection. */
 :root {
   --ui-font:'Space Grotesk Variable',sans-serif;
   --heading-font:var(--ui-font);
   --code-font:'JetBrains Mono Variable',monospace;
   --heading-weight:700;
   --heading-tracking:-0.5px;
-  --bg:#1C1D1C; --chrome:#131413; --raised:#242624;
-  --line:#2E302F; --text:#EDEFEE; --muted:#B2B5B3; --accent:#3ECF8E;
-  --accent-text:#07231A; --link:#85E0BA; --focus:#3ECF8E;
-  --blue:#72A6FF; --purple:#C49BFF; --amber:#F5D27A; --green:#F5A55A;
-  --source:#C49BFF; --selection:#0F3323; --shadow:rgba(0,0,0,0.45); --dot:#2C2F2D; --warn-bg:#3A2C0E;
-  --danger:#F16A50; --note:#6E9EFF; --drawing:#F07FB6; --diagram:#B88CF5;
-  --dirty:#E8B339; --dirty-ring:transparent;
-  --island:#1F201F; --island-ring:#323432; --island-shadow:rgba(0,0,0,0.50);
-  --tool-ink:#D0D3D1; --tool-on:#12402B; --tool-on-ink:#A9F1CA;
-  color-scheme:dark;
   font-family:var(--ui-font);
 }
-:root[data-scheme=light] {
-  --bg:#FFFFFF; --chrome:#F6F8F7; --raised:#EDF0EE;
-  --line:#E2E6E4; --text:#121413; --muted:#555C58; --accent:#097C4F;
-  --accent-text:#FFFFFF; --link:#065C3A; --focus:#097C4F;
-  --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
-  --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1; --warn-bg:#FFF4D6;
-  --danger:#CA3214; --note:#2665D9; --drawing:#BC357E; --diagram:#7A4BD6;
-  --dirty:#B87D08; --dirty-ring:transparent;
-  --island:#FFFFFF; --island-ring:#E2E6E4; --island-shadow:rgba(18,20,19,0.12);
-  --tool-ink:#2A2F2C; --tool-on:#DCF5E8; --tool-on-ink:#065C3A;
-  color-scheme:light;
-}
-/* Before the app sets data-scheme, the first paint follows the device. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-scheme]) {
-    --bg:#FFFFFF; --chrome:#F6F8F7; --raised:#EDF0EE;
-    --line:#E2E6E4; --text:#121413; --muted:#555C58; --accent:#097C4F;
-    --accent-text:#FFFFFF; --link:#065C3A; --focus:#097C4F;
-    --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
-    --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1; --warn-bg:#FFF4D6;
-    --danger:#CA3214; --note:#2665D9; --drawing:#BC357E; --diagram:#7A4BD6;
-    --dirty:#B87D08; --dirty-ring:transparent;
-    --island:#FFFFFF; --island-ring:#E2E6E4; --island-shadow:rgba(18,20,19,0.12);
-    --tool-ink:#2A2F2C; --tool-on:#DCF5E8; --tool-on-ink:#065C3A;
-    color-scheme:light;
-  }
-}
-::selection {background:var(--selection);color:var(--text)}
+::selection {background:var(--accent-soft);color:var(--text)}

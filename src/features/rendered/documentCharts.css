@@ -2,10 +2,10 @@
 @layer components {
   .document-chart {
     --chart-1: var(--accent);
-    --chart-2: var(--green);
-    --chart-3: var(--amber);
-    --chart-4: var(--purple);
-    --chart-5: var(--blue);
+    --chart-2: var(--code-str);
+    --chart-3: var(--warn-text);
+    --chart-4: var(--code-head);
+    --chart-5: var(--code-key);
     position: relative;
     width: 100%;
     min-width: 0;
@@ -26,11 +26,11 @@
   .document-chart .recharts-polar-grid [stroke='#ccc'],
   .document-chart .recharts-reference-line [stroke='#ccc'],
   .document-chart .recharts-tooltip-cursor {
-    stroke: var(--line);
+    stroke: var(--panel-border);
   }
   .document-chart .recharts-rectangle.recharts-tooltip-cursor,
   .document-chart .recharts-radial-bar-background-sector {
-    fill: var(--raised);
+    fill: var(--seg);
   }
   .document-chart .recharts-sector[stroke='#fff'],
   .document-chart .recharts-dot[stroke='#fff'] {
@@ -57,9 +57,9 @@
     min-width: 8rem;
     max-width: min(20rem, calc(100vw - 48px));
     padding: 8px 10px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
-    background: var(--bg);
+    background: var(--panel);
     color: var(--text);
     box-shadow: 0 4px 16px var(--shadow);
     font-size: 12px;

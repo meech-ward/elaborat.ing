@@ -38,7 +38,7 @@ export function ProjectPage({ account }: { account: ProjectAccount }) {
       <PanelPage>
         <p role="alert">
           {location.message}{" "}
-          <Link to="/" className="text-(--link) underline underline-offset-4">
+          <Link to="/" className="text-(--accent-soft-text) underline underline-offset-4">
             Go to your projects
           </Link>
           .
@@ -149,7 +149,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         <h1 className="text-[21px] leading-tight font-semibold">Project not found</h1>
         <p>
           This project is not on this device, and {account.online ? "you do not have access to it on the server" : "you are offline"}.{" "}
-          <Link to="/" className="text-(--link) underline underline-offset-4">
+          <Link to="/" className="text-(--accent-soft-text) underline underline-offset-4">
             Go to your projects
           </Link>
           .
@@ -180,7 +180,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           <UserPlus size={15} aria-hidden="true" />
         </button>
       ) : null}
-      {readOnly ? <p className="text-(--amber)">{readOnly}</p> : null}
+      {readOnly ? <p className="text-(--warn-text)">{readOnly}</p> : null}
       {entry?.archived && canEdit(entry.role) ? (
         <Button variant="outline" size="sm" onClick={() => void unarchive()}>
           Unarchive

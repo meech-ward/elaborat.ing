@@ -17,49 +17,17 @@ export interface ThemeEntry {
 
 export const themes: readonly ThemeEntry[] = palettes.map(({ id, label }) => ({ id, label }));
 
-export interface AppearanceTokens {
-  bg: string;
-  chrome: string;
-  raised: string;
-  line: string;
-  text: string;
-  muted: string;
-  accent: string;
-  /** Text on an accent fill, such as a primary button. */
-  accentText: string;
-  /** Links and other accent-coloured text, readable on every surface. */
-  link: string;
-  /** Keyboard focus rings: the accent, or the link colour where the accent is too light to see. */
+/**
+ * Every colour of the chosen palette under its design name (bg, panel,
+ * panelBorder, accentSoft ...), plus the two derived colours and the fonts.
+ * Each becomes a CSS variable named after the key in kebab case
+ * (`tokenProperty`): panelBorder is --panel-border, d2Fill2 is --d2-fill2.
+ */
+export interface AppearanceTokens extends PaletteColors {
+  /** Keyboard focus rings: the accent, or accentSoftText where the accent is too light to see. */
   focus: string;
-  blue: string;
-  purple: string;
-  amber: string;
-  green: string;
-  source: string;
-  selection: string;
-  shadow: string;
-  /** The dots on the app's dotted background. */
-  dot: string;
-  /** Behind warnings; their text is `amber`. */
-  warnBg: string;
-  /** Destructive actions, such as Delete in a menu. */
-  danger: string;
-  /** The unsaved-changes dot. */
-  dirty: string;
   /** A ring around the unsaved dot: `muted` where `dirty` alone is under 3:1 on a tab, otherwise transparent. */
   dirtyRing: string;
-  /** The kind colours: notes, drawings and D2 diagrams. */
-  note: string;
-  drawing: string;
-  diagram: string;
-  /** Floating tool islands over a canvas: fill, ring and shadow. */
-  island: string;
-  islandRing: string;
-  islandShadow: string;
-  /** Tool icons on an island, and the selected tool's fill and icon. */
-  toolInk: string;
-  toolOn: string;
-  toolOnInk: string;
   uiFont: string;
   headingFont: string;
   codeFont: string;
@@ -121,57 +89,28 @@ const contrast = (a: string, b: string) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-/** The accent where it shows at 3:1 on the panel and the background, otherwise the link colour. */
+/** The accent where it shows at 3:1 on the panel and the background, otherwise accentSoftText. */
 const focusColor = (colors: PaletteColors) =>
   contrast(colors.accent, colors.panel) >= 3 && contrast(colors.accent, colors.bg) >= 3 ? colors.accent : colors.accentSoftText;
 
-/** The unsaved dot sits on a tab, which is the panel or, when active or hovered, the raised fill. */
+/** The unsaved dot sits on a tab, which is the panel or, when active or hovered, seg. */
 const dirtyRing = (colors: PaletteColors) =>
   contrast(colors.dirty, colors.panel) >= 3 && contrast(colors.dirty, colors.seg) >= 3 ? 'transparent' : colors.muted;
 
-/**
- * The palette's colours in the variables today's screens use: the document
- * sits on the palette's panel, bars and the sidebar on its background, menus
- * on its raised fill. The four named colours are the code and callout ones.
- */
+/** The fonts, the same in every palette. */
+const FONT_TOKENS = {
+  uiFont: "'Space Grotesk Variable', sans-serif",
+  headingFont: "'Space Grotesk Variable', sans-serif",
+  codeFont: "'JetBrains Mono Variable', monospace",
+  headingWeight: 700,
+  headingTracking: '-0.5px',
+} as const;
+
+/** The palette's colours under their design names, the derived focus and unsaved-dot ring colours, and the fonts. */
 export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
   const colors = getPaletteColors(appearance);
-  return {
-    bg: colors.panel,
-    chrome: colors.bg,
-    raised: colors.seg,
-    line: colors.panelBorder,
-    text: colors.text,
-    muted: colors.muted,
-    accent: colors.accent,
-    accentText: colors.accentText,
-    link: colors.accentSoftText,
-    focus: focusColor(colors),
-    blue: colors.codeKey,
-    purple: colors.codeHead,
-    amber: colors.warnText,
-    green: colors.codeStr,
-    source: colors.codeHead,
-    selection: colors.accentSoft,
-    shadow: colors.shadow,
-    dot: colors.dot,
-    warnBg: colors.warnBg,
-    danger: colors.danger,
-    dirty: colors.dirty,
-    dirtyRing: dirtyRing(colors),
-    note: colors.note,
-    drawing: colors.drawing,
-    diagram: colors.diagram,
-    island: colors.island,
-    islandRing: colors.islandRing,
-    islandShadow: colors.islandShadow,
-    toolInk: colors.toolInk,
-    toolOn: colors.toolOn,
-    toolOnInk: colors.toolOnInk,
-    uiFont: "'Space Grotesk Variable', sans-serif",
-    headingFont: "'Space Grotesk Variable', sans-serif",
-    codeFont: "'JetBrains Mono Variable', monospace",
-    headingWeight: 700,
-    headingTracking: '-0.5px',
-  };
+  return { ...colors, focus: focusColor(colors), dirtyRing: dirtyRing(colors), ...FONT_TOKENS };
 }
+
+/** The CSS variable for a token key: panelBorder is --panel-border, d2Fill2 is --d2-fill2. */
+export const tokenProperty = (key: string) => `--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;

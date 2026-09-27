@@ -11,8 +11,17 @@ test.describe.configure({ timeout: 60_000 })
 
 const glacier = palettes.find((palette) => palette.id === "glacier-cyan")!
 const supabase = palettes.find((palette) => palette.id === "supabase-green")!
-// The document area takes the palette's panel colour (tokens.ts).
-const background = (page: Page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim())
+// The document area takes the palette's panel colour (--panel, palettes.css),
+// compared as the browser computes it: the built CSS may shorten #FFFFFF to #fff.
+const background = (page: Page) => page.evaluate(() => {
+  const probe = document.createElement("span")
+  probe.style.color = "var(--panel)"
+  document.body.append(probe)
+  const color = getComputedStyle(probe).color
+  probe.remove()
+  return color
+})
+const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`
 
 async function openProject(page: Page) {
   const fake = await fakeSupabase(page)
@@ -30,14 +39,14 @@ test("a palette and dark mode chosen in Settings apply at once and survive a rel
   const dialog = page.getByRole("dialog", { name: "Settings" })
   await dialog.getByRole("radio", { name: "Glacier Cyan" }).check()
   await dialog.getByRole("radio", { name: "Dark" }).check()
-  await expect.poll(() => background(page)).toBe(glacier.dark.panel)
+  await expect.poll(() => background(page)).toBe(rgb(glacier.dark.panel))
   // Check contrast once the dialog has finished fading in.
   // A colour change can replace a running transition, which cancels it, so wait for none to be running.
   await expect.poll(() => dialog.evaluate((element) => element.getAnimations({ subtree: true }).every((animation) => animation.playState !== "running"))).toBe(true)
   expect(await new AxeBuilder({ page }).include('[role="dialog"]').analyze().then((result) => result.violations)).toEqual([])
 
   await page.reload()
-  await expect.poll(() => background(page)).toBe(glacier.dark.panel)
+  await expect.poll(() => background(page)).toBe(rgb(glacier.dark.panel))
 })
 
 test("System follows the device while the page is open", async ({ page }) => {
@@ -46,15 +55,15 @@ test("System follows the device while the page is open", async ({ page }) => {
   await page.getByRole("button", { name: "Workbench menu" }).click()
   await page.getByRole("menuitem", { name: "Settings" }).click()
   await page.getByRole("dialog", { name: "Settings" }).getByRole("radio", { name: "System" }).check()
-  await expect.poll(() => background(page)).toBe(supabase.light.panel)
+  await expect.poll(() => background(page)).toBe(rgb(supabase.light.panel))
   await page.emulateMedia({ colorScheme: "dark" })
-  await expect.poll(() => background(page)).toBe(supabase.dark.panel)
+  await expect.poll(() => background(page)).toBe(rgb(supabase.dark.panel))
 })
 
 test("a first visit is Supabase Green, following the device", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" })
   await openProject(page)
-  await expect.poll(() => background(page)).toBe(supabase.light.panel)
+  await expect.poll(() => background(page)).toBe(rgb(supabase.light.panel))
   await expect(page.locator("html")).not.toHaveClass(/dark/)
 })
 

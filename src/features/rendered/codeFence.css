@@ -1,36 +1,36 @@
 @layer components {
   .document-code {
     --shiki-foreground: var(--text);
-    --shiki-background: var(--raised);
-    --shiki-token-constant: var(--amber);
-    --shiki-token-string: var(--green);
+    --shiki-background: var(--seg);
+    --shiki-token-constant: var(--warn-text);
+    --shiki-token-string: var(--code-str);
     --shiki-token-comment: var(--muted);
-    --shiki-token-keyword: var(--purple);
+    --shiki-token-keyword: var(--code-head);
     --shiki-token-parameter: var(--text);
-    --shiki-token-function: var(--blue);
-    --shiki-token-string-expression: var(--green);
+    --shiki-token-function: var(--code-key);
+    --shiki-token-string-expression: var(--code-str);
     --shiki-token-punctuation: var(--muted);
     --shiki-token-link: var(--accent);
     min-width: 0;
     max-width: 100%;
     margin-block: 1.25em;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid var(--panel-border);
     border-radius: .75rem;
-    background: var(--raised);
+    background: var(--seg);
   }
-  .document-code-label { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line); color: var(--muted); font: 11px/1.5 var(--code-font); }
+  .document-code-label { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--panel-border); color: var(--muted); font: 11px/1.5 var(--code-font); }
   .document-code-label span { font-family: var(--ui-font); }
   .document-code-label button { min-height: 32px; padding: 2px 8px; font: inherit; cursor: pointer; }
-  .document-code .document-code-editor { display: block; box-sizing: border-box; width: 100%; min-height: 7rem; margin: 0; border: 0; border-radius: 0; padding: 1rem; background: var(--raised); color: var(--text); font: 13px/1.7 var(--code-font); white-space: pre; tab-size: 2; resize: vertical; }
+  .document-code .document-code-editor { display: block; box-sizing: border-box; width: 100%; min-height: 7rem; margin: 0; border: 0; border-radius: 0; padding: 1rem; background: var(--seg); color: var(--text); font: 13px/1.7 var(--code-font); white-space: pre; tab-size: 2; resize: vertical; }
   .document-code pre { margin: 0; padding: 1rem 0; border: 0; border-radius: 0; overflow: auto; font: 13px/1.7 var(--code-font); tab-size: 2; }
   .document-code code { display: block; width: max-content; min-width: 100%; font: inherit; }
   .document-code pre:not(.shiki) code { padding-inline: 1rem; }
   .document-code .line { display: inline-block; width: 100%; padding-inline: 1rem; }
   .document-code .highlighted { background: color-mix(in srgb, var(--accent) 15%, transparent); box-shadow: inset 3px 0 var(--accent); }
   .document-code .highlighted-word { background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: 3px; }
-  .document-code .diff.add { background: color-mix(in srgb, var(--green) 15%, transparent); box-shadow: inset 3px 0 var(--green); }
-  .document-code .diff.remove { background: color-mix(in srgb, var(--purple) 15%, transparent); box-shadow: inset 3px 0 var(--purple); text-decoration: line-through; }
+  .document-code .diff.add { background: color-mix(in srgb, var(--code-str) 15%, transparent); box-shadow: inset 3px 0 var(--code-str); }
+  .document-code .diff.remove { background: color-mix(in srgb, var(--code-head) 15%, transparent); box-shadow: inset 3px 0 var(--code-head); text-decoration: line-through; }
   .document-code .has-focused .line:not(.focused) { opacity: .55; }
   .document-code:focus-within .has-focused .line, .document-code:hover .has-focused .line { opacity: 1; }
 }

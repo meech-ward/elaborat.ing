@@ -24,6 +24,9 @@
 // `add`, base-nova): the group root shares state with per-value Toggle
 // buttons, with variant/size plumbing through ToggleGroupContext.
 // Upstream: https://ui.shadcn.com/docs/components/base/toggle-group
+// Restyled: variant="segment" is the style guide's view switch, a seg
+// track with padding 2 around segment toggles (use spacing={0.5} for its 2px
+// gap and size="icon" for its 32 by 28 buttons).
 // Adaptations: `cn` via @/lib/utils; no wb-mode look change — the unlayered
 // workbench wb-mode rules (keyed on button + aria-pressed) win over the
 // layered toggle utilities where they meet. The caller keeps mandatory
@@ -73,7 +76,7 @@ function ToggleGroup({
       data-orientation={orientation}
       style={{ "--gap": spacing } as React.CSSProperties}
       className={cn(
-        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-vertical:flex-col data-vertical:items-stretch",
+        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-button data-vertical:flex-col data-vertical:items-stretch data-[variant=segment]:bg-seg data-[variant=segment]:p-0.5",
         className
       )}
       {...props}
@@ -103,7 +106,7 @@ function ToggleGroupItem({
       data-size={context.size || size}
       data-spacing={context.spacing}
       className={cn(
-        "shrink-0 group-data-[spacing=0]/toggle-group:rounded-none group-data-[spacing=0]/toggle-group:px-2 focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pr-1.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:pl-1.5 group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-l-lg group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-t-lg group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-r-lg group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-b-lg group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t",
+        "shrink-0 group-data-[spacing=0]/toggle-group:rounded-none group-data-[spacing=0]/toggle-group:px-2 focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pr-1.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:pl-1.5 group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-l-row group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-t-row group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-r-row group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-b-row group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t",
         toggleVariants({
           variant: context.variant || variant,
           size: context.size || size,

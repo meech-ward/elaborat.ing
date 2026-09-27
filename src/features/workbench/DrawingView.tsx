@@ -36,7 +36,7 @@ import { TablineActions, useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const toolbarButton =
-  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-(--raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
+  "inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-panel px-3 text-sm font-medium text-foreground hover:bg-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50";
 const bannerButton =
   "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =

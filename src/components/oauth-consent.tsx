@@ -40,7 +40,7 @@ function ConsentCardShell({
             {getInitial(clientName)}
           </div>
           <div className="h-px w-8 bg-border" aria-hidden="true" />
-          <div className="flex size-12 items-center justify-center rounded-full bg-accent font-semibold text-(--link)">
+          <div className="flex size-12 items-center justify-center rounded-full bg-accent font-semibold text-(--accent-soft-text)">
             {getInitial(productName)}
           </div>
         </div>

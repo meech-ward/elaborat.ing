@@ -20,7 +20,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 0 8px 0 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--panel-border);
 }
 .rv-title {
   overflow: hidden;
@@ -37,15 +37,15 @@
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 12px;
-  background: var(--raised);
+  background: var(--seg);
   color: var(--text);
   box-shadow: 0 2px 12px #0001;
 }
 .rv-control { min-width: 40px; height: 40px; flex-shrink: 0; }
 .rv-scale { min-width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
-.rv-divider { height: 20px; width: 1px; margin: 0 4px; background: var(--line); }
+.rv-divider { height: 20px; width: 1px; margin: 0 4px; background: var(--panel-border); }
 .rv-viewport {
   position: relative;
   flex: 1 1 0;
@@ -57,7 +57,7 @@
   touch-action: none;
   overscroll-behavior: contain;
   cursor: grab;
-  background-color: var(--bg);
+  background-color: var(--panel);
   background-image: radial-gradient(color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px);
   background-size: 20px 20px;
 }
@@ -80,7 +80,7 @@
   bottom: 28px;
   right: 24px;
   color: var(--muted);
-  background: var(--bg);
+  background: var(--panel);
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 12px;

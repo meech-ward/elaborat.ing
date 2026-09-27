@@ -10,11 +10,11 @@ import type { ReactNode } from "react";
 import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_SETTING,
-  getAppearanceTokens,
   parseAppearanceSetting,
 } from "./tokens";
 import type { Appearance, AppearanceSetting, ColorMode, ColorScheme, ThemeName } from "./tokens";
 import "./themes.css";
+import "./palettes.css";
 import {
   readReading,
   resetReading,
@@ -56,51 +56,6 @@ function deviceScheme(): ColorScheme {
   } catch {
     return "dark";
   }
-}
-
-/** Inline variables owned by the provider (mirrors the token table). */
-function tokenEntries(
-  appearance: Appearance,
-): Array<readonly [string, string]> {
-  const tokens = getAppearanceTokens(appearance);
-  return [
-    ["--bg", tokens.bg],
-    ["--chrome", tokens.chrome],
-    ["--raised", tokens.raised],
-    ["--line", tokens.line],
-    ["--text", tokens.text],
-    ["--muted", tokens.muted],
-    ["--accent", tokens.accent],
-    ["--accent-text", tokens.accentText],
-    ["--link", tokens.link],
-    ["--focus", tokens.focus],
-    ["--blue", tokens.blue],
-    ["--purple", tokens.purple],
-    ["--amber", tokens.amber],
-    ["--green", tokens.green],
-    ["--source", tokens.source],
-    ["--selection", tokens.selection],
-    ["--shadow", tokens.shadow],
-    ["--dot", tokens.dot],
-    ["--warn-bg", tokens.warnBg],
-    ["--danger", tokens.danger],
-    ["--dirty", tokens.dirty],
-    ["--dirty-ring", tokens.dirtyRing],
-    ["--note", tokens.note],
-    ["--drawing", tokens.drawing],
-    ["--diagram", tokens.diagram],
-    ["--island", tokens.island],
-    ["--island-ring", tokens.islandRing],
-    ["--island-shadow", tokens.islandShadow],
-    ["--tool-ink", tokens.toolInk],
-    ["--tool-on", tokens.toolOn],
-    ["--tool-on-ink", tokens.toolOnInk],
-    ["--ui-font", tokens.uiFont],
-    ["--heading-font", tokens.headingFont],
-    ["--code-font", tokens.codeFont],
-    ["--heading-weight", String(tokens.headingWeight)],
-    ["--heading-tracking", tokens.headingTracking],
-  ];
 }
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
@@ -165,24 +120,17 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     }
   }, [setting]);
 
+  // The palette's colours are CSS variables selected by these attributes
+  // (palettes.css); the dark class drives Tailwind's dark: variant.
   useEffect(() => {
     const root = document.documentElement;
-    const inlineVars = tokenEntries(appearance);
-
     const prevTheme = root.getAttribute("data-theme");
     const prevScheme = root.getAttribute("data-scheme");
     const prevDark = root.classList.contains("dark");
-    const prevInline = inlineVars.map(
-      ([property]) =>
-        [property, root.style.getPropertyValue(property)] as const,
-    );
 
     root.setAttribute("data-theme", appearance.theme);
     root.setAttribute("data-scheme", appearance.scheme);
     root.classList.toggle("dark", appearance.scheme === "dark");
-    for (const [property, value] of inlineVars) {
-      root.style.setProperty(property, value);
-    }
 
     return () => {
       if (prevTheme == null) root.removeAttribute("data-theme");
@@ -190,10 +138,6 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       if (prevScheme == null) root.removeAttribute("data-scheme");
       else root.setAttribute("data-scheme", prevScheme);
       root.classList.toggle("dark", prevDark);
-      for (const [property, prev] of prevInline) {
-        if (prev === "") root.style.removeProperty(property);
-        else root.style.setProperty(property, prev);
-      }
     };
   }, [appearance]);
 

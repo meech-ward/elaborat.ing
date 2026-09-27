@@ -67,7 +67,7 @@ function AccountPanel() {
           <Link to="/sign-in" className={buttonVariants({ variant: "outline" })}>
             Sign in
           </Link>
-          <Link to="/sign-up" className="text-(--link) underline underline-offset-4">
+          <Link to="/sign-up" className="text-(--accent-soft-text) underline underline-offset-4">
             Create an account
           </Link>
         </div>
@@ -84,7 +84,7 @@ function AccountPanel() {
       <div className="flex min-w-0 items-center gap-3">
         <span
           aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-(--link)"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-(--accent-soft-text)"
         >
           {email.charAt(0).toUpperCase()}
         </span>

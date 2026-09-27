@@ -38,8 +38,8 @@ export function Callout(props: {
   const tone = props.tone === 'warn' || props.tone === 'error' ? props.tone : 'info';
   const toneClasses = {
     info: 'border-l-primary',
-    warn: 'border-l-[var(--amber)]',
-    error: 'border-l-[var(--purple)]',
+    warn: 'border-l-[var(--warn-text)]',
+    error: 'border-l-[var(--code-head)]',
   }[tone];
   return (
     <aside

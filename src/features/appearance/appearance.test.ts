@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { getAppearanceTokens, parseAppearanceSetting, themes } from './index';
+import { buildPaletteCss, COLOR_TOKEN_KEYS } from './paletteCss';
 import { palettes } from './palettes';
+import { tokenProperty } from './tokens';
 
 const luminance = (hex: string) => {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -31,25 +33,21 @@ describe('themes', () => {
 });
 
 describe('getAppearanceTokens', () => {
-  test('maps a palette onto the variables the screens use', () => {
-    const dark = palettes[0].dark;
-    const tokens = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
-    expect(tokens.bg).toBe(dark.panel);
-    expect(tokens.chrome).toBe(dark.bg);
-    expect(tokens.accent).toBe('#3ECF8E');
-    expect(tokens.selection).toBe(dark.accentSoft);
-    expect([tokens.danger, tokens.note, tokens.drawing, tokens.diagram]).toEqual([dark.danger, dark.note, dark.drawing, dark.diagram]);
-    expect([tokens.island, tokens.islandRing, tokens.islandShadow]).toEqual([dark.island, dark.islandRing, dark.islandShadow]);
-    expect([tokens.toolInk, tokens.toolOn, tokens.toolOnInk]).toEqual([dark.toolInk, dark.toolOn, dark.toolOnInk]);
-    expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).accent).toBe('#097C4F');
-    expect(getAppearanceTokens({ theme: 'pewter', scheme: 'light' }).accent).toBe(palettes[6].light.accent);
+  test('gives every palette colour under its design name', () => {
+    for (const palette of palettes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        expect(getAppearanceTokens({ theme: palette.id, scheme })).toMatchObject(palette[scheme]);
+      }
+    }
+    expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' }).accent).toBe('#3ECF8E');
+    expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).panel).toBe('#FFFFFF');
   });
 
   test('gives the editor six-digit colours for every palette and scheme', () => {
     for (const { id } of themes) {
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = getAppearanceTokens({ theme: id, scheme });
-        for (const key of ['bg', 'text', 'accent'] as const) expect(tokens[key]).toMatch(/^#[\da-f]{6}$/i);
+        for (const key of ['panel', 'text', 'accent'] as const) expect(tokens[key]).toMatch(/^#[\da-f]{6}$/i);
       }
     }
   });
@@ -60,11 +58,11 @@ describe('getAppearanceTokens', () => {
         const t = getAppearanceTokens({ theme: id, scheme });
         const where = `${id} ${scheme}`;
         expect([where, contrast(t.accentText, t.accent) >= 4.5]).toEqual([where, true]);
-        for (const surface of [t.bg, t.chrome, t.raised]) {
-          for (const ink of [t.text, t.muted, t.link]) expect([where, contrast(ink, surface) >= 4.5]).toEqual([where, true]);
+        for (const surface of [t.panel, t.bg, t.seg]) {
+          for (const ink of [t.text, t.muted, t.accentSoftText]) expect([where, contrast(ink, surface) >= 4.5]).toEqual([where, true]);
         }
         // Dialogs sit on the panel over the background: their problems are danger text, their focus rings 3:1.
-        for (const surface of [t.bg, t.chrome]) {
+        for (const surface of [t.panel, t.bg]) {
           expect([where, contrast(t.danger, surface) >= 4.5]).toEqual([where, true]);
           expect([where, contrast(t.focus, surface) >= 3]).toEqual([where, true]);
         }
@@ -78,50 +76,70 @@ describe('getAppearanceTokens', () => {
       for (const scheme of ['light', 'dark'] as const) {
         const t = getAppearanceTokens({ theme: id, scheme });
         const where = `${id} ${scheme}`;
-        expect([where, t.dirty]).toEqual([where, palettes.find((palette) => palette.id === id)![scheme].dirty]);
-        // A tab is the panel, or the raised fill when it is active or hovered.
-        const plain = [t.bg, t.raised].every((surface) => contrast(t.dirty, surface) >= 3);
+        // A tab is the panel, or seg when it is active or hovered.
+        const plain = [t.panel, t.seg].every((surface) => contrast(t.dirty, surface) >= 3);
         expect([where, t.dirtyRing]).toEqual([where, plain ? 'transparent' : t.muted]);
         if (plain) continue;
         ringed.push(where);
-        for (const surface of [t.bg, t.raised]) expect([where, contrast(t.dirtyRing, surface) >= 3]).toEqual([where, true]);
+        for (const surface of [t.panel, t.seg]) expect([where, contrast(t.dirtyRing, surface) >= 3]).toEqual([where, true]);
       }
     }
     expect(ringed).toContain('lavender-ink light');
     expect(ringed).not.toContain('supabase-green light');
   });
 
-  test('focus rings use the accent, or the link colour where the accent is too light', () => {
+  test('focus rings use the accent, or accentSoftText where the accent is too light', () => {
     expect(getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' }).focus).toBe(palettes[0].light.accent);
     const volt = palettes.find((palette) => palette.id === 'ink-and-volt')!;
     expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'light' }).focus).toBe(volt.light.accentSoftText);
     expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'dark' }).focus).toBe(volt.dark.accent);
-    expect(getAppearanceTokens({ theme: 'ink-and-volt', scheme: 'light' }).danger).toBe(volt.light.danger);
+  });
+});
+
+describe('palettes.css', () => {
+  const css = readFileSync(new URL('./palettes.css', import.meta.url), 'utf8');
+  /** The declarations of the block that opens with `selector {`. */
+  const declarations = (selector: string) => {
+    const start = css.indexOf(`${selector} {\n`);
+    expect([selector, start]).not.toEqual([selector, -1]);
+    const body = css.slice(start + selector.length + 3, css.indexOf('}', start));
+    return Object.fromEntries(body.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const [property, ...value] = line.replace(/;$/, '').split(': ');
+      return [property, value.join(': ')];
+    }));
+  };
+  const expected = (theme: (typeof palettes)[number]['id'], scheme: 'light' | 'dark') => {
+    const tokens = getAppearanceTokens({ theme, scheme });
+    return { ...Object.fromEntries(COLOR_TOKEN_KEYS.map((key) => [tokenProperty(key), tokens[key]])), 'color-scheme': scheme };
+  };
+
+  test('is up to date with palettes.ts (run `bun run palette-css` after changing a palette)', () => {
+    expect(css).toBe(buildPaletteCss());
   });
 
-  test('the first-paint stylesheet matches the default palette', () => {
-    const css = readFileSync(new URL('./themes.css', import.meta.url), 'utf8');
-    const dark = getAppearanceTokens({ theme: 'supabase-green', scheme: 'dark' });
-    const light = getAppearanceTokens({ theme: 'supabase-green', scheme: 'light' });
-    const [rootBlock, lightBlock] = [css.split(':root {')[1], css.split(':root[data-scheme=light] {')[1]].map((block) => block.split('}')[0]);
-    for (const key of ['bg', 'chrome', 'accent', 'text', 'selection', 'danger', 'dirty', 'note', 'drawing', 'diagram'] as const) {
-      expect(rootBlock).toContain(`--${key}:${dark[key]};`);
-      expect(lightBlock).toContain(`--${key}:${light[key]};`);
+  test('names every design token in kebab case, plus the focus and unsaved-dot ring colours', () => {
+    expect(COLOR_TOKEN_KEYS.map(tokenProperty)).toEqual([
+      '--bg', '--dot', '--panel', '--panel-border', '--field', '--text', '--body', '--muted', '--dim', '--faint',
+      '--accent', '--accent-text', '--accent-soft', '--accent-soft-text', '--seg', '--ok', '--dirty', '--danger',
+      '--warn-bg', '--warn-text', '--shadow', '--code-head', '--code-key', '--code-str', '--code-kw', '--line-hi',
+      '--note', '--drawing', '--diagram', '--ink', '--ink-soft', '--accent-ink', '--d2-fill', '--d2-fill2',
+      '--pastel-blue', '--pastel-yellow', '--pastel-green', '--pastel-pink', '--island', '--island-shadow',
+      '--island-ring', '--tool-ink', '--tool-on', '--tool-on-ink', '--focus', '--dirty-ring',
+    ]);
+  });
+
+  test('has a block for every palette in light and dark, selected by data-theme and data-scheme', () => {
+    for (const { id } of palettes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        expect(declarations(`:root[data-theme="${id}"][data-scheme="${scheme}"]`)).toEqual(expected(id, scheme));
+      }
     }
-    expect(rootBlock).toContain(`--accent-text:${dark.accentText};`);
-    expect(rootBlock).toContain(`--dirty-ring:${dark.dirtyRing};`);
-    expect(lightBlock).toContain(`--dirty-ring:${light.dirtyRing};`);
-    expect(lightBlock).toContain(`--link:${light.link};`);
-    for (const key of ['focus', 'danger'] as const) {
-      expect(rootBlock).toContain(`--${key}:${dark[key]};`);
-      expect(lightBlock).toContain(`--${key}:${light[key]};`);
-    }
-    const islands = { island: 'island', islandRing: 'island-ring', islandShadow: 'island-shadow', toolInk: 'tool-ink', toolOn: 'tool-on', toolOnInk: 'tool-on-ink' } as const;
-    for (const [key, name] of Object.entries(islands) as Array<[keyof typeof islands, string]>) {
-      const compact = (value: string) => value.replace(/, /g, ',');
-      expect(rootBlock).toContain(`--${name}:${compact(dark[key])};`);
-      expect(lightBlock).toContain(`--${name}:${compact(light[key])};`);
-    }
+  });
+
+  test('the first paint is Supabase Green, dark unless the device is light', () => {
+    expect(declarations(':root')).toEqual(expected('supabase-green', 'dark'));
+    expect(css).toContain('@media (prefers-color-scheme: light) {\n  :root:not([data-scheme]) {');
+    expect(declarations('  :root:not([data-scheme])')).toEqual(expected('supabase-green', 'light'));
   });
 });
 

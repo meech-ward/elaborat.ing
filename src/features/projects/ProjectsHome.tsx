@@ -38,7 +38,7 @@ export function ProjectRoute({ children }: { children: (account: import("./accou
   return (
     <PanelPage>
       <p>
-        <Link to="/sign-in" search={{ next }} className="text-(--link) underline underline-offset-4">
+        <Link to="/sign-in" search={{ next }} className="text-(--accent-soft-text) underline underline-offset-4">
           Sign in
         </Link>{" "}
         to open this project.

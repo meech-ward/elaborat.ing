@@ -13,6 +13,23 @@ const allowed = new Set<string>([]);
 
 const src = join(import.meta.dir, '..', '..');
 
+// The variables the screens used before the design tokens (palettes.css), and
+// the design token each became. The app's old --bg (the panel) is --panel now,
+// and --bg is the design's background.
+const renamed = {
+  chrome: 'bg',
+  raised: 'seg',
+  line: 'panel-border',
+  link: 'accent-soft-text',
+  blue: 'code-key',
+  purple: 'code-head',
+  amber: 'warn-text',
+  green: 'code-str',
+  source: 'code-head',
+  selection: 'accent-soft',
+} as const;
+const retired = new RegExp(`--(${Object.keys(renamed).join('|')})(?![-\\w])`, 'g');
+
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -36,7 +53,20 @@ describe('palette colours', () => {
     expect(found).toEqual([]);
   });
 
-  test('the check sees a fixed colour class', () => {
+  test('nothing under src/ uses the variable names the design tokens replaced', () => {
+    const found: string[] = [];
+    for (const path of sourceFiles(src)) {
+      readFileSync(path, 'utf8')
+        .split('\n')
+        .forEach((line, index) => {
+          for (const match of line.matchAll(retired)) found.push(`src/${relative(src, path)}:${index + 1} ${match[0]} (now --${renamed[match[1] as keyof typeof renamed]})`);
+        });
+    }
+    expect(found).toEqual([]);
+  });
+
+  test('the checks see a fixed colour class and a replaced variable', () => {
+    expect('var(--raised) bg-(--line) var(--line-hi) var(--selection)'.match(retired)).toEqual(['--raised', '--line', '--selection']);
     expect('rounded-lg bg-amber-50 dark:text-neutral-400'.match(fixedColour)).toEqual(['amber-50', 'neutral-400']);
     expect('bg-(--raised) text-muted-foreground'.match(fixedColour)).toBeNull();
   });

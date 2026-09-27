@@ -14,6 +14,7 @@
     "build:browser-test": "vite build --mode browser-test",
     "build:next-version": "vite build --mode browser-test --config tests/browser/next-version/vite.config.ts",
     "build:chat-card": "bun scripts/build-chat-card.ts",
+    "palette-css": "bun scripts/palette-css.ts",
     "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"
   },

@@ -48,7 +48,7 @@ async function itemsOfOpenMenu(page: Page) {
 const duplicateItem = async (page: Page) =>
   `Duplicate${await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘D" : "Ctrl+D"))}`
 
-/** A colour as the browser computes it, from a CSS value such as var(--link). */
+/** A colour as the browser computes it, from a CSS value such as var(--accent-soft-text). */
 async function computed(page: Page, value: string) {
   return page.evaluate((value) => {
     const probe = document.createElement("span")
@@ -79,7 +79,7 @@ test("a file's menu works from the keyboard, highlights in the highlight colours
   for (let step = 0; step < 6 && (await remove.getAttribute("data-highlighted")) === null; step++) await page.keyboard.press("ArrowDown")
   await expect(remove).toHaveAttribute("data-highlighted")
   await expect(remove).toBeFocused()
-  expect(await colours(remove)).toEqual({ background: await computed(page, "var(--selection)"), text: await computed(page, "var(--link)") })
+  expect(await colours(remove)).toEqual({ background: await computed(page, "var(--accent-soft)"), text: await computed(page, "var(--accent-soft-text)") })
   // Delete is destructive: last, in the danger colour when it is not highlighted.
   await page.keyboard.press("ArrowUp")
   expect((await colours(remove)).text).toBe(await computed(page, "var(--danger)"))

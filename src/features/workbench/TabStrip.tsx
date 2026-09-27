@@ -194,7 +194,7 @@ export function TabStrip({
                 <KindBadge path={tab.path} />
                 <span className="min-w-0 truncate">{fileName(tab.path)}</span>
                 {tab.path.includes("/") && (
-                  <span className="ml-auto min-w-0 truncate pl-4 text-[11px] text-[var(--muted)] group-data-highlighted:text-[var(--link)]">{tab.path}</span>
+                  <span className="ml-auto min-w-0 truncate pl-4 text-[11px] text-[var(--muted)] group-data-highlighted:text-[var(--accent-soft-text)]">{tab.path}</span>
                 )}
               </MenuItem>
             ))}

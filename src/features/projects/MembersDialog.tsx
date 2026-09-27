@@ -135,7 +135,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
                           const role = ROLES.find((entry) => entry === event.target.value)
                           if (role) changeRole(member, role)
                         }}
-                        className="h-8 rounded-lg border border-input bg-background px-2 text-sm"
+                        className="h-8 rounded-lg border border-input bg-panel px-2 text-sm"
                       >
                         {ROLES.map((role) => (
                           <option key={role} value={role}>

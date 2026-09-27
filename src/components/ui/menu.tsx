@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 const positionerClass = "z-[10000] outline-none";
 const popupClass =
-  "min-w-[240px] max-w-[min(500px,calc(100vw-20px))] max-h-[min(70dvh,var(--available-height,70dvh))] overflow-y-auto rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-1.5 text-[var(--text)] shadow-[0_16px_40px_var(--shadow)] outline-none";
+  "min-w-[240px] max-w-[min(500px,calc(100vw-20px))] max-h-[min(70dvh,var(--available-height,70dvh))] overflow-y-auto rounded-[12px] border border-[var(--panel-border)] bg-[var(--panel)] p-1.5 text-[var(--text)] shadow-[0_16px_40px_var(--shadow)] outline-none";
 
 function Menu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root {...props} />;
@@ -72,7 +72,7 @@ function MenuItem({
         "group flex min-h-[30px] w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] leading-5 outline-none select-none",
         "pointer-coarse:min-h-10 max-[650px]:min-h-10 [&>svg]:hidden",
         variant === "destructive" ? "text-[var(--danger)]" : "text-[var(--text)]",
-        "data-highlighted:bg-[var(--selection)] data-highlighted:text-[var(--link)] data-disabled:cursor-default data-disabled:opacity-50",
+        "data-highlighted:bg-[var(--accent-soft)] data-highlighted:text-[var(--accent-soft-text)] data-disabled:cursor-default data-disabled:opacity-50",
         className,
       )}
       {...props}
@@ -86,7 +86,7 @@ function MenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
     <span
       aria-hidden="true"
       className={cn(
-        "ml-auto pl-4 font-[family-name:var(--code-font)] text-[11px] text-[var(--muted)] group-data-highlighted:text-[var(--link)]",
+        "ml-auto pl-4 font-[family-name:var(--code-font)] text-[11px] text-[var(--muted)] group-data-highlighted:text-[var(--accent-soft-text)]",
         className,
       )}
       {...props}
@@ -95,7 +95,7 @@ function MenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
 }
 
 function MenuSeparator({ className, ...props }: MenuPrimitive.Separator.Props) {
-  return <MenuPrimitive.Separator className={cn("mx-1 my-[5px] h-px bg-[var(--line)]", className)} {...props} />;
+  return <MenuPrimitive.Separator className={cn("mx-1 my-[5px] h-px bg-[var(--panel-border)]", className)} {...props} />;
 }
 
 /** One entry in a menu. The same list can feed a button menu and a right-click menu. */

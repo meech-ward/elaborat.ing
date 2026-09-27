@@ -11,14 +11,14 @@
   overflow-wrap: anywhere;
 }
 .document-block {
-  border: 1px solid var(--line);
+  border: 1px solid var(--panel-border);
   border-radius: 0.75rem;
   padding: 1rem;
-  background: var(--raised);
+  background: var(--seg);
 }
 .document-aside { border-inline-start: 3px solid var(--muted); }
-.document-aside[data-component="Warning"] { border-inline-start-color: var(--amber); }
-.document-aside[data-component="Important"] { border-inline-start-color: var(--blue); }
+.document-aside[data-component="Warning"] { border-inline-start-color: var(--warn-text); }
+.document-aside[data-component="Important"] { border-inline-start-color: var(--code-key); }
 .document-action { border-inline-start: 5px solid var(--accent); }
 .document-block-title { margin: 0 0 0.5rem; font-weight: 650; line-height: 1.4; }
 .document-block-body { min-width: 0; max-width: 100%; line-height: 1.65; overflow-wrap: anywhere; }
@@ -31,15 +31,15 @@
 .document-block-body > ol { list-style-type: decimal; }
 .document-block-body > :where(ul, ol) > li { margin-block: 0.35em; }
 .document-block-body > :where(ul, ol) > li > :where(ul, ol) { padding-inline-start: 1.5em; }
-.document-block-body > blockquote { padding-inline-start: 1em; border-inline-start: 3px solid var(--line); color: var(--muted); }
+.document-block-body > blockquote { padding-inline-start: 1em; border-inline-start: 3px solid var(--panel-border); color: var(--muted); }
 .document-block-body > :where(p, li, blockquote),
 .document-block-body > :where(ul, ol) > li { overflow-wrap: anywhere; }
-.document-block-body > pre { max-width: 100%; overflow-x: auto; padding: 0.85rem; border: 1px solid var(--line); border-radius: 0.5rem; font-family: var(--code-font); font-size: 0.9em; }
-.document-block-body > :where(p, ul, ol, blockquote) a { color: var(--link); text-decoration: underline; text-underline-offset: 0.15em; }
+.document-block-body > pre { max-width: 100%; overflow-x: auto; padding: 0.85rem; border: 1px solid var(--panel-border); border-radius: 0.5rem; font-family: var(--code-font); font-size: 0.9em; }
+.document-block-body > :where(p, ul, ol, blockquote) a { color: var(--accent-soft-text); text-decoration: underline; text-underline-offset: 0.15em; }
 .document-block-body > :where(p, ul, ol) code { font-family: var(--code-font); font-size: 0.9em; }
 .document-block-body > :where(img, video, svg) { max-width: 100%; height: auto; }
 .document-block-body > :where(table) { width: 100%; border-collapse: collapse; }
-.document-block-body > table :where(th, td) { padding: 0.5rem; border: 1px solid var(--line); text-align: start; }
+.document-block-body > table :where(th, td) { padding: 0.5rem; border: 1px solid var(--panel-border); text-align: start; }
 .document-block-body > :first-child { margin-block-start: 0; }
 .document-block-body > :last-child { margin-block-end: 0; }
 .document-layout { container-type: inline-size; }
@@ -47,8 +47,8 @@
 .document-column { min-width: 0; }
 .document-column-separator { display: none; position: absolute; inset-block: 0; inset-inline-start: calc((100% - var(--document-column-gap)) * var(--document-left) + var(--document-column-gap) / 2); width: var(--document-column-gap); min-height: 40px; transform: translateX(-50%); align-items: center; justify-content: center; cursor: col-resize; touch-action: none; user-select: none; z-index: 1; border-radius: 0.25rem; }
 .document-column-separator:dir(rtl) { transform: translateX(50%); }
-.document-column-separator::before { content: ''; position: absolute; inset-block: 0; width: 1px; background: var(--line); }
-.document-column-separator > span { position: relative; width: 5px; height: 32px; border: 1px solid var(--line); border-radius: 3px; background: var(--raised); }
+.document-column-separator::before { content: ''; position: absolute; inset-block: 0; width: 1px; background: var(--panel-border); }
+.document-column-separator > span { position: relative; width: 5px; height: 32px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--seg); }
 .document-column-separator:hover::before,
 .document-column-separator:active::before,
 .document-column-separator:focus-visible::before { background: var(--focus, var(--accent)); }
@@ -61,7 +61,7 @@
   .document-columns { grid-template-columns: var(--document-columns); }
   .document-column-separator { display: flex; }
 }
-.document-tab-list { display: flex; gap: 0.25rem; max-width: 100%; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.document-tab-list { display: flex; gap: 0.25rem; max-width: 100%; overflow-x: auto; border-bottom: 1px solid var(--panel-border); }
 .document-tab-list > button { min-width: 40px; min-height: 40px; flex-shrink: 0; padding: 0.5rem 0.8rem; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
 .document-tab-list > button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); font-weight: 650; }
 .document-tab-list > button:focus-visible,

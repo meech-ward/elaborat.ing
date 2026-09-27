@@ -221,7 +221,7 @@ function CustomControls(props: {__slot?: number; inline?: boolean; children?: Re
   const slot = typeof props.__slot === 'number' ? slotByIndex(props.__slot) : undefined;
   return <span className="custom-component not-prose" style={{display:props.inline ? 'inline-block' : 'block',maxWidth:'100%'}}>
     {props.children}
-    {slot?.supported && slot.props.length ? <fieldset className="custom-component-controls not-prose" style={{display:'flex',flexWrap:'wrap',gap:'.6rem',minWidth:0,maxWidth:'100%',border:'1px solid var(--line)',borderRadius:10,padding:'.5rem',margin:'.5rem 0'}}>
+    {slot?.supported && slot.props.length ? <fieldset className="custom-component-controls not-prose" style={{display:'flex',flexWrap:'wrap',gap:'.6rem',minWidth:0,maxWidth:'100%',border:'1px solid var(--panel-border)',borderRadius:10,padding:'.5rem',margin:'.5rem 0'}}>
       <legend>{slot.element} properties</legend>
       {slot.props.map(prop => {
         const label = `${slot.element} ${prop.name}`;

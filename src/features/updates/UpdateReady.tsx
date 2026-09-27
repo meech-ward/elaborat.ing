@@ -26,11 +26,11 @@ export function UpdateReady() {
     // the selection colour with link text.
     <div
       role="status"
-      className="fixed right-4 bottom-12 z-40 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-1.5 shadow-[0_16px_40px_var(--shadow)]"
+      className="fixed right-4 bottom-12 z-40 rounded-[12px] border border-[var(--panel-border)] bg-[var(--panel)] p-1.5 shadow-[0_16px_40px_var(--shadow)]"
     >
       <Button
         variant="ghost"
-        className="h-auto rounded-[10px] bg-[var(--selection)] px-3 py-2.5 text-[var(--link)] hover:bg-[var(--selection)] hover:text-[var(--link)] hover:underline active:bg-[var(--selection)]"
+        className="h-auto rounded-[10px] bg-[var(--accent-soft)] px-3 py-2.5 text-[var(--accent-soft-text)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-soft-text)] hover:underline active:bg-[var(--accent-soft)]"
         onClick={() => {
           chosen.current = true
           void navigator.serviceWorker.getRegistration().then((registration) => {
