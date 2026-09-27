@@ -5,9 +5,13 @@ name: Deploy Supabase
 # See docs/architecture.md, Deploys. Forks skip it until they set the
 # SUPABASE_PROJECT_ID variable.
 #
-# Run by hand for now: config push is not atomic, so the first config diff is
-# read before anything is pushed. A push trigger on main follows once it has.
+# Runs on every push to main that changes supabase/ or this file, and by hand,
+# where pushing config is a choice: config push is not atomic, so a diff can be
+# read first.
 on:
+  push:
+    branches: [main]
+    paths: ["supabase/**", ".github/workflows/deploy-supabase.yml"]
   workflow_dispatch:
     inputs:
       push_config:
@@ -77,7 +81,7 @@ jobs:
           version: 2.118.0
       - run: supabase config diff --project-ref "$SUPABASE_PROJECT_ID"
       # Without --yes, a run with no terminal skips everything and still passes.
-      - if: inputs.push_config
+      - if: github.event_name == 'push' || inputs.push_config
         shell: bash
         run: |
           supabase config push --yes --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | tee push.log

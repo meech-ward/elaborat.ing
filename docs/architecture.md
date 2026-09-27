@@ -122,9 +122,13 @@ from their own fork.
   repository variable.
 - **Not Supabase's GitHub integration.** On production it ignores Auth config
   unless the project ref is written into `config.toml`.
-- **`config push` is not atomic** (Auth is written before Storage), so the
-  workflow runs by hand until the first diff has been read and pushed, and
-  checks that no credential was left out.
+- **When it runs:** on every push to `main` that changes `supabase/` or the
+  workflow, and by hand. `config push` is not atomic (Auth is written before
+  Storage), so a hand run shows the diff and pushes only when asked. Every
+  push checks that no credential was left out.
+- **Known diff line:** `auth.sms.twilio.enabled` stays in the diff, because
+  `config push` cannot turn off the active SMS provider. Phone sign-in is off,
+  so nothing uses it.
 
 **Decision:** pull requests get a CI check that regenerates migrations from
 `schemas/` and fails if the committed migrations are out of date.
