@@ -43,15 +43,12 @@ async function menuAction(page: Page, name: string) {
   await page.getByRole("menuitem", { name }).click()
 }
 
-test("a diagram compiles in the browser, its first save writes the generated files in one call, and reopening writes nothing", async ({ page }) => {
+test("a diagram compiles in the browser, opening saves its generated files in one call, and reopening writes nothing", async ({ page }) => {
   const { fake, id } = await openProject(page, { "flow.d2": "a -> b: hello\n" }, "flow.d2")
+  const before = saves(fake).length
   await compiled(page)
   expect(await elementCount(page)).toBeGreaterThan(2)
-  // The generated files do not exist yet, so the diagram has something to save.
-  await expect(status(page)).toContainText("Unsaved changes")
-
-  const before = saves(fake).length
-  await page.keyboard.press("ControlOrMeta+s")
+  // The generated files follow from the saved code, so opening saves them: nothing is left unsaved.
   await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
   await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
   const native = JSON.parse(fake.server.content(id, "flow.excalidraw")!)
@@ -74,7 +71,6 @@ test("a diagram compiles in the browser, its first save writes the generated fil
 test("when a generated file changed elsewhere, a save keeps all three files as they were", async ({ page }) => {
   const { fake, id } = await openProject(page, { "flow.d2": "a -> b\n" }, "flow.d2")
   await compiled(page)
-  await page.keyboard.press("ControlOrMeta+s")
   await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
   await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
 
@@ -144,11 +140,10 @@ async function onScreen(page: Page, elements: SceneElement[], id: string) {
   }
 }
 
-/** Open a diagram, save it once so its generated canvas exists, and return that canvas's elements. */
+/** Open a diagram, which saves its generated canvas, and return that canvas's elements. */
 async function savedDiagram(page: Page, source: string) {
   const { fake, id } = await openProject(page, { "flow.d2": source }, "flow.d2")
   await compiled(page)
-  await page.keyboard.press("ControlOrMeta+s")
   await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
   await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
   const elements = (JSON.parse(fake.server.content(id, "flow.excalidraw")!) as { elements: SceneElement[] }).elements

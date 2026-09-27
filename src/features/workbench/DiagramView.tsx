@@ -128,6 +128,8 @@ export function DiagramView({
   const { view, options: viewOptions } = useCanvasViews(mode, active, setMode);
   /** The code the canvas was last generated from. */
   const generatedFrom = useRef<string | null>(null);
+  // Set at open when the canvas had to be generated (none saved, or the code changed since).
+  const generatedAtOpen = useRef(false);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -292,6 +294,7 @@ export function DiagramView({
         setSavedSidecarText(sidecar?.savedContent ? writeSidecarFile(readSidecarFile(sidecar.savedContent)) : null);
         setPendingLabels(result.pendingLabels);
         generatedFrom.current = opened.source;
+        generatedAtOpen.current = result.ok && result.scene !== result.persistedScene && !result.conflicts.length;
         if (!result.ok) setMode("source");
         setBootError(null);
       } catch (error) {
@@ -462,6 +465,22 @@ export function DiagramView({
       setSaving(false);
     }
   }, [saving, pendingLabels.length, baseline, savedSource, savedScene, savedSidecarText, baseRevision, client, path, nativePath, nativeRevision, sidecarPath, sidecarRevision]);
+
+  // A canvas generated at open follows from the saved code, so it is saved
+  // straight away rather than shown as unsaved edits nobody made (a diagram an
+  // agent wrote, for example). If that save fails, the diagram shows as unsaved.
+  useEffect(() => {
+    if (!generatedAtOpen.current || !booted || locked || saving || !scene) return;
+    if (source !== savedSource || baseRevision === null || pendingLabels.length) {
+      generatedAtOpen.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      generatedAtOpen.current = false;
+      void save();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [booted, locked, saving, scene, source, savedSource, baseRevision, pendingLabels.length, save]);
 
   // Ctrl or Cmd+S saves the active diagram (the code editor handles its own).
   useEffect(() => {
