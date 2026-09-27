@@ -188,6 +188,7 @@ export function WorkspaceWorkbench({
   const workbenchMenuButton = useRef<HTMLButtonElement>(null);
   const openPalette = (invoker: HTMLElement | null) => {
     paletteInvoker.current = invoker;
+    setPaletteFiles(false);
     setPalette(true);
   };
   const sheetViewport = useSheetViewport(narrow && sidebar);
@@ -200,6 +201,8 @@ export function WorkspaceWorkbench({
   const [tablineSlot, setTablineSlot] = useState<HTMLElement | null>(null);
   const [bottomHeight, setBottomHeight] = useState(190);
   const [palette, setPalette] = useState(false);
+  // Cmd+P finds a file; Cmd+K (and the commands button) runs a command.
+  const [paletteFiles, setPaletteFiles] = useState(false);
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const { appearance, toggleScheme } = useAppearance();
@@ -663,13 +666,14 @@ export function WorkspaceWorkbench({
         setFocus((v) => !v);
         return;
       }
-      if (key === "b" || key === "j" || key === "`" || key === "k") {
+      if (key === "b" || key === "j" || key === "`" || key === "k" || key === "p") {
         event.preventDefault();
         event.stopPropagation();
         if (key === "b") setSidebar((v) => !v);
-        else if (key === "k") {
+        else if (key === "k" || key === "p") {
           if (!palette && document.activeElement instanceof HTMLElement)
             paletteInvoker.current = document.activeElement;
+          setPaletteFiles(key === "p");
           setPalette((v) => !v);
         }
         else { setPanel((v) => !v); if (narrow) setSidebar(true); }
@@ -1229,28 +1233,28 @@ export function WorkspaceWorkbench({
         <Dialog.Portal>
           <Dialog.Backdrop className="wb-backdrop" />
           <Dialog.Popup className="wb-palette" finalFocus={() => { if (afterClose.current === null) paletteInvoker.current?.focus({ preventScroll: true }); return false; }}>
-            <Dialog.Title>Go anywhere</Dialog.Title>
+            <Dialog.Title>{paletteFiles ? "Go to file" : "Commands"}</Dialog.Title>
             <Dialog.Description className="sr-only">
-              Find a workspace file or command.
+              {paletteFiles ? "Find a file in this project." : "Run a command or open a file."}
             </Dialog.Description>
             {/* cmdk always pins the input's aria-labelledby to its label
               element (shadowing aria-label), so the label itself carries the
               established "Search commands" name; the dialog title keeps
               naming the palette. */}
-            <Command label="Search commands">
+            <Command label={paletteFiles ? "Search files" : "Search commands"}>
               <CommandInput
                 autoFocus
-                aria-label="Search commands"
-                placeholder="Find a file or command…"
+                aria-label={paletteFiles ? "Search files" : "Search commands"}
+                placeholder={paletteFiles ? "Go to file…" : "Run a command…"}
                 value={query}
                 onValueChange={setQuery}
               />
               <CommandList>
-                <CommandEmpty>No matching commands.</CommandEmpty>
+                <CommandEmpty>{paletteFiles ? "No matching files." : "No matching commands."}</CommandEmpty>
                 <CommandGroup>
                   {/* Command callbacks access refs only when invoked by onSelect. */}
                   {/* eslint-disable-next-line react-hooks/refs */}
-                  {commands.map((command) => (
+                  {(paletteFiles ? files.map((file) => ({ name: file.path, run: () => void openFromNavigation(file.path) })) : commands).map((command) => (
                     <CommandItem
                       key={command.name}
                       value={command.name}

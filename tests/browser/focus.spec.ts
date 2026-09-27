@@ -11,7 +11,7 @@ async function openNote(page: Page) {
   const id = crypto.randomUUID()
   const remote = fake.server.remote(person.id)
   await remote.createProject(id, "Notes")
-  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.md", content: "# A\n" }])
+  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.md", content: "# A\n" }, { op: "put", path: "notes/b.md", content: "# B\n" }])
   await signedIn(page)
   await page.goto(new URL(`projects/${id}/a.md`, APP_URL).href)
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
@@ -31,4 +31,14 @@ test("focus mode hides the side panels and tabs, and Exit full screen brings the
   await expect(tab).toBeVisible()
   await page.getByRole("button", { name: "Focus" }).click()
   await expect(files).toHaveCount(0)
+})
+
+test("Cmd+P finds a file and opens it", async ({ page }) => {
+  await openNote(page)
+  await page.keyboard.press("ControlOrMeta+p")
+  const search = page.getByLabel("Search files").first()
+  await expect(search).toBeFocused()
+  await search.fill("b.md")
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("tab", { name: "notes/b.md" })).toHaveAttribute("aria-selected", "true")
 })
