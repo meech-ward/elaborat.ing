@@ -3,6 +3,12 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
+/** Show the explorer if it is hidden (a desktop opens with it shown). */
+async function showExplorer(page: Page) {
+  const toggle = page.getByRole("button", { name: "Toggle explorer" })
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+}
+
 // Components in rendered notes: defined in the note, or imported from other
 // project files with `workspace:` specifiers. Modules load from their saved
 // copies, run only inside the isolated preview frame, and follow changes made
@@ -206,7 +212,7 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
   const alert = page.locator("[data-rendered-editor]").getByRole("alert")
 
   // Open the module in another tab, and save it broken.
-  await page.getByRole("button", { name: "Toggle explorer" }).click()
+  await showExplorer(page)
   await page.getByRole("button", { name: "Expand components", exact: true }).click()
   await page.getByRole("button", { name: MODULE, exact: true }).click()
   await expect(page.getByRole("tab", { name: MODULE })).toHaveAttribute("aria-selected", "true")
@@ -287,6 +293,7 @@ export const Tally = ({ name }) => {
 `
 const stateNote = `import { useEffect, useState } from "react"
 import { Tally } from "workspace:${TALLY}"
+
 
 export const Toggle = ({ name }) => {
   const [on, setOn] = useState(false)

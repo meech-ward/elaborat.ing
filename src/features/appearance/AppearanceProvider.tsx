@@ -80,6 +80,7 @@ function tokenEntries(
     ["--source", tokens.source],
     ["--selection", tokens.selection],
     ["--shadow", tokens.shadow],
+    ["--dot", tokens.dot],
     ["--ui-font", tokens.uiFont],
     ["--heading-font", tokens.headingFont],
     ["--code-font", tokens.codeFont],

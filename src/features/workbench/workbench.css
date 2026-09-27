@@ -1165,3 +1165,184 @@ pictures above the choices. */
 /* Menus are portalled. The shared shell flag covers coarse landscape too. */
 body:has(.wb-app[data-compact="true"]) .wb-menu-item { min-height: 40px !important; }
 body:has(.wb-app[data-compact="true"]) .wb-menu { max-height: min(70dvh, var(--available-height, 70dvh)); }
+
+/* The desktop frame: floating panels on a dotted background. The project,
+   the files and the account sit down the side, the editor beside them. */
+.wb-app:not([data-compact="true"]) {
+  grid-template-rows: minmax(0, 1fr);
+  background-color: var(--chrome);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+.wb-app:not([data-compact="true"]) > .wb-body {
+  padding: 16px;
+}
+.wb-float,
+.wb-app:not([data-compact="true"]) .wb-main-panel {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px var(--shadow);
+  overflow: hidden;
+}
+.wb-app:not([data-compact="true"]) .wb-explorer-panel {
+  overflow: visible;
+}
+/* A 16px gap between the side and the editor that is also the resize handle. */
+.wb-app:not([data-compact="true"]) .wb-horizontal-panels > .wb-resize-handle {
+  width: 16px;
+  background: transparent;
+}
+.wb-app:not([data-compact="true"]) .wb-horizontal-panels > .wb-resize-handle:is(:hover, :focus-visible, [data-separator="active"]) {
+  background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
+  outline: none;
+}
+.wb-sidebar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.wb-project-panel {
+  position: relative;
+  flex-shrink: 0;
+  padding: 12px 44px 12px 14px;
+}
+.wb-project-panel > div {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.wb-project-panel h1 {
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  order: -1;
+}
+.wb-project-panel > .wb-icon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+}
+.wb-files-panel {
+  flex: 1;
+  min-height: 0;
+  width: 100% !important;
+  background: var(--bg);
+}
+.wb-files-panel .wb-explorer {
+  background: transparent;
+  border-right: 0;
+}
+.wb-files-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 12px 6px;
+}
+.wb-app .wb-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.wb-app .wb-button-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+.wb-account-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.wb-account-unsaved {
+  color: var(--muted);
+}
+.wb-account-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+.wb-account-links > .wb-icon {
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+}
+.wb-account-links a,
+.wb-app .wb-link-button {
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.wb-account-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.wb-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--selection);
+  color: var(--link);
+  font-weight: 600;
+}
+.wb-account-email {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+/* One line at the top of the editor: the explorer toggle, the open files and commands. */
+.wb-tabline {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.wb-tabline > .wb-icon {
+  width: 32px;
+  height: 32px;
+  margin: 0 4px;
+}
+.wb-tabline > .wb-tabs {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border-bottom: 0;
+}
+.wb-app[data-compact="true"] .wb-tabline { display: none; }
+/* File names stay on one line in the side panel; the full path is the title. */
+.wb-files-panel .wb-explorer-open {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}

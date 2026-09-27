@@ -16,7 +16,7 @@
   --line:#2E302F; --text:#EDEFEE; --muted:#B2B5B3; --accent:#3ECF8E;
   --accent-text:#07231A; --link:#85E0BA;
   --blue:#72A6FF; --purple:#C49BFF; --amber:#F5D27A; --green:#F5A55A;
-  --source:#C49BFF; --selection:#0F3323; --shadow:rgba(0,0,0,0.45);
+  --source:#C49BFF; --selection:#0F3323; --shadow:rgba(0,0,0,0.45); --dot:#2C2F2D;
   color-scheme:dark;
   font-family:var(--ui-font);
 }
@@ -25,7 +25,7 @@
   --line:#E2E6E4; --text:#121413; --muted:#555C58; --accent:#097C4F;
   --accent-text:#FFFFFF; --link:#065C3A;
   --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
-  --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10);
+  --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1;
   color-scheme:light;
 }
 /* Before the app sets data-scheme, the first paint follows the device. */
@@ -35,7 +35,7 @@
     --line:#E2E6E4; --text:#121413; --muted:#555C58; --accent:#097C4F;
     --accent-text:#FFFFFF; --link:#065C3A;
     --blue:#2A5BC9; --purple:#6B3FD0; --amber:#6B4700; --green:#A8560A;
-    --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10);
+    --source:#6B3FD0; --selection:#DCF5E8; --shadow:rgba(18,20,19,0.10); --dot:#CED5D1;
     color-scheme:light;
   }
 }

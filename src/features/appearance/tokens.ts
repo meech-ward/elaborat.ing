@@ -36,6 +36,8 @@ export interface AppearanceTokens {
   source: string;
   selection: string;
   shadow: string;
+  /** The dots on the app's dotted background. */
+  dot: string;
   uiFont: string;
   headingFont: string;
   codeFont: string;
@@ -106,6 +108,7 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     source: colors.codeHead,
     selection: colors.accentSoft,
     shadow: colors.shadow,
+    dot: colors.dot,
     uiFont: "'Space Grotesk Variable', sans-serif",
     headingFont: "'Space Grotesk Variable', sans-serif",
     codeFont: "'JetBrains Mono Variable', monospace",

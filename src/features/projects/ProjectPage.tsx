@@ -153,6 +153,17 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           Unarchive
         </Button>
       ) : null}
+      {error || departureError ? (
+        <p role="alert" className="text-destructive">
+          {departureError ?? error}
+        </p>
+      ) : null}
+    </div>
+  )
+
+  // The sync state sits with the account on a desktop, and in the phone menu.
+  const syncStatus = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
       <p role="status" className="truncate text-muted-foreground">
         {entry ? statusLabel(entry) : ""}
         {!account.online || state.offline ? " (offline)" : ""}
@@ -161,11 +172,6 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         <Button variant="outline" size="sm" onClick={() => void syncNow()}>
           Sync now
         </Button>
-      ) : null}
-      {error || departureError ? (
-        <p role="alert" className="text-destructive">
-          {departureError ?? error}
-        </p>
       ) : null}
     </div>
   )
@@ -182,6 +188,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         client={workspace}
         projectId={projectId}
         projectHeader={header}
+        syncStatus={syncStatus}
         onLeaveGuard={registerLeaveGuard}
         onResolveConflict={resolveConflict}
         readOnly={readOnly}

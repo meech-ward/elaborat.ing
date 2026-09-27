@@ -33,8 +33,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuButton,
@@ -50,7 +48,7 @@ import {
 } from "@/components/ui/command";
 import {
   Diamond,
-  Files,
+  Plus,
   Search,
   PanelLeft,
   PanelBottom,
@@ -62,11 +60,11 @@ import {
   PenTool,
   Network,
   FileUp,
-  Terminal,
 } from "lucide-react";
-import { themes, useAppearance } from "@/features/appearance";
+import { useAppearance } from "@/features/appearance";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
-import { AccountMenu } from "@/features/auth";
+import { Link } from "@tanstack/react-router";
+import { AccountMenu, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
@@ -121,14 +119,17 @@ import "./workbench.css";
 /**
  * The editor for one project: an explorer, tabs of open files, each a
  * source and rendered editor, saves to this device (sync sends them), and a
- * command palette. `projectHeader` shows in the title bar and in the phone
- * navigation sheet.
+ * command palette. On a desktop it sits in floating panels on a dotted
+ * background: the project (`projectHeader`), the files and the account with
+ * the sync state (`syncStatus`) down the side, and the editor. On a phone the
+ * same controls are in the navigation sheet.
  */
 export function WorkspaceWorkbench({
   client,
   onLeaveGuard,
   projectId,
   projectHeader,
+  syncStatus,
   onResolveConflict,
   readOnly = null,
 }: {
@@ -136,6 +137,7 @@ export function WorkspaceWorkbench({
   onLeaveGuard?: (guard: PrepareProjectLeave | null) => void;
   projectId: string;
   projectHeader?: ReactNode;
+  syncStatus?: ReactNode;
   onResolveConflict?: (path: string, choice: ConflictChoice) => Promise<void>;
   /**
    * Why the project cannot be changed (the person is a viewer, or it is
@@ -173,9 +175,10 @@ export function WorkspaceWorkbench({
   const [directories, setDirectories] = useState<string[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sidebar, setSidebar] = useState(false);
-  const [panel, setPanel] = useState(false);
   const narrow = useCompactWorkbench();
+  // The side panels start open on a desktop; on a phone they are a sheet, closed.
+  const [sidebar, setSidebar] = useState(() => !narrow);
+  const [panel, setPanel] = useState(false);
   const navigationButton = useRef<HTMLButtonElement>(null);
   const sheetClose = useRef<HTMLButtonElement>(null);
   // Element that opened the command palette; Escape/focus return goes here.
@@ -188,7 +191,7 @@ export function WorkspaceWorkbench({
   const sheetViewport = useSheetViewport(narrow && sidebar);
   const explorerPanel = usePanelRef();
   const bottomPanel = usePanelRef();
-  const [explorerWidth, setExplorerWidth] = useState(240);
+  const [explorerWidth, setExplorerWidth] = useState(264);
   const [bottomHeight, setBottomHeight] = useState(190);
   const [palette, setPalette] = useState(false);
   const [readingSettings, setReadingSettings] = useState(false);
@@ -196,6 +199,7 @@ export function WorkspaceWorkbench({
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const { appearance, toggleScheme } = useAppearance();
   const openSettings = useOpenSettings();
+  const auth = useAuth();
   const sequence = useRef(0);
   const restoreDone = useRef(false);
   const interacted = useRef(false);
@@ -762,6 +766,54 @@ export function WorkspaceWorkbench({
       run: () => void openFromNavigation(file.path),
     })),
   ];
+  const workbenchMenu = (
+    <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton} finalFocus={() => {
+      const keep = keepMenuFocus.current;
+      keepMenuFocus.current = false;
+      return !keep;
+    }} onClosed={runAfterClose}>
+      {!readOnly && (
+        <button onClick={() => afterMenu(() => startCreate("note"))}>
+          <FilePlus size={14} /> New
+        </button>
+      )}
+      {!readOnly && <button onClick={() => afterMenu(() => startCreate("mdx"))}><FilePlus size={14} /> New MDX note</button>}
+      {!readOnly && <button onClick={() => afterMenu(() => startCreate("drawing"))}><PenTool size={14} /> New drawing</button>}
+      {!readOnly && <button onClick={() => afterMenu(() => startCreate("diagram"))}><Network size={14} /> New diagram</button>}
+      {!readOnly && (
+        <button onClick={() => fileInput.current?.click()}>
+          <FileUp size={14} /> Import
+        </button>
+      )}
+      {!readOnly && (
+        <button onClick={() => afterMenu(() => startCreate("folder"))}>
+          <FolderPlus size={14} /> New folder
+        </button>
+      )}
+      <button onClick={() => void refreshList()}>
+        <FolderSync size={14} /> Refresh file list
+      </button>
+      <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
+      <button onClick={() => afterMenu(openSettings)}>Settings</button>
+      <button onClick={() => setReadingSettings(true)}>
+        Reading preferences
+      </button>
+    </ActionMenu>
+  );
+  const importInput = (
+    <input
+      ref={fileInput}
+      type="file"
+      className="sr-only"
+      accept=".md,.mdx,.json,.excalidraw,.d2"
+      aria-label="Import a file from this computer into the project"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (file) void importFile(file);
+      }}
+    />
+  );
   const workbenchControls = (
       <header className="wb-titlebar">
         <span className="wb-brand">
@@ -796,92 +848,49 @@ export function WorkspaceWorkbench({
             <PanelBottom size={17} />
           </button>
         </div>
-        <ActionMenu label="Workbench menu" triggerRef={workbenchMenuButton} finalFocus={() => {
-          const keep = keepMenuFocus.current;
-          keepMenuFocus.current = false;
-          return !keep;
-        }} onClosed={runAfterClose}>
-          {!readOnly && (
-            <button onClick={() => afterMenu(() => startCreate("note"))}>
-              <FilePlus size={14} /> New
-            </button>
-          )}
-          {!readOnly && <button onClick={() => afterMenu(() => startCreate("mdx"))}><FilePlus size={14} /> New MDX note</button>}
-          {!readOnly && <button onClick={() => afterMenu(() => startCreate("drawing"))}><PenTool size={14} /> New drawing</button>}
-          {!readOnly && <button onClick={() => afterMenu(() => startCreate("diagram"))}><Network size={14} /> New diagram</button>}
-          {!readOnly && (
-            <button onClick={() => fileInput.current?.click()}>
-              <FileUp size={14} /> Import
-            </button>
-          )}
-          {!readOnly && (
-            <button onClick={() => afterMenu(() => startCreate("folder"))}>
-              <FolderPlus size={14} /> New folder
-            </button>
-          )}
-          <button onClick={() => void refreshList()}>
-            <FolderSync size={14} /> Refresh file list
-          </button>
-          <button onClick={() => openPalette(workbenchMenuButton.current)}>Command palette</button>
-          <button onClick={() => afterMenu(openSettings)}>Settings</button>
-          <button onClick={() => setReadingSettings(true)}>
-            Reading preferences
-          </button>
-        </ActionMenu>
+        {workbenchMenu}
         <AccountMenu />
-        <input
-          ref={fileInput}
-          type="file"
-          className="sr-only"
-          accept=".md,.mdx,.json,.excalidraw,.d2"
-          aria-label="Import a file from this computer into the project"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void importFile(file);
-          }}
-        />
+        {importInput}
       </header>
+  );
+  const newFileMenu = (
+    <ActionMenu label="New file" trigger={<><Plus size={15} /> New file</>} triggerClassName="wb-button wb-button-primary" align="start" finalFocus={() => {
+      const keep = keepMenuFocus.current;
+      keepMenuFocus.current = false;
+      return !keep;
+    }} onClosed={runAfterClose}>
+      <button onClick={() => afterMenu(() => startCreate("note"))}>New note</button>
+      <button onClick={() => afterMenu(() => startCreate("mdx"))}>New MDX note</button>
+      <button onClick={() => afterMenu(() => startCreate("drawing"))}>New drawing</button>
+      <button onClick={() => afterMenu(() => startCreate("diagram"))}>New diagram</button>
+    </ActionMenu>
+  );
+  const unsaved = state.tabs.filter((tab) => tab.dirty).length;
+  const accountPanel = (
+    <section className="wb-float wb-account-panel" aria-label="Account and app">
+      {syncStatus}
+      {unsaved > 0 && <p className="wb-account-unsaved">{unsaved} unsaved</p>}
+      <div className="wb-account-links">
+        <Link to="/agents">Connected agents</Link>
+        <button type="button" className="wb-link-button" onClick={openSettings}>Settings</button>
+        <button type="button" className="wb-icon" aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`} onClick={toggleScheme}>
+          <Sun size={15} />
+        </button>
+      </div>
+      {auth.status === "ready" && (
+        <div className="wb-account-profile">
+          <span className="wb-avatar" aria-hidden="true">{(auth.email ?? "?").slice(0, 1).toUpperCase()}</span>
+          <span className="wb-account-email">{auth.email ?? "Signed in"}</span>
+          <button type="button" className="wb-link-button" onClick={() => void signOut().catch((reason: unknown) => setNotice(`Not signed out: ${reason instanceof Error ? reason.message : String(reason)}`))}>Sign out</button>
+        </div>
+      )}
+    </section>
   );
   const navigation = narrow ? <button type="button" ref={navigationButton} className="wb-icon" data-compact-nav="" aria-label="Navigation" aria-haspopup="dialog" aria-expanded={sidebar} onClick={() => setSidebar(true)}><PanelLeft size={20} /></button> : null;
   return (
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
     <div className="wb-app" data-compact={narrow} ref={shell}>
-      {!narrow && workbenchControls}
       <div className="wb-body">
-        <nav className="wb-rail" aria-label="Activity bar">
-          <button
-            className="wb-icon"
-            aria-label="Explorer"
-            aria-pressed={sidebar}
-            onClick={() => setSidebar(!sidebar)}
-          >
-            <Files size={21} />
-          </button>
-          <button
-            className="wb-icon"
-            aria-label="Find a file or command"
-            onClick={(e) => openPalette(e.currentTarget)}
-          >
-            <Search size={21} />
-          </button>
-          <button
-            className="wb-icon"
-            aria-label="Diagnostics"
-            aria-pressed={panel}
-            onClick={() => setPanel(!panel)}
-          >
-            <Terminal size={20} />
-          </button>
-          <span />
-          <button
-            className="wb-icon"
-            aria-label={`Switch to ${appearance.scheme === "dark" ? "light" : "dark"} mode`}
-            onClick={toggleScheme}
-          >
-            <Sun size={20} />
-          </button>
-        </nav>
         <ResizablePanelGroup
           orientation="horizontal"
           className="wb-horizontal-panels"
@@ -901,40 +910,31 @@ export function WorkspaceWorkbench({
               groupResizeBehavior="preserve-pixel-size"
               className="wb-explorer-panel"
             >
-              <Sidebar collapsible="none">
-              <nav className="wb-explorer" aria-label="Workspace files">
-                <SidebarHeader className="wb-explorer-title">
-                  Explorer
-                  <span className="wb-explorer-actions">
+              <div className="wb-sidebar-column">
+                <header className="wb-float wb-project-panel">
+                  {projectHeader}
+                  {workbenchMenu}
+                  {importInput}
+                </header>
+                <Sidebar collapsible="none" className="wb-float wb-files-panel">
+                  <nav className="wb-explorer" aria-label="Workspace files">
                     {!readOnly && (
-                      <button
-                        className="wb-icon"
-                        aria-label="New folder"
-                        title="New folder"
-                        onClick={() => startCreate("folder")}
-                      >
-                        <FolderPlus size={15} />
-                      </button>
+                      <div className="wb-files-actions">
+                        {newFileMenu}
+                        <button type="button" className="wb-button" onClick={() => startCreate("folder")}>
+                          <FolderPlus size={15} /> New folder
+                        </button>
+                      </div>
                     )}
-                    <button
-                      className="wb-icon"
-                      aria-label="Close explorer"
-                      onClick={() => setSidebar(false)}
-                    >
-                      <X size={15} />
-                    </button>
-                  </span>
-                </SidebarHeader>
-                <SidebarContent>
-                  <SidebarGroup>
-                    <SidebarGroupLabel>Files</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                      {renderExplorerBody()}
-                    </SidebarGroupContent>
-                  </SidebarGroup>
-                </SidebarContent>
-              </nav>
-              </Sidebar>
+                    <SidebarContent>
+                      <SidebarGroup>
+                        <SidebarGroupContent>{renderExplorerBody()}</SidebarGroupContent>
+                      </SidebarGroup>
+                    </SidebarContent>
+                  </nav>
+                </Sidebar>
+                {accountPanel}
+              </div>
             </ResizablePanel>
           )}
           {sidebar && !narrow && (
@@ -956,6 +956,12 @@ export function WorkspaceWorkbench({
                   if (typeof value === "string" && value) selectTab(value);
                 }}
               >
+              <div className="wb-tabline">
+              {!narrow && (
+                <button type="button" className="wb-icon" aria-label="Toggle explorer" aria-pressed={sidebar} onClick={() => setSidebar(!sidebar)}>
+                  <PanelLeft size={16} />
+                </button>
+              )}
               <TabsList className="wb-tabs" aria-label="Open files" activateOnFocus {...tabReorder.handlers} data-reordering={tabReorder.visual?.animateNeighbors ?? false}>
                 {state.tabs.map((tab) => (
                   <div
@@ -1001,6 +1007,12 @@ export function WorkspaceWorkbench({
                   </div>
                 ))}
               </TabsList>
+              {!narrow && (
+                <button type="button" className="wb-icon" aria-label="Open workspace commands" title="Commands (⌘K)" onClick={(e) => openPalette(e.currentTarget)}>
+                  <Search size={15} />
+                </button>
+              )}
+              </div>
               {tabReorder.visual && createPortal(
                 <div className="wb-tab-ghost" aria-hidden="true" data-settling={tabReorder.visual.settling}
                   style={{ left: tabReorder.visual.left, top: tabReorder.visual.top, width: tabReorder.visual.width, height: tabReorder.visual.height }}>
@@ -1162,6 +1174,7 @@ export function WorkspaceWorkbench({
             <SheetDescription className="sr-only">Open files, project files and controls.</SheetDescription>
             <div className="wb-navigation-scroll">
               {projectHeader}
+              {syncStatus}
               <section aria-label="Open files" className="wb-navigation-tabs">
                 <h3>Open files</h3>
                 {state.tabs.length > 0 && (
@@ -1195,13 +1208,6 @@ export function WorkspaceWorkbench({
             </div>
           </SheetContent>
       </Sheet>
-      <footer className="wb-status">
-        <span>Workspace</span>
-        <span>
-          {state.tabs.filter((tab) => tab.dirty).length} unsaved ·{" "}
-          {themes.find((theme) => theme.id === appearance.theme)?.label} / {appearance.scheme}
-        </span>
-      </footer>
       <Dialog.Root open={palette} onOpenChange={(open) => { setPalette(open); if (!open) setQuery(""); }} onOpenChangeComplete={(open) => { if (!open) runAfterClose(); }}>
         <Dialog.Portal>
           <Dialog.Backdrop className="wb-backdrop" />

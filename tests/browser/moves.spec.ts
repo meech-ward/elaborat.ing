@@ -3,6 +3,13 @@ import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
+/** Show the explorer if it is hidden (a desktop opens with it shown). */
+async function showExplorer(page: Page) {
+  const toggle = page.getByRole("button", { name: "Toggle explorer" })
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+}
+
+
 // Folders and files in the explorer: new folders, and renames and moves of
 // files and folders whose references are rewritten in the same save. A D2
 // diagram's generated files go with it, open tabs follow their files, and
@@ -247,7 +254,7 @@ test("unsaved edits stop a move until they are saved, then the open tab follows 
 
 test("a new folder reaches the server, is still there after a reload, and takes a moved note", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# A\n" }, [], "a.md")
-  await page.getByRole("button", { name: "Toggle explorer" }).click()
+  await showExplorer(page)
   const files = page.getByRole("navigation", { name: "Workspace files" })
   await files.getByRole("button", { name: "New folder" }).click()
   await files.getByRole("textbox", { name: "Name of the new folder in the workspace root" }).fill("plans")
@@ -269,7 +276,7 @@ test("a file of a kind the app does not edit is listed and opens as text, but is
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await openProject(page, { "agent/output.txt": "hello from an agent\n", "notes.md": "# Notes\n" }, [], "notes.md")
-  await page.getByRole("button", { name: "Toggle explorer" }).click()
+  await showExplorer(page)
   const files = page.getByRole("navigation", { name: "Workspace files" })
   await files.getByRole("button", { name: "Expand agent", exact: true }).click()
   await files.getByRole("button", { name: "agent/output.txt", exact: true }).click()
