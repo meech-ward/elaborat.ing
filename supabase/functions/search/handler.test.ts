@@ -38,6 +38,19 @@ Deno.test('a query is embedded once and searched with its embedding and count', 
   assertEquals(calls, [{ query_text: 'tomato sauce', query_embedding: '[0.5,-0.5]', match_count: 5 }])
 })
 
+Deno.test('a project id narrows the search to that project', async () => {
+  const { value, calls } = deps({ data: [result], error: null })
+  const projectId = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e'
+  assertEquals((await handleSearch({ query: 'tomato', projectId }, value)).status, 200)
+  assertEquals(calls, [{ query_text: 'tomato', query_embedding: '[0.5,-0.5]', match_count: 10, filter_project_id: projectId }])
+})
+
+Deno.test('a project id that is not a UUID is refused without searching', async () => {
+  const { value, calls, embedded } = deps({ data: [], error: null })
+  for (const projectId of ['p', 42, '']) assertEquals((await handleSearch({ query: 'tomato', projectId }, value)).status, 400)
+  assertEquals([calls.length, embedded.length], [0, 0])
+})
+
 Deno.test('the count defaults to 10 and may not pass 30', async () => {
   const { value, calls } = deps({ data: [], error: null })
   await handleSearch({ query: 'basil' }, value)

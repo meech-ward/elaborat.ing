@@ -176,11 +176,13 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     }
 
     // The search Edge Function: a passage for each file, in the projects the
-    // person can read, whose text has every word of the query.
+    // person can read (or the one asked for), whose text has every word of the query.
     if (path === "/functions/v1/search") {
-      const words = String(request.postDataJSON()?.query ?? "").toLowerCase().split(/\s+/).filter(Boolean)
+      const { query: text, projectId: onlyProject } = request.postDataJSON() ?? {}
+      const words = String(text ?? "").toLowerCase().split(/\s+/).filter(Boolean)
       const results = [...server.projects.values()]
         .filter((project) => project.owner === person.id || project.members.get(person.id)?.acceptedAt)
+        .filter((project) => !onlyProject || project.id === onlyProject)
         .flatMap((project) =>
           [...project.files.values()]
             .filter((file) => words.every((word) => file.content.toLowerCase().includes(word)))

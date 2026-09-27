@@ -1,18 +1,18 @@
 -- Hybrid search: who can read passages, what gets queued for the embed
 -- function, and that a search returns ranked passages from the caller's
--- projects only.
+-- projects only, or from one of them.
 -- Run with the Supabase CLI: `supabase test db` (pgTAP). Everything happens in
 -- one transaction that is rolled back at the end.
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(29);
 
 select table_privs_are('public', 'file_passages', 'anon', array[]::text[], 'Anonymous users cannot touch passages');
 select table_privs_are('public', 'file_passages', 'authenticated', array['SELECT'], 'Signed-in users can only read passages');
 select policies_are('public', 'file_passages', array['People can read passages in their projects'], 'One policy: people read passages in their projects');
 select function_privs_are(
-  'public', 'hybrid_search', array['text', 'extensions.vector', 'integer', 'double precision', 'double precision', 'integer'],
+  'public', 'hybrid_search', array['text', 'extensions.vector', 'integer', 'double precision', 'double precision', 'integer', 'uuid'],
   'anon', array[]::text[], 'Anonymous users cannot search'
 );
 select function_privs_are(
@@ -191,6 +191,38 @@ select throws_ok(
   '42501',
   null,
   'Anonymous callers cannot search'
+);
+reset role;
+
+-- Searching one project. Bob adds two basil passages that outrank Alice's
+-- garden note in words and in meaning. Asked for one result, each half keeps
+-- only its best two, so her note is found only if the project is filtered
+-- before that limit.
+insert into public.file_passages (file_id, project_id, ordinal, headings, content, start_offset, end_offset, embedding)
+select f.id, f.project_id, p.ordinal, 'Basil', 'Basil, basil and more basil.', 0, length(f.content), pg_temp.unit(4)
+from (values (1), (2)) as p (ordinal)
+join public.project_files f on f.path = 'quick.md' and f.project_id = 'bbbbbbbb-0000-4000-8000-000000000001';
+
+set local role authenticated;
+set local request.jwt.claims to '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+select results_eq(
+  $$select project_id from public.hybrid_search('basil', pg_temp.unit(4), 1)$$,
+  array['bbbbbbbb-0000-4000-8000-000000000001'::uuid],
+  'Across her projects, Bob''s basil passages come first'
+);
+select results_eq(
+  $$select path from public.hybrid_search('basil', pg_temp.unit(4), 1, filter_project_id => 'aaaaaaaa-0000-4000-8000-000000000001')$$,
+  array['garden.mdx'],
+  'Searching her project finds her note, though the other project''s passages outrank it'
+);
+select results_eq(
+  $$select path from public.hybrid_search('basil', pg_temp.unit(4), 10, filter_project_id => 'aaaaaaaa-0000-4000-8000-000000000001')$$,
+  array['garden.mdx'],
+  'Searching her project returns only its passages'
+);
+select is_empty(
+  $$select * from public.hybrid_search('tomato sauce', pg_temp.unit(1), 10, filter_project_id => 'cccccccc-0000-4000-8000-000000000001')$$,
+  'Naming a project she cannot read finds nothing'
 );
 reset role;
 

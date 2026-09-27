@@ -61,6 +61,15 @@ Deno.test('search embeds the query and runs hybrid_search as the user', async ()
   assertEquals(rpcs, [{ name: 'hybrid_search', args: { query_text: 'tomato sauce', query_embedding: '[0.25,-0.25]', match_count: 5 } }])
 })
 
+Deno.test('search can be narrowed to one project', async () => {
+  const { rpcs } = await search({ query: 'tomato', project_id: passage.project_id }, { data: [passage], error: null })
+  assertEquals(rpcs, [
+    { name: 'hybrid_search', args: { query_text: 'tomato', query_embedding: '[0.25,-0.25]', match_count: 10, filter_project_id: passage.project_id } },
+  ])
+  const notAnId = await search({ query: 'tomato', project_id: 'p' }, { data: [], error: null })
+  assertEquals([notAnId.result.isError, notAnId.rpcs.length], [true, 0])
+})
+
 Deno.test('search returns 10 passages unless asked for another count, up to 30', async () => {
   const { rpcs } = await search({ query: 'basil' }, { data: [], error: null })
   assertEquals((rpcs[0].args as { match_count: number }).match_count, 10)

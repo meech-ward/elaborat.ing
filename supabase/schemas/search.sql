@@ -141,14 +141,17 @@ select cron.schedule(
 -- Supabase's documented hybrid search over passages, returning up to 30. It
 -- runs as the caller, so RLS keeps results to projects they can read.
 -- Iterative index scans keep the vector half from coming back short when RLS
--- filters out most of the nearest passages (other people's).
+-- filters out most of the nearest passages (other people's). With
+-- filter_project_id, both halves search that one project before they are
+-- limited, so its matches are not crowded out by the caller's other projects.
 create function public.hybrid_search(
   query_text text,
   query_embedding extensions.vector(384),
   match_count integer,
   full_text_weight double precision default 1,
   semantic_weight double precision default 1,
-  rrf_k integer default 50
+  rrf_k integer default 50,
+  filter_project_id uuid default null
 )
 returns table (
   passage_id bigint,
@@ -173,6 +176,7 @@ as $$
       row_number() over (order by ts_rank_cd(p.fts, websearch_to_tsquery('english', query_text)) desc) as rank_ix
     from public.file_passages p
     where p.fts @@ websearch_to_tsquery('english', query_text)
+      and (filter_project_id is null or p.project_id = filter_project_id)
     order by rank_ix
     limit least(match_count, 30) * 2
   ),
@@ -181,6 +185,7 @@ as $$
       p.id,
       row_number() over (order by p.embedding operator(extensions.<#>) query_embedding) as rank_ix
     from public.file_passages p
+    where filter_project_id is null or p.project_id = filter_project_id
     order by rank_ix
     limit least(match_count, 30) * 2
   )
@@ -203,5 +208,5 @@ as $$
   limit least(match_count, 30)
 $$;
 
-revoke all on function public.hybrid_search(text, extensions.vector, integer, double precision, double precision, integer) from public, anon;
-grant execute on function public.hybrid_search(text, extensions.vector, integer, double precision, double precision, integer) to authenticated;
+revoke all on function public.hybrid_search(text, extensions.vector, integer, double precision, double precision, integer, uuid) from public, anon;
+grant execute on function public.hybrid_search(text, extensions.vector, integer, double precision, double precision, integer, uuid) to authenticated;

@@ -264,7 +264,9 @@ schema is `supabase/schemas/search.sql`.
   Fusion over both result lists, up to 30 passages with their file paths. It
   runs as the caller, so RLS limits results to projects the user can read:
   their own and those shared with them. The join to the file for its path is a
-  second RLS check.
+  second RLS check. Given a project, both halves search only that project
+  before they are cut to size, so the files panel's search finds a project's
+  matches however many other projects the person has.
 - **Automatic embeddings:** Supabase's documented pattern. A trigger on
   `project_files` queues a note or diagram in the `file_passages` pgmq queue
   when it is saved or renamed. A pg_cron job every 10 seconds sends batches to

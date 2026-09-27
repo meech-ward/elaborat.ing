@@ -1,7 +1,7 @@
 /**
  * A passage as the `search` Edge Function returns it (see
- * supabase/functions/search/handler.ts). Search covers every project the
- * person can read, best match first.
+ * supabase/functions/search/handler.ts), best match first. Search covers every
+ * project the person can read, or the one it is given.
  */
 export type SearchPassage = { project_id: string; path: string; content: string }
 

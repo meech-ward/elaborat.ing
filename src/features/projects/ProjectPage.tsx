@@ -114,11 +114,12 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     [account.online, delayedSync, library, projectId, syncNow],
   )
 
-  // The files panel's search: the server's search over every project the
-  // person can read, narrowed to this one.
+  // The files panel's search: the server's search in this project.
   const searchFiles = useCallback(
     async (query: string) => {
-      const { data, error } = await createClient().functions.invoke<{ results: SearchPassage[] }>("search", { body: { query, matchCount: 30 } })
+      const { data, error } = await createClient().functions.invoke<{ results: SearchPassage[] }>("search", {
+        body: { query, matchCount: 30, projectId },
+      })
       if (error) throw new Error(error.name === "FunctionsFetchError" ? "Search needs a connection." : `Search failed: ${error.message}`)
       return projectHits(data?.results ?? [], projectId)
     },

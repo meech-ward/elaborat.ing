@@ -41,7 +41,7 @@ test("search in the files panel finds this project's files by their text, and op
   await expect(results.getByRole("button")).toHaveCount(1)
   await expect(results.getByRole("button")).toContainText("notes/plan.md")
   await expect(results.locator("strong")).toHaveText("customer")
-  expect(fake.requests.some((request) => request.url().endsWith("/functions/v1/search"))).toBe(true)
+  expect(fake.requests.some((request) => request.url().endsWith("/functions/v1/search") && request.postDataJSON()?.projectId === id)).toBe(true)
 
   await field.fill("customer")
   await expect(results.getByRole("button")).toHaveCount(2)
