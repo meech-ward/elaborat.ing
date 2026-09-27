@@ -65,8 +65,7 @@ body{font:14px/1.6 var(--ui-font);color:var(--text);-webkit-font-smoothing:antia
 .skel{display:grid;gap:8px}
 .skel span{height:10px;border-radius:5px;background:var(--bg)}
 .skel span:nth-child(2){width:80%}.skel span:nth-child(3){width:55%}
-.doc{position:relative;max-height:360px;overflow:hidden;overflow-wrap:anywhere}
-.doc.clipped::after{content:"";position:absolute;inset:auto 0 0;height:64px;background:linear-gradient(transparent,var(--panel))}
+.doc{position:relative;overflow-wrap:anywhere}
 .doc>:first-child{margin-top:0}.doc>:last-child{margin-bottom:0}
 .doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6{margin:1em 0 .4em;font-weight:600;line-height:1.3}
 .doc h1{font-size:20px}.doc h2{font-size:17px}.doc h3{font-size:15px}.doc h4,.doc h5,.doc h6{font-size:14px}
@@ -85,7 +84,6 @@ body{font:14px/1.6 var(--ui-font);color:var(--text);-webkit-font-smoothing:antia
 .doc input[type=checkbox]{accent-color:var(--accent);margin:0 6px 0 0}
 .doc li:has(>input[type=checkbox]){list-style:none}
 .note{margin:0;color:var(--muted);font-size:13px}
-.doc.tall{max-height:640px}
 .art{overflow:hidden}
 .art svg{display:block;max-width:100%;height:auto;max-height:420px;margin:0 auto}
 .art .label-bg{fill:var(--panel)}
@@ -243,12 +241,10 @@ const SCRIPT = `
     if (view.kind === 'note' && typeof view.html === 'string') {
       doc.innerHTML = view.html
       fillFigures(doc, embeds, svgs)
-      doc.classList.toggle('tall', embeds.length > 0)
       doc.hidden = false
-      const clipped = doc.scrollHeight > doc.clientHeight + 1
-      doc.classList.toggle('clipped', clipped)
+      // The whole note shows; only a note longer than the server's limit is cut.
       $('note').textContent = 'Open in elaborat.ing to read the rest.'
-      $('note').hidden = !(clipped || view.truncated)
+      $('note').hidden = !view.truncated
     } else if ((view.kind === 'drawing' || view.kind === 'diagram') && embeds[0]) {
       doc.hidden = true
       const art = artFor(embeds[0], svgs)
