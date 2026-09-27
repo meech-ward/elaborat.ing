@@ -40,6 +40,8 @@ export interface AppearanceTokens {
   shadow: string;
   /** The dots on the app's dotted background. */
   dot: string;
+  /** Behind warnings; their text is `amber`. */
+  warnBg: string;
   /** Destructive actions, such as Delete in a menu. */
   danger: string;
   /** The kind colours: notes, drawings and D2 diagrams. */
@@ -137,6 +139,7 @@ export function getAppearanceTokens(appearance: Appearance): AppearanceTokens {
     selection: colors.accentSoft,
     shadow: colors.shadow,
     dot: colors.dot,
+    warnBg: colors.warnBg,
     danger: colors.danger,
     note: colors.note,
     drawing: colors.drawing,

@@ -10,9 +10,9 @@ import { drawingSvgForContent } from "./resources";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const bannerButton =
-  "inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900";
+  "inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button";
 const banner =
-  "mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+  "mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

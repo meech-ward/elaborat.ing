@@ -82,6 +82,7 @@ function tokenEntries(
     ["--selection", tokens.selection],
     ["--shadow", tokens.shadow],
     ["--dot", tokens.dot],
+    ["--warn-bg", tokens.warnBg],
     ["--danger", tokens.danger],
     ["--note", tokens.note],
     ["--drawing", tokens.drawing],

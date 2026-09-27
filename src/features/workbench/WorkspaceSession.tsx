@@ -683,7 +683,7 @@ export function WorkspaceSession({
       {renderError && (
         <p
           role="alert"
-          className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
         >
           Render error: {renderError} Source is unchanged and remains editable.
         </p>
@@ -691,7 +691,7 @@ export function WorkspaceSession({
       {inSource && isNote && sourceError && !renderError && (
         <p
           role="alert"
-          className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-danger"
         >
           Source check: {sourceError} Source is unchanged and remains editable.
         </p>
@@ -699,7 +699,7 @@ export function WorkspaceSession({
       {patchError && (
         <div
           role="alert"
-          className="mt-2 flex items-start justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          className="mt-2 flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
         >
           <span>Patch rejected: {patchError}</span>
           <button
@@ -714,7 +714,7 @@ export function WorkspaceSession({
       {conflict && (
         <div
           role="alert"
-          className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
         >
           <p>
             Save conflict on {displayName}: it was saved elsewhere since you
@@ -730,7 +730,7 @@ export function WorkspaceSession({
                   `Loaded the saved version of ${displayName}.`,
                 )
               }
-              className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900"
+              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
             >
               Load the saved version
             </button>
@@ -740,7 +740,7 @@ export function WorkspaceSession({
                 const t = saveTarget(openFile);
                 if (t) void doWrite(t, conflict.currentRevision, "Overwrote");
               }}
-              className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900"
+              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
             >
               Overwrite with my version
             </button>
@@ -757,7 +757,7 @@ export function WorkspaceSession({
       {openFile.serverChanged && (
         <div
           role="alert"
-          className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          className="mt-2 rounded-lg px-3 py-2 text-sm wb-banner-warn"
         >
           <p>
             {displayName} was changed elsewhere while you were editing. Your
@@ -773,7 +773,7 @@ export function WorkspaceSession({
                   `Loaded the saved version of ${displayName}.`,
                 )
               }
-              className="inline-flex min-h-10 items-center rounded-lg border border-amber-400 bg-white px-3 font-medium dark:border-amber-700 dark:bg-neutral-900"
+              className="inline-flex min-h-10 items-center rounded-lg px-3 font-medium wb-banner-button"
             >
               Load the saved version
             </button>

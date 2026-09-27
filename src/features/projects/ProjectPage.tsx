@@ -170,7 +170,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           <UserPlus size={15} aria-hidden="true" />
         </button>
       ) : null}
-      {readOnly ? <p className="text-amber-800 dark:text-amber-200">{readOnly}</p> : null}
+      {readOnly ? <p className="text-(--amber)">{readOnly}</p> : null}
       {entry?.archived && canEdit(entry.role) ? (
         <Button variant="outline" size="sm" onClick={() => void unarchive()}>
           Unarchive
