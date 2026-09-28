@@ -3,7 +3,7 @@
  * comments and in a project's members. It is kept in their Auth user
  * metadata (`display_name`), set here from their own session; agents have no
  * way to change it. Without one, the name their sign-in provider gave shows,
- * else their email.
+ * else their email. Below it, Delete account (DeleteAccountDialog.tsx).
  */
 import type { User } from "@supabase/supabase-js"
 import { useId, useState, type FormEvent } from "react"
@@ -14,20 +14,22 @@ import { Banner } from "@/features/design-system"
 import { accountName, DISPLAY_NAME_KEY, NAME_MAX_LENGTH } from "@/features/auth/accountName"
 import { useAuth } from "@/features/auth/useAuth"
 import { createClient } from "@/lib/supabase/client"
+import { DeleteAccountDialog } from "./DeleteAccountDialog"
 
-export function AccountSection() {
+export function AccountSection({ onDeleted }: { onDeleted: () => void }) {
   const account = useAuth()
   if (account.status !== "ready") return null
-  return <YourName key={account.user.id} user={account.user} />
+  return <YourName key={account.user.id} user={account.user} onDeleted={onDeleted} />
 }
 
-function YourName({ user }: { user: User }) {
+function YourName({ user, onDeleted }: { user: User; onDeleted: () => void }) {
   const id = useId()
   const hintId = useId()
   const saved = accountName(user.user_metadata) ?? ""
   const [value, setValue] = useState(saved)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<{ tone: "info" | "danger"; text: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const name = value.replace(/\s+/g, " ").trim()
 
   const save = async (event: FormEvent) => {
@@ -75,6 +77,27 @@ function YourName({ user }: { user: User }) {
         </p>
       </form>
       {notice ? <Banner tone={notice.tone}>{notice.text}</Banner> : null}
+      {user.email ? (
+        <div className="grid gap-2 border-t border-border pt-3">
+          <h4 className="text-[13px] font-medium">Delete account</h4>
+          <p className="text-xs text-muted-foreground">Deletes your account and the projects you own. You see what goes before anything is deleted.</p>
+          <div>
+            <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+              Delete account...
+            </Button>
+          </div>
+          <DeleteAccountDialog
+            open={deleting}
+            onOpenChange={setDeleting}
+            userId={user.id}
+            email={user.email}
+            onDeleted={() => {
+              setDeleting(false)
+              onDeleted()
+            }}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }

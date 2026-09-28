@@ -269,3 +269,15 @@ class IndexedTransaction implements StorageTransaction {
     await request(this.store("folders").delete([this.partition, projectId, path]))
   }
 }
+
+/**
+ * Delete every project an account has on this device, with its files,
+ * folders and drafts, in one transaction; other accounts' projects stay.
+ * For an account that was deleted.
+ */
+export async function deleteAccountProjects(db: ProjectDatabase, partition: string): Promise<void> {
+  const projects = await db.listProjects(partition)
+  await db.transaction(partition, "readwrite", async (tx) => {
+    for (const project of projects) await tx.deleteProject(project.id)
+  })
+}

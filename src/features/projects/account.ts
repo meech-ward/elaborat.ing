@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react"
 import { readOfflineAccount, useAuth } from "@/features/auth"
 import { parseConfig } from "@/lib/config"
 import { createClient } from "@/lib/supabase/client"
-import { IndexedProjectDatabase } from "@/features/project-storage/database"
+import { deleteAccountProjects, IndexedProjectDatabase } from "@/features/project-storage/database"
 import { ProjectFileStore } from "@/features/project-storage/fileStore"
 import { ProjectLibrary, offlineRemote, type LibraryState } from "@/features/project-storage/library"
 import { LOCAL_PARTITION, ensureLocalProject, moveLocalProject } from "@/features/project-storage/localProject"
@@ -53,6 +53,26 @@ export function libraryFor(account: ProjectAccount): ProjectLibrary {
     libraries.set(key, library)
   }
   return library
+}
+
+/**
+ * After an account is deleted: remove its projects, files and drafts from
+ * this device, and the view settings kept for them (their keys hold the
+ * account's id). Other accounts' projects and the local project stay.
+ */
+export async function forgetAccountOnDevice(userId: string): Promise<void> {
+  const partition = partitionKey(parseConfig(import.meta.env).supabaseUrl, userId)
+  for (const key of [...libraries.keys()]) if (key.startsWith(`${partition}\n`)) libraries.delete(key)
+  database ??= new IndexedProjectDatabase()
+  await deleteAccountProjects(database, partition)
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index)
+      if (key?.includes(userId)) localStorage.removeItem(key)
+    }
+  } catch {
+    // Storage may be blocked; view settings hold no content.
+  }
 }
 
 /** Make sure the local project is on this device, for someone without an account. */

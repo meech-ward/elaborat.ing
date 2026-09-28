@@ -49,13 +49,25 @@ export function registerBeforeSignOut(guard: BeforeSignOut): () => void {
 }
 
 /** Sign out after every guard has run. Rejects, without signing out, when a guard refuses. */
-export async function signOut(): Promise<void> {
+export function signOut(): Promise<void> {
+  return signOutAfter(async () => {})
+}
+
+/**
+ * Run `work`, then sign out, as one step: every guard runs first, as for any
+ * sign-out, unless `ignoreGuards` (the person chose to discard what a guard
+ * kept them from losing). Rejects, without signing out, when a guard refuses
+ * or `work` fails. Deleting an account uses it.
+ */
+export async function signOutAfter(work: () => Promise<void>, { ignoreGuards = false } = {}): Promise<void> {
   const current = authController()
   if (!current) return
-  await withSignOutGuards(guards, async () => {
+  const finish = async () => {
+    await work()
     forgetOfflineAccount()
     await current.signOut()
-  })
+  }
+  await withSignOutGuards(ignoreGuards ? [] : guards, finish)
 }
 
 /** Load the session again, for a "Try again" after the sign-in service was unreachable. */

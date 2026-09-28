@@ -20,7 +20,8 @@ select function_privs_are('public', 'count_tool_call', array[]::text[], 'anon', 
 
 select results_eq(
   $$select name, max_count, window_length from private.limits() order by name$$,
-  $$values ('comment_writes_per_minute', 120, interval '1 minute'), ('invitations_per_day', 50, interval '1 day'),
+  $$values ('account_deletions_per_day', 5, interval '1 day'),
+      ('comment_writes_per_minute', 120, interval '1 minute'), ('invitations_per_day', 50, interval '1 day'),
       ('projects', 1000, null::interval), ('projects_per_day', 100, interval '1 day'),
       ('saves_per_minute', 300, interval '1 minute'), ('searches_per_minute', 120, interval '1 minute'),
       ('tool_calls_per_minute', 300, interval '1 minute')$$,

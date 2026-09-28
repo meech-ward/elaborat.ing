@@ -450,6 +450,10 @@ verify_jwt = true
 [functions.share]
 verify_jwt = true
 
+# Called by the app for a signed-in person, to delete their own account.
+[functions.delete-account]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

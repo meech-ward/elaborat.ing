@@ -5,8 +5,8 @@ between devices, search, sharing, and agents (Claude, ChatGPT or any MCP
 client) working on your projects.
 
 The app is a static site. Everything else is Supabase: Auth, Postgres with
-row-level security, Realtime and four Edge Functions (`mcp-server`, `embed`,
-`search`, `share`). There is no other server. [Architecture](architecture.md)
+row-level security, Realtime and five Edge Functions (`mcp-server`, `embed`,
+`search`, `share`, `delete-account`). There is no other server. [Architecture](architecture.md)
 explains the design; this page is the steps.
 
 Placeholders used below:

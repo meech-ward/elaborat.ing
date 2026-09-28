@@ -74,6 +74,8 @@ export type FakeSupabase = {
   passkeys: FakePasskey[]
   /** While true, every request fails as if the network were down. */
   offline: boolean
+  /** Set once the `delete-account` function has deleted the person's account. */
+  accountDeleted: boolean
   /** Push a change signal for a project over Realtime. */
   signal(projectId: string, revision: number): void
 }
@@ -97,6 +99,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     refused: [],
     passkeys: [],
     offline: false,
+    accountDeleted: false,
     signal(projectId, revision) {
       for (const socket of sockets) {
         socket.send(JSON.stringify([null, null, `realtime:project:${projectId}`, "broadcast", { type: "broadcast", event: "changed", payload: { revision } }]))
@@ -245,6 +248,20 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "unarchive_project") return answer(route, () => remote.unarchiveProject(body.project_id))
       if (rpc === "delete_project") return answer(route, async () => (await remote.deleteProject(body.project_id), { id: body.project_id, deleted: true }))
       if (rpc === "list_members") return answer(route, () => remote.listMembers(body.project_id))
+      if (rpc === "account_deletion_summary") {
+        const owned = [...server.projects.values()].filter((project) => project.owner === person.id)
+        return json(route, {
+          owned: owned
+            .sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()))
+            .map((project) => ({
+              id: project.id,
+              title: project.title,
+              archived: project.archivedAt !== null,
+              members: [...project.members.values()].filter((member) => member.acceptedAt).length,
+            })),
+          shared: [...server.projects.values()].filter((project) => project.members.get(person.id)?.acceptedAt).length,
+        })
+      }
       if (FakeComments.handles(rpc)) return answer(route, async () => fake.comments.call(person.id, rpc, body))
       if (rpc === "share_project") {
         return answer(route, async () => (
@@ -265,6 +282,22 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
         if (error.kind === "network") return route.abort("internetdisconnected")
         return json(route, { error: error.message }, error.kind === "access" || error.kind === "account-limit" ? errorStatus[error.kind] : 400)
       }
+    }
+
+    // The delete-account Edge Function: with the person's email typed to
+    // confirm, their projects go, they leave the rest, and the account goes.
+    if (path === "/functions/v1/delete-account") {
+      const { email } = request.postDataJSON() ?? {}
+      if (String(email).trim().toLowerCase() !== person.email) return json(route, { error: "That is not the email of this account" }, 400)
+      let projects = 0
+      for (const project of [...server.projects.values()]) {
+        if (project.owner === person.id) {
+          server.projects.delete(project.id)
+          projects++
+        } else project.members.delete(person.id)
+      }
+      fake.accountDeleted = true
+      return json(route, { deleted: true, projects })
     }
 
     // The search Edge Function: a passage for each file, in the projects the

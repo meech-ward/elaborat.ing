@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { useAppearance } from "@/features/appearance"
 import { readingPreferencesSchema } from "@/features/appearance/reading"
 import { useAuth } from "@/features/auth/useAuth"
-import { ColorModeToggle, PaletteSelect } from "@/features/design-system"
+import { Banner, ColorModeToggle, PaletteSelect } from "@/features/design-system"
 import { AccountSection } from "./AccountSection"
 import { PasskeysSection } from "./PasskeysSection"
 
@@ -28,7 +28,12 @@ export function useOpenSettings(): () => void {
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
-  const openSettings = useCallback(() => setOpen(true), [])
+  // Set once the account is deleted, which signs out: Settings says so until it closes.
+  const [deleted, setDeleted] = useState(false)
+  const openSettings = useCallback(() => {
+    setDeleted(false)
+    setOpen(true)
+  }, [])
   return (
     <SettingsContext.Provider value={openSettings}>
       {children}
@@ -38,9 +43,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             <DialogTitle>Settings</DialogTitle>
             <SettingsDescription />
           </DialogHeader>
+          {deleted ? <Banner tone="info">Your account was deleted, and you are signed out.</Banner> : null}
           <AppearanceSection />
           <ReadingSection />
-          <AccountSection />
+          <AccountSection onDeleted={() => setDeleted(true)} />
           <PasskeysSection />
         </DialogContent>
       </Dialog>

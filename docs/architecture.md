@@ -13,7 +13,7 @@ browser: static Vite + React SPA on Cloudflare Workers (static assets)
   ├─ Postgres + RLS ....... projects, files, versions, members, comments, search
   ├─ Realtime ............. "something changed" signals, then authoritative re-reads
   └─ Edge Functions ....... mcp (agents), embed (search indexing), search (query embedding),
-                            share (invite by email)
+                            share (invite by email), delete-account
 
 MCP clients (Claude, ChatGPT, ...) ── OAuth ──> mcp Edge Function ──> same database functions, as the user
 
@@ -446,6 +446,26 @@ device remembers the last account signed in, so its projects can open offline;
 this marker selects local data only and is never a credential. Someone signed
 in stays signed in while the Auth server cannot be reached.
 
+**Decision: a person deletes their own account with one Edge Function.**
+Settings > Account first shows what happens, from `account_deletion_summary`
+(read as the person): the projects they own, each with how many people have
+accepted it, and how many shared projects they would leave. They type their
+email to confirm. The `delete-account` function refuses agents' tokens, checks
+the typed email against the account's (read with its service key), then, as
+the person, calls `begin_account_deletion` (which refuses OAuth sessions too
+and counts the daily limit) and `delete_project` for each project they own,
+so those go for everyone through the same path as the project page. Only then
+does it delete the account with Auth's admin API, which ends its sessions and
+agent connections; the foreign keys remove its memberships and counters and
+leave its comments, file versions and threads with no author ("Deleted
+account"). A failure part way keeps the account, and trying again carries on.
+There is no way to hand a project to someone else yet: the page says so, and
+points to Download project for keeping a copy.
+The app runs the sign-out guards first (a refusal offers "Delete anyway"),
+then removes this device's copies of the account's projects and drafts, and
+signs out. `supabase/schemas/account_deletion.sql`,
+`supabase/functions/delete-account/`, `src/features/settings/`.
+
 **Decision: without an account, one local project.** "Start writing" opens a
 project kept in its own partition (`local`) of the same on-device store, at a
 fixed id, that never syncs; what needs an account is shown locked. After
@@ -488,6 +508,7 @@ files panel's search shows it; the MCP server returns it to the agent as is.
 | Agent tool calls | 300 a minute | the MCP server calls `count_tool_call()` before every tool runs |
 | Invitations by email | 50 a day | `prepare_email_invitation`, which the `share` function calls for every invitation, for the owner |
 | Comment changes | 120 a minute | every comment write: new threads, replies, edits, resolves, reopens and deletes (retries included) |
+| Account deletion attempts | 5 a day | `begin_account_deletion`, which the `delete-account` function calls once the typed email matches |
 
 Limits that were there already, kept as they are:
 
