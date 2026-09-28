@@ -1,7 +1,7 @@
 import 'jsr:@supabase/functions-js@2.108.2/edge-runtime.d.ts'
 
 import { withSupabase } from 'npm:@supabase/server@1.6.0'
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
+import { isAuthSessionMissingError, type SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { handleDeleteAccount } from './handler.ts'
 
@@ -25,6 +25,14 @@ const deleteAccount = withSupabase({ auth: 'user' }, async (req, ctx) => {
     { id: ctx.userClaims!.id, clientId: typeof clientId === 'string' && clientId !== '' ? clientId : null },
     await req.json().catch(() => null),
     {
+      // Auth's own check of the token: a session that has ended is reported
+      // as a missing session, or refused with 401 or 403.
+      checkSession: async () => {
+        const { error } = await db.auth.getUser()
+        if (!error) return 'live'
+        if (isAuthSessionMissingError(error) || error.status === 401 || error.status === 403) return 'ended'
+        return { error }
+      },
       readAccount: async (userId) => {
         const { data, error } = await admin.auth.admin.getUserById(userId)
         if (error?.status === 404) return { data: null, error: null }

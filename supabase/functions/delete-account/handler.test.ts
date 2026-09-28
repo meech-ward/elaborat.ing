@@ -10,6 +10,7 @@ const body = { email: '  Person@Example.com ' }
 
 /** A fake database and Auth: the person owns Team and Solo; `limit` more attempts are allowed today. */
 function fake({
+  session = 'live' as 'live' | 'ended' | 'unreachable',
   limit = 5,
   email = 'person@example.com' as string | null,
   exists = true,
@@ -19,6 +20,10 @@ function fake({
   const calls: Array<[string, unknown?]> = []
   let attempts = 0
   const deps: DeleteAccountDeps = {
+    checkSession: async () => {
+      calls.push(['checkSession'])
+      return session === 'unreachable' ? { error: { message: 'fetch failed', status: 0 } } : session
+    },
     readAccount: async (userId) => {
       calls.push(['readAccount', userId])
       return { data: exists ? { email } : null, error: null }
@@ -63,7 +68,7 @@ Deno.test('an email that is not the account\'s deletes nothing and counts nothin
   const response = await handleDeleteAccount(person, { email: 'someone@example.com' }, deps)
   assertEquals(response.status, 400)
   assertEquals(await response.json(), { error: 'That is not the email of this account' })
-  assertEquals(calls, [['readAccount', PERSON]])
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession']])
 })
 
 Deno.test('an account without an email cannot confirm', async () => {
@@ -71,7 +76,23 @@ Deno.test('an account without an email cannot confirm', async () => {
   const response = await handleDeleteAccount(person, body, deps)
   assertEquals(response.status, 400)
   assertEquals(await response.json(), { error: 'This account has no email to confirm with' })
-  assertEquals(calls, [['readAccount', PERSON]])
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession']])
+})
+
+Deno.test('a token from a session that has signed out deletes nothing and counts nothing', async () => {
+  const { deps, calls } = fake({ session: 'ended' })
+  const response = await handleDeleteAccount(person, body, deps)
+  assertEquals(response.status, 401)
+  assertEquals(await response.json(), { error: 'You are signed out. Sign in again to delete your account.' })
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession']])
+})
+
+Deno.test('when the session cannot be checked, nothing is deleted', async () => {
+  const { deps, calls } = fake({ session: 'unreachable' })
+  const response = await handleDeleteAccount(person, body, deps)
+  assertEquals(response.status, 502)
+  assertEquals(await response.json(), { error: 'Your account could not be checked. Nothing was changed. Try again.' })
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession']])
 })
 
 Deno.test('the owned projects are deleted as the caller, then the account', async () => {
@@ -79,7 +100,7 @@ Deno.test('the owned projects are deleted as the caller, then the account', asyn
   const response = await handleDeleteAccount(person, body, deps)
   assertEquals(response.status, 200)
   assertEquals(await response.json(), { deleted: true, projects: 2 })
-  assertEquals(calls, [['readAccount', PERSON], ['begin'], ['deleteProject', SOLO], ['deleteProject', TEAM], ['deleteUser', PERSON]])
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession'], ['begin'], ['deleteProject', SOLO], ['deleteProject', TEAM], ['deleteUser', PERSON]])
 })
 
 Deno.test('over the daily limit, nothing is deleted and the message says when to try again', async () => {
@@ -87,7 +108,7 @@ Deno.test('over the daily limit, nothing is deleted and the message says when to
   const response = await handleDeleteAccount(person, body, deps)
   assertEquals(response.status, 429)
   assertEquals(await response.json(), { error: 'You have reached the limit of 5 account deletion attempts a day. Try again in 5 hours.' })
-  assertEquals(calls, [['readAccount', PERSON], ['begin']])
+  assertEquals(calls, [['readAccount', PERSON], ['checkSession'], ['begin']])
 })
 
 Deno.test('the database refusing an agent is passed on as 403', async () => {

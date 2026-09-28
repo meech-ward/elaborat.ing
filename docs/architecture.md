@@ -450,8 +450,10 @@ in stays signed in while the Auth server cannot be reached.
 Settings > Account first shows what happens, from `account_deletion_summary`
 (read as the person): the projects they own, each with how many people have
 accepted it, and how many shared projects they would leave. They type their
-email to confirm. The `delete-account` function refuses agents' tokens, checks
-the typed email against the account's (read with its service key), then, as
+email to confirm. The `delete-account` function refuses agents' tokens and
+tokens from a session that has signed out (it asks Auth whether the session
+is still live), checks the typed email against the account's (read with its
+service key), then, as
 the person, calls `begin_account_deletion` (which refuses OAuth sessions too
 and counts the daily limit) and `delete_project` for each project they own,
 so those go for everyone through the same path as the project page. Only then

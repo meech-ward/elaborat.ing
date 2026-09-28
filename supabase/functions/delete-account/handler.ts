@@ -2,7 +2,9 @@ import { z } from 'npm:zod@4.4.3'
 
 // Delete the caller's own account, for a signed-in person who has typed their
 // email to confirm. Only people delete accounts: a token issued to an OAuth
-// client (an agent) is refused, and so is it in the database.
+// client (an agent) is refused, and so is it in the database. Deleting also
+// needs a live session: a token from a session that has signed out is
+// refused, even before it expires.
 //
 // Everything that can run as the caller does: `begin_account_deletion`
 // refuses agents, counts the daily limit and lists the projects the caller
@@ -31,6 +33,8 @@ export const Summary = z.object({
 })
 
 export type DeleteAccountDeps = {
+  /** Whether the caller's session is still live, asked of Auth with the caller's token; an error when Auth could not say. */
+  checkSession: () => Promise<'live' | 'ended' | { error: { message: string; status?: number } }>
   /** The account's email, with the service role; data null when the account no longer exists. */
   readAccount: (userId: string) => Promise<{ data: { email: string | null } | null; error: { message: string } | null }>
   /** public.begin_account_deletion, as the caller. */
@@ -70,6 +74,13 @@ export async function handleDeleteAccount(caller: Caller, body: unknown, deps: D
   }
   // Already deleted, by an earlier attempt whose answer was lost.
   if (!account.data) return Response.json({ deleted: true, projects: 0 })
+
+  const session = await deps.checkSession()
+  if (session === 'ended') return refuse(401, 'You are signed out. Sign in again to delete your account.')
+  if (session !== 'live') {
+    console.error('delete-account: session check failed', session.error.status, session.error.message)
+    return refuse(502, 'Your account could not be checked. Nothing was changed. Try again.')
+  }
   if (!account.data.email) return refuse(400, 'This account has no email to confirm with')
   if (normal(request.data.email) !== normal(account.data.email)) {
     return refuse(400, 'That is not the email of this account')
