@@ -33,7 +33,8 @@ export function Counter(props: { initial?: number; step?: number }): ReactNode {
 
 /**
  * A callout as the app's library draws one (Callout in the design system):
- * the tone's soft fill with its own text colour, radius 10, padding 12 by
+ * the tone's soft fill with its own text colour (its paragraphs too, not the
+ * note's body colour), radius 10, padding 12 by
  * 14, 15px at 1.55, the tone's icon first (not on a phone). Info is the
  * accentSoft note; warn and error take the warning and danger colours.
  */
@@ -62,7 +63,7 @@ export function Callout(props: {
             {props.title}
           </p>
         ) : null}
-        <div className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p+_p]:mt-3">
+        <div className="[&_:is(p,li)]:text-inherit [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p+_p]:mt-3">
           {props.children}
         </div>
       </div>

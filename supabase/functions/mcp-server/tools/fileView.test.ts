@@ -292,6 +292,33 @@ Deno.test('a Callout written as one block becomes a callout around its Markdown;
   assertEquals(embeds, [{ kind: 'drawing', path: 'art/in.excalidraw' }])
 })
 
+Deno.test('a Callout with blank lines inside, or a tone in braces, is a callout too', () => {
+  const { html } = renderNote(
+    [
+      '<Callout tone="warn">',
+      '  First paragraph.',
+      '',
+      '  Second paragraph.',
+      '</Callout>',
+      '',
+      'After.',
+      '',
+      '<Callout tone={"error"} title={\'Stop\'}>Braced props.</Callout>',
+      '',
+      '<Callout tone="note">',
+      '  Never closed.',
+      '',
+      'Still text.',
+    ].join('\n')
+  )
+  const flat = html.replace(/\n/g, '')
+  assertStringIncludes(flat, '<aside class="callout" data-tone="warn"><p>First paragraph.</p><p>Second paragraph.</p></aside><p>After.</p>')
+  assertStringIncludes(flat, '<aside class="callout" data-tone="error"><p class="callout-title">Stop</p><p>Braced props.</p></aside>')
+  assertStringIncludes(html, '&#x3C;Callout tone="note">')
+  assertStringIncludes(html, '<p>Still text.</p>')
+  assertFalse(html.includes('&#x3C;/Callout>'), html)
+})
+
 Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it cannot', async () => {
   const note = [
     '# Plan',

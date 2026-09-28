@@ -99,7 +99,7 @@ export function TreeScroller({ children }: { children: ReactNode }) {
 
 /**
  * New file (a menu: note, drawing or diagram) and New folder, side by side.
- * On a phone they are the 40 high text buttons.
+ * On a phone they are the 40 high text buttons, New folder without a fill.
  */
 export function NewButtons({
   size,
@@ -126,7 +126,7 @@ export function NewButtons({
           </Button>
         }
       />
-      <Button variant="secondary" size={touch ? "touch" : "sm"} className={cn(!touch && "rounded-tool")} onClick={onNewFolder}>
+      <Button variant={touch ? "ghost" : "secondary"} size={touch ? "touch" : "sm"} className={cn(touch ? "text-foreground" : "rounded-tool")} onClick={onNewFolder}>
         {!touch && <FolderPlus aria-hidden="true" />}
         New folder
       </Button>

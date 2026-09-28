@@ -213,7 +213,7 @@ function PhoneFiles() {
         <SearchField size="touch" placeholder="Search" aria-label="Search notes, drawings and diagrams" className="mb-2" />
         <div className="mb-2 grid grid-cols-2 gap-2">
           <Button size="touch">New file</Button>
-          <Button variant="secondary" size="touch">
+          <Button variant="ghost" size="touch" className="text-foreground">
             New folder
           </Button>
         </div>

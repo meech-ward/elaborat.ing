@@ -185,8 +185,20 @@ export function SourceEditor(props: SourceEditorProps) {
     const disposables: monaco.IDisposable[] = ["mdx", "d2"].map((language) =>
       monaco.languages.registerCompletionItemProvider(language, {
         triggerCharacters: ["<", " ", '"', "'", ":", ".", ">"],
-        provideCompletionItems(completionModel, position) {
+        provideCompletionItems(completionModel, position, context) {
           if (completionModel !== model || !live.current.visible)
+            return { suggestions: [] };
+          // A space opens suggestions inside a tag or after a key, not at
+          // the start of a line (an indent, or a space on an empty line).
+          if (
+            context.triggerKind ===
+              monaco.languages.CompletionTriggerKind.TriggerCharacter &&
+            context.triggerCharacter === " " &&
+            model
+              .getLineContent(position.lineNumber)
+              .slice(0, position.column - 1)
+              .trim() === ""
+          )
             return { suggestions: [] };
           const suggestions = completeSource({
             text: model.getValue(),

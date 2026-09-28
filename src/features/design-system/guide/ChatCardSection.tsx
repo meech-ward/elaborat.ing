@@ -1,5 +1,8 @@
+import type { CSSProperties } from "react"
 import { CARD_TEXT, CardView, EditorFrame, EmbedFigure, type CardFile, type CardState } from "@/chat-card"
-import { SAMPLE_DRAWING_SVG, SAMPLE_NOTE_HTML } from "./chatCardSamples"
+import { getPaletteColors, useAppearance } from "@/features/appearance"
+import { beforeDarkFilter } from "@/features/drawings"
+import { SAMPLE_DIAGRAM_SVG, SAMPLE_NOTE_HTML } from "./chatCardSamples"
 import { GuideLabel, GuideValue } from "./parts"
 
 // The chat card (the view of show_file in Claude and ChatGPT) in its states,
@@ -14,8 +17,8 @@ const NOTE: CardFile = {
   version: 5,
   url: `${PROJECT}/docs/customer-model.mdx`,
   truncated: false,
-  embeds: [{ kind: "drawing", path: "art/flow.excalidraw", url: `${PROJECT}/art/flow.excalidraw`, status: "drawn" }],
-  svgs: { "art/flow.excalidraw": SAMPLE_DRAWING_SVG },
+  embeds: [{ kind: "diagram", path: "flows/signup.d2", url: `${PROJECT}/flows/signup.d2`, status: "drawn" }],
+  svgs: { "flows/signup.d2": SAMPLE_DIAGRAM_SVG },
   html: SAMPLE_NOTE_HTML,
   source: "# Customer model\n",
 }
@@ -27,7 +30,6 @@ const DIAGRAM: CardFile = {
   version: 3,
   url: `${PROJECT}/flows/signup.d2`,
   embeds: [{ kind: "diagram", path: "flows/signup.d2", url: `${PROJECT}/flows/signup.d2`, status: "stale" }],
-  svgs: { "flows/signup.d2": SAMPLE_DRAWING_SVG },
   html: null,
   source: null,
 }
@@ -43,13 +45,19 @@ const shown = (file: CardFile, rest: Partial<Extract<CardState, { phase: "shown"
   ...rest,
 })
 
-/** A picture of the editor on the note: the rendered editor's text, with the embed as an island it cannot change. */
+/**
+ * A picture of the editor on the note: the rendered editor's text, with the
+ * callout and the embed as islands it cannot change (the callout as written).
+ */
 function EditingSample() {
   return (
     <EditorFrame>
       <div className="ProseMirror">
         <h1>Customer model</h1>
         <p>How a customer moves from sign-up to their first project, and where agents help today.</p>
+        <div data-fluid-object="">
+          <pre className="island-source">{'<Callout tone="note">\n  Agents act as the signed-in person in every project they can open.\n</Callout>'}</pre>
+        </div>
         <ol>
           <li>Sign up with an email link.</li>
           <li>Create a project.</li>
@@ -74,14 +82,26 @@ const SPECIMENS = [
   { label: "Diagram, out of date", state: shown(DIAGRAM) },
 ]
 
+/**
+ * The diagram fills the card's build sets from the palette (card.css), here
+ * from the one the guide shows: in dark, ahead of the drawings' dark filter.
+ */
+function useDiagramFills(): CSSProperties {
+  const { appearance } = useAppearance()
+  const palette = getPaletteColors(appearance)
+  const shown = appearance.scheme === "dark" ? beforeDarkFilter : (color: string) => color
+  return { "--card-d2-fill": shown(palette.d2Fill), "--card-d2-fill2": shown(palette.d2Fill2) } as CSSProperties
+}
+
 export function ChatCardSection() {
+  const fills = useDiagramFills()
   return (
     <>
       <GuideValue className="-mt-3.5">
         The card Claude and ChatGPT show for show_file, from the same components: the note in the rendered note&apos;s type, embeds in the
         embed box, banners, buttons and the save status.
       </GuideValue>
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-2" style={fills}>
         {SPECIMENS.map(({ label, state, editor }) => (
           <div key={label} className="flex min-w-0 flex-col gap-2">
             <GuideLabel>{label}</GuideLabel>

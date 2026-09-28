@@ -112,7 +112,7 @@ function drawOne(path: string, files: Map<string, string>, budget: number): { st
   } catch {
     return { status: 'unreadable' }
   }
-  const drawn = drawingSvg(elements, Math.min(MAX_SVG_CHARS, budget))
+  const drawn = drawingSvg(elements, Math.min(MAX_SVG_CHARS, budget), { diagram: kind === 'diagram' })
   if (!('svg' in drawn)) return { status: drawn.problem }
   return { status: kind === 'diagram' && drawnFromOtherSource(path, files) ? 'stale' : 'drawn', svg: drawn.svg }
 }

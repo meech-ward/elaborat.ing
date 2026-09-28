@@ -11,7 +11,10 @@ export { parseDrawing } from '../../_shared/drawing.ts'
 // keep their hand-drawn look. Text names Excalifont, which the view carries
 // for Latin text, then the reader's system fonts. Images and frames are not
 // drawn: an image shows as a dashed box, a frame's contents are drawn without
-// its outline.
+// its outline. In a diagram, a shape the generator left without a fill (as
+// the app saves it, src/features/structured/emitter.ts) is filled as the app
+// shows it: the fill carries a class, `d2-fill` (`d2-fill2` inside a
+// container), that the view paints in its palette's diagram colour.
 // The options mirror Excalidraw 0.18's renderer (element/src/shape.ts).
 
 type Element = Record<string, unknown>
@@ -30,6 +33,21 @@ export const MAX_SVG_CHARS = 200_000
 
 const INK = '#1e1e1e'
 const PADDING = 10
+
+/** A shape the D2 generator made (src/features/structured/merge.ts). */
+const GENERATED = /^d2:/
+/** Shapes the app fills (src/features/structured/presentation.ts). */
+const FILLED = new Set(['rectangle', 'ellipse', 'diamond'])
+/** The default palette's diagram fills, until the view paints its own. */
+const DIAGRAM_FILL = { 'd2-fill': '#dcf5e8', 'd2-fill2': '#edf0ee' } as const
+type FillClass = keyof typeof DIAGRAM_FILL
+
+/** The class for a generated diagram shape's fill, or null when it keeps its own. */
+function diagramFill(element: Element): FillClass | null {
+  if (!FILLED.has(String(element.type)) || !GENERATED.test(String(element.id ?? ''))) return null
+  if (element.backgroundColor !== 'transparent') return null
+  return element.frameId ? 'd2-fill2' : 'd2-fill'
+}
 
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
 const fmt = (value: number): string => String(Math.round(value * 100) / 100)
@@ -79,7 +97,7 @@ function adjustRoughness(element: Element, width: number, height: number, linear
 
 const FILL_STYLES = new Set(['hachure', 'cross-hatch', 'solid', 'zigzag', 'dots', 'dashed', 'zigzag-line'])
 
-function roughOptions(element: Element, width: number, height: number, linear: boolean): Options {
+function roughOptions(element: Element, width: number, height: number, linear: boolean, fillClass: FillClass | null = null): Options {
   const strokeWidth = num(element.strokeWidth, 2)
   const style = element.strokeStyle
   const solid = style !== 'dashed' && style !== 'dotted'
@@ -94,13 +112,14 @@ function roughOptions(element: Element, width: number, height: number, linear: b
     roughness,
     stroke: ink(element),
     preserveVertices: roughness < 2,
-    fill: color(element.backgroundColor) ?? undefined,
+    fill: fillClass ? DIAGRAM_FILL[fillClass] : (color(element.backgroundColor) ?? undefined),
     fillStyle: FILL_STYLES.has(String(element.fillStyle)) ? String(element.fillStyle) : 'hachure',
   }
 }
 
-function drawableSvg(drawable: Drawable): string {
+function drawableSvg(drawable: Drawable, fillClass: FillClass | null = null): string {
   const options = drawable.options
+  const marked = fillClass ? ` class="${fillClass}"` : ''
   return drawable.sets
     .map((set: OpSet) => {
       const d = generator.opsToPath(set, 1)
@@ -110,10 +129,10 @@ function drawableSvg(drawable: Drawable): string {
       }
       if (set.type === 'fillPath') {
         const rule = drawable.shape === 'curve' || drawable.shape === 'polygon' ? ' fill-rule="evenodd"' : ''
-        return `<path d="${d}" stroke="none" fill="${escapeAttr(options.fill ?? 'none')}"${rule}/>`
+        return `<path d="${d}" stroke="none" fill="${escapeAttr(options.fill ?? 'none')}"${rule}${marked}/>`
       }
       const weight = options.fillWeight < 0 ? options.strokeWidth / 2 : options.fillWeight
-      return `<path d="${d}" stroke="${escapeAttr(options.fill ?? 'none')}" stroke-width="${fmt(weight)}" fill="none"/>`
+      return `<path d="${d}" stroke="${escapeAttr(options.fill ?? 'none')}" stroke-width="${fmt(weight)}" fill="none"${fillClass ? ` class="${fillClass}-sketch"` : ''}/>`
     })
     .join('')
 }
@@ -226,32 +245,33 @@ function textSvg(element: Element, width: number, height: number, onArrow: boole
 }
 
 /** One element's SVG in its own coordinates, and its box there. */
-function elementSvg(element: Element, types: Map<unknown, unknown>): { body: string; box: [number, number, number, number] } | null {
+function elementSvg(element: Element, types: Map<unknown, unknown>, diagram: boolean): { body: string; box: [number, number, number, number] } | null {
   const width = Math.abs(num(element.width))
   const height = Math.abs(num(element.height))
   const box: [number, number, number, number] = [0, 0, width, height]
+  const fillClass = diagram ? diagramFill(element) : null
   switch (element.type) {
     case 'rectangle':
     case 'embeddable':
     case 'iframe': {
-      const options = roughOptions(element, width, height, false)
-      if (!element.roundness) return { body: drawableSvg(generator.rectangle(0, 0, width, height, options)), box }
+      const options = roughOptions(element, width, height, false, fillClass)
+      if (!element.roundness) return { body: drawableSvg(generator.rectangle(0, 0, width, height, options), fillClass), box }
       const r = cornerRadius(Math.min(width, height), element)
       const d = `M ${r} 0 L ${width - r} 0 Q ${width} 0, ${width} ${r} L ${width} ${height - r} Q ${width} ${height}, ${width - r} ${height} L ${r} ${height} Q 0 ${height}, 0 ${height - r} L 0 ${r} Q 0 0, ${r} 0`
-      return { body: drawableSvg(generator.path(d, options)), box }
+      return { body: drawableSvg(generator.path(d, options), fillClass), box }
     }
     case 'diamond': {
-      const options = roughOptions(element, width, height, false)
+      const options = roughOptions(element, width, height, false, fillClass)
       const [tx, ty, rx, ry, bx, by, lx, ly] = [Math.floor(width / 2) + 1, 0, width, Math.floor(height / 2) + 1, Math.floor(width / 2) + 1, height, 0, Math.floor(height / 2) + 1]
-      if (!element.roundness) return { body: drawableSvg(generator.polygon([[tx, ty], [rx, ry], [bx, by], [lx, ly]], options)), box }
+      if (!element.roundness) return { body: drawableSvg(generator.polygon([[tx, ty], [rx, ry], [bx, by], [lx, ly]], options), fillClass), box }
       const v = cornerRadius(Math.abs(tx - lx), element)
       const h = cornerRadius(Math.abs(ry - ty), element)
       const d = `M ${tx + v} ${ty + h} L ${rx - v} ${ry - h} C ${rx} ${ry}, ${rx} ${ry}, ${rx - v} ${ry + h} L ${bx + v} ${by - h} C ${bx} ${by}, ${bx} ${by}, ${bx - v} ${by - h} L ${lx + v} ${ly + h} C ${lx} ${ly}, ${lx} ${ly}, ${lx + v} ${ly - h} L ${tx - v} ${ty + h} C ${tx} ${ty}, ${tx} ${ty}, ${tx + v} ${ty + h}`
-      return { body: drawableSvg(generator.path(d, options)), box }
+      return { body: drawableSvg(generator.path(d, options), fillClass), box }
     }
     case 'ellipse': {
-      const options = { ...roughOptions(element, width, height, false), curveFitting: 1 }
-      return { body: drawableSvg(generator.ellipse(width / 2, height / 2, width, height, options)), box }
+      const options = { ...roughOptions(element, width, height, false, fillClass), curveFitting: 1 }
+      return { body: drawableSvg(generator.ellipse(width / 2, height / 2, width, height, options), fillClass), box }
     }
     case 'line':
     case 'arrow': {
@@ -270,7 +290,7 @@ function elementSvg(element: Element, types: Map<unknown, unknown>): { body: str
       else if (element.roundness) body = generator.curve(pts, options)
       else body = loop && options.fill ? generator.polygon(pts, options) : generator.linearPath(pts, options)
       const heads = element.type === 'arrow' ? [...arrowhead(element, body, pts, 'start', options), ...arrowhead(element, body, pts, 'end', options)] : []
-      return { body: [body, ...heads].map(drawableSvg).join(''), box: lineBox }
+      return { body: [body, ...heads].map((drawable) => drawableSvg(drawable)).join(''), box: lineBox }
     }
     case 'freedraw': {
       const pts = points(element)
@@ -295,15 +315,18 @@ function elementSvg(element: Element, types: Map<unknown, unknown>): { body: str
 
 export type DrawingSvg = { svg: string } | { problem: 'empty' | 'too_big' }
 
-/** The scene as one SVG on a transparent background, or why it is not drawn. */
-export function drawingSvg(elements: Element[], maxChars = MAX_SVG_CHARS): DrawingSvg {
+/**
+ * The scene as one SVG on a transparent background, or why it is not drawn.
+ * A diagram's canvas (`diagram`) gets its generated shapes filled.
+ */
+export function drawingSvg(elements: Element[], maxChars = MAX_SVG_CHARS, { diagram = false }: { diagram?: boolean } = {}): DrawingSvg {
   if (elements.length > MAX_ELEMENTS) return { problem: 'too_big' }
   const types = new Map(elements.map((element) => [element.id, element.type]))
   const parts: string[] = []
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity]
   let size = 0
   for (const element of elements) {
-    const drawn = elementSvg(element, types)
+    const drawn = elementSvg(element, types, diagram)
     if (!drawn) continue
     const x = num(element.x)
     const y = num(element.y)

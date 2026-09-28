@@ -17,9 +17,10 @@ import { unified } from 'npm:unified@11.0.5'
 // (src/features/workbench/refs.ts), and its callouts. Each embed becomes an
 // empty `<figure class="embed" data-embed="N">` that the view fills with the
 // drawing, and the note's embeds are listed in the order of N. A
-// `<Callout>` written as one block (no blank line inside), with a plain
-// string tone and title if any, becomes `<aside class="callout"
-// data-tone="info|warn|error">` around its Markdown, as the app renders it
+// `<Callout>` at the start of a block, with a string tone and title if any
+// (`tone="warn"`, or `tone={"warn"}`), becomes `<aside class="callout"
+// data-tone="info|warn|error">` around its Markdown up to its closing tag,
+// blank lines included, as the app renders it
 // (src/features/rendered/components.tsx); the view draws it as a callout.
 
 /** A drawing or diagram a note embeds, by its project-relative path. */
@@ -74,8 +75,13 @@ const textOf = (node: Node): string =>
 /** MDX's import and export lines: code for the app, not part of what the note says. */
 const isModuleSyntax = (node: Node) => node.type === 'paragraph' && /^(import|export)\s/.test(textOf(node))
 
-const CALLOUT = /^<Callout((?:\s+[A-Za-z][\w-]*=(?:"[^"]*"|'[^']*'))*)\s*>([\s\S]*?)<\/Callout>$/
-const ATTRIBUTE = /([A-Za-z][\w-]*)=(?:"([^"]*)"|'([^']*)')/g
+// A string prop: "x", 'x', {"x"} or {'x'}.
+const CALLOUT = /^<Callout((?:\s+[A-Za-z][\w-]*=(?:"[^"]*"|'[^']*'|\{"[^"]*"\}|\{'[^']*'\}))*)\s*>([\s\S]*?)<\/Callout>$/
+const ATTRIBUTE = /([A-Za-z][\w-]*)=(?:"([^"]*)"|'([^']*)'|\{"([^"]*)"\}|\{'([^']*)'\})/g
+/** A block that opens a callout and does not close it: a blank line comes before its closing tag. */
+const OPENS_CALLOUT = /^<Callout[\s>]/
+/** Nodes whose children are blocks, where a callout can span several. */
+const BLOCKS = new Set(['root', 'blockquote', 'listItem'])
 
 /** The text with the indent its lines share taken off, as MDX reads a component's children. */
 function dedent(text: string): string {
@@ -88,7 +94,9 @@ function dedent(text: string): string {
 function calloutNode(raw: string, embeds: EmbedRef[]): Node | null {
   const match = CALLOUT.exec(raw.trim())
   if (!match) return null
-  const attributes = new Map([...match[1].matchAll(ATTRIBUTE)].map((found) => [found[1], decodeLiteral(found[2] ?? found[3] ?? '')]))
+  const attributes = new Map(
+    [...match[1].matchAll(ATTRIBUTE)].map((found) => [found[1], decodeLiteral(found[2] ?? found[3] ?? found[4] ?? found[5] ?? '')])
+  )
   const tone = attributes.get('tone')
   const title = attributes.get('title')
   const body = dedent(match[2])
@@ -111,14 +119,40 @@ function sourceOf(node: Node, source: string): string {
   return start === undefined || end === undefined ? '' : source.slice(start, end)
 }
 
+/**
+ * A callout with a blank line inside, which the parser splits into blocks:
+ * from the one that opens it to the first that ends with its closing tag.
+ * Returns the callout and how many blocks it took, or null.
+ */
+function spannedCallout(children: Node[], at: number, embeds: EmbedRef[], source: string): [Node, number] | null {
+  const opening = children[at]
+  if (opening.type !== 'html' || !OPENS_CALLOUT.test(String(opening.value ?? '')) || String(opening.value).includes('</Callout>')) return null
+  const end = children.findIndex((later, index) => index > at && /<\/Callout>\s*$/.test(sourceOf(later, source)))
+  const from = opening.position?.start.offset
+  const to = children[end]?.position?.end.offset
+  if (end < 0 || from === undefined || to === undefined) return null
+  const callout = calloutNode(source.slice(from, to), embeds)
+  return callout ? [callout, end - at + 1] : null
+}
+
 function transform(node: Node, embeds: EmbedRef[], root: boolean, source: string): void {
   const place = (refs: EmbedRef[]) =>
     refs.map((ref) => {
       embeds.push(ref)
       return embedNode(embeds.length - 1)
     })
-  node.children = node.children?.flatMap((child): Node[] => {
+  let skip = 0
+  node.children = node.children?.flatMap((child, index, children): Node[] => {
+    if (skip > 0) {
+      skip--
+      return []
+    }
     if (root && isModuleSyntax(child)) return []
+    const spanned = BLOCKS.has(node.type) ? spannedCallout(children, index, embeds, source) : null
+    if (spanned) {
+      skip = spanned[1] - 1
+      return [spanned[0]]
+    }
     if (child.type === 'html') {
       const refs = embedsIn(String(child.value ?? ''))
       if (refs) return place(refs)

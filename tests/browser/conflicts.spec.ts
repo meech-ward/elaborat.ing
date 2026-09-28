@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
+import { showView } from "./views.ts"
 
 // A file changed on this device and on the server stops syncing and asks
 // which version to keep. Compare shows what differs first: a diff for text,
@@ -53,8 +54,8 @@ async function openProject(page: Page, files: Record<string, string>, file: stri
   for (const [name, content] of Object.entries(files)) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: name, content }])
   await signedIn(page)
   await page.goto(projectUrl(id, file))
-  // A phone shows no sync status; the file opens once the project is on the device.
-  if (phone) await expect(page.locator(".monaco-editor:visible .view-lines").first()).toContainText("Shared line", { timeout: 15_000 })
+  // A phone shows no sync status; the file opens, rendered, once the project is on the device.
+  if (phone) await expect(page.frameLocator('iframe[title="Isolated document preview"]').getByText("Shared line")).toBeVisible({ timeout: 15_000 })
   else await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
   return { fake, id }
 }
@@ -185,6 +186,8 @@ test.describe("on a phone", () => {
 
   test("the note comparison fits, in one column, and axe finds nothing in it", async ({ page }) => {
     const { fake, id } = await openProject(page, { "a.md": NOTE }, "a.md", true)
+    // A note opens rendered on a phone; the edit goes in its source.
+    await showView(page, "Source")
     await saveMyLine(page, fake)
     await changeOnServer(fake, id, "a.md", `${NOTE}Their line\n`)
     await reconnect(page, fake)

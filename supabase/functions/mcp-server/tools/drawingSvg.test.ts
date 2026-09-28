@@ -104,3 +104,30 @@ Deno.test("an arrow's label hides the arrow behind it; a box's label does not", 
   assertEquals(svg.match(/class="label-bg"/g)?.length, 1)
   assertStringIncludes(svg.split('<g ').at(-1)!, '<rect class="label-bg" x="-3" y="-3" width="46" height="26" rx="4" fill="#ffffff"/>')
 })
+
+Deno.test("a diagram's generated shapes are filled for the view to colour; an author's fill and a drawing's shapes are not", () => {
+  const elements = parseDrawing(JSON.stringify({
+    type: 'excalidraw',
+    version: 2,
+    elements: [
+      { ...base, id: 'd2:shape:user', type: 'rectangle', x: 0, y: 0, width: 120, height: 60 },
+      { ...base, id: 'd2:shape:db', type: 'ellipse', x: 200, y: 0, width: 100, height: 60, frameId: 'd2:shape:group' },
+      { ...base, id: 'd2:shape:own', type: 'rectangle', x: 400, y: 0, width: 100, height: 60, backgroundColor: '#ffc9c9' },
+      { ...base, id: 'd2:shape:clear', type: 'rectangle', x: 600, y: 0, width: 100, height: 60, backgroundColor: '#00000000' },
+      { ...base, id: 'note', type: 'rectangle', x: 800, y: 0, width: 100, height: 60 },
+    ],
+  }))
+  const diagram = drawingSvg(elements, undefined, { diagram: true })
+  assert('svg' in diagram)
+  const [, user, db, own, clear, note] = diagram.svg.split('<g ')
+  assertStringIncludes(user, 'class="d2-fill"')
+  assertStringIncludes(db, 'class="d2-fill2"')
+  assertStringIncludes(own, 'fill="#ffc9c9"')
+  assertFalse(own.includes('class='))
+  assertFalse(clear.includes('class='))
+  assertFalse(note.includes('class='))
+  // The same shapes in a drawing keep the file's (lack of) fill.
+  const drawing = drawingSvg(elements)
+  assert('svg' in drawing)
+  assertFalse(drawing.svg.includes('class="d2-fill'))
+})

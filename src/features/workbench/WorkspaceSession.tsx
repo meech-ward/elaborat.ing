@@ -95,12 +95,14 @@ export function WorkspaceSession({
       ? openWorkspaceFile(initial.path, initial.revision)
       : { ...newUntitledNote(initial.path), kind: kindForPath(initial.path) },
   );
-  const [mode, setMode] = useState<Mode>(() => {
-    const stored = readProjectView(client.persistenceKey, initial.path);
-    return stored === "rendered" || stored === "split" ? stored : "source";
-  });
   // Split is desktop only: at compact widths a stored Split shows Rendered.
   const compact = useCompactWorkbench();
+  const [mode, setMode] = useState<Mode>(() => {
+    const stored = readProjectView(client.persistenceKey, initial.path);
+    if (stored === "rendered" || stored === "split" || stored === "source") return stored;
+    // A note not opened before reads rendered on a phone, and opens its source on a desktop.
+    return compact && kindForPath(initial.path) === "note" ? "rendered" : "source";
+  });
   const view: Mode = mode === "split" && compact ? "rendered" : mode;
   const [renderedEver, setRenderedEver] = useState(mode !== "source");
   useEffect(() => { writeProjectView(client.persistenceKey, initial.path, mode); }, [client.persistenceKey, initial.path, mode]);

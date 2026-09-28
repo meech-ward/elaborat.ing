@@ -114,9 +114,11 @@ test("a note left in Split opens in Rendered on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await expect(paragraph(page, "First paragraph")).toBeVisible({ timeout: 15_000 })
-  await expect(view(page, "Rendered")).toHaveAttribute("aria-pressed", "true")
-  await expect(view(page, "Split")).toHaveCount(0)
   await expect(sourceText(page)).toHaveCount(0)
+  // A phone's views are a choice in "...": Source and Rendered, no Split.
+  await page.locator('[data-slot="phone-header"]:visible').getByRole("button", { name: "File actions" }).click()
+  await expect(page.getByRole("menuitemradio", { name: "Rendered", exact: true })).toHaveAttribute("aria-checked", "true")
+  await expect(page.getByRole("menuitemradio", { name: "Split", exact: true })).toHaveCount(0)
 })
 
 test("Split has no accessibility problems at 1280", async ({ page }) => {

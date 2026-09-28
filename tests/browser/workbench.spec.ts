@@ -415,7 +415,8 @@ test.describe("on a phone", () => {
     if (await expand.count()) await expand.click()
     await screen.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "notes/b.md", exact: true }).click()
     await expect(screen).toBeHidden()
-    await expect(editorText(page)).toContainText("# On a phone")
+    // A note opens rendered on a phone.
+    await expect(page.getByRole("tabpanel", { name: "notes/b.md" }).frameLocator('iframe[title="Isolated document preview"]').getByRole("heading", { name: "On a phone" })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   })
 
@@ -423,6 +424,8 @@ test.describe("on a phone", () => {
     const { fake, id } = await openProject(page, { "a.md": "# Title\n" }, "a.md", true)
     const save = page.getByRole("button", { name: "Save, unsaved changes", exact: true })
     await expect(save).toHaveCount(0)
+    // A note opens rendered on a phone; type in its source.
+    await showView(page, "Source")
     await typeAtEnd(page, "Typed on a phone.")
     await save.click()
     await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\nTyped on a phone.")

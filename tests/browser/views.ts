@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import { expect, type Page } from "@playwright/test"
 
 /**
  * Show one of the open file's views by its name (Source, Split, Rendered, or
@@ -7,10 +7,13 @@ import type { Page } from "@playwright/test"
  */
 export async function showView(page: Page, name: string) {
   const more = page.locator('[data-slot="phone-header"]:visible').getByRole("button", { name: "File actions" })
+  const button = page.getByRole("button", { name, exact: true })
+  // Wait for either header before choosing: isVisible() does not wait.
+  await expect(more.or(button).first()).toBeVisible()
   if (await more.isVisible()) {
     await more.click()
     await page.getByRole("menuitemradio", { name, exact: true }).click()
   } else {
-    await page.getByRole("button", { name, exact: true }).click()
+    await button.click()
   }
 }

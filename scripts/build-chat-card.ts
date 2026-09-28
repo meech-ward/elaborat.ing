@@ -14,6 +14,7 @@ import react from "@vitejs/plugin-react"
 import { build } from "vite"
 import { COLOR_TOKEN_KEYS } from "../src/features/appearance/paletteCss"
 import { DEFAULT_THEME, getAppearanceTokens, tokenProperty, type ColorScheme } from "../src/features/appearance/tokens"
+import { beforeDarkFilter } from "../src/features/drawings/presentation"
 
 const REPO = path.resolve(import.meta.dirname, "..")
 const ENTRY = path.join(REPO, "src/chat-card/main.tsx")
@@ -52,10 +53,17 @@ if (!chunk || chunk.type !== "chunk") throw new Error("The chat card build produ
 if (!sheet || sheet.type !== "asset") throw new Error("The chat card build produced no stylesheet.")
 
 // The default palette in light and dark: dark when the host says so, and
-// before it does, whatever the device uses.
+// before it does, whatever the device uses. A diagram's fills go in as the
+// app's canvas takes them: through the dark filter the drawings get in dark.
 const scheme = (value: ColorScheme) => {
   const tokens = getAppearanceTokens({ theme: DEFAULT_THEME, scheme: value })
-  return [...COLOR_TOKEN_KEYS.map((key) => `${tokenProperty(key)}:${tokens[key]}`), `color-scheme:${value}`].join(";")
+  const shown = value === "dark" ? beforeDarkFilter : (color: string) => color
+  return [
+    ...COLOR_TOKEN_KEYS.map((key) => `${tokenProperty(key)}:${tokens[key]}`),
+    `--card-d2-fill:${shown(tokens.d2Fill)}`,
+    `--card-d2-fill2:${shown(tokens.d2Fill2)}`,
+    `color-scheme:${value}`,
+  ].join(";")
 }
 const palette =
   `:root{${scheme("light")}}:root[data-scheme="dark"]{${scheme("dark")}}` +

@@ -207,31 +207,47 @@ function NoteCallout({ tone, html }: { tone: keyof typeof CALLOUT_TONES; html: s
 
 /**
  * The server's SVG of a drawing, which escapes everything it takes from the
- * file. In a note it shows at a readable size, as the rendered note shows
- * it (card.css): its own width and width to height ratio set that, and a
- * picture cut off at the bottom is marked so it fades out.
+ * file. It shows at a readable size (card.css): its own width and width to
+ * height ratio set that. In a note, a picture cut off at the bottom is marked
+ * so it fades out; on its own (`whole`), one wider than the card scrolls
+ * sideways, fading out at the edges that have more, and takes the keyboard.
  */
-function EmbedArt({ svg, embed, className }: { svg: string; embed: CardEmbed; className?: string }) {
+function EmbedArt({ svg, embed, whole = false }: { svg: string; embed: CardEmbed; whole?: boolean }) {
   const size = pictureSize(svg)
   const sizing = size ? ({ "--picture-width": `${size.width}px`, "--picture-ratio": size.width / size.height } as CSSProperties) : undefined
   const art = useRef<HTMLDivElement>(null)
   const [clipped, setClipped] = useState(false)
+  const [more, setMore] = useState({ left: false, right: false })
   useLayoutEffect(() => {
     const box = art.current
     if (!box) return
+    const measure = () => {
+      setClipped(box.scrollHeight > box.clientHeight + 1)
+      const left = box.scrollLeft > 1
+      const right = box.scrollLeft + box.clientWidth < box.scrollWidth - 1
+      setMore((current) => (current.left === left && current.right === right ? current : { left, right }))
+    }
     // A ResizeObserver reports each box once when it starts watching it.
-    const observer = new ResizeObserver(() => setClipped(box.scrollHeight > box.clientHeight + 1))
+    const observer = new ResizeObserver(measure)
     observer.observe(box)
     if (box.firstElementChild) observer.observe(box.firstElementChild)
-    return () => observer.disconnect()
+    box.addEventListener("scroll", measure, { passive: true })
+    return () => {
+      observer.disconnect()
+      box.removeEventListener("scroll", measure)
+    }
   }, [svg])
+  const scrolls = whole && (more.left || more.right)
   return (
     <div
       ref={art}
       role="img"
       aria-label={`${KIND_NAMES[embed.kind]} ${embed.path}`}
-      data-clipped={clipped || undefined}
-      className={cn("card-art min-w-0", className)}
+      tabIndex={scrolls ? 0 : undefined}
+      data-clipped={(!whole && clipped) || undefined}
+      data-more-left={(whole && more.left) || undefined}
+      data-more-right={(whole && more.right) || undefined}
+      className={cn("card-art min-w-0", whole && "card-art-whole w-full")}
       style={sizing}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
@@ -243,6 +259,7 @@ export function EmbedFigure({ embed, svgs }: { embed: CardEmbed; svgs: Record<st
   const svg = svgFor(embed, svgs)
   return (
     <EmbedBox
+      floatingCaption={Boolean(svg)}
       caption={
         <>
           <KindBadge kind={badgeKind(embed.kind)} />
@@ -269,7 +286,7 @@ function DrawingBody({ embed, svgs }: { embed: CardEmbed; svgs: Record<string, s
     <>
       <DottedPage className="flex min-h-[200px] items-center justify-center p-6 max-[500px]:min-h-[160px] max-[500px]:p-4">
         {svg ? (
-          <EmbedArt svg={svg} embed={embed} className="card-art-whole w-full" />
+          <EmbedArt svg={svg} embed={embed} whole />
         ) : (
           <p className="text-center text-[13px] leading-snug text-muted-foreground">{EMBED_NOTES[embed.status]}</p>
         )}

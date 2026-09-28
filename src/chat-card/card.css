@@ -122,11 +122,15 @@
 
 /* The server's drawings: black lines on a transparent background, turned by
    Excalidraw's own dark filter in dark mode. A text label's backing takes
-   the canvas colour, before the filter where it applies. In a note a picture
-   shows at a readable size, as the rendered note shows it (reading.css): its
-   own size narrowed to the box, a tall one shrunk to fit 480px high but not
-   below 75%, and past that cut off at the bottom, fading out. On its own it
-   fits 420px high. */
+   the canvas colour, and a diagram's generated shapes the palette's diagram
+   fills (--card-d2-fill*, from scripts/build-chat-card.ts), before the filter
+   where it applies. In a note a picture shows at a readable size, as the
+   rendered note shows it (reading.css): its own size narrowed to the box, a
+   tall one shrunk to fit 480px high but not below 75%, and past that cut off
+   at the bottom, fading out. On its own it shows at its own size, narrowed
+   to the card or shrunk to fit 560px high but never below 60%, so its words
+   stay readable; wider than the card at that, it scrolls sideways, fading
+   out at the edges that have more (CardView.tsx marks them). */
 .card-art:not(.card-art-whole) {
   max-height: 480px;
   overflow: hidden;
@@ -145,12 +149,40 @@
   max-width: 100%;
   margin-inline: auto;
 }
+.card-art-whole {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.card-art-whole[data-more-right] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+.card-art-whole[data-more-left] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+}
+.card-art-whole[data-more-left][data-more-right] {
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+}
 .card-art-whole svg {
-  width: auto;
-  max-height: 420px;
+  width: max(
+    min(var(--picture-width, 100%), 100%, calc(560px * var(--picture-ratio, 1))),
+    calc(var(--picture-width, 100%) * 0.6)
+  );
+  max-width: none;
 }
 .card-art .label-bg {
   fill: var(--bg);
+}
+.card-art .d2-fill {
+  fill: var(--card-d2-fill, var(--d2-fill));
+}
+.card-art .d2-fill2 {
+  fill: var(--card-d2-fill2, var(--d2-fill2));
+}
+.card-art .d2-fill-sketch {
+  stroke: var(--card-d2-fill, var(--d2-fill));
+}
+.card-art .d2-fill2-sketch {
+  stroke: var(--card-d2-fill2, var(--d2-fill2));
 }
 :root[data-scheme="dark"] .card-art svg {
   filter: invert(93%) hue-rotate(180deg);
