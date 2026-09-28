@@ -10,7 +10,7 @@ import { APP_URL } from "./urls.ts"
 
 const projectUrl = (id: string, file?: string) => new URL(`projects/${id}${file ? `/${file}` : ""}`, APP_URL).href
 
-// The first compile loads D2's 8 MB WebAssembly build.
+// The first compile loads D2's engine, 22 MB of WebAssembly.
 test.describe.configure({ timeout: 90_000 })
 
 async function openProject(page: Page, files: Record<string, string>, file?: string, phone = false) {

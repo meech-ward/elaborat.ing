@@ -241,14 +241,20 @@ the preview the person sees the new preview first. There is no move journal on
 the server: the device's save is atomic, and the mutation id covers a lost
 answer. The planner is `src/features/workbench/movePlan.ts`.
 
-**Decision: D2 compiles in the browser.** `@terrastruct/d2` ships a browser
-build that inlines its WebAssembly and worker in one module, about 8 MB, loaded
-the first time a diagram opens (the first compile takes a few seconds; later
-ones take well under a second). The inlined WebAssembly is already compressed:
-the package's plain `.wasm` build would be 22 MB to cache and larger to
-download (about 7.1 MB at Cloudflare's brotli against 6.0 MB), so the app uses
-the inlined build. One shared worker serves every compile, through
-a queue, because the package answers requests without ids. A diagram is three
+**Decision: D2 compiles in the browser.** D2 runs in a worker from
+`@terrastruct/d2`'s own files, loaded the first time a diagram compiles: its
+22 MB `.wasm`, fetched as a file of its own and compiled while it downloads,
+and the ELK layout script (`vite-plugins/d2-engine.ts` makes `@terrastruct/d2`
+resolve to `src/features/structured/d2Engine.ts` in the app's build). The
+package's browser build carries the same two files brotli-compressed as base64
+in one 8.2 MB module and unpacks them with a JavaScript decoder on the page's
+main thread: the page froze for 0.9 s before the first diagram on a fast
+desktop (3.5 s with the main thread slowed 4x), and the first compile took
+about 2 s instead of 1.1 s. The cost: the host compresses less than the
+package did, so the first diagram downloads about 7.2 MB instead of 6.0 MB
+(zstd 3 or brotli 4 against brotli 11), and the offline cache holds 25.8 MB of
+engine instead of 8.2 MB. One shared worker serves every compile, through a
+queue, because the package's own build answers requests without ids. A diagram is three
 files: the `.d2` source, the generated `.excalidraw` canvas that holds freehand
 additions and moved shapes, and the `.d2.json` sidecar with the generation
 baseline. They save on the device as one change, so a file that changed
@@ -868,7 +874,7 @@ generated worker (`generateSW`), configured in `vite.config.ts`:
   including lazy ones, styles, workers, the fonts of the app's own interface
   and of drawings (Excalifont, the default for new text, among them), the
   preview frame (a chunk of its own), the D2 compiler, `.wasm` files and the
-  license texts. That is about 28.6 MB. The worker registers once the page
+  license texts. That is about 44 MB, about 13 MB over the network. The worker registers once the page
   has loaded, so this download does not compete with the page's own files,
   and it finds those in the browser's cache. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`

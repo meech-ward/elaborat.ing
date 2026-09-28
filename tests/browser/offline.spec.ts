@@ -12,7 +12,7 @@ import { APP_URL } from "./urls.ts"
 // blocks service workers (playwright.config.ts); this spec allows them.
 
 test.use({ serviceWorkers: "allow" })
-// Each journey installs the worker, which caches about 30 MB of app files.
+// Each journey installs the worker, which caches about 44 MB of app files.
 test.describe.configure({ timeout: 90_000 })
 
 const DIST = path.join(import.meta.dirname, "..", "..", "dist")
@@ -142,6 +142,20 @@ test("offline, a new tab lists the project from the device and opens it", async 
   await other.getByRole("link", { name: "Notes" }).click()
   await expect(other.getByRole("tab", { name: "notes/a.md" })).toBeVisible()
   await expect(editorText(other)).toContainText("On this device.")
+})
+
+test("offline, a diagram compiles with the engine the service worker cached", async ({ page, context }) => {
+  const { fake, id } = await openProject(page, { "a.md": "text\n", "flow.d2": "a -> b: offline\n" }, "a.md")
+  await offlineReady(page)
+  fake.offline = true
+  await context.setOffline(true)
+  // Open the diagram in a fresh page (see the first offline journey). Its
+  // canvas is generated on open, so it shows only once D2 has compiled.
+  await page.close()
+  const again = await context.newPage()
+  await again.goto(projectUrl(id, "flow.d2"))
+  await expect(again.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 45_000 })
+  await expect(again.locator(".wb-native-view [aria-live]").first()).toContainText(/[1-9]\d* elements/)
 })
 
 /** The load status of each face of one font family on the page, such as "loaded" or "error". */

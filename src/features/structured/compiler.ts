@@ -118,6 +118,7 @@ export function buildCompileRequest(source: string, virtualFiles: Record<string,
 
 async function loadD2Module(): Promise<D2Module> {
   try {
+    // In the app's build this is ./d2Engine.ts (vite-plugins/d2-engine.ts).
     return (await import('@terrastruct/d2')) as D2Module;
   } catch {
     throw missingPackageError();
@@ -237,8 +238,8 @@ export function getDefaultD2Port(): D2CompilePort {
 
 /**
  * Compile D2 in the browser through the shared worker, returning the raw
- * diagram or the compiler's message. The D2 package (an 8 MB chunk with its
- * WASM inlined) loads on the first call.
+ * diagram or the compiler's message. The engine (22 MB of wasm, compiled while
+ * it downloads) loads on the first call.
  */
 export async function compileD2Diagram(
   source: string,

@@ -40,7 +40,11 @@ type Match = string | RegExp
 /** A page: the route chunks it loads on top of the entry before the first paint. */
 type Page = { name: string; start: Match[]; note?: string }
 
-/** A feature on the project page: the chunks and workers its first use loads, and the modules that make it up. */
+/**
+ * A feature on the project page: the chunks its first use loads, the files it
+ * fetches besides them (workers, wasm; matched by file name in assets/), and
+ * the modules that make it up.
+ */
 type Feature = { name: string; start: Match[]; workers?: RegExp[]; modules: RegExp[]; note?: string }
 
 // Every page loads the entry, and the service worker's registration imports
@@ -103,9 +107,10 @@ const FEATURES: Feature[] = [
   },
   {
     name: "A diagram (D2)",
-    start: ["src/features/workbench/DiagramView.tsx", /^node_modules\/@terrastruct\/d2\//, "src/features/structured/native-font-ttf.json"],
+    start: ["src/features/workbench/DiagramView.tsx", "src/features/structured/d2Engine.ts", "src/features/structured/native-font-ttf.json"],
+    workers: [/^d2Engine\.worker-/, /^d2-[\w-]+\.wasm$/, /^elk-[\w-]+\.js$/],
     modules: [/node_modules\/@terrastruct\//, /src\/features\/structured\//, /src\/features\/workbench\/(DiagramView|diagramArtifact|diagramEmbed)\./],
-    note: "the diagram view, then D2 and its measuring font on the first compile; Excalidraw, as for a drawing, when the canvas shows",
+    note: "the diagram view, then on the first compile D2's worker, its wasm and ELK layout script, and its measuring font; Excalidraw, as for a drawing, when the canvas shows",
   },
   { name: "The command palette", start: [], modules: [/node_modules\/cmdk\//, /QuickOpen\.tsx$/, /FileSearch\.tsx$/, /contentSearch\.ts$/] },
   { name: "Settings", start: [], modules: [/src\/features\/settings\//, /src\/features\/appearance\/.*\.tsx$/] },

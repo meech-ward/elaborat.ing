@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { bundleVisualizer } from "./vite-plugins/bundle-visualizer.ts"
+import { d2Engine } from "./vite-plugins/d2-engine.ts"
 import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
 import { monacoLanguageServices } from "./vite-plugins/monaco-language-services.ts"
 import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
@@ -113,6 +114,8 @@ export default defineConfig({
   plugins: [
     nativeFontAssets(),
     excalidrawSubsetWorker(),
+    // D2 runs from its own wasm file in a worker (see the plugin).
+    d2Engine(),
     // The editors never start these services' workers (src/features/source/SourceEditor.tsx).
     monacoLanguageServices({ exclude: ["typescript", "css", "html"] }),
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
