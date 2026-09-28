@@ -173,7 +173,7 @@ test("a selection in Rendered is commented on, and so is a heading pointed at", 
   ])
 })
 
-test("the comment key comments on a heading's section in Source, and elsewhere shows and hides the comments", async ({ page }) => {
+test("the comment key comments on a heading's section in Source, and elsewhere shows and hides the comments; the context menu comments too", async ({ page }) => {
   await seeded(page, { threads: false, view: "Source" })
   await sourceLines(page).getByText("## Steps").click()
   await page.keyboard.press("ControlOrMeta+Alt+m")
@@ -185,6 +185,15 @@ test("the comment key comments on a heading's section in Source, and elsewhere s
   await sourceLines(page).getByText("Create a project.").click()
   await page.keyboard.press("ControlOrMeta+Alt+m")
   await expect(panel(page)).toBeHidden()
+
+  // The editor's context menu comments on a selection.
+  await page.keyboard.press("End")
+  await page.keyboard.press("Shift+Home")
+  await sourceLines(page).getByText("Create a project.").click({ button: "right" })
+  // The menu shows the key beside it.
+  await page.getByRole("menuitem", { name: /^Comment(?! on)/ }).click()
+  await send(page, "Name the project first.")
+  await expect(thread(page, "“2. Create a project.”")).toBeVisible()
 })
 
 test("markers and highlights open the panel at their thread, and the panel shows a thread's text", async ({ page }) => {
