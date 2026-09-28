@@ -27,9 +27,13 @@ async function explorer(page: Page, path?: string) {
   await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
   const parts = path?.split("/").slice(0, -1) ?? []
   for (let i = 1; i <= parts.length; i++) {
-    const folder = parts.slice(0, i).join("/")
-    const expand = page.getByRole("button", { name: folder, exact: true, expanded: false })
-    if (await expand.count()) await expand.click()
+    const folder = page.getByRole("button", { name: parts.slice(0, i).join("/"), exact: true })
+    // A project opened with no file opens its first note, which expands its
+    // folder by itself at any moment: click only while it is collapsed.
+    await expect(async () => {
+      if ((await folder.getAttribute("aria-expanded")) === "false") await folder.click({ timeout: 1_000 })
+      await expect(folder).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 })
+    }).toPass()
   }
 }
 
