@@ -830,8 +830,11 @@ and the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 Excalidraw fetches fonts from a public CDN. The build copies the pinned
 package's fonts to `/excalidraw-assets/` and the app points Excalidraw there at
 startup, so drawings work offline and no font request leaves the site. The
-font-subset worker is built as its own worker graph; bundled as app code it
-imports the DOM entry and fails.
+font-subset worker starts from the chunk Excalidraw imports for it, and the
+page imports the same subsetting code (1.8 MB) for the rest, so everything the
+worker imports gets chunks of its own
+(`vite-plugins/excalidraw-subset-worker.ts`): one file serves both, and the
+worker loads nothing that needs the DOM.
 
 **Decision: chunks follow what loads together, and libraries keep their own.**
 `vite.config.ts` declares the app's own modules free of side effects (except

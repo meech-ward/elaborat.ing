@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test"
 import { HARNESS_URL } from "./urls.ts"
 
 const dist = path.join(import.meta.dirname, "harness", "dist")
+const appDist = path.join(import.meta.dirname, "..", "..", "dist")
 
 test("the canvas draws with fonts from this site and nothing else", async ({ page }) => {
   const errors: string[] = []
@@ -36,6 +37,16 @@ test("SVG export embeds a subset font and starts the bundled worker", async ({ p
   expect(svg).toContain("hello")
   expect(svg).toContain("data:font/woff2;base64,")
   expect(workers.some((url) => /\/subset-worker\.chunk-[^/]*\.js$/.test(url))).toBe(true)
+})
+
+// The page and the worker each import it; one file serves both.
+test("the font subsetting code ships once, for the page and the worker", async () => {
+  for (const build of [dist, appDist]) {
+    const assets = (await readdir(path.join(build, "assets"))).filter((file) => file.endsWith(".js"))
+    const copies: string[] = []
+    for (const name of assets) if ((await readFile(path.join(build, "assets", name), "utf8")).includes("hb_subset_input_create_or_fail")) copies.push(name)
+    expect(copies, build).toHaveLength(1)
+  }
 })
 
 // Excalidraw loads this worker as an ordinary module; bundled as app code it
