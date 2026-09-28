@@ -16,6 +16,7 @@ import { loadWorkbench } from "@/features/workbench/load"
 import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
+import { DeletedProjectPage } from "./DeletedProject"
 import { useProjectDownload } from "./DownloadProject"
 import { MembersDialog } from "./MembersDialog"
 import { projectMenuEntries } from "./projectMenu"
@@ -62,7 +63,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const [sharing, setSharing] = useState(false)
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
-  const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open")
+  // Its owner deleted it: its page says so in its place (below), and leaving it keeps nothing.
+  const deleted = state.deleted.find((candidate) => candidate.id === projectId)
+  const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open" && !deleted)
   const download = useProjectDownload(library, onError)
   const entry = state.entries.find((candidate) => candidate.id === projectId)
 
@@ -240,6 +243,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     [account.userId, asksFirst, library, projectId],
   )
 
+  if (deleted) return <DeletedProjectPage library={library} project={deleted} onLeave={() => navigate({ to: "/" })} />
   if (opened === "missing") {
     return (
       <PanelPage>

@@ -31,6 +31,13 @@ export type ProjectEntry = {
   archived: boolean
 }
 
+/**
+ * A project its owner deleted while this account was in it. It leaves the
+ * list, and this device too, unless files in it have changes the server never
+ * got (`unsaved`), which stay until the person downloads or removes them.
+ */
+export type DeletedProject = { id: string; title: string; unsaved: number }
+
 /** A project someone shared with this account, waiting for it to accept. */
 export type Invitation = { projectId: string; title: string; role: RemoteInvitation["role"] }
 
@@ -48,6 +55,8 @@ export type Member = {
 
 export type LibraryState = {
   entries: ProjectEntry[]
+  /** Projects their owner deleted: still on this device with unsaved changes, or removed from it since this page opened. */
+  deleted: DeletedProject[]
   /** Invitations waiting for this account, as the server last listed them. */
   invitations: Invitation[]
   /** The server could not be reached on the last refresh. */
@@ -67,8 +76,10 @@ export const offlineRemote: ProjectRemote = new Proxy({} as ProjectRemote, {
 
 export class ProjectLibrary {
   readonly sync: ProjectSync
-  private state: LibraryState = { entries: [], invitations: [], offline: false, loaded: false }
+  private state: LibraryState = { entries: [], deleted: [], invitations: [], offline: false, loaded: false }
   private catalog: RemoteProject[] = []
+  /** Deleted projects removed from this device since this page opened, still to tell the person about. */
+  private removed = new Map<string, DeletedProject>()
   private readonly listeners = new Set<() => void>()
 
   constructor(
@@ -100,8 +111,13 @@ export class ProjectLibrary {
   async load(): Promise<void> {
     const local = await this.db.listProjects(this.partition)
     const entries: ProjectEntry[] = []
+    const deleted: DeletedProject[] = []
     for (const project of local) {
       const files = await this.db.transaction(this.partition, "readonly", (tx) => tx.listFiles(project.id))
+      if (project.syncError === "deleted") {
+        deleted.push({ id: project.id, title: project.pendingTitle ?? project.title, unsaved: waiting(files).length })
+        continue
+      }
       const conflict = files.some((file) => file.conflict !== null)
       const unsynced = !project.created || project.pending !== null || project.pendingTitle !== null || files.some(isDirty)
       entries.push({
@@ -113,13 +129,46 @@ export class ProjectLibrary {
         archived: project.archivedAt !== null,
       })
     }
-    const known = new Set(entries.map((entry) => entry.id))
+    for (const gone of this.removed.values()) if (!deleted.some((entry) => entry.id === gone.id)) deleted.push(gone)
+    const known = new Set([...entries, ...deleted].map((entry) => entry.id))
     for (const remote of this.catalog) {
       if (known.has(remote.id)) continue
       entries.push({ id: remote.id, title: remote.title, role: remote.role, status: "not-downloaded", stopped: null, archived: remote.archived_at !== null })
     }
     entries.sort((a, b) => a.title.localeCompare(b.title) || (a.id < b.id ? -1 : 1))
-    this.set({ entries, loaded: true })
+    this.set({ entries, deleted, loaded: true })
+  }
+
+  /**
+   * Projects their owner deleted leave this device, unless files in them have
+   * changes the server never got: those wait for the person (see
+   * `unsavedChanges` and `removeDeleted`).
+   */
+  private async settleDeleted(): Promise<void> {
+    for (const project of await this.db.listProjects(this.partition)) {
+      if (project.syncError !== "deleted") continue
+      const files = await this.db.transaction(this.partition, "readonly", (tx) => tx.listFiles(project.id))
+      if (waiting(files).length > 0) continue
+      this.removed.set(project.id, { id: project.id, title: project.pendingTitle ?? project.title, unsaved: 0 })
+      await this.sync.forget(project.id)
+    }
+  }
+
+  /** The files of a deleted project with changes the server never got, as they are on this device, for a download. */
+  async unsavedChanges(projectId: string): Promise<Array<{ path: string; content: string }>> {
+    const files = await this.db.transaction(this.partition, "readonly", (tx) => tx.listFiles(projectId))
+    return waiting(files).flatMap((file) => {
+      const content = file.draft?.content ?? file.content
+      return content === null ? [] : [{ path: file.path, content }]
+    })
+  }
+
+  /** Remove a project its owner deleted from this device, unsaved changes and all, and stop telling the person about it. */
+  async removeDeleted(projectId: string): Promise<void> {
+    this.removed.delete(projectId)
+    const project = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(projectId))
+    if (project?.syncError === "deleted") await this.sync.forget(projectId)
+    await this.load()
   }
 
   /** Ask the server for the account's projects and pull changes into those on this device. */
@@ -131,6 +180,7 @@ export class ProjectLibrary {
       if (!(error instanceof RemoteError) || error.kind !== "network") throw error
       this.set({ offline: true })
     }
+    await this.settleDeleted()
     await this.load()
   }
 
@@ -356,6 +406,7 @@ export class ProjectLibrary {
   async syncProject(projectId: string): Promise<SyncOutcome> {
     const outcome = await this.sync.sync(projectId)
     this.set({ offline: outcome.status === "offline" })
+    if (outcome.status === "stopped" && outcome.reason === "deleted") await this.settleDeleted()
     await this.load()
     return outcome
   }

@@ -340,3 +340,63 @@ test("who last changed a project's files, by name, as the server knows it", asyn
   await server.remote(OTHER).leaveProject(id)
   expect(await library(server).library.fileEditors(id, ["ui/chart.mdx"])).toEqual(new Map())
 })
+
+test("a project its owner deleted leaves the list and this device, and says so", async () => {
+  const server = new FakeProjectServer()
+  const id = await othersProject(server, "Their notes")
+  server.share(id, OWNER, "editor")
+  const { db, library: here } = library(server)
+  await here.refresh()
+  await here.open(id)
+
+  await server.remote(OTHER).deleteProject(id)
+  await here.refresh()
+  expect(here.getState().entries).toEqual([])
+  expect(here.getState().deleted).toEqual([{ id, title: "Their notes", unsaved: 0 }])
+  expect(await db.listProjects(partition)).toEqual([])
+
+  await here.removeDeleted(id)
+  expect(here.getState().deleted).toEqual([])
+})
+
+test("a deleted project with unsaved changes stays on this device until they are downloaded or removed", async () => {
+  const server = new FakeProjectServer()
+  const id = await othersProject(server, "Their notes")
+  server.share(id, OWNER, "editor")
+  const { db, library: here } = library(server)
+  await here.refresh()
+  await here.open(id)
+  const store = new ProjectFileStore(db, partition, id)
+  await put(store, "notes/a.md", "saved here")
+  await store.persistDrafts([{ path: "notes/b.md", content: "unsaved", baseRevision: null }])
+
+  await server.remote(OTHER).deleteProject(id)
+  expect(await here.syncProject(id)).toMatchObject({ status: "stopped", reason: "deleted", message: "This project was deleted by its owner." })
+  expect(here.getState().entries).toEqual([])
+  expect(here.getState().deleted).toEqual([{ id, title: "Their notes", unsaved: 2 }])
+  expect(await here.unsavedChanges(id)).toEqual([
+    { path: "notes/a.md", content: "saved here" },
+    { path: "notes/b.md", content: "unsaved" },
+  ])
+
+  await here.refresh()
+  expect(here.getState().deleted).toEqual([{ id, title: "Their notes", unsaved: 2 }])
+  await here.removeDeleted(id)
+  expect(here.getState().deleted).toEqual([])
+  expect(await db.listProjects(partition)).toEqual([])
+})
+
+test("a project someone was removed from still says their access ended", async () => {
+  const server = new FakeProjectServer()
+  const id = await othersProject(server, "Their notes")
+  server.share(id, OWNER, "editor")
+  const { library: here } = library(server)
+  await here.refresh()
+  await here.open(id)
+
+  await server.remote(OTHER).shareProject(id, OWNER, null)
+  await server.remote(OTHER).deleteProject(id)
+  await here.refresh()
+  expect(here.getState().deleted).toEqual([])
+  expect(here.getState().entries).toMatchObject([{ id, status: "stopped", stopped: "access-lost" }])
+})

@@ -7,6 +7,7 @@ import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
 import { libraryFor, moveLocalProjectTo, useLibraryState, type ProjectAccount } from "./account"
+import { DeletedProjectBanner } from "./DeletedProject"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { useProjectDownload } from "./DownloadProject"
 import { ImportProjectButton, ImportReport, useProjectImport } from "./ImportProject"
@@ -196,9 +197,12 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         </div>
         <ImportProjectButton state={importing.state} onChoose={(input, source) => void importing.choose(input, source)} />
       </div>
-      {offline || error || notice || importing.state.kind !== "idle" ? (
+      {offline || error || notice || importing.state.kind !== "idle" || state.deleted.length > 0 ? (
         <div className="flex flex-col gap-2">
           {offline ? <Banner tone="info">Offline: showing the projects on this device. Changes sync when you are back online.</Banner> : null}
+          {state.deleted.map((project) => (
+            <DeletedProjectBanner key={project.id} library={library} project={project} onError={onError} />
+          ))}
           {error ? <Banner tone="danger">{error}</Banner> : null}
           {notice ? <Banner tone="info">{notice}</Banner> : null}
           <ImportReport state={importing.state} />

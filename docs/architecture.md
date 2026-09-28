@@ -262,7 +262,10 @@ makes edits to different files conflict. It is not carried forward.)
 **Decision:** agents archive, people delete. Archive and unarchive are available
 to any editor, including agents. Permanent delete is for the project owner
 only, in a normal user session: the database refuses it when the token came
-from an OAuth client (the JWT carries a `client_id` claim).
+from an OAuth client (the JWT carries a `client_id` claim). Deleting a project
+leaves a row in `deleted_projects` for each person who had accepted it (kept
+90 days, readable only by them), so their devices say the owner deleted it,
+offer a .zip of their unsaved changes, and remove it.
 
 Account settings are for people. The database refuses a password change
 made by an OAuth session: a deferred trigger on `auth.users`

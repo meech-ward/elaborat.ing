@@ -136,10 +136,11 @@ export class ProjectSync {
   async refresh(): Promise<RemoteProject[]> {
     const remote = await this.remote.listProjects()
     const byId = new Map(remote.map((entry) => [entry.id, entry]))
-    for (const local of await this.db.listProjects(this.partition)) {
-      if (!local.created) continue
-      await this.takeDetails(local, byId.get(local.id) ?? null)
-    }
+    const local = (await this.db.listProjects(this.partition)).filter((project) => project.created)
+    // A project no longer listed was deleted by its owner, or the person's access ended.
+    const gone = local.filter((project) => !byId.has(project.id) && project.syncError !== "deleted").map((project) => project.id)
+    const deleted = new Set(gone.length > 0 ? await this.remote.deletedProjects(gone) : [])
+    for (const project of local) await this.takeDetails(project, byId.get(project.id) ?? null, deleted.has(project.id))
     return remote
   }
 
@@ -149,16 +150,16 @@ export class ProjectSync {
     if (local?.created) await this.takeDetails(local, entry)
   }
 
-  /** Update a project on this device from the server's details (none: access is gone), and pull what it lacks. */
-  private async takeDetails(local: LocalProject, entry: RemoteProject | null): Promise<void> {
-    await this.updateDetails(local.id, entry)
+  /** Update a project on this device from the server's details (none: access is gone, or with `deleted` the project), and pull what it lacks. */
+  private async takeDetails(local: LocalProject, entry: RemoteProject | null, deleted = false): Promise<void> {
+    await this.updateDetails(local.id, entry, deleted)
     if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
   }
 
-  /** A project's title, role and archived state as the server lists them (none: access is gone). */
-  private async updateDetails(projectId: string, entry: RemoteProject | null): Promise<void> {
+  /** A project's title, role and archived state as the server lists them (none: access is gone, or with `deleted` the project). */
+  private async updateDetails(projectId: string, entry: RemoteProject | null, deleted = false): Promise<void> {
     await this.updateProject(projectId, (current) => {
-      if (!entry) return { ...current, syncError: "access-lost" }
+      if (!entry) return { ...current, syncError: deleted || current.syncError === "deleted" ? "deleted" : "access-lost" }
       return {
         ...current,
         title: entry.title,
@@ -205,6 +206,8 @@ export class ProjectSync {
   sync(projectId: string): Promise<SyncOutcome> {
     return this.locked(projectId, async () => {
       const outcome = await this.push(projectId)
+      // Refused, or no longer listed (below): the owner may have deleted the project.
+      if (outcome.status === "stopped" && outcome.reason === "access-lost") return (await this.deletedOutcome(outcome.projectId)) ?? outcome
       if (outcome.status !== "synced") return outcome
       try {
         const entry = (await this.remote.listProjects()).find((candidate) => candidate.id === outcome.projectId)
@@ -212,6 +215,8 @@ export class ProjectSync {
           // The role and archived state follow too, so a new role or an unarchive shows without waiting for a refresh.
           await this.updateDetails(outcome.projectId, entry)
           await this.pull(outcome.projectId, entry.revision)
+        } else {
+          return (await this.deletedOutcome(outcome.projectId)) ?? outcome
         }
       } catch (error) {
         if (error instanceof RemoteError && error.kind === "network") return { status: "offline", projectId: outcome.projectId, message: error.message }
@@ -219,6 +224,22 @@ export class ProjectSync {
       }
       return outcome
     })
+  }
+
+  /** When the project's owner deleted it: marks it so, and says so; else (or offline) null. */
+  private async deletedOutcome(projectId: string): Promise<SyncOutcome | null> {
+    const project = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(projectId))
+    if (!project?.created) return null
+    let deleted: string[]
+    try {
+      deleted = await this.remote.deletedProjects([projectId])
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") return null
+      throw error
+    }
+    if (!deleted.includes(projectId)) return null
+    await this.updateDetails(projectId, null, true)
+    return { status: "stopped", projectId, reason: "deleted", message: stopMessage("deleted") }
   }
 
   private async push(startId: string): Promise<SyncOutcome> {
@@ -500,6 +521,8 @@ function stopMessage(reason: NonNullable<LocalProject["syncError"]>, detail?: st
   switch (reason) {
     case "access-lost":
       return "You can no longer change this project. Your work stays on this device."
+    case "deleted":
+      return "This project was deleted by its owner."
     case "archived":
       return "This project is archived. Unarchive it to sync your changes."
     case "limit":

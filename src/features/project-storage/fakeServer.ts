@@ -54,6 +54,8 @@ export class FakeProjectServer {
   readonly names = new Map<string, string>()
   /** Who last changed each file, by file id, as `project_files.updated_by` holds it. */
   readonly editors = new Map<string, string>()
+  /** Projects deleted while each person was in them, by person, as `deleted_projects` holds them. */
+  readonly deletions = new Map<string, Set<string>>()
 
   /** An account's name as the database gives it (private.person_name): its name, else its email. */
   nameOf(id: string): string | null {
@@ -114,6 +116,7 @@ export class FakeProjectServer {
       archiveProject: (projectId) => call("archiveProject", [projectId], () => this.setArchived(user, projectId, true)),
       unarchiveProject: (projectId) => call("unarchiveProject", [projectId], () => this.setArchived(user, projectId, false)),
       deleteProject: (projectId) => call("deleteProject", [projectId], () => this.remove(user, projectId)),
+      deletedProjects: (projectIds) => call("deletedProjects", [projectIds], () => projectIds.filter((id) => this.deletions.get(user)?.has(id))),
     }
   }
 
@@ -270,6 +273,16 @@ export class FakeProjectServer {
   private remove(user: string, projectId: string): void {
     const project = this.projects.get(projectId)
     if (!project || project.owner !== user) throw new RemoteError("access", "Only the project owner can permanently delete it")
+    this.drop(projectId)
+  }
+
+  /** Delete a project as `delete_project` does: everyone who had accepted it hears it was deleted. */
+  drop(projectId: string): void {
+    const project = this.projects.get(projectId)
+    if (!project) return
+    for (const [member, { acceptedAt }] of project.members) {
+      if (acceptedAt) this.deletions.set(member, new Set([...(this.deletions.get(member) ?? []), projectId]))
+    }
     this.projects.delete(projectId)
   }
 

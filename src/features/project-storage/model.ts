@@ -146,8 +146,8 @@ export const LocalProject = z.object({
   /** True once the server has the project (create_project acknowledged or it came from the server). */
   created: z.boolean(),
   archivedAt: z.string().nullable(),
-  /** Why sync stopped for this project, if it did; local work is always kept. */
-  syncError: z.enum(["access-lost", "archived", "limit", "invalid"]).nullable(),
+  /** Why sync stopped for this project, if it did; local work is always kept. `deleted`: its owner deleted it. */
+  syncError: z.enum(["access-lost", "deleted", "archived", "limit", "invalid"]).nullable(),
   pending: PendingSave.nullable(),
 }).strict()
 export type LocalProject = z.infer<typeof LocalProject>

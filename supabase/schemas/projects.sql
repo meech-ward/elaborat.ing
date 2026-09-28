@@ -60,3 +60,25 @@ create policy "People can see members of their projects and their own invites"
     user_id = (select auth.uid())
     or project_id in (select private.readable_project_ids())
   );
+
+-- Projects their owner deleted while other people were in them: a row for
+-- each person who had accepted, written by `delete_project`, so their devices
+-- can say the owner deleted the project, rather than that their access ended,
+-- and remove it. Each deletion also removes rows older than 90 days.
+create table public.deleted_projects (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  project_id uuid not null,
+  deleted_at timestamptz not null default now(),
+  primary key (user_id, project_id)
+);
+
+alter table public.deleted_projects enable row level security;
+
+revoke all on table public.deleted_projects from anon, authenticated;
+grant select on table public.deleted_projects to authenticated;
+
+create policy "People can see which projects they were in were deleted"
+  on public.deleted_projects
+  for select
+  to authenticated
+  using (user_id = (select auth.uid()));

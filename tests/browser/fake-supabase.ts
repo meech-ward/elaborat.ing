@@ -293,7 +293,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       let projects = 0
       for (const project of [...server.projects.values()]) {
         if (project.owner === person.id) {
-          server.projects.delete(project.id)
+          server.drop(project.id)
           projects++
         } else project.members.delete(person.id)
       }
@@ -337,6 +337,11 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       )
     }
     if (projectId && path.endsWith("/project_folders")) return answer(route, async () => (await remote.folders(projectId)).map((folder) => ({ path: folder })))
+    // Projects deleted while the person was in them: `project_id=in.(a,b)`.
+    if (path.endsWith("/deleted_projects")) {
+      const ids = (query("project_id", "in") ?? "()").slice(1, -1).split(",").filter(Boolean)
+      return answer(route, async () => (await remote.deletedProjects(ids)).map((id) => ({ project_id: id })))
+    }
     return json(route, { message: `No fake for ${request.method()} ${path}${url.search}` }, 404)
   })
 

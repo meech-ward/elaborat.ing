@@ -188,6 +188,8 @@ export interface ProjectRemote {
   unarchiveProject(projectId: string): Promise<RemoteProject>
   /** Permanently delete a project and everything in it. Only its owner, and never with an agent's token. */
   deleteProject(projectId: string): Promise<void>
+  /** Which of these projects their owner deleted while the caller was in them (`deleted_projects`). */
+  deletedProjects(projectIds: string[]): Promise<string[]>
 }
 
 type Page = PromiseLike<{ data: unknown[] | null; error: PostgrestLikeError | null }>
@@ -335,6 +337,22 @@ export class SupabaseProjectRemote implements ProjectRemote {
         return { id: parsed.file_id, version: parsed.version }
       },
     )
+  }
+
+  async deletedProjects(projectIds: string[]) {
+    const found: string[] = []
+    // A hundred ids at a time keeps the request's URL short.
+    for (let start = 0; start < projectIds.length; start += 100) {
+      let response
+      try {
+        response = await this.supabase.from("deleted_projects").select("project_id").in("project_id", projectIds.slice(start, start + 100))
+      } catch (error) {
+        throw new RemoteError("network", error instanceof Error ? error.message : String(error))
+      }
+      if (response.error) throw classify(response.error)
+      found.push(...z.array(z.object({ project_id: z.uuid() })).parse(response.data ?? []).map((row) => row.project_id))
+    }
+    return found
   }
 
   async fileEditors(projectId: string, paths: string[]) {

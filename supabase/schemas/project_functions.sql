@@ -218,6 +218,13 @@ begin
   if p.id is null or p.owner_id <> uid then
     raise exception 'Only the project owner can permanently delete it' using errcode = '42501';
   end if;
+  -- The people in it hear that its owner deleted it (see deleted_projects).
+  delete from public.deleted_projects d where d.deleted_at < now() - interval '90 days';
+  insert into public.deleted_projects (user_id, project_id)
+  select m.user_id, p.id
+  from public.project_members m
+  where m.project_id = p.id and m.accepted_at is not null
+  on conflict on constraint deleted_projects_pkey do update set deleted_at = excluded.deleted_at;
   delete from public.projects where id = p.id;
   return jsonb_build_object('id', p.id, 'deleted', true);
 end;
