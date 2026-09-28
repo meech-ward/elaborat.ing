@@ -9,12 +9,9 @@
  * code, tables and other MDX are islands the editor cannot change: embeds show
  * the drawing the server drew, and the rest shows as it is written.
  *
- * `bun run build:chat-card` builds this file into one script that the view
- * inlines (supabase/functions/mcp-server/tools/cardEditorScript.ts). No code
- * here uses eval or new Function, and nothing loads from the network, so it
- * runs under the MCP Apps default Content Security Policy.
+ * ChatCard.tsx starts it when Edit is pressed; `bun run build:chat-card`
+ * builds it into the card's script with the rest of the card (main.tsx).
  */
-import './jitless'
 import { COMPONENT_CATALOG } from '../features/document/componentCatalog'
 import {
   fluidPositionForSourceOffset,
@@ -274,11 +271,3 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
     },
   }
 }
-
-declare global {
-  interface Window {
-    elaboratingCardEditor?: { start: typeof startCardEditor }
-  }
-}
-
-window.elaboratingCardEditor = { start: startCardEditor }

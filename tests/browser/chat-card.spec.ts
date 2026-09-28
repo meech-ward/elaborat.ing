@@ -67,7 +67,7 @@ function shown(version: number, source: string) {
 // The spec's default policy for a view that declares no `_meta.ui.csp`.
 const CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'"
 
-type Host = { tools: boolean; theme: "light" | "dark"; result: unknown }
+type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown }
 
 /** Opens the stand-in host with the view in it; answers come from window.answers. */
 async function openHost(page: Page, host: Host) {
@@ -84,8 +84,10 @@ async function openHost(page: Page, host: Host) {
       const state = window as unknown as Record<string, unknown>
       const calls: unknown[] = []
       const contexts: unknown[] = []
+      const sizes: unknown[] = []
       state.calls = calls
       state.contexts = contexts
+      state.sizes = sizes
       state.answers = {}
       const frame = document.querySelector("iframe")!
       const reply = (id: unknown, result: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", id, result }, "*")
@@ -98,7 +100,7 @@ async function openHost(page: Page, host: Host) {
             protocolVersion: "2026-01-26",
             hostInfo: { name: "stand-in", version: "1.0.0" },
             hostCapabilities: host.tools ? { serverTools: {}, openLinks: {} } : { openLinks: {} },
-            hostContext: { theme: host.theme },
+            hostContext: { theme: host.theme, styles: host.styles },
           })
         } else if (message.method === "ui/notifications/initialized") {
           send("ui/notifications/tool-input", { arguments: { project_id: "p", path: "notes/plan.mdx" } })
@@ -107,6 +109,8 @@ async function openHost(page: Page, host: Host) {
           calls.push(message.params)
           const queue = (state.answers as Record<string, unknown[]>)[message.params!.name] ?? []
           reply(message.id, queue.shift())
+        } else if (message.method === "ui/notifications/size-changed") {
+          sizes.push(message.params)
         } else if (message.method === "ui/update-model-context") {
           contexts.push(message.params)
           reply(message.id, {})
@@ -176,6 +180,13 @@ test("a note is edited in the chat card and saved with write_file, byte for byte
   expect(contexts.map((context) => context.content[0].text)).toEqual([
     `The user edited ${PATH} in the elaborat.ing card and saved it as version 5. Read it again before changing it.`,
   ])
+  // The app's fonts come from the card's own script, so the default policy allows them.
+  const fonts = () => page.frames()[1].evaluate(() => [...document.fonts].map((font) => [font.family.replaceAll('"', ""), font.status]))
+  await expect.poll(fonts).toEqual([
+    ["Space Grotesk Variable", "loaded"],
+    ["JetBrains Mono Variable", "loaded"],
+    ["Excalifont", "loaded"],
+  ])
   // Runs under the default policy: no eval, no requests.
   expect(await violations(page)).toEqual([])
 })
@@ -202,9 +213,52 @@ test("a note changed since the card loaded is not overwritten, and the latest ca
   expect(contexts).toEqual([])
 })
 
-test("where the host cannot call tools, the card stays read-only", async ({ page }) => {
-  const card = await openHost(page, { tools: false, theme: "light", result: shown(4, SOURCE) })
+test("where the host cannot call tools, the card stays read-only, in the host's fonts, and reports its size", async ({ page }) => {
+  const card = await openHost(page, {
+    tools: false,
+    theme: "light",
+    result: shown(4, SOURCE),
+    styles: { variables: { "--font-sans": "Georgia, serif" } },
+  })
   await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
   await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toBeVisible()
   await expect(card.getByRole("button", { name: "Edit" })).toBeHidden()
+  await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /Georgia/)
+  // The palette's light panel, as the host asked.
+  await expect(card.locator('[data-slot="chat-card"]')).toHaveCSS("background-color", "rgb(255, 255, 255)")
+  const sizes = () => page.evaluate(() => (window as unknown as { sizes: { width: number; height: number }[] }).sizes)
+  const width = await page.frames()[1].evaluate(() => window.innerWidth)
+  await expect.poll(async () => (await sizes()).at(-1)?.width).toBe(width)
+  expect((await sizes()).at(-1)!.height).toBeGreaterThan(200)
+})
+
+/** A show_file result for a diagram whose canvas was drawn from older source. */
+const staleDiagram = {
+  content: [{ type: "text", text: "Showing flows/signup.d2 (version 3) to the user." }],
+  structuredContent: {
+    project_id: PROJECT,
+    path: "flows/signup.d2",
+    kind: "diagram",
+    version: 3,
+    updated_at: null,
+    url: `https://elaborat.ing/projects/${PROJECT}/flows/signup.d2`,
+    truncated: false,
+    embeds: [{ kind: "diagram", path: "flows/signup.d2", url: `https://elaborat.ing/projects/${PROJECT}/flows/signup.d2`, status: "stale" }],
+  },
+  _meta: { "elaborat.ing/svg": { "flows/signup.d2": SVG } },
+}
+
+test("a diagram shows on the dotted canvas in dark mode, with a banner when its source changed since it was drawn", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  const card = await openHost(page, { tools: true, theme: "dark", result: staleDiagram })
+  await expect(card.getByRole("img", { name: "Diagram flows/signup.d2" })).toBeVisible()
+  await expect(card.getByRole("status").filter({ hasText: "Its source changed after this was drawn." })).toBeVisible()
+  await expect(card.getByText("v3", { exact: true })).toBeVisible()
+  await expect(card.getByRole("button", { name: "Edit" })).toBeHidden()
+  // The palette's dark panel, and the drawing through the dark filter.
+  await expect(card.locator('[data-slot="chat-card"]')).toHaveCSS("background-color", "rgb(28, 29, 28)")
+  await expect(card.locator(".card-art svg")).toHaveCSS("filter", /invert/)
+  // Nothing runs past the phone's width.
+  expect(await page.frames()[1].evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(await violations(page)).toEqual([])
 })

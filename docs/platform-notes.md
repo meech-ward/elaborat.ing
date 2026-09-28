@@ -227,6 +227,14 @@ Re-check it against OpenAI's pages linked below.
   style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:;
   connect-src 'none'` (the draft adds `object-src 'none'`). That runs inline
   scripts, but not `eval` or `new Function`, which need `'unsafe-eval'`.
+- **The default policy blocks font files.** It sets no `font-src`, which falls
+  back to `default-src 'none'`, so `@font-face` URLs fail, `data:` ones
+  included, and `resourceDomains` takes origins, not schemes. A `FontFace`
+  made from an `ArrayBuffer` makes no request and loads (checked in Chromium
+  and Firefox under the default policy, 2026-09-27). Hosts may pass their
+  own fonts in `hostContext.styles`: `--font-sans` and `--font-mono` among
+  `variables`, and `css.fonts` with `@font-face` or `@import` rules.
+  [Spec, stable 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
 - **The official SDK assumes views cannot use `eval`.** Its `App` class says
   views "typically run under a strict CSP without `unsafe-eval`", puts Zod in
   jitless mode by default for that reason, and offers `allowUnsafeEval` only

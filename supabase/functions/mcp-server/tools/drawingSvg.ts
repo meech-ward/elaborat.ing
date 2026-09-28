@@ -8,9 +8,10 @@ export { parseDrawing } from '../../_shared/drawing.ts'
 // The view runs in the host's sandbox with no network, so it gets finished
 // SVG markup, not a renderer. Shapes go through roughjs, the library
 // Excalidraw draws with, with the element's own seed and options, so they
-// keep their hand-drawn look. Text uses the reader's system fonts (the view
-// cannot load Excalifont). Images and frames are not drawn: an image shows as
-// a dashed box, a frame's contents are drawn without its outline.
+// keep their hand-drawn look. Text names Excalifont, which the view carries
+// for Latin text, then the reader's system fonts. Images and frames are not
+// drawn: an image shows as a dashed box, a frame's contents are drawn without
+// its outline.
 // The options mirror Excalidraw 0.18's renderer (element/src/shape.ts).
 
 type Element = Record<string, unknown>

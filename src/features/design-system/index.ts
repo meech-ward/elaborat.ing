@@ -65,6 +65,10 @@ export { QuickOpen, type QuickOpenCommand, type QuickOpenFile, type QuickOpenMod
 export { quickOpenMatches, type QuickOpenMatch } from "./ui/quickOpenMatch"
 // --- end Canvas ---
 
+// --- Chat card (guide/ChatCardSection.tsx) ---
+export { EmbedBox } from "./ui/EmbedBox"
+// --- end Chat card ---
+
 // --- Pages outside a project (guide/HomeSection.tsx) ---
 export { AccountPill } from "./ui/AccountPill"
 export { AppBar, BrandMark } from "./ui/AppBar"

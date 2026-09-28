@@ -3,6 +3,7 @@ import { DottedPage } from "@/components/panel"
 import { palettes, useAppearance } from "@/features/appearance"
 import { AppearancePicker } from "./AppearancePicker"
 import { CanvasSection } from "./CanvasSection"
+import { ChatCardSection } from "./ChatCardSection"
 import { ColourTokensSection } from "./ColourTokensSection"
 import { ComponentsSheet } from "./ComponentsSheet"
 import { ControlsSection } from "./ControlsSection"
@@ -67,6 +68,9 @@ export function StyleGuidePage() {
             </GuideCard>
             <GuideCard title="Pages outside a project" className="gap-7">
               <HomeSection />
+            </GuideCard>
+            <GuideCard title="Chat card" className="gap-7">
+              <ChatCardSection />
             </GuideCard>
           </div>
           <div ref={portal} />

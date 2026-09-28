@@ -3,7 +3,7 @@ import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
-import { CARD_EDITOR_SCRIPT } from './cardEditorScript.ts'
+import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
@@ -113,25 +113,23 @@ Deno.test('show_file advertises the view and read_file stays text only', async (
 })
 
 Deno.test('the view is self-contained: no URL but elaborat.ing, nothing loaded from outside', () => {
-  // The editor script is checked on its own below: its libraries' error messages name their docs.
-  assert(CARD_EDITOR_SCRIPT.length > 0 && FILE_VIEW_HTML.includes(CARD_EDITOR_SCRIPT))
-  const view = FILE_VIEW_HTML.replace(CARD_EDITOR_SCRIPT, '')
-  const urls = view.match(/https?:\/\/[^\s"'`)<>]+/gi) ?? []
-  assert(urls.length > 0)
-  for (const url of urls) assertEquals(new URL(url).origin, 'https://elaborat.ing', url)
-  for (const pattern of [/\bsrc\s*=/i, /<link\b/i, /@import/i, /url\(/, /\/\/[a-z0-9.-]+\.[a-z]{2,}/i, /\bfetch\(|XMLHttpRequest|WebSocket|EventSource/]) {
+  // The script is checked on its own below: its libraries' error messages name their docs.
+  assert(CARD_SCRIPT.length > 0 && FILE_VIEW_HTML.includes(CARD_SCRIPT) && FILE_VIEW_HTML.includes(CARD_STYLE))
+  // The stylesheet's license banner names its project's site; it loads nothing.
+  const view = FILE_VIEW_HTML.replace(CARD_SCRIPT, '').replaceAll(/\/\*![^*]*\*\//g, '')
+  for (const url of view.match(/https?:\/\/[^\s"'`)<>]+/gi) ?? []) assertEquals(new URL(url).origin, 'https://elaborat.ing', url)
+  for (const pattern of [/\bsrc\s*=/i, /<link\b/i, /@import/i, /url\(/, /@font-face/i, /\/\/[a-z0-9.-]+\.[a-z]{2,}/i, /\bfetch\(|XMLHttpRequest|WebSocket|EventSource/]) {
     assertFalse(pattern.test(view.replaceAll(/https:\/\/elaborat\.ing\/?/g, '')), `view matches ${pattern}`)
   }
-  // The editor script's only em dashes are in its HTML entity tables.
-  assertFalse(view.includes('\u2014'), 'no em dashes in the view copy')
+  assertFalse(view.includes('\u2014'), 'no em dashes in the view')
 })
 
-Deno.test('the note editor script makes no requests, runs no code from strings, and stays inside its script element', () => {
+Deno.test('the card script makes no requests, runs no code from strings, and stays inside its script element', () => {
   for (const pattern of [/\bfetch\(|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon|new Worker/, /\beval\(|new Function\b/, /<\/script|<!--/i]) {
-    assertFalse(pattern.test(CARD_EDITOR_SCRIPT), `editor script matches ${pattern}`)
+    assertFalse(pattern.test(CARD_SCRIPT), `card script matches ${pattern}`)
   }
-  // What hosts load for the view, the editor included.
-  assert(FILE_VIEW_HTML.length < 1_200_000, `the view is ${FILE_VIEW_HTML.length} characters`)
+  // What hosts load for the view: the card, its editor, its two fonts and its stylesheet.
+  assert(FILE_VIEW_HTML.length < 1_300_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 
 Deno.test('rendered Markdown shows raw HTML as text and drops unsafe links and images', () => {
@@ -267,6 +265,31 @@ Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays tex
   assertStringIncludes(html, '&#x3C;Drawing src="../outside.excalidraw" />')
   assertStringIncludes(html, '&#x3C;Drawing src={path} />')
   assertFalse(html.includes('<Drawing'), html)
+})
+
+Deno.test('a Callout written as one block becomes a callout around its Markdown; other forms stay text', () => {
+  const { html, embeds } = renderNote(
+    [
+      '<Callout tone="warn" title="Heads up">',
+      '  Agents act as **you**.',
+      '  <Drawing src="art/in.excalidraw" />',
+      '</Callout>',
+      '',
+      '<Callout type="note">Keep this as it is.</Callout>',
+      '',
+      '<Callout tone={tone}>Not a literal tone</Callout>',
+      '',
+      '<Callout tone="danger"><a href="javascript:alert(1)">x</a></Callout>',
+    ].join('\n')
+  )
+  assertStringIncludes(html, '<aside class="callout" data-tone="warn"><p class="callout-title">Heads up</p>')
+  assertStringIncludes(html, 'Agents act as <strong>you</strong>.')
+  assertStringIncludes(html, '<aside class="callout" data-tone="info"><p>Keep this as it is.</p></aside>')
+  assertStringIncludes(html, '&#x3C;Callout tone={tone}>')
+  // Raw HTML inside a callout is text too, and an unknown tone is info.
+  assertStringIncludes(html, '<aside class="callout" data-tone="info"><p>&#x3C;a href="javascript:alert(1)">x&#x3C;/a></p></aside>')
+  assertFalse(html.includes('<a '), html)
+  assertEquals(embeds, [{ kind: 'drawing', path: 'art/in.excalidraw' }])
 })
 
 Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it cannot', async () => {

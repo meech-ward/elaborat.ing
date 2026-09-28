@@ -1,0 +1,193 @@
+/* The chat card's rules for markup it does not render itself: the note's
+   HTML from the server (NoteProse sets its headings, paragraphs and ordered
+   lists; these add the rest, as the app's rendered note draws them), the
+   server's SVG drawings, and the note editor. The library's components in
+   the note ([data-slot]) keep their own styles. */
+
+.card-note :where(ul):not([data-slot] *) {
+  margin: 0;
+  padding-left: 22px;
+  list-style: disc;
+}
+.card-note :where(li > ul, li > ol) {
+  margin-top: 4px;
+}
+.card-note :where(li > p):not([data-slot] *) {
+  margin: 0;
+}
+.card-note :where(li):has(> input[type="checkbox"]) {
+  list-style: none;
+}
+.card-note input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  accent-color: var(--accent);
+  vertical-align: -1px;
+}
+.card-note :where(h3, h4, h5, h6):not([data-slot] *) {
+  margin: 4px 0 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.card-note :where(h3):not([data-slot] *) {
+  font-size: 17px;
+}
+.card-note :where(h4, h5, h6):not([data-slot] *) {
+  font-size: 15.5px;
+}
+.card-note :where(h1, h2, h3, h4, h5, h6):not([data-slot] *) {
+  font-family: var(--heading-font, var(--ui-font));
+}
+.card-note :where(h1):not([data-slot] *) {
+  letter-spacing: var(--heading-tracking, -0.5px);
+}
+.card-note :where(a):not([data-slot] *) {
+  color: var(--accent-soft-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+.card-note :where(strong, b):not([data-slot] *) {
+  font-weight: 600;
+  color: var(--text);
+}
+.card-note :where(blockquote):not([data-slot] *) {
+  margin: 0;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+}
+.card-note :where(blockquote p):not([data-slot] *) {
+  color: inherit;
+}
+.card-note :where(:not(pre) > code):not([data-slot] *) {
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: var(--seg);
+  font-family: var(--code-font);
+  font-size: 0.88em;
+}
+.card-note :where(pre):not([data-slot] *) {
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  background: var(--seg);
+  box-shadow: 0 1px 2px var(--shadow);
+  color: var(--text);
+  font: 13px/1.6 var(--code-font);
+}
+.card-note :where(hr):not([data-slot] *) {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--panel-border);
+}
+.card-note :where(table):not([data-slot] *) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.card-note :where(th, td):not([data-slot] *) {
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  text-align: left;
+}
+.card-note :where(th):not([data-slot] *) {
+  background: var(--seg);
+  font-weight: 600;
+}
+.card-note :where(del) {
+  color: var(--muted);
+}
+.card-note :where(p, li, h1, h2, h3, h4, h5, h6) {
+  overflow-wrap: anywhere;
+}
+
+/* A callout's words take its colours and size (the library's Callout). */
+.card-callout p {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.card-callout p + p {
+  margin-top: 12px;
+}
+.card-callout .callout-title {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+/* The server's drawings: black lines on a transparent background, shown at
+   most 320px high in a note (420 on their own), and turned by Excalidraw's
+   own dark filter in dark mode. A text label's backing takes the canvas
+   colour, before the filter where it applies. */
+.card-art svg {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 320px;
+  margin-inline: auto;
+}
+.card-art-whole svg {
+  max-height: 420px;
+}
+.card-art .label-bg {
+  fill: var(--bg);
+}
+:root[data-scheme="dark"] .card-art svg {
+  filter: invert(93%) hue-rotate(180deg);
+}
+/* The dark background colour, before the dark filter turns it back into itself. */
+:root[data-scheme="dark"] .card-art .label-bg {
+  fill: #fefefe;
+}
+
+/* The note editor: ProseMirror in the note's type, 14 between blocks. */
+.card-editor .ProseMirror {
+  min-height: 3em;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-variant-ligatures: none;
+  caret-color: var(--accent);
+}
+.card-editor .ProseMirror > * {
+  margin-block: 0;
+}
+.card-editor .ProseMirror > * + * {
+  margin-top: 14px;
+}
+.card-editor .ProseMirror > h2 {
+  margin-top: 20px;
+}
+.card-editor .ProseMirror li {
+  position: relative;
+}
+.card-editor .ProseMirror li > p {
+  margin: 0;
+}
+.card-editor .ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+.card-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.card-editor [data-fluid-object] {
+  cursor: default;
+  user-select: none;
+  white-space: normal;
+}
+.card-editor .island-source {
+  margin: 0;
+  color: var(--muted);
+  font: 12.5px/1.6 var(--code-font);
+  white-space: pre-wrap;
+}
+.card-editor code.island-source {
+  white-space: normal;
+}

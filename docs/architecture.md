@@ -528,7 +528,8 @@ secrets.
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with
   one self-contained `ui://` view. It renders a note's Markdown (raw HTML and
-  other MDX shown as text, sanitized) and draws drawings and diagrams, shown on
+  other MDX shown as text, except a `<Callout>` written as one block, which
+  becomes a callout; sanitized) and draws drawings and diagrams, shown on
   their own or embedded in a note with `<Drawing>` and `<Diagram>`, each with an
   "Open in elaborat.ing" link. The server draws them as SVG from the saved
   scene (a diagram from its `.excalidraw` companion) with roughjs, the library
@@ -545,12 +546,18 @@ secrets.
   result's `_meta`. Save calls `write_file` through the bridge with the
   version the card showed, so a note changed since is a conflict, never
   overwritten; the card then reloads with `show_file` and tells the model
-  with `ui/update-model-context`. `src/chat-card/cardEditor.ts` is built
-  into one script by `bun run build:chat-card`, which writes
-  `tools/cardEditorScript.ts`; it is committed because the functions deploy
-  without building the app, so rebuild it after changing the editor
-  modules. The view is about 0.85 MB with it, and runs under the spec's
-  default policy (Zod runs jitless).
+  with `ui/update-model-context`.
+- **The card is built from the component library.** `src/chat-card` is a
+  small React app on the library's components and the Supabase Green
+  palette, light or dark as the host says; its states are on `/style-guide`.
+  `bun run build:chat-card` builds it, with the rendered editor, its
+  stylesheet and the app's fonts (Space Grotesk, JetBrains Mono and
+  Excalifont's Latin subset, added from bytes, which the default policy
+  allows where it blocks font files), into `tools/cardEditorScript.ts`. That
+  file is committed because the functions deploy without building the app,
+  so rebuild it after changing the card or the modules it uses, and give
+  the view a new `ui://` URI. The view is about 1.25 MB and runs under the
+  spec's default policy (Zod runs jitless).
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local

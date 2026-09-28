@@ -64,6 +64,7 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | `wrangler.jsonc` | `vars.MCP_UPSTREAM` | `https://<ref>.supabase.co/functions/v1/mcp-server` |
 | `wrangler.jsonc` | `routes` | Your domain, or remove it to serve from `workers.dev`. You may rename `name` too. |
 | `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here. |
+| `src/chat-card/toolResult.ts` | `APP_ORIGIN` | `<site>/`, then `bun run build:chat-card`. The chat card follows only links to this origin. |
 | `supabase/functions/share/index.ts` | `redirectTo` | `<site>/`. Where an invitation email's link lands. (Auth sends a link it does not allow to `site_url` instead, so leaving it does no harm once the hosted origin is out of your redirect list.) |
 
 Optional: the email subjects in `config.toml` and the templates in
