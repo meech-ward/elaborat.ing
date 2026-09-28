@@ -446,6 +446,8 @@ test.describe("on a phone", () => {
     await expect(open).toHaveAttribute("aria-current", "true")
     // Axe finds nothing on the files screen, in light and in dark (Look and theme opens Settings).
     for (const next of ["Dark", "Light"]) {
+      // Colours fade to the new theme: axe reads them once the fades are done.
+      await page.evaluate(() => Promise.allSettled(document.getAnimations().filter((animation) => animation instanceof CSSTransition).map((animation) => animation.finished)))
       const results = await new AxeBuilder({ page }).include("[data-files-screen]").analyze()
       expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
       await screen.getByRole("button", { name: "Look and theme" }).click()

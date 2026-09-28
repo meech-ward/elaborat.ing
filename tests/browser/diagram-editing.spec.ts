@@ -33,9 +33,11 @@ const saves = (fake: FakeSupabase) =>
 const status = (page: Page) => page.locator(".wb-native-view [aria-live]").first()
 const elementCount = async (page: Page) => Number(/(\d+) elements/.exec(await status(page).innerText())?.[1] ?? "0")
 
+// The diagram's view loads its chunk before it shows "Compiling diagram…", so
+// wait for the canvas itself: D2 loads and compiles first.
 async function compiled(page: Page) {
-  await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
-  await expect(page.locator(".excalidraw canvas").first()).toBeVisible()
+  await expect(page.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByText("Compiling diagram…")).toHaveCount(0)
 }
 
 async function menuAction(page: Page, name: string) {
