@@ -96,6 +96,7 @@ export {
   type CommentsSheetProps,
   type CommentsStatus,
 } from "./ui/CommentsPanel"
+export { commentHighlightClass } from "./ui/commentHighlightClass"
 export { COMMENT_MAX_LENGTH, absoluteTime, commentLength, relativeTime, type CommentLength } from "./ui/commentText"
 export { CommentAnchorLine, CommentDraft, CommentItem, CommentThread, anchorSummary, type CommentThreadProps } from "./ui/CommentThread"
 export {

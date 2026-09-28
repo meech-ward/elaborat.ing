@@ -14,8 +14,8 @@ export type NoteComments = {
   marks: readonly CommentMark[]
   /** The text the marks were placed in. A view showing other text waits for the next marks. */
   marksSource: string
-  /** A highlight or marker was chosen: the panel opens at its thread. */
-  open(threadId: string): void
+  /** A marker (`focus`: the keyboard goes to the thread) or commented text was chosen: the panel opens at its thread. */
+  open(threadId: string, focus?: boolean): void
   /**
    * Start a comment on part of `source`, the text the view shows: the panel
    * opens with a new comment on it. Returns why it cannot, or null.
@@ -102,10 +102,10 @@ export function useNoteComments({
     canComment,
     marks,
     marksSource: source,
-    open(threadId) {
+    open(threadId, focus = true) {
       if (!comments) return
       if (threadId === DRAFT_MARK) comments.controller.setPanelOpen(true)
-      else comments.controller.openThread(threadId)
+      else comments.controller.openThread(threadId, focus)
     },
     comment(request, text) {
       if (!comments || !file || !comments.canWrite) return null

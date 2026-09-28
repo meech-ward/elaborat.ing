@@ -61,6 +61,8 @@ import type { ComponentProps, ComponentPropsWithoutRef } from "react";
 import {
   checkParentMessage,
   encodePropLiteral,
+  type CommentMarksMessage,
+  type FrameRect,
   type RenderMessage,
   type SlotInfo,
 } from "../features/rendered/protocol";
@@ -111,11 +113,21 @@ function postToParent(message: unknown): void {
 
 // The app's shortcuts (save, commands, go to file, duplicate, focus, and the
 // view switch) work while the keyboard is in the frame: the frame passes them
-// up instead of letting the frame or the browser act on them.
+// up instead of letting the frame or the browser act on them. The comment key
+// comments on the selection, or on the heading holding the caret; elsewhere it
+// is passed up too (it shows or hides the comments).
 window.addEventListener(
   "keydown",
   (event) => {
     if (!activeSession || !(event.metaKey || event.ctrlKey) || event.shiftKey) return;
+    if (event.altKey && event.code === "KeyM") {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = commentTarget();
+      if (target) postToParent({ kind: "comment-shortcut", session: activeSession, revision: activeRevision, ...target });
+      else postToParent({ kind: "shortcut", session: activeSession, key: "m", meta: event.metaKey, ctrl: event.ctrlKey, alt: true });
+      return;
+    }
     const digit = /^Digit([123])$/.exec(event.code)?.[1];
     const key = event.altKey ? digit : ["s", "k", "p", "d", "."].find((candidate) => candidate === event.key.toLowerCase());
     if (!key) return;
@@ -493,6 +505,8 @@ const subscribeIslands = (listener: () => void) => {
 };
 let fluidEditor: FluidEditor | null = null;
 let runtimeKey: string | null = null;
+/** The commented text to mark, as the parent last sent it for a revision. */
+let commentMarks: CommentMarksMessage | null = null;
 let fluidContent: Awaited<ReturnType<typeof run>>["default"] | null = null;
 let originalIslandOffsets = new Map<string, number>();
 let currentIslandOffsets = new Map<string, number>();
@@ -642,6 +656,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       for (const listener of islandListeners) listener();
       setAuthoringContext(pending.session, pending.revision, pending.authoring);
       editor.receive({ kind: "render", ...pending });
+      applyCommentMarks();
       root.render(
         <StrictMode>
           <Content components={fluidComponents} />
@@ -765,6 +780,16 @@ window.addEventListener("message", (event: MessageEvent) => {
     document.documentElement.dataset.scheme = message.scheme;
     return;
   }
+  if (message.kind === "comments") {
+    commentMarks = message;
+    applyCommentMarks();
+    if (!message.canComment) resetCommentReports();
+    return;
+  }
+  if (message.kind === "comment-reveal") {
+    fluidEditor?.revealCommentMark(message.id, message.focus);
+    return;
+  }
   if (message.kind === "resources") {
     // Notify only the embed subscribers. Re-evaluating the document creates
     // a new Content component and unmounts focused prose/literal controls,
@@ -857,3 +882,141 @@ if (typeof IntersectionObserver !== "undefined" && document.documentElement) {
   });
   frameVisibility.observe(document.documentElement);
 }
+
+// Comments. The parent sends the commented text as document ranges for a
+// revision; they are marked once the document on screen is that revision
+// (a render still compiling marks them when it lands). The frame reports the
+// selection and the heading under the pointer, as document positions and
+// where they are on screen, so the parent can offer Comment by them; it maps
+// the positions through its own projection.
+
+function applyCommentMarks(): void {
+  if (!fluidEditor || !commentMarks || fluidEditor.shownRevision !== commentMarks.revision) return;
+  fluidEditor.setCommentMarks(commentMarks.marks);
+}
+
+const canComment = () => Boolean(activeSession && fluidEditor && commentMarks?.canComment);
+
+/** Whether a DOM node is in the note's editable text, outside computed objects. */
+function inNoteText(node: Node | null): boolean {
+  const element = node instanceof Element ? node : node?.parentElement;
+  return Boolean(element && fluidEditor?.view.dom.contains(element) && !element.closest("[data-fluid-object]"));
+}
+
+/** The frame's viewport position of a DOM rect, rounded for comparing. */
+function frameRect(rect: DOMRect): FrameRect {
+  return { top: Math.round(rect.top), left: Math.round(rect.left), bottom: Math.round(rect.bottom), right: Math.round(rect.right) };
+}
+
+/** The selected text as document positions and where its end is, or null when nothing is selected there. */
+function selectedText(): { range: { from: number; to: number }; rect: FrameRect } | null {
+  const selection = document.getSelection();
+  const view = fluidEditor?.view;
+  if (!view || !selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  if (!inNoteText(selection.anchorNode) || !inNoteText(selection.focusNode)) return null;
+  try {
+    const anchor = view.posAtDOM(selection.anchorNode!, selection.anchorOffset);
+    const head = view.posAtDOM(selection.focusNode!, selection.focusOffset);
+    if (anchor === head) return null;
+    const range = selection.getRangeAt(0);
+    const rects = range.getClientRects();
+    const end = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+    return { range: { from: Math.min(anchor, head), to: Math.max(anchor, head) }, rect: frameRect(end) };
+  } catch {
+    return null;
+  }
+}
+
+/** The heading element holding a node, in the note's text. */
+function headingOf(node: Node | null): Element | null {
+  const element = node instanceof Element ? node : node?.parentElement;
+  const heading = element?.closest("h1, h2, h3, h4, h5, h6") ?? null;
+  return heading && inNoteText(heading) ? heading : null;
+}
+
+/** What the comment key comments on: the selection, or the heading holding the caret (from = to). */
+function commentTarget(): { from: number; to: number } | null {
+  if (!canComment()) return null;
+  const selected = selectedText();
+  if (selected) return selected.range;
+  const selection = document.getSelection();
+  const heading = headingOf(selection?.anchorNode ?? null);
+  if (!heading || !fluidEditor) return null;
+  try {
+    const pos = fluidEditor.view.posAtDOM(heading, 0);
+    return { from: pos, to: pos };
+  } catch {
+    return null;
+  }
+}
+
+let reportedSelection = "null";
+function reportSelection(): void {
+  if (!canComment()) return;
+  const selected = selectedText();
+  const key = JSON.stringify(selected);
+  if (key === reportedSelection) return;
+  reportedSelection = key;
+  postToParent({ kind: "comment-selection", session: activeSession, revision: activeRevision, range: selected?.range ?? null, rect: selected?.rect ?? null });
+}
+
+let hoveredHeading: Element | null = null;
+function reportHeading(heading: Element | null): void {
+  if (!canComment() || !fluidEditor) return;
+  hoveredHeading = heading;
+  let pos: number | null = null;
+  let rect: FrameRect | null = null;
+  if (heading) {
+    try {
+      pos = fluidEditor.view.posAtDOM(heading, 0);
+      // Beside the heading's words, not its full-width box.
+      const words = document.createRange();
+      words.selectNodeContents(heading);
+      rect = frameRect(words.getBoundingClientRect());
+    } catch {
+      pos = null;
+    }
+  }
+  postToParent({ kind: "comment-heading", session: activeSession, revision: activeRevision, pos, rect: pos === null ? null : rect });
+}
+
+/** Comments were turned off (a viewer, or offline): forget what was reported. */
+function resetCommentReports(): void {
+  reportedSelection = "null";
+  hoveredHeading = null;
+}
+
+let selectionTimer = 0;
+document.addEventListener("selectionchange", () => {
+  window.clearTimeout(selectionTimer);
+  selectionTimer = window.setTimeout(reportSelection, 120);
+});
+document.addEventListener("mouseover", (event) => {
+  const heading = headingOf(event.target instanceof Node ? event.target : null);
+  if (heading !== hoveredHeading) reportHeading(heading);
+});
+document.documentElement.addEventListener("mouseleave", () => {
+  if (hoveredHeading) reportHeading(null);
+});
+let scrollFrame = 0;
+window.addEventListener(
+  "scroll",
+  () => {
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(() => {
+      // Whatever was reported has moved: report it again where it is now.
+      reportedSelection = "";
+      reportSelection();
+      if (hoveredHeading) reportHeading(hoveredHeading);
+    });
+  },
+  { passive: true },
+);
+// Commented text opens its thread when clicked (not when a selection ends on it).
+document.addEventListener("click", (event) => {
+  if (!activeSession || !commentMarks || !(event.target instanceof Element)) return;
+  if (!document.getSelection()?.isCollapsed) return;
+  const marked = event.target.closest("[data-comment-thread]");
+  const id = marked && inNoteText(marked) ? marked.getAttribute("data-comment-thread") : null;
+  if (id) postToParent({ kind: "comment-open", session: activeSession, revision: activeRevision, id });
+});

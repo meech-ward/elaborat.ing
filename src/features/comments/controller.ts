@@ -101,10 +101,14 @@ export class CommentsController {
     this.notify()
   }
 
-  /** A marker or highlight was chosen: open the panel at its thread, and move the keyboard there. */
-  openThread(threadId: string): void {
+  /**
+   * A marker or commented text was chosen: open the panel at its thread. With
+   * `focus` (a marker, a button) the keyboard moves to the thread; a click in
+   * the text leaves it there.
+   */
+  openThread(threadId: string, focus = true): void {
     this.set({ panelOpen: true, activeThreadId: threadId })
-    for (const listener of this.focusListeners) listener(threadId)
+    if (focus) for (const listener of this.focusListeners) listener(threadId)
   }
 
   /** The Comment action on a selection or a heading: open the panel with a new comment on it. */

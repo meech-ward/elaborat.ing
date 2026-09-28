@@ -5,6 +5,7 @@ import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
+import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
 import { RenderedEditor } from "@/features/rendered";
 import type { RenderedPatchOptions } from "../source/renderedHistory";
@@ -21,7 +22,7 @@ import { useCanvasPresentation } from "./viewTheme";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
-import { useNoteComments } from "@/features/comments";
+import { useNoteComments, type NoteCommentRequest } from "@/features/comments";
 import { savedComponentSource } from '../document/componentModules';
 import {
   applyReload,
@@ -164,16 +165,6 @@ export function WorkspaceSession({
     });
     return () => onOperationSession?.(initial.path,null);
   }, [client,initial.path,locked,onOperationSession,openFile,readOnly,store]);
-
-  // The note's comments: the panel's file while it is on screen, and the
-  // commented text both views mark.
-  useNoteComments({
-    path: initial.path,
-    server,
-    active,
-    text: snapshot.text,
-    onReveal: () => {},
-  });
 
   const displayName = openFile.path ?? openFile.pendingName ?? "No file open";
   const isNote = openFile.kind === "note";
@@ -337,6 +328,33 @@ export function WorkspaceSession({
   }, []);
 
   const apple = useMemo(() => isApplePlatform(), []);
+
+  // The note's comments: the panel's file while it is on screen, and the
+  // commented text both views mark. The panel shows a thread's text in the
+  // views on screen; the source takes the keyboard, or the note on its own.
+  const renderedApi = useRef<RenderedEditorApi | null>(null);
+  const noteComments = useNoteComments({
+    path: initial.path,
+    server,
+    active,
+    text: snapshot.text,
+    onReveal: (mark) => {
+      const sourceShown = view !== "rendered" || !isNote;
+      if (sourceShown) editorApi.current?.revealRange(mark.from, mark.to, true);
+      if (isNote && view !== "source") renderedApi.current?.revealComment(mark.id, !sourceShown);
+    },
+  });
+  const commentProps = {
+    marks: noteComments.marks,
+    source: noteComments.marksSource,
+    canComment: noteComments.canComment,
+    shortcut: apple ? { label: "⌘⌥M", aria: "Meta+Alt+M" } : { label: "Ctrl+Alt+M", aria: "Control+Alt+M" },
+    onOpen: noteComments.open,
+    onComment: (request: NoteCommentRequest, source: string) => {
+      const problem = noteComments.comment(request, source);
+      if (problem) setNotice(problem);
+    },
+  };
   // A phone has no room to split.
   const views = useMemo<EditorView[]>(() => (compact ? ["source", "rendered"] : ["source", "split", "rendered"]), [compact]);
   useEffect(() => {
@@ -735,6 +753,7 @@ export function WorkspaceSession({
               onChange={handleSourceChange}
               onCursor={() => {}}
               readOnly={readOnly}
+              comments={{ ...commentProps, sections: isNote }}
               onSave={() => {
                 if (readOnly) {
                   setNotice(readOnly);
@@ -772,6 +791,8 @@ export function WorkspaceSession({
                 )}
                 onEditResource={handleEditResource}
                 readOnly={Boolean(readOnly)}
+                comments={commentProps}
+                apiRef={renderedApi}
               />
             </div>
           )}

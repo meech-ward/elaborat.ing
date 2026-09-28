@@ -310,6 +310,27 @@ export const appearanceMessageSchema = z.object({
   scheme: z.enum(["light", "dark"]),
 });
 export type AppearanceMessage = z.infer<typeof appearanceMessageSchema>;
+
+/**
+ * Parent -> child: the commented text to mark, as ranges of the rendered
+ * document (ProseMirror positions) for this revision, which the parent works
+ * out from the source. Ids are the threads' (or "draft"), echoed back when
+ * one is clicked. `canComment` turns on the selection and heading reports.
+ */
+export const commentMarksMessageSchema = z.object({
+  kind: z.literal("comments"),
+  session: z.string().min(8),
+  revision: z.number().int().nonnegative(),
+  canComment: z.boolean(),
+  marks: z.array(z.object({
+    id: z.string().min(1).max(64),
+    from: z.number().int().nonnegative(),
+    to: z.number().int().nonnegative(),
+    active: z.boolean(),
+  }).strict()).max(1000),
+}).strict();
+export type CommentMarksMessage = z.infer<typeof commentMarksMessageSchema>;
+
 export const parentMessageSchema = z.union([
   z.object({
     kind: z.literal('source-draft-settled'),
@@ -338,9 +359,26 @@ export const parentMessageSchema = z.union([
   renderMessageSchema,
   resourcesMessageSchema,
   appearanceMessageSchema,
+  commentMarksMessageSchema,
+  // Show a commented range: scroll to it, flash it, and take the keyboard if asked.
+  z.object({
+    kind: z.literal("comment-reveal"),
+    session: z.string().min(8),
+    id: z.string().min(1).max(64),
+    focus: z.boolean(),
+  }).strict(),
 ]);
 
 export type ParentMessage = z.infer<typeof parentMessageSchema>;
+
+/** Where something is in the frame's viewport, in CSS pixels, for the parent to place a control by it. */
+const frameRectSchema = z.object({
+  top: z.number().finite(),
+  left: z.number().finite(),
+  bottom: z.number().finite(),
+  right: z.number().finite(),
+}).strict();
+export type FrameRect = z.infer<typeof frameRectSchema>;
 
 /** Child -> parent: result or edit messages. */
 export const childMessageSchema = z.discriminatedUnion("kind", [
@@ -411,7 +449,7 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("shortcut"),
     session: z.string().min(1),
-    key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3"]),
+    key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3", "m"]),
     meta: z.boolean(),
     ctrl: z.boolean(),
     alt: z.boolean(),
@@ -421,6 +459,38 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     session: z.string().min(1),
     revision: z.number().int().nonnegative(),
   }),
+  // The selected text (document positions) and where its end is, or none.
+  // Positions are proposals: the parent maps them through its own projection.
+  z.object({
+    kind: z.literal("comment-selection"),
+    session: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    range: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }).strict().nullable(),
+    rect: frameRectSchema.nullable(),
+  }).strict(),
+  // The heading under the pointer (a position in it) and where its words are, or none.
+  z.object({
+    kind: z.literal("comment-heading"),
+    session: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    pos: z.number().int().nonnegative().nullable(),
+    rect: frameRectSchema.nullable(),
+  }).strict(),
+  // Commented text was clicked: open its thread (an id the parent sent).
+  z.object({
+    kind: z.literal("comment-open"),
+    session: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    id: z.string().min(1).max(64),
+  }).strict(),
+  // The comment key in the frame: comment on the selection, or on the heading holding the caret (from = to).
+  z.object({
+    kind: z.literal("comment-shortcut"),
+    session: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    from: z.number().int().nonnegative(),
+    to: z.number().int().nonnegative(),
+  }).strict(),
   z.object({
     kind: z.literal("render-error"),
     session: z.string().min(1),
@@ -509,6 +579,10 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "edit-resource":
     case "view-resource":
     case "shortcut":
+    case "comment-selection":
+    case "comment-heading":
+    case "comment-open":
+    case "comment-shortcut":
       return "drop";
     case "edit-rejected":
       return "refusal";

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
 import { format } from "prettier/standalone";
 import * as prettierMarkdown from "prettier/plugins/markdown";
@@ -9,6 +9,8 @@ import { getAppearanceTokens, getPaletteColors, useAppearance } from "@/features
 import { monacoTheme } from "./monacoTheme";
 import { completeSource } from "./completions";
 import type { ComponentDefinition } from '../document/componentCatalog';
+import { DRAFT_MARK, isHeadingLine, type CommentMark, type NoteCommentRequest } from "@/features/comments";
+import { CommentActionButton, CommentMarker, commentHighlightClass, type Shortcut } from "@/features/design-system";
 import type {
   RenderedPatchOptions,
   SourceHistoryResult,
@@ -39,7 +41,31 @@ export interface SourceEditorApi {
   ): void;
   history(direction: "undo" | "redo"): SourceHistoryResult;
   focus(): void;
+  /** Scroll source[from, to) into view and flash it; `focus` puts the cursor at its start. */
+  revealRange(from: number, to: number, focus: boolean): void;
 }
+
+/** The note's commented text, and the Comment actions when the person may comment. */
+export type SourceComments = {
+  /** Where the commented text is in `source`. Marks placed in other text wait for the next. */
+  marks: readonly CommentMark[];
+  source: string;
+  /** Offer Comment on a selection (and Comment on section on a heading, with `sections`). */
+  canComment: boolean;
+  /** Headings take section comments (notes). */
+  sections: boolean;
+  /** The key that comments, shown on the Comment button. */
+  shortcut?: Shortcut;
+  /** A marker (`focus`: the keyboard goes to the thread) or commented text was chosen. */
+  onOpen: (threadId: string, focus: boolean) => void;
+  /** Comment on part of `source`, the editor's text. */
+  onComment: (request: NoteCommentRequest, source: string) => void;
+};
+
+/** The comment markers beside the lines, one per line with commented text. */
+type RailMarker = { line: number; top: number; ids: string[]; active: boolean; label: string };
+
+const LINE_HEIGHT = 22;
 
 export interface SourceEditorProps {
   initialText: string;
@@ -75,6 +101,7 @@ export interface SourceEditorProps {
   apiRef: React.RefObject<SourceEditorApi | null>;
   /** Why the text cannot be changed here, or null (the default) when it can. Monaco shows it when someone tries to type. */
   readOnly?: string | null;
+  comments?: SourceComments | null;
 }
 
 /** Pull a leading `line:column` (MDX/VFile style) out of an error message. */
@@ -102,6 +129,11 @@ export function SourceEditor(props: SourceEditorProps) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const documentSyncRef = useRef<ReturnType<typeof createModelDocumentSync> | null>(null);
+  // Comments: the markers beside the lines and the Comment button under a
+  // selection, placed from the editor's own positions as it scrolls.
+  const [rail, setRail] = useState<{ shown: boolean; markers: RailMarker[] }>({ shown: false, markers: [] });
+  const [commentButton, setCommentButton] = useState<{ top: number; left: number } | null>(null);
+  const commentMarksRef = useRef<((marks: readonly CommentMark[], source: string) => void) | null>(null);
   // Latest callbacks without rebinding the mount-once editor. Assigned in
   // an effect (never during render) so memoization stays valid.
   const live = useRef(props);
@@ -283,12 +315,131 @@ export function SourceEditor(props: SourceEditorProps) {
         },
       }),
     );
+    // Comments: commented text as decorations, which move with edits until
+    // the next marks arrive; markers and the Comment button follow them.
+    const markDecorations = editor.createDecorationsCollection();
+    const flashDecorations = editor.createDecorationsCollection();
+    let marked: { decoration: string; mark: CommentMark }[] = [];
+    let flashTimer = 0;
+    const canCommentKey = editor.createContextKey<boolean>("elaboratingCanComment", false);
+    const onHeadingKey = editor.createContextKey<boolean>("elaboratingOnHeading", false);
+    const headingAt = (lineNumber: number) => {
+      // Only a line that looks like a heading, or sits over an underline, is checked in full.
+      const line = model.getLineContent(lineNumber);
+      const next = lineNumber < model.getLineCount() ? model.getLineContent(lineNumber + 1) : "";
+      if (!/^ {0,3}#/.test(line) && !/^ {0,3}(?:=+|-+)[ \t]*$/.test(next)) return false;
+      return isHeadingLine(model.getValue(), model.getOffsetAt({ lineNumber, column: 1 }));
+    };
+    const updateComments = () => {
+      const comments = live.current.comments;
+      const layout = editor.getLayoutInfo();
+      const scrollTop = editor.getScrollTop();
+      const lines = new Map<number, { ids: string[]; active: boolean }>();
+      for (const { decoration, mark } of marked) {
+        const range = model.getDecorationRange(decoration);
+        if (!range || range.isEmpty() || mark.id === DRAFT_MARK) continue;
+        const group = lines.get(range.startLineNumber) ?? { ids: [], active: false };
+        group.ids.push(mark.id);
+        group.active ||= mark.active;
+        lines.set(range.startLineNumber, group);
+      }
+      const markers: RailMarker[] = [];
+      for (const [line, group] of lines) {
+        const top = editor.getTopForLineNumber(line) - scrollTop + (LINE_HEIGHT - 18) / 2;
+        if (top < -LINE_HEIGHT || top > layout.height) continue;
+        const count = group.ids.length;
+        markers.push({ line, top, ids: group.ids, active: group.active, label: `${count} ${count === 1 ? "thread" : "threads"} on line ${line}` });
+      }
+      setRail((current) =>
+        current.shown === lines.size > 0 && JSON.stringify(current.markers) === JSON.stringify(markers) ? current : { shown: lines.size > 0, markers },
+      );
+      const selection = editor.getSelection();
+      let button: { top: number; left: number } | null = null;
+      if (comments?.canComment && selection && !selection.isEmpty() && editor.hasTextFocus()) {
+        const end = editor.getScrolledVisiblePosition(selection.getEndPosition());
+        if (end && end.top >= 0 && end.top <= layout.height - end.height) {
+          button = {
+            top: Math.min(end.top + end.height + 4, layout.height - 40),
+            left: Math.max(layout.contentLeft, Math.min(end.left - 48, layout.width - 200)),
+          };
+        }
+      }
+      setCommentButton((current) => (current?.top === button?.top && current?.left === button?.left ? current : button));
+      canCommentKey.set(Boolean(comments?.canComment));
+      onHeadingKey.set(Boolean(comments?.canComment && comments.sections && selection?.isEmpty() && headingAt(selection.startLineNumber)));
+    };
+    commentMarksRef.current = (marks, source) => {
+      // Marks placed in other text (typing ran ahead) wait for the next set.
+      if (source === model.getValue()) {
+        const ids = markDecorations.set(
+          marks.map((mark) => ({
+            range: monaco.Range.fromPositions(model.getPositionAt(mark.from), model.getPositionAt(mark.to)),
+            options: {
+              inlineClassName: commentHighlightClass({ active: mark.active }),
+              stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            },
+          })),
+        );
+        marked = ids.map((decoration, index) => ({ decoration, mark: marks[index] }));
+      }
+      updateComments();
+    };
+    const commentOn = (request: NoteCommentRequest) => live.current.comments?.onComment(request, model.getValue());
+    disposables.push(
+      // The comment key comments on the selection, or on the heading the
+      // cursor is on. Elsewhere it is left to the page (it shows or hides
+      // the comments).
+      editor.addAction({
+        id: "elaborating.comment",
+        label: "Comment",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
+        precondition: "elaboratingCanComment && editorHasSelection",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 0,
+        run() {
+          const selection = editor.getSelection();
+          if (!selection || selection.isEmpty()) return;
+          commentOn({ kind: "text", from: model.getOffsetAt(selection.getStartPosition()), to: model.getOffsetAt(selection.getEndPosition()) });
+        },
+      }),
+      editor.addAction({
+        id: "elaborating.comment-section",
+        label: "Comment on section",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
+        precondition: "elaboratingCanComment && !editorHasSelection && elaboratingOnHeading",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 0,
+        run() {
+          const position = editor.getPosition();
+          if (position) commentOn({ kind: "section", offset: model.getOffsetAt(position) });
+        },
+      }),
+      editor.onDidScrollChange(updateComments),
+      editor.onDidLayoutChange(updateComments),
+      editor.onDidChangeCursorSelection(updateComments),
+      editor.onDidFocusEditorText(updateComments),
+      editor.onDidBlurEditorText(updateComments),
+      // Commented text opens its thread when clicked (not when a selection ends on it).
+      editor.onMouseUp((event) => {
+        const comments = live.current.comments;
+        const position = event.target.position;
+        if (!comments || !position || event.target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT) return;
+        if (!editor.getSelection()?.isEmpty()) return;
+        const hit = marked
+          .filter(({ decoration, mark }) => mark.id !== DRAFT_MARK && model.getDecorationRange(decoration)?.containsPosition(position))
+          .sort((a, b) => a.mark.to - a.mark.from - (b.mark.to - b.mark.from))[0];
+        if (hit) comments.onOpen(hit.mark.id, false);
+      }),
+      { dispose: () => window.clearTimeout(flashTimer) },
+    );
+
     disposables.push(
       editor.onDidChangeModelContent(() => {
         if (!applyingRendered) renderedGroup = undefined;
         const text = model.getValue();
         documentSync.emitted(text);
         live.current.onChange(text);
+        updateComments();
       }),
       editor.onDidFocusEditorText(() => {
         renderedGroup = undefined;
@@ -381,10 +532,24 @@ export function SourceEditor(props: SourceEditorProps) {
       focus() {
         editor.focus();
       },
+      revealRange(from, to, focus) {
+        const range = monaco.Range.fromPositions(model.getPositionAt(from), model.getPositionAt(to));
+        editor.revealRangeInCenterIfOutsideViewport(range, monaco.editor.ScrollType.Smooth);
+        flashDecorations.set([
+          { range, options: { inlineClassName: commentHighlightClass({ active: true, flash: true }) } },
+        ]);
+        window.clearTimeout(flashTimer);
+        flashTimer = window.setTimeout(() => flashDecorations.clear(), 1500);
+        if (focus) {
+          editor.setPosition(range.getStartPosition());
+          editor.focus();
+        }
+      },
     };
 
     return () => {
       live.current.apiRef.current = null;
+      commentMarksRef.current = null;
       for (const item of disposables) item.dispose();
       editorRef.current = null;
       modelRef.current = null;
@@ -457,6 +622,14 @@ export function SourceEditor(props: SourceEditorProps) {
     });
   }, [readOnly]);
 
+  // The commented text, and whether the Comment actions are offered.
+  const commentMarks = props.comments?.marks;
+  const commentSource = props.comments?.source;
+  const canComment = props.comments?.canComment ?? false;
+  useEffect(() => {
+    commentMarksRef.current?.(commentMarks ?? [], commentSource ?? "");
+  }, [canComment, commentMarks, commentSource]);
+
   // The component stays mounted in rendered mode (history preserved);
   // relayout when it becomes visible again.
   useEffect(() => {
@@ -467,7 +640,51 @@ export function SourceEditor(props: SourceEditorProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [visible]);
 
-  return <div ref={containerRef} hidden={!visible} className="h-full w-full" />;
+  const comments = props.comments;
+  return (
+    <div hidden={!visible} className="relative flex h-full w-full">
+      <div ref={containerRef} className="h-full min-w-0 flex-1" />
+      {rail.shown && (
+        // A column at the right of the pane, beside the lines it marks.
+        <div className="relative h-full w-12 shrink-0 overflow-hidden">
+          {rail.markers.map((marker) => (
+            <CommentMarker
+              key={marker.line}
+              count={marker.ids.length}
+              label={marker.label}
+              active={marker.active}
+              className="absolute left-1"
+              style={{ top: marker.top }}
+              onClick={() => {
+                // A line with more than one thread opens the next each time.
+                const current = marker.ids.findIndex((id) => id === props.comments?.marks.find((mark) => mark.active)?.id);
+                props.comments?.onOpen(marker.ids[(current + 1) % marker.ids.length], true);
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {comments?.canComment && commentButton && (
+        <CommentActionButton
+          shortcut={comments.shortcut}
+          className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
+          style={{ top: commentButton.top, left: commentButton.left }}
+          // Keep the keyboard in the editor, so the selection stays.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const editor = editorRef.current;
+            const model = modelRef.current;
+            const selection = editor?.getSelection();
+            if (!editor || !model || !selection || selection.isEmpty()) return;
+            comments.onComment(
+              { kind: "text", from: model.getOffsetAt(selection.getStartPosition()), to: model.getOffsetAt(selection.getEndPosition()) },
+              model.getValue(),
+            );
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 export { parseErrorPosition };

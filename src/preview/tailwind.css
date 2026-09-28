@@ -12,6 +12,8 @@
 @import "../features/rendered/documentCharts.css";
 @import "./inlineLiteral.css";
 @import "../features/appearance/radii.css";
+/* Commented text, marked the way the app marks it (the library's look). */
+@import "../features/design-system/ui/commentHighlight.css";
 @plugin "@tailwindcss/typography";
 
 @source "../features/rendered/components.tsx";

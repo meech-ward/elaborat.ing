@@ -8,6 +8,7 @@ import { Callout } from "../ui/Banner"
 import { CanvasIsland, ToolButton, ToolGroup, ZoomControl, islandTools } from "../ui/CanvasIsland"
 import { CommentComposer } from "../ui/CommentComposer"
 import { CommentActionButton, CommentHighlight, CommentMarker, CommentsButton, DetachedBadge } from "../ui/CommentMarker"
+import { commentHighlightClass } from "../ui/commentHighlightClass"
 import { CommentsPanel, CommentsSheet } from "../ui/CommentsPanel"
 import { CommentAnchorLine, CommentDraft, CommentThread } from "../ui/CommentThread"
 import type { CommentAnchorView } from "../ui/commentTypes"
@@ -209,6 +210,13 @@ function ComposerAndMarkers() {
         </p>
         <GuideValue>
           Commented text: a faint wash over a dotted 2px underline in the accent line (the accent, or accentSoftText where the accent is too light to see), apart from the selection and from links; the open thread&apos;s stronger, solid.
+        </GuideValue>
+        <p className="max-w-[340px] font-mono text-[13px] leading-[22px] text-foreground">
+          How a customer moves, and <span className={commentHighlightClass()}>where agents help</span>. Then{" "}
+          <span className={commentHighlightClass({ active: true })}>the open thread</span>.
+        </p>
+        <GuideValue>
+          The same look on text the library does not draw, the source editor&apos;s and the rendered note&apos;s: commentHighlightClass gives it as plain classes. Showing a thread&apos;s text flashes it once.
         </GuideValue>
         <DottedPage className="relative h-[120px] min-h-0 w-full max-w-[290px] overflow-hidden rounded-tile border border-border">
           <svg width="290" height="120" viewBox="0 0 290 120" aria-hidden="true" className="absolute top-0 left-0 font-[family-name:Excalifont,cursive]">

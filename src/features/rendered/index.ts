@@ -5,7 +5,7 @@
  * Document types are owned by `src/features/document/index.ts` and
  * re-exported through `./types`.
  */
-export { RenderedEditor, type RenderedEditorProps } from './RenderedEditor';
+export { RenderedEditor, type RenderedComments, type RenderedEditorApi, type RenderedEditorProps } from './RenderedEditor';
 export { Counter, Callout } from './components';
 export {
   compileForPreview,

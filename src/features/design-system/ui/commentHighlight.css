@@ -1,0 +1,38 @@
+/*
+ * CommentHighlight's look as plain classes, for commented text the library
+ * does not render itself: the source editor's decorations and the rendered
+ * note's (its frame imports this file). Keep it the same as
+ * commentHighlightVariants: a faint wash of the accent line (--focus) over a
+ * dotted 2px underline in it; the open thread's text a stronger wash and a
+ * solid underline. `flash` pulses the wash once, when the panel shows a
+ * thread's text.
+ */
+.comment-highlight {
+  border-radius: 2px;
+  background-color: color-mix(in oklab, var(--focus) 10%, transparent);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--focus);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+}
+.comment-highlight.comment-highlight-active {
+  background-color: color-mix(in oklab, var(--focus) 22%, transparent);
+  text-decoration-style: solid;
+}
+.comment-highlight.comment-highlight-flash {
+  animation: comment-highlight-flash 1.4s ease-out;
+}
+@keyframes comment-highlight-flash {
+  0%,
+  35% {
+    background-color: color-mix(in oklab, var(--focus) 48%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .comment-highlight.comment-highlight-flash {
+    animation: none;
+    background-color: color-mix(in oklab, var(--focus) 38%, transparent);
+  }
+}

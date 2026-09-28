@@ -23,6 +23,9 @@ describe("CommentsController", () => {
     controller.onFocusThread((id) => focused.push(id))
     controller.openThread("t1")
     expect(controller.getState()).toMatchObject({ panelOpen: true, activeThreadId: "t1" })
+    // Commented text clicked in the file: the keyboard stays there.
+    controller.openThread("t2", false)
+    expect(controller.getState()).toMatchObject({ panelOpen: true, activeThreadId: "t2" })
     expect(focused).toEqual(["t1"])
   })
 

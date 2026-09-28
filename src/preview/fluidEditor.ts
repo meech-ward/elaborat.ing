@@ -1,10 +1,12 @@
 import {
   EditorState,
+  Plugin,
+  PluginKey,
   TextSelection,
   type Transaction,
   type Command,
 } from "prosemirror-state";
-import { EditorView, type NodeView } from "prosemirror-view";
+import { Decoration, DecorationSet, EditorView, type NodeView } from "prosemirror-view";
 import { keymap } from "prosemirror-keymap";
 import {
   baseKeymap,
@@ -109,6 +111,51 @@ function beforeFocusCheck(first: () => void) {
   queueMicrotask(restore);
 }
 
+/** Commented text to mark, as document ranges; `active` is the thread open in the panel. */
+export type CommentMarkRange = { id: string; from: number; to: number; active: boolean };
+
+type CommentMarksState = { marks: CommentMarkRange[]; flash: string | null; set: DecorationSet };
+type CommentMarksMeta = { marks?: CommentMarkRange[]; flash?: string | null };
+const commentMarksKey = new PluginKey<CommentMarksState>("comment-marks");
+
+/**
+ * Marks commented text with the app's highlight classes (the library's
+ * commentHighlight.css, which the frame's stylesheet imports). The marks move
+ * with edits until the next set arrives; each carries its thread's id, so a
+ * click on it can open the thread.
+ */
+function commentMarksPlugin() {
+  const decorate = (doc: PMNode, marks: CommentMarkRange[], flash: string | null) =>
+    DecorationSet.create(
+      doc,
+      marks.flatMap((mark) => {
+        const from = Math.max(0, Math.min(mark.from, doc.content.size));
+        const to = Math.max(0, Math.min(mark.to, doc.content.size));
+        if (from >= to) return [];
+        const classes = ["comment-highlight", mark.active && "comment-highlight-active", mark.id === flash && "comment-highlight-flash"];
+        return [Decoration.inline(from, to, { class: classes.filter(Boolean).join(" "), "data-comment-thread": mark.id }, { id: mark.id })];
+      }),
+    );
+  return new Plugin<CommentMarksState>({
+    key: commentMarksKey,
+    state: {
+      init: () => ({ marks: [], flash: null, set: DecorationSet.empty }),
+      apply(tr, value, _old, state) {
+        const meta = tr.getMeta(commentMarksKey) as CommentMarksMeta | undefined;
+        let { marks, flash } = value;
+        if (tr.docChanged) {
+          marks = marks.map((mark) => ({ ...mark, from: tr.mapping.map(mark.from, 1), to: tr.mapping.map(mark.to, -1) }));
+        }
+        if (!meta && !tr.docChanged) return value;
+        if (meta?.marks) marks = meta.marks;
+        if (meta && "flash" in meta) flash = meta.flash ?? null;
+        return { marks, flash, set: decorate(state.doc, marks, flash) };
+      },
+    },
+    props: { decorations: (state) => commentMarksKey.getState(state)?.set },
+  });
+}
+
 function objects(doc: PMNode): string {
   const ids: string[] = [];
   doc.descendants((node) => {
@@ -132,6 +179,7 @@ export class FluidEditor {
   private lastInput = 0;
   private historyPending: "undo" | "redo" | null = null;
   private keysSinceFocus = false;
+  private flashTimer = 0;
   private notifyIslands: () => void;
   private send: (message: object) => void;
 
@@ -159,6 +207,7 @@ export class FluidEditor {
       state: EditorState.create({
         schema: fluidSchema,
         plugins: [
+          commentMarksPlugin(),
           keymap({
             "Mod-z": requestHistory("undo"),
             "Mod-Shift-z": requestHistory("redo"),
@@ -499,7 +548,41 @@ export class FluidEditor {
     this.flush();
   }
 
+  /** The note revision the document on screen was rendered from. */
+  get shownRevision(): number {
+    return this.revision;
+  }
+
+  /** Mark commented text: every mark is replaced. */
+  setCommentMarks(marks: CommentMarkRange[]) {
+    this.view.dispatch(this.view.state.tr.setMeta(commentMarksKey, { marks } satisfies CommentMarksMeta));
+  }
+
+  /**
+   * Scroll a mark into view and flash it; `focus` puts the caret at its
+   * start and takes the keyboard. False when there is no such mark.
+   */
+  revealCommentMark(id: string, focus: boolean): boolean {
+    const mark = commentMarksKey.getState(this.view.state)?.marks.find((candidate) => candidate.id === id);
+    if (!mark) return false;
+    const { doc } = this.view.state;
+    const from = Math.max(0, Math.min(mark.from, doc.content.size));
+    const tr = this.view.state.tr.setMeta(commentMarksKey, { flash: id } satisfies CommentMarksMeta);
+    if (focus) tr.setSelection(TextSelection.near(doc.resolve(from)));
+    this.view.dispatch(tr);
+    if (focus) this.view.focus();
+    const element = this.view.dom.querySelector(`[data-comment-thread="${CSS.escape(id)}"]`);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    element?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    window.clearTimeout(this.flashTimer);
+    this.flashTimer = window.setTimeout(() => {
+      this.view.dispatch(this.view.state.tr.setMeta(commentMarksKey, { flash: null } satisfies CommentMarksMeta));
+    }, 1500);
+    return true;
+  }
+
   destroy() {
+    window.clearTimeout(this.flashTimer);
     this.queue = [];
     this.view.destroy();
   }

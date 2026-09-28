@@ -54,7 +54,9 @@ import type {
 } from "../source/renderedHistory";
 import { acceptSourceTransaction } from "./sourceTransaction";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Banner, LoadingLine } from "@/features/design-system";
+import { Banner, CommentActionButton, LoadingLine, type Shortcut } from "@/features/design-system";
+import type { CommentMark, NoteCommentRequest } from "@/features/comments";
+import { fluidRangeForSource, sourceRangeForFluid } from "./commentMarks";
 import {
   checkChildMessage,
   childMessageSchema,
@@ -64,6 +66,8 @@ import {
   checkViewResource,
   PREVIEW_SANDBOX,
   staleChildMessage,
+  type CommentMarksMessage,
+  type FrameRect,
   type RenderMessage,
   type ResourcesMessage,
 } from "./protocol";
@@ -112,7 +116,33 @@ export type RenderedEditorProps = {
   onEditResource?: (path: string) => void;
   /** Show the note without editing in the frame; `onPatch` should refuse edits too. */
   readOnly?: boolean;
+  /** The note's commented text, and the Comment actions when the person may comment. */
+  comments?: RenderedComments | null;
+  apiRef?: React.RefObject<RenderedEditorApi | null>;
 };
+
+/** Commented text in the rendered note, and what choosing it or commenting does. */
+export type RenderedComments = {
+  /** Where the commented text is in `source`. Marks for other text wait for the next. */
+  marks: readonly CommentMark[];
+  source: string;
+  /** Offer Comment on a selection and Comment on section on a heading. */
+  canComment: boolean;
+  /** The key that comments, shown on the Comment button. */
+  shortcut?: Shortcut;
+  /** Commented text was clicked (`focus` false: the keyboard stays in the note). */
+  onOpen: (threadId: string, focus: boolean) => void;
+  /** Comment on part of `source`, the text the rendered note shows. */
+  onComment: (request: NoteCommentRequest, source: string) => void;
+};
+
+export type RenderedEditorApi = {
+  /** Scroll a commented range into view and flash it; `focus` moves the keyboard to its start. */
+  revealComment(threadId: string, focus: boolean): void;
+};
+
+/** A comment action floating over the frame, at a place in the editor's box. */
+type CommentAction = { top: number; left: number; request: NoteCommentRequest; source: string };
 
 /** Shown after "Edit not applied:" when an edit in the frame was made against an older revision of the note. */
 const LOST_EDIT = "the note changed at the same time. Make the edit again.";
@@ -161,6 +191,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     availableResourcePaths,
     onEditResource,
     readOnly = false,
+    comments = null,
+    apiRef,
   } = props;
   const pendingOwners = useRef({ fluid: false, draft: false });
   const onPendingChange = useCallback((pending: boolean) => {
@@ -183,6 +215,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   );
   // Forget the inspection on hide without remounting the document frame.
   if (!active && viewer !== null) setViewer(null);
+  // The Comment action by the selection, and Comment on section by the heading under the pointer.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [selectionAction, setSelectionAction] = useState<CommentAction | null>(null);
+  const [headingAction, setHeadingAction] = useState<CommentAction | null>(null);
+  const headingHold = useRef({ hovered: false, timer: 0 });
+  const commentsRef = useRef(comments);
+  useLayoutEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
   const viewerActive = useRef(active);
   useLayoutEffect(() => {
     viewerActive.current = active;
@@ -434,6 +475,37 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       );
   }, [reading, exposed, readyTick, session]);
 
+  // The commented text, as ranges of the document on screen. Marks placed in
+  // other text wait for the next; meanwhile the frame's marks move with edits.
+  const commentMarks = comments?.marks;
+  const commentSource = comments?.source;
+  const canComment = comments?.canComment ?? false;
+  useEffect(() => {
+    if (!exposed || commentMarks === undefined || commentSource !== exposed.text) return;
+    const marks = commentMarks.flatMap((mark) => {
+      const range = fluidRangeForSource(exposed, mark.from, mark.to);
+      return range ? [{ id: mark.id, from: range.from, to: range.to, active: mark.active }] : [];
+    });
+    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment, marks: marks.slice(0, 1000) };
+    frameRef.current?.contentWindow?.postMessage(message, "*");
+  }, [canComment, commentMarks, commentSource, exposed, readyTick, session]);
+
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = {
+      revealComment(threadId, focus) {
+        const frame = frameRef.current;
+        if (!frame?.contentWindow) return;
+        // The frame can take the keyboard only once the page gives it to the frame.
+        if (focus) frame.focus();
+        frame.contentWindow.postMessage({ kind: "comment-reveal", session, id: threadId, focus }, "*");
+      },
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, session]);
+
   useEffect(() => {
     const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
       // Keep a rebase lease only for the exact source result of this local
@@ -529,6 +601,49 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             cancelable: true,
           }),
         );
+        return;
+      }
+      if (
+        message.kind === "comment-selection" ||
+        message.kind === "comment-heading" ||
+        message.kind === "comment-open" ||
+        message.kind === "comment-shortcut"
+      ) {
+        // Positions come from the frame: they are mapped through this
+        // editor's own projection, and ids must be threads it marked.
+        const current = authority.current;
+        const frame = frameRef.current;
+        const commenting = commentsRef.current;
+        if (message.kind === "comment-open") {
+          if (commenting?.marks.some((mark) => mark.id === message.id)) commenting.onOpen(message.id, false);
+          return;
+        }
+        if (message.kind === "comment-shortcut") {
+          const range = current && commenting?.canComment ? sourceRangeForFluid(current, message.from, message.to) : null;
+          if (!current || !commenting || !range) return;
+          commenting.onComment(
+            message.from === message.to ? { kind: "section", offset: range.from } : { kind: "text", from: range.from, to: range.to },
+            current.text,
+          );
+          return;
+        }
+        if (message.kind === "comment-selection") {
+          const range = current && commenting?.canComment && message.range ? sourceRangeForFluid(current, message.range.from, message.range.to) : null;
+          const place = range && range.from < range.to && frame && message.rect ? actionPlace(frame, message.rect, "selection") : null;
+          setSelectionAction(current && range && place ? { ...place, request: { kind: "text", from: range.from, to: range.to }, source: current.text } : null);
+          return;
+        }
+        window.clearTimeout(headingHold.current.timer);
+        const caret = current && commenting?.canComment && message.pos !== null ? sourceRangeForFluid(current, message.pos, message.pos) : null;
+        const place = caret && frame && message.rect ? actionPlace(frame, message.rect, "heading") : null;
+        if (current && caret && place) {
+          setHeadingAction({ ...place, request: { kind: "section", offset: caret.from }, source: current.text });
+        } else {
+          // Leave it a moment, so the pointer can reach it from the heading.
+          headingHold.current.timer = window.setTimeout(() => {
+            if (!headingHold.current.hovered) setHeadingAction(null);
+          }, 400);
+        }
         return;
       }
       if (message.kind === 'source-draft-pending') {
@@ -876,7 +991,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
 
   const displayedError = componentError ?? compileError;
   return (
-    <div data-rendered-editor={document.format} style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div ref={rootRef} data-rendered-editor={document.format} style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
       {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError ? (
@@ -901,6 +1016,37 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           display: componentPending || displayedError ? 'none' : "block",
         }}
       />
+      {active && comments?.canComment && selectionAction && (
+        <CommentActionButton
+          shortcut={comments.shortcut}
+          className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
+          style={{ top: selectionAction.top, left: selectionAction.left }}
+          onClick={() => {
+            setSelectionAction(null);
+            comments.onComment(selectionAction.request, selectionAction.source);
+          }}
+        />
+      )}
+      {active && comments?.canComment && headingAction && (
+        <CommentActionButton
+          className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
+          style={{ top: headingAction.top, left: headingAction.left }}
+          onPointerEnter={() => {
+            headingHold.current.hovered = true;
+          }}
+          onPointerLeave={() => {
+            headingHold.current.hovered = false;
+            window.clearTimeout(headingHold.current.timer);
+            headingHold.current.timer = window.setTimeout(() => setHeadingAction(null), 400);
+          }}
+          onClick={() => {
+            setHeadingAction(null);
+            comments.onComment(headingAction.request, headingAction.source);
+          }}
+        >
+          Comment on section
+        </CommentActionButton>
+      )}
       <Dialog
         open={active && viewer !== null}
         onOpenChange={(next) => {
@@ -918,4 +1064,26 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       </Dialog>
     </div>
   );
+}
+
+/**
+ * Where a comment action goes in the editor's box, beside something in the
+ * frame at `rect` (frame pixels): under the end of a selection, or after a
+ * heading's words. Null when that is out of the frame's view.
+ */
+function actionPlace(frame: HTMLIFrameElement, rect: FrameRect, by: "selection" | "heading"): { top: number; left: number } | null {
+  const width = frame.clientWidth;
+  const height = frame.clientHeight;
+  if (rect.bottom < 0 || rect.top > height) return null;
+  const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(value, Math.max(low, high)));
+  if (by === "selection") {
+    return {
+      top: frame.offsetTop + clamp(rect.bottom + 6, 0, height - 40),
+      left: frame.offsetLeft + clamp(rect.right - 48, 8, width - 200),
+    };
+  }
+  return {
+    top: frame.offsetTop + clamp((rect.top + rect.bottom) / 2 - 16, 0, height - 40),
+    left: frame.offsetLeft + clamp(rect.right + 12, 8, width - 200),
+  };
 }
