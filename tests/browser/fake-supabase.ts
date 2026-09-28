@@ -1,6 +1,7 @@
 import type { Page, Request, Route, WebSocketRoute } from "@playwright/test"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
+import { FakeComments } from "./fake-comments.ts"
 
 /**
  * A stand-in for the Supabase project the browser-test build points at
@@ -53,6 +54,8 @@ export type OAuthGrant = { client: { id: string; name: string; uri: string; logo
 
 export type FakeSupabase = {
   server: FakeProjectServer
+  /** The comment functions, over the server's projects; `comments.call(user, rpc, args)` writes as someone else. */
+  comments: FakeComments
   requests: Request[]
   /** Requests refused while offline. */
   refused: Request[]
@@ -73,6 +76,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
   const sockets: WebSocketRoute[] = []
   const fake: FakeSupabase = {
     server,
+    comments: new FakeComments(server),
     requests: [],
     refused: [],
     offline: false,
@@ -167,6 +171,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "unarchive_project") return answer(route, () => remote.unarchiveProject(body.project_id))
       if (rpc === "delete_project") return answer(route, async () => (await remote.deleteProject(body.project_id), { id: body.project_id, deleted: true }))
       if (rpc === "list_members") return answer(route, () => remote.listMembers(body.project_id))
+      if (FakeComments.handles(rpc)) return answer(route, async () => fake.comments.call(person.id, rpc, body))
       if (rpc === "share_project") {
         return answer(route, async () => (
           await remote.shareProject(body.project_id, body.member_id, body.member_role),

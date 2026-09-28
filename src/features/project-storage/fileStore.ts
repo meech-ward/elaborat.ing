@@ -28,6 +28,12 @@ export type FileRef = {
   unsynced: boolean
   /** A save of this file was refused because the server copy changed; see the sync layer to resolve. */
   conflict: boolean
+  /**
+   * The server's id for the file and the version of the copy this device
+   * last got from it, or null when the server has no such file yet. The id
+   * stays the same when the file is renamed or moved; comments hang off it.
+   */
+  server: { id: string; version: number } | null
 }
 
 export type StoredFile = FileRef & {
@@ -151,6 +157,7 @@ export class ProjectFileStore {
       draft: file.draft !== null,
       unsynced: file.base === null ? saved !== null : saved !== file.base.content || file.path !== file.base.path,
       conflict: file.conflict !== null,
+      server: file.base === null ? null : { id: file.base.id, version: file.base.version },
     }
   }
 

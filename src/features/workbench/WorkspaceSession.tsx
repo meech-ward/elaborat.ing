@@ -21,6 +21,7 @@ import { useCanvasPresentation } from "./viewTheme";
 import { readProjectView, writeProjectView } from "./projectViews";
 import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
+import { useNoteComments } from "@/features/comments";
 import { savedComponentSource } from '../document/componentModules';
 import {
   applyReload,
@@ -56,6 +57,7 @@ export function WorkspaceSession({
   blocked = false,
   navigation,
   savedRevision,
+  server = null,
   conflicted = false,
   onResolveConflict,
   onDuplicate,
@@ -73,6 +75,8 @@ export function WorkspaceSession({
   navigation?: ReactNode;
   /** The saved copy's revision in the latest file list; a change made elsewhere shows up here. */
   savedRevision?: string | null;
+  /** The server's id and version for the file (comments hang off the id), or null before it is on the server. */
+  server?: { id: string; version: number } | null;
   /** Sync found this file changed in two places. */
   conflicted?: boolean;
   onResolveConflict?: (choice: ConflictChoice) => Promise<void>;
@@ -160,6 +164,16 @@ export function WorkspaceSession({
     });
     return () => onOperationSession?.(initial.path,null);
   }, [client,initial.path,locked,onOperationSession,openFile,readOnly,store]);
+
+  // The note's comments: the panel's file while it is on screen, and the
+  // commented text both views mark.
+  useNoteComments({
+    path: initial.path,
+    server,
+    active,
+    text: snapshot.text,
+    onReveal: () => {},
+  });
 
   const displayName = openFile.path ?? openFile.pendingName ?? "No file open";
   const isNote = openFile.kind === "note";

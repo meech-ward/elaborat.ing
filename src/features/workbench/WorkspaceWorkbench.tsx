@@ -1096,6 +1096,7 @@ export function WorkspaceWorkbench({
                             onState={onState}
                             onOperationSession={registerSession}
                             savedRevision={files.find((file) => file.path === tab.path)?.revision}
+                            server={files.find((file) => file.path === tab.path)?.server ?? null}
                             conflicted={files.find((file) => file.path === tab.path)?.conflict ?? false}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
                             onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}

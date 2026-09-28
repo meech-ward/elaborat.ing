@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { PanelPage } from "@/components/panel"
+import { CommentsController, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
@@ -89,14 +90,32 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     }
   }, [account.local, account.online, library, projectId, syncNow])
 
-  // Hear about changes made elsewhere while the project is open.
+  // The project's comments, in memory while it is open. Its own writes are
+  // marked as seen, so they do not come back as a change to pull.
+  const [seenRevisions] = useState(() => new SeenRevisions())
+  const [comments] = useState(() =>
+    account.local
+      ? null
+      : {
+          store: new ProjectComments(new SupabaseCommentsRemote(createClient()), projectId, seenRevisions.seen),
+          controller: new CommentsController(),
+        },
+  )
+
+  // Hear about changes made elsewhere while the project is open: files sync,
+  // and the comments listed so far reload.
   useEffect(() => {
     if (!account.online || opened !== "open") return
-    const changes = new ProjectChanges(createClient(), projectId, 0, () => void syncNow())
+    const changes = new ProjectChanges(createClient(), projectId, 0, (revision) => {
+      void syncNow()
+      comments?.store.changed(revision)
+    })
+    seenRevisions.listen(changes)
     return () => {
+      seenRevisions.listen(null)
       void changes.close()
     }
-  }, [account.online, opened, projectId, syncNow])
+  }, [account.online, comments, opened, projectId, seenRevisions, syncNow])
 
   // Saves sync shortly after they happen, a burst of them together.
   const [delayedSync] = useState(() => new Delayed(SYNC_DELAY_MS))
@@ -192,38 +211,62 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   )
 
   // The sync state sits with the person in the account panel.
-  const sync = entry && !account.local ? syncDot(entry, !account.online || state.offline) : null
+  const offline = !account.online || state.offline
+  const sync = entry && !account.local ? syncDot(entry, offline) : null
+  const viewer = entry?.role === "viewer"
+  const commentsValue: ProjectCommentsValue | null =
+    comments && entry
+      ? {
+          ...comments,
+          userId: account.userId,
+          owner: entry.role === "owner",
+          viewer,
+          canWrite: !viewer && !entry.archived && !offline,
+          writeBlocked: viewer ? null : entry.archived ? "This project is archived." : offline ? "Comments need a connection." : null,
+        }
+      : null
 
   return (
-    <Suspense
-      fallback={
-        <PanelPage>
-          <p role="status" className="text-[13px] text-muted-foreground">
-            Loading the editor...
-          </p>
-        </PanelPage>
-      }
-    >
-      <WorkspaceWorkbench
-        client={workspace}
-        projectId={projectId}
-        projectName={account.local ? "Local project" : (entry?.title ?? "Project")}
-        projectMenu={projectMenu}
-        onShare={entry?.role === "owner" && account.online ? () => setSharing(true) : undefined}
-        projectNotices={notices}
-        sync={sync}
-        onSyncNow={account.online && !account.local ? () => void syncNow() : undefined}
-        searchFiles={account.online && !account.local ? searchFiles : null}
-        onLeaveGuard={registerLeaveGuard}
-        onResolveConflict={resolveConflict}
-        readOnly={readOnly}
-        local={account.local}
-      />
-      {sharing && entry ? (
-        <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
-      ) : null}
-    </Suspense>
+    <ProjectCommentsProvider value={commentsValue}>
+      <Suspense
+        fallback={
+          <PanelPage>
+            <p role="status" className="text-[13px] text-muted-foreground">
+              Loading the editor...
+            </p>
+          </PanelPage>
+        }
+      >
+        <WorkspaceWorkbench
+          client={workspace}
+          projectId={projectId}
+          projectName={account.local ? "Local project" : (entry?.title ?? "Project")}
+          projectMenu={projectMenu}
+          onShare={entry?.role === "owner" && account.online ? () => setSharing(true) : undefined}
+          projectNotices={notices}
+          sync={sync}
+          onSyncNow={account.online && !account.local ? () => void syncNow() : undefined}
+          searchFiles={account.online && !account.local ? searchFiles : null}
+          onLeaveGuard={registerLeaveGuard}
+          onResolveConflict={resolveConflict}
+          readOnly={readOnly}
+          local={account.local}
+        />
+        {sharing && entry ? (
+          <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
+        ) : null}
+      </Suspense>
+    </ProjectCommentsProvider>
   )
+}
+
+/** Passes revisions this device made itself (comment writes) to the change listener open now, so they are not pulled. */
+class SeenRevisions {
+  private changes: ProjectChanges | null = null
+  listen(changes: ProjectChanges | null) {
+    this.changes = changes
+  }
+  seen = (revision: number) => this.changes?.seen(revision)
 }
 
 /** Runs the latest scheduled work once, `ms` after the last request. */
