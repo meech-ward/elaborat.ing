@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react"
-import { CARD_TEXT, CardView, EditorFrame, EmbedFigure, type CardFile, type CardPreview, type CardState } from "@/chat-card"
+import { CARD_TEXT, CardView, componentCaption, EditorFrame, EmbedFigure, type CardFile, type CardPreview, type CardState } from "@/chat-card"
 import { EmbedBox } from "../ui/EmbedBox"
 import { getPaletteColors, useAppearance } from "@/features/appearance"
 import { beforeDarkFilter } from "@/features/drawings"
@@ -37,6 +37,8 @@ const DIAGRAM: CardFile = {
   source: null,
 }
 
+const SAMPLE_PROPS = { label: "Agents this week", value: 128 }
+
 /** A component file an agent is drafting, shown with sample props by preview_component. */
 const COMPONENT: CardFile = {
   ...NOTE,
@@ -49,7 +51,7 @@ const COMPONENT: CardFile = {
   html: null,
   source: null,
   components: {},
-  preview: { component: "Metric", props: { label: "Agents this week", value: 128 }, draft: true },
+  preview: { component: "Metric", props: SAMPLE_PROPS, draft: true },
 }
 
 const shown = (file: CardFile, rest: Partial<Extract<CardState, { phase: "shown" }>> = {}): CardState => ({
@@ -96,7 +98,7 @@ function EditingSample() {
 function ComponentSample() {
   return (
     <div className="flex flex-col gap-4 p-4">
-      <EmbedBox caption={<code>{"<Metric />"}</code>} className="min-h-[120px] items-stretch">
+      <EmbedBox caption={<code className="min-w-0 wrap-anywhere">{componentCaption("Metric", SAMPLE_PROPS)}</code>} className="min-h-[120px] items-stretch">
         <div className="flex flex-col gap-1 text-body">
           <span className="text-xs font-semibold tracking-wide text-dim uppercase">Agents this week</span>
           <span className="text-3xl leading-none font-semibold text-foreground">128</span>
@@ -105,6 +107,25 @@ function ComponentSample() {
     </div>
   )
 }
+
+/**
+ * A picture of a note's preview with a link in its first line, which was
+ * clicked: the card asks about it just below it (its bottom is 44 down).
+ */
+function LinkSample() {
+  return (
+    <div className="flex flex-col gap-3 px-6 py-5 text-[15.5px] leading-6 text-body max-[500px]:px-4">
+      <p className="m-0">
+        Read <span className="text-(--accent-soft-text) underline underline-offset-4">the docs</span> before connecting an agent.
+      </p>
+      <p className="m-0">Agents act as the signed-in person in every project they can open.</p>
+      <p className="m-0">Each one needs your approval first, and you can disconnect it at any time.</p>
+      <p className="m-0">Its changes show in the project like anyone else's.</p>
+    </div>
+  )
+}
+
+const noop = () => {}
 
 const SPECIMENS: Array<{ label: string; state: CardState; editor?: ReactNode; preview?: CardPreview }> = [
   { label: "Reading, saved", state: shown(NOTE, { status: { kind: "saved", version: 5 } }) },
@@ -116,6 +137,16 @@ const SPECIMENS: Array<{ label: string; state: CardState; editor?: ReactNode; pr
   },
   { label: "Diagram, out of date", state: shown(DIAGRAM) },
   { label: "Draft component preview", state: shown(COMPONENT), preview: { status: "shown", message: null, frame: <ComponentSample /> } },
+  {
+    label: "Link in a preview",
+    state: shown({ ...NOTE, components: {} }),
+    preview: {
+      status: "shown",
+      message: null,
+      frame: <LinkSample />,
+      link: { url: "https://example.com/docs", spot: { y: 44, side: "below" }, onOpen: noop, onDismiss: noop },
+    },
+  },
   {
     label: "Components not shown",
     state: shown({ ...NOTE, components: {} }),

@@ -73,7 +73,23 @@ export function guardPlugin() {
   return (tree: unknown) => wrap(tree as MdastNode)
 }
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+/**
+ * A compile error as the card shows it: MDX's own words with the line they
+ * are about, and plain words for the parse error of an import or export,
+ * which MDX words after the parser it uses.
+ */
+export function compileErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  // MDX's messages (VFileMessage) have a reason and a place; some browsers give every error a line in its script.
+  const { line, reason, cause } = error as Error & { line?: unknown; reason?: unknown }
+  if (typeof reason !== "string") return error.message
+  let text = error.message
+  if (text.startsWith("Could not parse import/exports with acorn")) {
+    const detail = cause instanceof Error ? cause.message.replace(/\s*\(\d+:\d+\)$/, "") : ""
+    text = `An import or export is not valid JavaScript${detail ? `: ${detail}` : ""}`
+  }
+  return typeof line === "number" ? `${text} (line ${line})` : text
+}
 
 /** A note and the component files it imports, compiled. */
 export async function compileNote(source: string, sources: Record<string, string>): Promise<PreviewProgram> {
@@ -88,7 +104,7 @@ export async function compileNote(source: string, sources: Record<string, string
       }),
     )
   } catch (error) {
-    throw new Error(`Invalid MDX: ${messageOf(error)}`)
+    throw new Error(`Invalid MDX: ${compileErrorMessage(error)}`)
   }
   return { modules: environment.modules, note, target: null, items: null }
 }

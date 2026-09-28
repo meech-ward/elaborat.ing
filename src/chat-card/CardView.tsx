@@ -36,7 +36,13 @@ export type CardPreview = {
    * A link clicked in the preview, which opens only when the person says so
    * here: the preview's code could ask for any link at any time.
    */
-  link?: { url: string; onOpen: () => void; onDismiss: () => void } | null
+  link?: {
+    url: string
+    /** Where in the preview the link is: the prompt shows beside it. Without one, it follows the preview. */
+    spot?: { y: number; side: "below" | "above" } | null
+    onOpen: () => void
+    onDismiss: () => void
+  } | null
 }
 
 export const PREVIEW_TEXT = {
@@ -104,7 +110,8 @@ function CardHeader({ state }: { state: CardState }) {
       {file?.preview?.draft && <span className="font-mono text-xs text-dim">draft</span>}
       {file?.url && (
         <a href={file.url} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm" })}>
-          Open in elaborat.ing
+          {/* A draft is no file yet: the link opens its project. */}
+          {file.preview?.draft ? "Open the project in elaborat.ing" : "Open in elaborat.ing"}
           <ExternalLink aria-hidden="true" data-icon="inline-end" />
         </a>
       )}
@@ -126,28 +133,47 @@ function LoadingLines() {
 /**
  * Where the preview's frame lives: in the card's flow once it has drawn,
  * and until then kept out of sight (laid out at the card's width, so it can
- * measure itself) and out of the keyboard's way.
+ * measure itself) and out of the keyboard's way. `column`: a note's, whose
+ * text is in a 680 column the link prompt keeps to.
  */
-function PreviewSlot({ preview }: { preview: CardPreview }) {
+function PreviewSlot({ preview, column = false }: { preview: CardPreview; column?: boolean }) {
   const shown = preview.status === "shown"
   const link = shown ? preview.link : null
+  const prompt = link && (
+    <Banner
+      tone="info"
+      className={cn(link.spot && "shadow-[0_8px_24px_var(--shadow)]", column && "mx-auto max-w-[680px]")}
+      action={
+        <>
+          <BannerAction onClick={link.onOpen}>Open</BannerAction> <BannerAction onClick={link.onDismiss}>Not now</BannerAction>
+        </>
+      }
+    >
+      <span className="break-all">{PREVIEW_TEXT.openLink(link.url)}</span>
+    </Banner>
+  )
   return (
     <>
-      <div data-preview={preview.status} aria-hidden={!shown || undefined} className={cn(!shown && "invisible h-0 overflow-hidden")}>
+      <div data-preview={preview.status} aria-hidden={!shown || undefined} className={cn("relative", !shown && "invisible h-0 overflow-hidden")}>
         {preview.frame}
-      </div>
-      {link && (
-        <div className="px-4 pb-3 max-[500px]:px-3">
-          <Banner
-            tone="info"
-            action={
-              <>
-                <BannerAction onClick={link.onOpen}>Open</BannerAction> <BannerAction onClick={link.onDismiss}>Not now</BannerAction>
-              </>
-            }
+        {/* Beside the link, so a link far up a long note is not asked about out of sight. */}
+        {link?.spot && (
+          <div
+            data-slot="link-prompt"
+            className={cn(
+              "absolute z-10",
+              column ? "inset-x-6 max-[500px]:inset-x-4" : "inset-x-4 max-[500px]:inset-x-3",
+              link.spot.side === "above" ? "-translate-y-full pb-1" : "pt-1",
+            )}
+            style={{ top: link.spot.y }}
           >
-            <span className="break-all">{PREVIEW_TEXT.openLink(link.url)}</span>
-          </Banner>
+            {prompt}
+          </div>
+        )}
+      </div>
+      {link && !link.spot && (
+        <div data-slot="link-prompt" className={column ? "px-6 pb-4 max-[500px]:px-4" : "px-4 pb-3 max-[500px]:px-3"}>
+          {prompt}
         </div>
       )}
     </>
@@ -177,10 +203,13 @@ function CardBody({ state, editor, preview }: { state: CardState; editor?: React
     return (
       <>
         {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />}
-        {preview && preview.status !== "failed" && <PreviewSlot preview={preview} />}
+        {preview && preview.status !== "failed" && <PreviewSlot preview={preview} column />}
         {preview?.status === "failed" && (
-          <div className="px-4 pb-3 max-[500px]:px-3">
-            <Banner tone="warn">{PREVIEW_TEXT.noteFailed(preview.message)}</Banner>
+          // In the note's column, under its text.
+          <div className="px-6 pb-4 max-[500px]:px-4">
+            <Banner tone="warn" className="mx-auto max-w-[680px]">
+              {PREVIEW_TEXT.noteFailed(preview.message)}
+            </Banner>
           </div>
         )}
         {file.truncated && <p className="px-6 pb-4 text-[13px] leading-snug text-muted-foreground max-[500px]:px-4">Open in elaborat.ing to read the rest.</p>}

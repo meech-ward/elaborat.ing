@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { COMPONENT_CATALOG } from "@/features/document/componentCatalog"
 import { PREVIEW_COMPONENTS } from "../preview/catalog"
-import { compileComponents, compileNote } from "../preview/compile"
+import { componentCaption, MAX_CAPTION } from "../preview/caption"
+import { compileComponents, compileErrorMessage, compileNote } from "../preview/compile"
 import { frameDocument, inlineScript } from "../preview/frameDocument"
-import { MAX_MESSAGE, readFrameMessage } from "../preview/frameMessages"
+import { linkSpot, MAX_MESSAGE, readFrameMessage } from "../preview/frameMessages"
 import { parseShowResult } from "../toolResult"
 
 const CHART = [
@@ -159,4 +160,35 @@ test("the preview's words have no em dashes", () => {
   for (const name of ["cardNote.tsx", "embedText.ts", "preview/catalog.tsx", "preview/ComponentPreview.tsx", "preview/compile.ts", "preview/runtime.tsx"]) {
     expect(readFileSync(new globalThis.URL(`../${name}`, import.meta.url), "utf8")).not.toContain("—")
   }
+})
+
+describe("what the card says about a preview", () => {
+  test("a component file that does not parse says so in plain words, with its line", async () => {
+    const failure = await compileComponents("components/metric.mdx", { "components/metric.mdx": "# Metric\n\nexport const Metric = ( => <div />\n" }, { component: null, props: null }).then(
+      () => null,
+      (error: unknown) => error,
+    )
+    expect(compileErrorMessage(failure)).toMatch(/^An import or export is not valid JavaScript: .+ \(line 3\)$/)
+    expect(compileErrorMessage(new Error("Plain"))).toBe("Plain")
+  })
+
+  test("a component's caption is the component as a note writes it, with the props it was drawn with", () => {
+    expect(componentCaption("Metric", {})).toBe("<Metric />")
+    expect(componentCaption("Metric", { label: 'Say "hi"', value: 128, wide: true, data: [1, 2], onClick: () => {}, gone: undefined })).toBe(
+      '<Metric label="Say \\"hi\\"" value={128} wide data={[1,2]} />',
+    )
+    const long = componentCaption("Metric", { label: "x".repeat(400) })
+    expect(long.length).toBe(MAX_CAPTION)
+    expect(long.endsWith("... />")).toBe(true)
+  })
+
+  test("the link prompt shows below the link, else above it, where it has room", () => {
+    expect(linkSpot({ top: 10, bottom: 30 }, 400)).toEqual({ y: 30, side: "below" })
+    expect(linkSpot({ top: 370, bottom: 390 }, 400)).toEqual({ y: 370, side: "above" })
+    expect(linkSpot({ top: 40, bottom: 60 }, 120)).toBeNull()
+    expect(linkSpot({}, 400)).toBeNull()
+    // The frame's word is kept inside the frame.
+    expect(linkSpot({ top: -500, bottom: 20 }, 400)).toEqual({ y: 20, side: "below" })
+    expect(linkSpot({ top: 350, bottom: 99_999 }, 400)).toEqual({ y: 350, side: "above" })
+  })
 })

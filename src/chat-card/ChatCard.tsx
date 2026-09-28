@@ -18,7 +18,7 @@ import type { HostBridge } from "./bridge"
 import { startCardEditor, type CardEditor, type EmbedRef } from "./cardEditor"
 import { cardReducer, INITIAL_CARD_STATE } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, type CardPreview } from "./CardView"
-import { ComponentPreview, type PreviewOutcome } from "./preview/ComponentPreview"
+import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
 import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
 const inputSchema = z.object({ path: z.string() })
@@ -57,7 +57,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
   // How the components' preview of the file shown went; it starts again for each file, and after an edit.
   const [previewed, setPreviewed] = useState<{ file: CardFile; outcome: PreviewOutcome } | null>(null)
   // A link clicked in the preview, waiting for the person to open it.
-  const [asked, setAsked] = useState<{ file: CardFile; url: string } | null>(null)
+  const [asked, setAsked] = useState<{ file: CardFile; url: string; spot: LinkSpot | null } | null>(null)
 
   useEffect(
     () =>
@@ -102,9 +102,9 @@ export function ChatCard({ host }: { host: HostBridge }) {
               const note = previewFile.kind === "component" ? previewNote(previewFile.path, next) : null
               if (note) host.tellModel(note)
             }}
-            onLink={(href) => {
+            onLink={(href, spot) => {
               const url = linkUrl(href, previewFile.url ?? APP_ORIGIN)
-              if (url) setAsked({ file: previewFile, url })
+              if (url) setAsked({ file: previewFile, url, spot })
             }}
           />
         ),
@@ -114,6 +114,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
           asked?.file === previewFile
             ? {
                 url: asked.url,
+                spot: asked.spot,
                 onOpen: () => {
                   setAsked(null)
                   host.openLink(asked.url, APP_ORIGIN)

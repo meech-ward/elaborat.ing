@@ -55,4 +55,5 @@ export type FrameToCard =
   | { type: "rendered"; run: number; errors: ComponentError[] }
   /** Nothing could be shown. */
   | { type: "failed"; run: number; message: string }
-  | { type: "link"; run: number; href: string }
+  /** A link clicked, and where it is: its top and bottom, in pixels from the frame's top. */
+  | { type: "link"; run: number; href: string; top?: number; bottom?: number }

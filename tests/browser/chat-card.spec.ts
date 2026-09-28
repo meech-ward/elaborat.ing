@@ -365,6 +365,10 @@ for (const theme of ["light", "dark"] as const) {
     await card.getByRole("button", { name: "Not now" }).click()
     await expect(card.getByText("Open https://example.com/unasked?")).toBeHidden()
     await note.getByRole("link", { name: "the docs" }).click()
+    // The card asks beside the link, not under the whole preview.
+    const docs = (await note.getByRole("link", { name: "the docs" }).boundingBox())!
+    const asking = (await card.locator('[data-slot="link-prompt"]').boundingBox())!
+    expect(Math.abs(asking.y - (docs.y + docs.height))).toBeLessThan(12)
     await card.getByRole("button", { name: "Open", exact: true }).click()
     await expect.poll(links).toEqual([{ url: "https://example.com/docs" }])
 
@@ -404,10 +408,13 @@ for (const theme of ["light", "dark"] as const) {
     })
     await expect(card.getByText("metric.mdx", { exact: true })).toBeVisible()
     await expect(card.getByText("draft", { exact: true })).toBeVisible()
+    // A draft is no file yet: its link opens the project.
+    await expect(card.getByRole("link", { name: "Open the project in elaborat.ing" })).toHaveAttribute("href", `https://elaborat.ing/projects/${PROJECT}`)
     const shownPreview = preview(page, "components/metric.mdx")
     // The componentMeta defaults, as the app's block picker inserts them.
     await expect(shownPreview.locator("[data-metric]")).toHaveText("Agents this week 128")
-    await expect(shownPreview.getByText("<Metric />")).toBeVisible()
+    // Each caption says the props it was drawn with.
+    await expect(shownPreview.getByText('<Metric label="Agents this week" value={128} />')).toBeVisible()
     await expect(shownPreview.getByText("<Broken />")).toBeVisible()
     await expect(shownPreview.getByRole("alert")).toHaveText("Broken could not be shown: Broken on purpose")
     await expect(card.getByRole("button", { name: "Edit" })).toBeHidden()
@@ -456,7 +463,8 @@ test("a component file whose code does not compile is a problem in the card, and
       _meta: { "elaborat.ing/components": { modules: { "components/metric.mdx": "export const Metric = ( => <div />\n" } } },
     },
   })
-  await expect(card.getByRole("alert").filter({ hasText: "This component could not be shown:" })).toBeVisible()
+  // In plain words, with the line.
+  await expect(card.getByRole("alert")).toHaveText(/^This component could not be shown: An import or export is not valid JavaScript: .+ \(line 1\)$/)
   await expect(card.getByText("v2", { exact: true })).toBeVisible()
   await expect.poll(() => contexts(page)).toHaveLength(1)
   expect((await contexts(page))[0]).toMatch(/^The preview of components\/metric\.mdx in the elaborat\.ing card failed: /)

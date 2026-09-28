@@ -28,6 +28,7 @@ import { trustedReact } from "@/preview/trustedReact"
 import { CARD_NOTE_CLASS, EmbedFigure } from "../cardNote"
 import type { CardEmbed } from "../embedText"
 import { addFonts } from "../fontFaces"
+import { componentCaption } from "./caption"
 import { PREVIEW_COMPONENTS } from "./catalog"
 import { GUARD_NAME, type CardToFrame, type ComponentError, type FrameToCard, type PreviewAppearance, type PreviewPlan } from "./protocol"
 
@@ -155,7 +156,9 @@ function watchLinks() {
       const href = link.getAttribute("href") ?? ""
       if (href.startsWith("#")) return
       event.preventDefault()
-      post({ type: "link", run, href })
+      // Where it is, so the card can ask about it beside it.
+      const box = link.getBoundingClientRect()
+      post({ type: "link", run, href, top: box.top, bottom: box.bottom })
     },
     true,
   )
@@ -216,7 +219,12 @@ async function start(plan: PreviewPlan, registry: Registry) {
         {plan.items.map(({ name, props }, index) => {
           const Shown = file[name] as ((props: Record<string, unknown>) => ReactNode) | undefined
           return (
-            <EmbedBox key={index} data-component-preview={name} caption={<code>{`<${name} />`}</code>} className="min-h-[120px] items-stretch">
+            <EmbedBox
+              key={index}
+              data-component-preview={name}
+              caption={<code className="min-w-0 wrap-anywhere">{componentCaption(name, props)}</code>}
+              className="min-h-[120px] items-stretch"
+            >
               <div className="min-w-0 text-[15px] leading-[1.55] text-body">
                 <Guard name={name}>{typeof Shown === "function" ? <Shown {...props} /> : <MissingExport name={name} />}</Guard>
               </div>

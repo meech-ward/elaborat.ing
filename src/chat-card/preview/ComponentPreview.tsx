@@ -17,9 +17,9 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { CARD_FONTS } from "../fonts"
 import type { CardFile } from "../toolResult"
-import { compileComponents, compileNote, type PreviewProgram } from "./compile"
+import { compileComponents, compileErrorMessage, compileNote, type PreviewProgram } from "./compile"
 import { frameDocument } from "./frameDocument"
-import { readFrameMessage } from "./frameMessages"
+import { linkSpot, readFrameMessage } from "./frameMessages"
 import type { CardToFrame, ComponentError, PreviewAppearance, PreviewPlan } from "./protocol"
 
 /** The frame's script and stylesheet (runtime.tsx), which scripts/build-chat-card.ts builds first and sets here. */
@@ -31,11 +31,12 @@ const LOAD_TIMEOUT = 15_000
 /** The tallest the frame grows. */
 const MAX_HEIGHT = 20_000
 
+export type LinkSpot = NonNullable<ReturnType<typeof linkSpot>>
+
 export type PreviewOutcome = { status: "shown"; errors: ComponentError[] } | { status: "failed"; message: string }
 
 type Prepared = { file: CardFile; run: number; srcdoc: string; plan: PreviewPlan }
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** The card's colours and fonts now, which the frame follows. */
 function currentAppearance(): PreviewAppearance {
@@ -75,11 +76,13 @@ export function ComponentPreview({
 }: {
   file: CardFile
   onOutcome: (outcome: PreviewOutcome) => void
-  onLink: (href: string) => void
+  /** A link clicked in the preview, and where to ask about it (linkSpot). */
+  onLink: (href: string, spot: LinkSpot | null) => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [prepared, setPrepared] = useState<Prepared | null>(null)
   const [height, setHeight] = useState(0)
+  const shownHeight = useRef(0)
   const outcome = useEffectEvent(onOutcome)
   const link = useEffectEvent(onLink)
 
@@ -91,7 +94,7 @@ export function ComponentPreview({
         if (!stale) setPrepared(ready)
       },
       (error: unknown) => {
-        if (!stale) outcome({ status: "failed", message: messageOf(error) })
+        if (!stale) outcome({ status: "failed", message: compileErrorMessage(error) })
       },
     )
     return () => {
@@ -119,13 +122,14 @@ export function ComponentPreview({
         case "ready":
           return send({ type: "setup", plan: prepared.plan, appearance: currentAppearance(), fonts: CARD_FONTS })
         case "size":
-          return setHeight(Math.min(message.height, MAX_HEIGHT))
+          shownHeight.current = Math.min(message.height, MAX_HEIGHT)
+          return setHeight(shownHeight.current)
         case "rendered":
           return settle({ status: "shown", errors: message.errors })
         case "failed":
           return settle({ status: "failed", message: message.message })
         case "link":
-          return link(message.href)
+          return link(message.href, linkSpot(message, shownHeight.current))
       }
     }
     // A chat whose policy does not allow the frame at all.

@@ -4,3 +4,4 @@
 export { CardView, EditorFrame, EmbedFigure, PREVIEW_TEXT, type CardPreview, type CardViewProps } from "./CardView"
 export { CARD_TEXT, type CardState } from "./cardState"
 export type { CardEmbed, CardFile } from "./toolResult"
+export { componentCaption } from "./preview/caption"
