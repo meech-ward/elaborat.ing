@@ -60,13 +60,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const navigate = useNavigate()
   const [opened, setOpened] = useState<"opening" | "open" | "missing">("opening")
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
   // Its owner deleted it: its page says so in its place (below), and leaving it keeps nothing.
   const deleted = state.deleted.find((candidate) => candidate.id === projectId)
   const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open" && !deleted)
-  const download = useProjectDownload(library, onError)
+  const download = useProjectDownload(library, onError, setNotice)
   const entry = state.entries.find((candidate) => candidate.id === projectId)
 
   const syncNow = useCallback(async () => {
@@ -288,6 +289,11 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         </Banner>
       ) : null}
       {problem ? <Banner tone="danger">{problem}</Banner> : null}
+      {notice ? (
+        <Banner tone="info" action={<BannerAction onClick={() => setNotice(null)}>Dismiss</BannerAction>}>
+          {notice}
+        </Banner>
+      ) : null}
     </>
   )
 

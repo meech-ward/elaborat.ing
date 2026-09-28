@@ -11,9 +11,12 @@ import { filesToDownload, zipName, zipProject } from "./projectArchive"
 
 type Snapshot = Awaited<ReturnType<ReturnType<typeof fileStoreFor>["snapshot"]>>
 
+/** A project with nothing saved in it: told as a notice, since nothing went wrong. */
+class NothingToDownload extends Error {}
+
 function save(snapshot: Snapshot, title: string, drafts: boolean) {
   const files = filesToDownload(snapshot.files, drafts)
-  if (files.length === 0 && snapshot.folders.length === 0) throw new Error("This project has no saved files or folders yet.")
+  if (files.length === 0 && snapshot.folders.length === 0) throw new NothingToDownload("Nothing to download: this project has no saved files or folders yet.")
   const zip = zipProject(files, snapshot.folders)
   downloadBlob(new Blob([zip], { type: "application/zip" }), zipName(title))
 }
@@ -24,8 +27,12 @@ function save(snapshot: Snapshot, title: string, drafts: boolean) {
  * (that needs a connection). When files have unsaved changes, a dialog asks
  * whether to include them; otherwise the download starts at once.
  */
-export function useProjectDownload(library: ProjectLibrary, onError: (message: string) => void) {
+export function useProjectDownload(library: ProjectLibrary, onError: (message: string) => void, onNotice: (message: string) => void) {
   const [asking, setAsking] = useState<{ title: string; snapshot: Snapshot } | null>(null)
+  const report = (cause: unknown) => {
+    if (cause instanceof NothingToDownload) onNotice(cause.message)
+    else onError(`Not downloaded: ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
 
   const start = async (projectId: string, title: string) => {
     try {
@@ -41,7 +48,7 @@ export function useProjectDownload(library: ProjectLibrary, onError: (message: s
       if (snapshot.files.some((file) => file.draft !== null)) setAsking({ title, snapshot })
       else save(snapshot, title, false)
     } catch (cause) {
-      onError(`Not downloaded: ${cause instanceof Error ? cause.message : String(cause)}`)
+      report(cause)
     }
   }
 
@@ -54,7 +61,7 @@ export function useProjectDownload(library: ProjectLibrary, onError: (message: s
         try {
           save(asking.snapshot, asking.title, drafts)
         } catch (cause) {
-          onError(`Not downloaded: ${cause instanceof Error ? cause.message : String(cause)}`)
+          report(cause)
         }
       }}
       onClose={() => setAsking(null)}

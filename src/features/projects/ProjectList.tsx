@@ -2,7 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { Ellipsis } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ActionMenu, Banner, FloatingPanel, NewProjectCard, ProjectCard, ProjectGrid, StatusDot, type MenuEntry } from "@/features/design-system"
+import { ActionMenu, Banner, BannerAction, FloatingPanel, NewProjectCard, ProjectCard, ProjectGrid, StatusDot, type MenuEntry } from "@/features/design-system"
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
@@ -64,7 +64,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [membersOf, setMembersOf] = useState<ProjectEntry | null>(null)
   const importing = useProjectImport(library)
   const onError = useCallback((text: string) => setError(text), [])
-  const download = useProjectDownload(library, onError)
+  const download = useProjectDownload(library, onError, setNotice)
   useBackgroundRefresh(library, onError, { invitations: true })
 
   // Just signed in with work in the local project: it joins the account's projects and opens (the project page uploads it).
@@ -204,7 +204,11 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
             <DeletedProjectBanner key={project.id} library={library} project={project} onError={onError} />
           ))}
           {error ? <Banner tone="danger">{error}</Banner> : null}
-          {notice ? <Banner tone="info">{notice}</Banner> : null}
+          {notice ? (
+            <Banner tone="info" action={<BannerAction onClick={() => setNotice(null)}>Dismiss</BannerAction>}>
+              {notice}
+            </Banner>
+          ) : null}
           <ImportReport state={importing.state} />
         </div>
       ) : null}

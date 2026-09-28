@@ -193,6 +193,11 @@ test("a project with nothing in it says so instead of saving an empty .zip", asy
   page.on("download", () => downloads++)
   await page.getByRole("button", { name: "Actions for Empty" }).click()
   await page.getByRole("menuitem", { name: "Download project" }).click()
-  await expect(page.getByRole("alert")).toContainText("Not downloaded: This project has no saved files or folders yet.")
+  // Nothing went wrong, so it is a notice the person can dismiss.
+  const notice = page.getByRole("status").filter({ hasText: "Nothing to download: this project has no saved files or folders yet." })
+  await expect(notice).toBeVisible()
+  await expect(page.getByRole("alert")).toHaveCount(0)
   expect(downloads).toBe(0)
+  await notice.getByRole("button", { name: "Dismiss" }).click()
+  await expect(notice).toHaveCount(0)
 })
