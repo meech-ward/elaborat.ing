@@ -301,6 +301,76 @@ $$;
 revoke all on function public.share_project(uuid, uuid, text) from public, anon;
 grant execute on function public.share_project(uuid, uuid, text) to authenticated;
 
+-- Hand a project to one of its members, who becomes its owner; the old owner
+-- stays on as an editor. Owner only, and only a signed-in person: tokens
+-- issued to OAuth clients (agents) are refused, as for permanent deletes,
+-- since the new owner can delete it. The new owner must have accepted their
+-- invitation, whatever their role. An archived project can be handed over
+-- too: archiving stops changes to its files, not to who has access
+-- (share_project works on it as well), and a person deleting their account
+-- can then keep an archived project going. The project counts against the
+-- new owner's total (limits.sql). Returns the project as the caller now sees it.
+create function private.transfer_project(project_id uuid, new_owner_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.require_user();
+  p public.projects;
+  most integer;
+begin
+  if private.is_oauth_client() then
+    raise exception 'Only a signed-in person can transfer a project' using errcode = '42501';
+  end if;
+  select * into p from public.projects where id = transfer_project.project_id for update;
+  if p.id is null or p.owner_id <> uid then
+    raise exception 'Only the project owner can transfer it' using errcode = '42501';
+  end if;
+  if transfer_project.new_owner_id is null or transfer_project.new_owner_id = uid then
+    raise exception 'Invalid member' using errcode = '22023';
+  end if;
+
+  delete from public.project_members m
+  where m.project_id = p.id
+    and m.user_id = transfer_project.new_owner_id
+    and m.accepted_at is not null;
+  if not found then
+    raise exception 'Only a member who has accepted their invitation can become the owner' using errcode = '22023';
+  end if;
+
+  select l.max_count into most from private.limits() l where l.name = 'projects';
+  if (select count(*) from public.projects o where o.owner_id = transfer_project.new_owner_id) >= most then
+    raise exception 'They have reached the limit of % projects, so cannot own another.', most
+      using errcode = 'PT429', detail = 'projects';
+  end if;
+
+  insert into public.project_members (project_id, user_id, role, accepted_at)
+  values (p.id, uid, 'editor', now());
+  update public.projects
+  set owner_id = transfer_project.new_owner_id, revision = revision + 1, updated_at = now()
+  where id = p.id
+  returning * into p;
+  return private.project_summary(p, 'editor');
+end;
+$$;
+
+revoke all on function private.transfer_project(uuid, uuid) from public, anon;
+grant execute on function private.transfer_project(uuid, uuid) to authenticated;
+
+create function public.transfer_project(project_id uuid, new_owner_id uuid)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.transfer_project(project_id, new_owner_id)
+$$;
+
+revoke all on function public.transfer_project(uuid, uuid) from public, anon;
+grant execute on function public.transfer_project(uuid, uuid) to authenticated;
+
 -- Invitations waiting for the caller to accept, with each project's title.
 create function private.list_invitations()
 returns jsonb

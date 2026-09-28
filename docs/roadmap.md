@@ -204,6 +204,10 @@ Also done in this phase: the comment anchoring library (see the task below).
   a role or removes a member or an invitation there, and agents can read the
   list with the `list_members` tool), and a warning before sharing as editor
   (done: inviting as an editor, or making someone one, asks first).
+- Transferring ownership (done: the owner picks "Make owner" next to a member
+  who has accepted, in the Members dialog, and confirms; they become the
+  owner and the old owner an editor. Delete account offers "Transfer first"
+  next to each owned shared project. People only, never agents.)
 - The commenter role, and comments on documents, sections, text selections and
   drawing elements. (Database and agent side done: threads, replies, edits,
   resolving and deletes with the access rules for each role, pgTAP tests for

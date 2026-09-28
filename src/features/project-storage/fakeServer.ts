@@ -109,6 +109,7 @@ export class FakeProjectServer {
       listMembers: (projectId) => call("listMembers", [projectId], () => this.members(user, projectId)),
       shareProject: (projectId, memberId, role) =>
         call("shareProject", [projectId, memberId, role], () => this.setMember(user, projectId, memberId, role)),
+      transferProject: (projectId, newOwnerId) => call("transferProject", [projectId, newOwnerId], () => this.transfer(user, projectId, newOwnerId)),
       inviteByEmail: (projectId, email, role) => call("inviteByEmail", [projectId, email, role], () => this.inviteByEmail(user, projectId, email, role)),
       archiveProject: (projectId) => call("archiveProject", [projectId], () => this.setArchived(user, projectId, true)),
       unarchiveProject: (projectId) => call("unarchiveProject", [projectId], () => this.setArchived(user, projectId, false)),
@@ -217,6 +218,22 @@ export class FakeProjectServer {
       member.role = role
       project.revision++
     }
+  }
+
+  /**
+   * The owner makes a member who has accepted the owner, and stays as an
+   * editor, as `transfer_project` does (archived projects included).
+   */
+  private transfer(user: string, projectId: string, newOwnerId: string): RemoteProject {
+    const project = this.projects.get(projectId)
+    if (!project || project.owner !== user) throw new RemoteError("access", "Only the project owner can transfer it")
+    if (newOwnerId === user) throw new RemoteError("invalid", "Invalid member")
+    if (!project.members.get(newOwnerId)?.acceptedAt) throw new RemoteError("invalid", "Only a member who has accepted their invitation can become the owner")
+    project.members.delete(newOwnerId)
+    project.members.set(user, { role: "editor", invitedAt: this.tick(), acceptedAt: this.tick() })
+    project.owner = newOwnerId
+    project.revision++
+    return this.summary(project, user)
   }
 
   /**

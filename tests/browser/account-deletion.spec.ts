@@ -71,8 +71,10 @@ test("a person sees what deleting does, confirms with their email, and the accou
 
   const dialog = await startDeleting(page)
   const owned = dialog.getByRole("list", { name: "Projects you own" }).getByRole("listitem")
-  await expect(owned).toHaveText(["SoloOnly you", "Team notesShared with 1 person"])
-  await expect(dialog).toContainText("The 2 projects you own are deleted, for everyone they are shared with. You cannot hand a project to someone else yet. To keep a copy, choose Download project in its menu first.")
+  await expect(owned).toHaveText(["SoloOnly you", "Team notesShared with 1 personTransfer first"])
+  await expect(dialog).toContainText(
+    "The 2 projects you own are deleted, for everyone they are shared with. To keep a shared project going, transfer it to someone it is shared with first. To keep a copy, choose Download project in its menu first.",
+  )
   await expect(dialog).toContainText("You leave the project shared with you.")
   await expect(dialog).toContainText("Your comments stay where you wrote them, shown as from a deleted account.")
   await expect(dialog).toContainText("Agents you connected lose access.")
@@ -94,6 +96,37 @@ test("a person sees what deleting does, confirms with their email, and the accou
   expect(fake.server.projects.get(theirs)?.members.has(person.id)).toBe(false)
   expect((await storedPartitions(page)).some((partition) => partition.includes(person.id))).toBe(false)
   await expect.poll(() => page.evaluate(() => localStorage.getItem("elaborating.offline-account.v1"))).toBeNull()
+})
+
+test("Transfer first hands a shared project to a member, so deleting the account keeps it", async ({ page }) => {
+  const { fake, team, solo } = await setUp(page)
+  const dialog = await startDeleting(page)
+  const owned = dialog.getByRole("list", { name: "Projects you own" })
+  // Only a project someone has accepted can be handed over.
+  await expect(owned.getByRole("button")).toHaveText(["Transfer first"])
+
+  await owned.getByRole("button", { name: "Transfer first: Team notes" }).click()
+  const confirm = page.getByRole("alertdialog", { name: "Transfer Team notes" })
+  // The only member who has accepted is chosen already.
+  await expect(confirm.getByLabel("New owner")).toContainText("bob@example.com (Editor)")
+  await expect(confirm).toContainText("bob@example.com can then change who has access and delete the project permanently.")
+  expect(await new AxeBuilder({ page }).include('[role="alertdialog"]').analyze().then((result) => result.violations.map((violation) => violation.id))).toEqual([])
+  await confirm.getByRole("button", { name: "Make bob@example.com the owner" }).click()
+  await expect(confirm).toBeHidden()
+
+  await expect(dialog.getByRole("status")).toHaveText("bob@example.com is now the owner of Team notes, so it is kept. You stay on as an editor.")
+  expect(fake.server.projects.get(team)?.owner).toBe(BOB)
+  await expect(owned.getByRole("listitem")).toHaveText(["SoloOnly you"])
+  await expect(dialog).toContainText("The project you own is deleted, for everyone it is shared with. To keep a copy, choose Download project in its menu first.")
+  await expect(dialog).toContainText("You leave the 2 projects shared with you.")
+
+  await dialog.getByLabel(`Type ${person.email} to confirm`).fill(person.email)
+  await dialog.getByRole("button", { name: "Delete account" }).click()
+  await expect(page.getByRole("dialog", { name: "Settings" }).getByText("Your account was deleted, and you are signed out.")).toBeVisible()
+  // Team notes is Bob's now, and stays; the project only this person owned goes.
+  expect(fake.server.projects.get(team)?.owner).toBe(BOB)
+  expect(fake.server.projects.get(team)?.members.has(person.id)).toBe(false)
+  expect(fake.server.projects.has(solo)).toBe(false)
 })
 
 test("when signing out would lose unreconciled work, nothing is deleted until the person deletes anyway", async ({ page }) => {

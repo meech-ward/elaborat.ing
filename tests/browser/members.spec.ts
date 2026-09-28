@@ -184,6 +184,51 @@ test("making a member an editor asks first", async ({ page }) => {
   expect(server.projects.get(id)!.members.get(MEMBER)?.role).toBe("editor")
 })
 
+test("the owner makes a member the owner after a confirmation naming them, and becomes an editor", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = await sharedProject(server, person.id, "Team notes", "viewer")
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  const dialog = await openMembers(page, "Team notes")
+  const transfers = () => fake.requests.filter((request) => request.url().endsWith("/rpc/transfer_project")).map((request) => request.postDataJSON())
+  // Only people who have accepted can become the owner.
+  await expect(dialog.getByRole("button", { name: "Make invited@example.com the owner" })).toHaveCount(0)
+
+  await dialog.getByRole("button", { name: "Make member@example.com the owner" }).click()
+  const confirm = page.getByRole("alertdialog", { name: "Transfer Team notes" })
+  await expect(confirm).toContainText(
+    "member@example.com can then change who has access and delete the project permanently. You stay on as an editor, and only they can hand it back.",
+  )
+  await expect(confirm.getByLabel("New owner")).toContainText("member@example.com (Viewer)")
+  const axe = await new AxeBuilder({ page }).include('[role="alertdialog"]').analyze()
+  expect(axe.violations.map((violation) => violation.id)).toEqual([])
+
+  // Cancelling changes nothing.
+  await confirm.getByRole("button", { name: "Cancel" }).click()
+  await expect(confirm).toBeHidden()
+  expect(transfers()).toEqual([])
+  expect(server.projects.get(id)!.owner).toBe(person.id)
+
+  await dialog.getByRole("button", { name: "Make member@example.com the owner" }).click()
+  await confirm.getByRole("button", { name: "Make member@example.com the owner" }).click()
+  await expect(confirm).toBeHidden()
+  await expect(dialog.getByRole("status")).toHaveText("member@example.com is now the owner of Team notes. You are an editor.")
+  expect(transfers()).toEqual([{ project_id: id, new_owner_id: MEMBER }])
+  expect(server.projects.get(id)!.owner).toBe(MEMBER)
+  expect(server.projects.get(id)!.members.get(person.id)?.role).toBe("editor")
+  // The list is read again: the new owner first, this person an editor, the invitation no longer shown to them.
+  await expect(dialog.getByRole("list", { name: "Members" }).getByRole("listitem")).toHaveText(["member@example.comOwner", "person@example.com (you)Editor"])
+  await expect(dialog).toContainText("Only its owner can change this.")
+  await expect(dialog.getByRole("combobox")).toHaveCount(0)
+  await expect(dialog.getByRole("list", { name: "Members" })).toBeFocused()
+
+  // The project's menu is an editor's now: no permanent delete, and they can leave.
+  await dialog.getByRole("button", { name: "Close" }).click()
+  await page.getByRole("button", { name: "Actions for Team notes" }).click()
+  await expect(page.getByRole("menuitem", { name: "Leave project" })).toBeVisible()
+  await expect(page.getByRole("menuitem", { name: "Delete permanently" })).toHaveCount(0)
+})
+
 test("a member sees who has access, without controls or invitations", async ({ page }) => {
   const server = new FakeProjectServer()
   const id = await sharedProject(server, OWNER, "Their notes", "viewer")

@@ -63,7 +63,10 @@ Developer first, friendly for everyone.
 
 - **The project is the unit of sharing.** References between notes, drawings
   and diagrams live inside a project.
-- **Roles:** viewer (the default), commenter, editor, plus the owner.
+- **Roles:** viewer (the default), commenter, editor, plus the owner. The
+  owner can hand the project to a member who has accepted it, whatever their
+  role: that person becomes the owner, with permanent delete, and the old
+  owner stays on as an editor. Only people do this, never agents.
 - **Editing is one person at a time.** Two editors cannot silently overwrite
   each other: the second save gets a conflict and recovery. Before sharing as
   editor, the app warns that real-time co-editing is not supported.

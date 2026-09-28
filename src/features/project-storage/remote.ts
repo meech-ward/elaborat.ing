@@ -171,6 +171,12 @@ export interface ProjectRemote {
   /** Invite someone, change their role, or remove them or their invitation (role null). Owner only. */
   shareProject(projectId: string, memberId: string, role: MemberRole | null): Promise<void>
   /**
+   * Make a member who has accepted the owner; the caller stays as an editor.
+   * Owner only, and never with an agent's token. Returns the project as the
+   * caller now sees it.
+   */
+  transferProject(projectId: string, newOwnerId: string): Promise<RemoteProject>
+  /**
    * Invite someone by email (the `share` Edge Function). An email with an
    * account gets the usual invitation; one without gets an account and an
    * email to join. The answer does not say which. Owner only, and never with
@@ -244,6 +250,10 @@ export class SupabaseProjectRemote implements ProjectRemote {
     z.object({ project_id: z.uuid(), member_id: z.uuid() }).parse(
       await this.rpc("share_project", { project_id: projectId, member_id: memberId, member_role: role }),
     )
+  }
+
+  async transferProject(projectId: string, newOwnerId: string) {
+    return RemoteProject.parse(await this.rpc("transfer_project", { project_id: projectId, new_owner_id: newOwnerId }))
   }
 
   async inviteByEmail(projectId: string, email: string, role: MemberRole) {

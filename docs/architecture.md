@@ -174,6 +174,21 @@ invitation) themselves. The owner and accepted members can see who a project
 is shared with, each person's email included (`list_members`); only the owner
 sees invitations not yet accepted, and only the owner changes them.
 
+**Decision: the owner can hand a project to a member.** `transfer_project`
+makes a member who has accepted the project its owner, whatever their role,
+and keeps the old owner on as an editor, in one step that raises the
+revision, so every device with the project open hears of it. From then on the
+new owner has the owner's rights, sharing and permanent delete included. Only
+the owner can do it, and only a signed-in person: agents' tokens are refused,
+as for permanent deletes, since the new owner can delete. An invitation not
+yet accepted is not enough. Archived projects can be handed over too:
+archiving stops changes to the files, not to who has access, and someone
+deleting their account may want to keep an archived project going. The
+project counts against the new owner's project limit. In the app, the owner
+picks "Make owner" next to a member in the Members dialog, or "Transfer
+first" next to a shared project when deleting their account, and confirms in
+a dialog naming the new owner.
+
 **Decision: sharing by email goes through one Edge Function.** The owner
 invites an email with the `share` Edge Function, which refuses agents' tokens
 (people share, agents don't) and checks, as the caller, that they own the
@@ -464,7 +479,8 @@ does it delete the account with Auth's admin API, which ends its sessions and
 agent connections; the foreign keys remove its memberships and counters and
 leave its comments, file versions and threads with no author ("Deleted
 account"). A failure part way keeps the account, and trying again carries on.
-There is no way to hand a project to someone else yet: the page says so, and
+Each owned project someone has accepted offers "Transfer first", which hands
+it to one of them (`transfer_project`, above) so it is kept, and the page
 points to Download project for keeping a copy.
 The app runs the sign-out guards first (a refusal offers "Delete anyway"),
 then removes this device's copies of the account's projects and drafts, and

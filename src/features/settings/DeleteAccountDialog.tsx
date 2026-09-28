@@ -1,6 +1,8 @@
 /**
  * Settings > Account > Delete account: says exactly what deleting does,
  * from the server's own summary, and asks the person to type their email.
+ * Each owned project someone else has accepted offers "Transfer first", which
+ * hands it to one of them (TransferOwnershipDialog) so it is kept.
  * Deleting runs the same guards as signing out; when one would keep unsaved
  * work, it says why and offers "Delete anyway".
  */
@@ -10,10 +12,13 @@ import { AlertDialog, DialogClose, DialogContent, DialogDescription, DialogFoote
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Banner, BannerAction } from "@/features/design-system"
+import { libraryFor } from "@/features/projects/account"
+import { LazyTransferOwnershipDialog } from "@/features/projects/LazyTransferOwnershipDialog"
 import { deleteSignedInAccount, loadDeletionSummary, type DeletionSummary } from "./accountDeletion"
 
 type Summary = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; summary: DeletionSummary }
 type Problem = { kind: "kept"; reason: string } | { kind: "failed"; message: string } | null
+type Owned = DeletionSummary["owned"][number]
 
 const people = (count: number) => (count === 0 ? "Only you" : count === 1 ? "Shared with 1 person" : `Shared with ${count} people`)
 const normal = (email: string) => email.trim().toLowerCase()
@@ -42,6 +47,8 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
   const [typed, setTyped] = useState("")
   const [pending, setPending] = useState(false)
   const [problem, setProblem] = useState<Problem>(null)
+  const [transferring, setTransferring] = useState<Owned | null>(null)
+  const [transferred, setTransferred] = useState<string | null>(null)
   const confirmed = normal(typed) === normal(email)
 
   useEffect(() => {
@@ -105,8 +112,9 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
           {summary.message}
         </Banner>
       ) : (
-        <Consequences summary={summary.summary} />
+        <Consequences summary={summary.summary} onTransfer={pending ? undefined : setTransferring} />
       )}
+      {transferred ? <p role="status" className="text-[13px]">{transferred}</p> : null}
       <div className="grid gap-2">
         <Label htmlFor={inputId}>Type {email} to confirm</Label>
         <Input
@@ -139,13 +147,28 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
           {pending ? "Deleting..." : "Delete account"}
         </Button>
       </DialogFooter>
+      {transferring ? (
+        <LazyTransferOwnershipDialog
+          library={libraryFor({ userId, email, online: true })}
+          projectId={transferring.id}
+          title={transferring.title}
+          onTransferred={(name) => {
+            setTransferred(`${name} is now the owner of ${transferring.title}, so it is kept. You stay on as an editor.`)
+            setTransferring(null)
+            // Read the summary again: the project has left the list.
+            setAttempt((value) => value + 1)
+          }}
+          onClose={() => setTransferring(null)}
+        />
+      ) : null}
     </form>
   )
 }
 
 /** What deleting does, in the order it happens. */
-function Consequences({ summary }: { summary: DeletionSummary }) {
+function Consequences({ summary, onTransfer }: { summary: DeletionSummary; onTransfer?: (project: Owned) => void }) {
   const { owned, shared } = summary
+  const transferable = owned.some((project) => project.members > 0)
   return (
     <ul className="grid list-disc gap-2 pl-5 text-[13px] leading-normal">
       <li>
@@ -157,16 +180,31 @@ function Consequences({ summary }: { summary: DeletionSummary }) {
               {owned.length === 1
                 ? "The project you own is deleted, for everyone it is shared with."
                 : `The ${owned.length} projects you own are deleted, for everyone they are shared with.`}{" "}
-              You cannot hand a project to someone else yet. To keep a copy, choose Download project in its menu first.
+              {transferable ? "To keep a shared project going, transfer it to someone it is shared with first. " : ""}To keep a copy, choose Download
+              project in its menu first.
             </span>
             <ul aria-label="Projects you own" className="flex max-h-48 flex-col divide-y divide-border overflow-y-auto rounded-tile border border-border">
               {owned.map((project) => (
-                <li key={project.id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-2">
-                  <span className="min-w-0 font-medium break-words">{project.title}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {people(project.members)}
-                    {project.archived ? ", archived" : ""}
+                <li key={project.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="font-medium break-words">{project.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {people(project.members)}
+                      {project.archived ? ", archived" : ""}
+                    </span>
                   </span>
+                  {project.members > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Transfer first: ${project.title}`}
+                      disabled={!onTransfer}
+                      onClick={() => onTransfer?.(project)}
+                    >
+                      Transfer first
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>

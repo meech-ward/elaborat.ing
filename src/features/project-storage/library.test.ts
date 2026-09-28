@@ -278,6 +278,29 @@ test("members lists who a project is shared with, and the owner changes a role a
   )
 })
 
+test("the owner transfers a project to a member and becomes an editor here too; transferring needs a connection", async () => {
+  const server = new FakeProjectServer()
+  const { library: here } = library(server)
+  const id = await here.create("Handed over")
+  await here.syncProject(id)
+  server.share(id, OTHER, "viewer")
+  const invited = crypto.randomUUID()
+  server.invite(id, invited, "editor")
+
+  await expect(here.transfer(id, invited)).rejects.toThrow("Only a member who has accepted their invitation can become the owner")
+  server.offline = true
+  await expect(here.transfer(id, OTHER)).rejects.toThrow("Transferring a project needs a connection. Try again when you are online.")
+  server.offline = false
+
+  await here.transfer(id, OTHER)
+  expect(here.getState().entries.find((entry) => entry.id === id)?.role).toBe("editor")
+  expect((await here.members(id)).map((member) => [member.userId, member.role])).toEqual([
+    [OTHER, "owner"],
+    [OWNER, "editor"],
+  ])
+  await expect(here.deletePermanently(id)).rejects.toThrow("Only the project owner can permanently delete it")
+})
+
 test("members and sharing need a connection, and a project only on this device is shared with no one", async () => {
   const server = new FakeProjectServer()
   const { library: here } = library(server)

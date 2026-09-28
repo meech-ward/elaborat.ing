@@ -248,6 +248,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "unarchive_project") return answer(route, () => remote.unarchiveProject(body.project_id))
       if (rpc === "delete_project") return answer(route, async () => (await remote.deleteProject(body.project_id), { id: body.project_id, deleted: true }))
       if (rpc === "list_members") return answer(route, () => remote.listMembers(body.project_id))
+      if (rpc === "transfer_project") return answer(route, () => remote.transferProject(body.project_id, body.new_owner_id))
       if (rpc === "account_deletion_summary") {
         const owned = [...server.projects.values()].filter((project) => project.owner === person.id)
         return json(route, {

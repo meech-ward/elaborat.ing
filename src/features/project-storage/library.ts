@@ -272,6 +272,23 @@ export class ProjectLibrary {
   }
 
   /**
+   * Make a member who has accepted the owner of a project this account owns;
+   * this account stays on as an editor, here too. People only; needs a connection.
+   */
+  async transfer(projectId: string, userId: string): Promise<void> {
+    let project: RemoteProject
+    try {
+      project = await this.remote.transferProject(projectId, userId)
+    } catch (error) {
+      if (error instanceof RemoteError && error.kind === "network") throw new Error("Transferring a project needs a connection. Try again when you are online.")
+      throw error
+    }
+    this.catalog = [...this.catalog.filter((entry) => entry.id !== project.id), project]
+    await this.sync.adopt(project)
+    await this.load()
+  }
+
+  /**
    * Invite someone by email. An account gets the usual invitation; an email
    * without one gets an email to join. Owner only; needs a connection.
    */

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { personName } from "@/features/auth/accountName"
 import type { Member, ProjectLibrary } from "@/features/project-storage/library"
 import type { MemberRole } from "@/features/project-storage/remote"
+import { LazyTransferOwnershipDialog } from "./LazyTransferOwnershipDialog"
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -48,11 +49,12 @@ const nameOf = (member: Member) => personName(member.name, member.email) ?? `Acc
 /**
  * Who a project is shared with. Its owner can invite people by email, change
  * a member's role, and remove a member or an invitation after a confirmation;
- * making someone an editor is confirmed first too. Anyone else sees the list
- * only. Each change goes to the server at once, then the list is read again,
- * so it always shows what the server holds.
+ * making someone an editor is confirmed first too, and so is making a member
+ * who has accepted the owner (TransferOwnershipDialog). Anyone else sees the
+ * list only. Each change goes to the server at once, then the list is read
+ * again, so it always shows what the server holds.
  */
-export function MembersDialog({ library, projectId, title, owner, you, onClose }: {
+export function MembersDialog({ library, projectId, title, owner: ownedWhenOpened, you, onClose }: {
   library: ProjectLibrary
   projectId: string
   title: string
@@ -68,9 +70,13 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
   const [pending, setPending] = useState(false)
   const [email, setEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<MemberRole>("viewer")
+  const [handingTo, setHandingTo] = useState<Member | null>(null)
   const emailId = useId()
   const list = useRef<HTMLUListElement>(null)
   const close = useRef<HTMLButtonElement>(null)
+
+  // The list says who owns the project now, after a transfer too.
+  const owner = members ? members.some((member) => member.role === "owner" && member.userId === you) : ownedWhenOpened
 
   const load = async () => {
     try {
@@ -146,6 +152,15 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
     list.current?.focus()
   }
 
+  const transferred = async (name: string) => {
+    setHandingTo(null)
+    setError(null)
+    setNotice(`${name} is now the owner of ${title}. You are an editor.`)
+    await load()
+    // The controls, and the button that had focus, are gone.
+    list.current?.focus()
+  }
+
   return (
     <Dialog
       open
@@ -158,7 +173,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
           <DialogTitle>Members of {title}</DialogTitle>
           <DialogDescription>
             {owner
-              ? "Invite people by email, change a member's role, or remove a member or an invitation. Changes apply at once."
+              ? "Invite people by email, change a member's role, make a member the owner, or remove a member or an invitation. Changes apply at once."
               : "Who this project is shared with. Only its owner can change this."}
           </DialogDescription>
         </DialogHeader>
@@ -218,8 +233,13 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
                     )}
                   </span>
                   {editable ? (
-                    <span className="flex items-center gap-2">
+                    <span className="flex flex-wrap items-center gap-2">
                       <RoleSelect label={`Role for ${name}`} value={member.role as MemberRole} onChange={(role) => changeRole(member, role)} />
+                      {member.invited ? null : (
+                        <Button variant="outline" size="sm" aria-label={`Make ${name} the owner`} disabled={pending} onClick={() => setHandingTo(member)}>
+                          Make owner
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -246,6 +266,17 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
             Close
           </Button>
         </DialogFooter>
+        {handingTo && members ? (
+          <LazyTransferOwnershipDialog
+            library={library}
+            projectId={projectId}
+            title={title}
+            members={members}
+            picked={handingTo.userId}
+            onTransferred={(name) => void transferred(name)}
+            onClose={() => setHandingTo(null)}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )
