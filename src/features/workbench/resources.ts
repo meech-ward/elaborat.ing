@@ -1,9 +1,6 @@
 import { exportDrawingSvg } from "@/features/drawings/export.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import type { DrawingScene } from "@/features/drawings/types.ts";
-import { compileD2Diagram } from "@/features/structured/compiler";
-import { sidecarPathFor } from "@/features/structured/structuredClient";
-import { nativePathFor, projectDiagramArtifact, readDiagramCompanion } from "./diagramArtifact";
 import type { WorkspaceStore } from "./workspaceStore";
 
 /**
@@ -32,7 +29,9 @@ export async function drawingSvgForContent(content: string, filename: string): P
 /**
  * SVG for a saved diagram, from the same saved artifact the diagram view
  * shows, in the colours `present` gives it (the palette's diagram fills,
- * as the canvas shows them: useCanvasPresentation).
+ * as the canvas shows them: useCanvasPresentation). The code that makes it
+ * (regeneration, and D2 when the saved canvas is out of date) loads with
+ * the first diagram a note embeds (diagramEmbed.ts).
  */
 export async function diagramSvgForWorkspace(
   source: string,
@@ -40,18 +39,6 @@ export async function diagramSvgForWorkspace(
   client: Pick<WorkspaceStore, "read">,
   present: (scene: DrawingScene) => DrawingScene = (scene) => scene,
 ): Promise<string> {
-  const nativePath = nativePathFor(path);
-  const [native, sidecar] = await Promise.all([readDiagramCompanion(client, nativePath), readDiagramCompanion(client, sidecarPathFor(path))]);
-  const result = await projectDiagramArtifact({
-    source,
-    nativePath,
-    nativeContent: native?.savedContent ?? null,
-    sidecarContent: sidecar?.savedContent ?? null,
-    compile: async () => {
-      const compiled = await compileD2Diagram(source);
-      return compiled.ok ? { diagram: compiled.diagram, error: null } : { diagram: null, error: compiled.error };
-    },
-  });
-  if (!result.ok && !result.persistedScene) throw new Error(result.diagnostics[0]?.message ?? "Diagram unavailable");
-  return sanitizeSvg(await exportDrawingSvg(present(result.scene)));
+  const { diagramSvg } = await import("./diagramEmbed");
+  return diagramSvg(source, path, client, present);
 }

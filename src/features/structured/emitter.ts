@@ -1,3 +1,4 @@
+import { GENERATED_FILL, GENERATED_STROKE } from './generated.ts';
 import { elementIdForConnection, elementIdForLabel, elementIdForShape } from './merge.ts';
 import type {
   AngularPoint,
@@ -14,12 +15,7 @@ export type EmitResult = {
   diagnostics: Diagnostic[];
 };
 
-/**
- * The colours every generated element starts with (saved as these), unless
- * the D2 source sets its own. The canvas shows these in the palette's colours.
- */
-export const GENERATED_STROKE = '#1e1e1e';
-export const GENERATED_FILL = 'transparent';
+export { GENERATED_FILL, GENERATED_STROKE };
 /** A fill the author set to transparent, stored so the palette leaves it clear. */
 const CLEAR_FILL = '#00000000';
 

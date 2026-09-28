@@ -23,7 +23,6 @@
 import { emitNativeScene } from './emitter.ts';
 import { mergeRegeneration, recordForElement } from './merge.ts';
 import { hashSource } from './sourceHash.ts';
-import nativeFont from './native-font.json';
 export { hashSource } from './sourceHash.ts';
 import type {
   CompileOptions,
@@ -73,7 +72,19 @@ export type D2CompileRequest = {
 // emitter supports regular text, so style variants deliberately measure regular.
 // D2 0.1.33's worker JSON.stringify boundary requires Go []byte's base64 JSON
 // representation. Its declared Uint8Array becomes an object and is rejected.
-const nativeFontBase64 = nativeFont.ttfBase64;
+// The font (220 kB of base64) loads with the first compile, beside D2 itself.
+let nativeFontLoading: Promise<string> | null = null;
+
+function loadNativeFontBase64(): Promise<string> {
+  nativeFontLoading ??= import('./native-font-ttf.json').then(
+    (font) => font.ttfBase64,
+    (error: unknown) => {
+      nativeFontLoading = null;
+      throw error;
+    },
+  );
+  return nativeFontLoading;
+}
 
 type D2Instance = {
   compile: (input: string | D2CompileRequest) => Promise<{ diagram: D2Diagram }>;
@@ -95,16 +106,14 @@ type D2Module = {
  * against the supplied map only. Verified live against 0.1.33; a missing
  * import throws a structured D2 error, never a filesystem or network read.
  */
-export function buildCompileRequest(source: string, virtualFiles: Record<string, string> = {}): D2CompileRequest {
+export function buildCompileRequest(source: string, virtualFiles: Record<string, string> = {}, fontBase64?: string): D2CompileRequest {
   if ('index.d2' in virtualFiles) {
     throw new Error(
       'Conflicting virtual file "index.d2": the entry source occupies that path. Rename the import.',
     );
   }
-  return { fs: { ...virtualFiles, 'index.d2': source }, inputPath: 'index.d2', options: {
-    layout: 'elk', fontRegular: nativeFontBase64, fontBold: nativeFontBase64,
-    fontItalic: nativeFontBase64, fontSemibold: nativeFontBase64,
-  } };
+  const fonts = fontBase64 === undefined ? {} : { fontRegular: fontBase64, fontBold: fontBase64, fontItalic: fontBase64, fontSemibold: fontBase64 };
+  return { fs: { ...virtualFiles, 'index.d2': source }, inputPath: 'index.d2', options: { layout: 'elk', ...fonts } };
 }
 
 async function loadD2Module(): Promise<D2Module> {
@@ -201,8 +210,8 @@ export function createD2CompilePort(): D2CompilePort {
     virtualFiles?: Record<string, string>;
   }): Promise<D2Diagram> => {
     return enqueueD2Compile(async () => {
-      const d2 = await getSharedD2();
-      const result = await d2.compile(buildCompileRequest(source, virtualFiles ?? {}));
+      const [d2, font] = await Promise.all([getSharedD2(), loadNativeFontBase64()]);
+      const result = await d2.compile(buildCompileRequest(source, virtualFiles ?? {}, font));
       if (!result || typeof result !== 'object' || !('diagram' in result)) {
         throw new Error('Unexpected @terrastruct/d2 response: missing result.diagram.');
       }

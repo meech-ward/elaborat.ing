@@ -3,22 +3,8 @@ import type { DrawingScene } from "@/features/drawings/index.ts";
 import type { D2Diagram } from "@/features/structured/types.ts";
 import { applySidecar, hashDiagramSource, readSidecarFile, regenerateDiagram, toNativeScene, writeSidecarFile, type RegenerateResult } from "@/features/structured/structuredClient";
 import { pendingLabelsFromArtifact, type LabelEdit } from "@/features/structured/labelSync";
-import { MissingFileError, type WorkspaceFile, type WorkspaceStore } from "./workspaceStore";
 
-/** A diagram's generated file, or null when it has not been saved yet. */
-export async function readDiagramCompanion(client: Pick<WorkspaceStore, "read">, path: string): Promise<WorkspaceFile | null> {
-  try {
-    return await client.read(path);
-  } catch (error) {
-    if (error instanceof MissingFileError) return null;
-    throw error;
-  }
-}
-
-/** The `.excalidraw` canvas generated next to a `.d2` source. */
-export function nativePathFor(sourcePath: string): string {
-  return sourcePath.replace(/\.d2$/i, ".excalidraw");
-}
+export { nativePathFor, readDiagramCompanion } from "./diagramFiles";
 
 /** The single saved-artifact projection for the diagram view and diagram embeds. */
 export async function projectDiagramArtifact(input: {

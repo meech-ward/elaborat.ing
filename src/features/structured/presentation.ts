@@ -1,5 +1,4 @@
-import { GENERATED_FILL, GENERATED_STROKE } from './emitter.ts';
-import { isGeneratedId } from './merge.ts';
+import { GENERATED_FILL, GENERATED_STROKE, isGeneratedId } from './generated.ts';
 
 /** The palette's diagram colours, as the canvas should store them for display. */
 export type DiagramColors = {

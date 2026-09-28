@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import {
   buildCompileRequest,
   compileStructured,
@@ -8,6 +9,7 @@ import {
 } from '../compiler.ts';
 import { recordForElement } from '../merge.ts';
 import type { D2Diagram } from '../types.ts';
+import nativeFont from '../native-font.json';
 
 afterEach(() => {
   setSharedD2ForTest(null);
@@ -142,6 +144,22 @@ describe('shared D2 serialization', () => {
     expect(third.shapes?.[0]?.label).toBe('label:ccc');
     // Serialized: the stub never observes overlapping compiles.
     expect(maxInFlight).toBe(1);
+  });
+
+  test('every compile measures with the native font, loaded with the first compile', async () => {
+    const requests: Array<{ options?: Record<string, unknown> }> = [];
+    setSharedD2ForTest({
+      compile: async (input: string | { options?: Record<string, unknown> }) => {
+        if (typeof input !== 'string') requests.push(input);
+        return { diagram: diagramWithLabel('a', 'A') };
+      },
+    });
+    await createD2CompilePort()({ source: 'a: A' });
+    const font = requests[0]?.options?.fontRegular;
+    expect(typeof font).toBe('string');
+    const digest = createHash('sha256').update(Buffer.from(font as string, 'base64')).digest('hex');
+    expect(digest).toBe(nativeFont.ttfSha256);
+    expect(requests[0]?.options).toMatchObject({ layout: 'elk', fontBold: font, fontItalic: font, fontSemibold: font });
   });
 
   test('a rejected compile releases the queue and a later compile succeeds', async () => {

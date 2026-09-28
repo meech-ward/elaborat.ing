@@ -2,6 +2,8 @@
 
 Run in a disposable Python environment with fonttools==4.59.0, brotli==1.1.0.
 Arguments: pinned package Excalifont directory, output JSON path.
+The TTF itself goes to a second file next to it (native-font-ttf.json), which
+only the D2 compiler loads, so a drawing's canvas does not download it.
 No new glyphs or platform fallbacks are introduced. No network at runtime.
 """
 import base64
@@ -55,9 +57,11 @@ result = {
     'ttfSha256': hashlib.sha256(ttf).hexdigest(),
     'license': sorted(licenses),
     'glyphCoverage': {'codepoints': len(merged_cmap), 'cjk': 0x4E2D in merged_cmap, 'emoji': 0x1F600 in merged_cmap},
-    'ttfBase64': base64.b64encode(ttf).decode('ascii'),
 }
 with open(sys.argv[2], 'w') as output:
     json.dump(result, output, indent=2)
     output.write('\n')
-print(json.dumps({key:value for key,value in result.items() if key != 'ttfBase64'}, indent=2))
+with open(Path(sys.argv[2]).with_name('native-font-ttf.json'), 'w') as output:
+    json.dump({'ttfBase64': base64.b64encode(ttf).decode('ascii')}, output, indent=2)
+    output.write('\n')
+print(json.dumps(result, indent=2))

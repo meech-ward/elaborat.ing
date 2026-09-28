@@ -34,7 +34,7 @@ export const MAX_SVG_CHARS = 200_000
 const INK = '#1e1e1e'
 const PADDING = 10
 
-/** A shape the D2 generator made (src/features/structured/merge.ts). */
+/** A shape the D2 generator made (src/features/structured/generated.ts). */
 const GENERATED = /^d2:/
 /** Shapes the app fills (src/features/structured/presentation.ts). */
 const FILLED = new Set(['rectangle', 'ellipse', 'diamond'])

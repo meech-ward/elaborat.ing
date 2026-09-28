@@ -229,7 +229,10 @@ answer. The planner is `src/features/workbench/movePlan.ts`.
 **Decision: D2 compiles in the browser.** `@terrastruct/d2` ships a browser
 build that inlines its WebAssembly and worker in one module, about 8 MB, loaded
 the first time a diagram opens (the first compile takes a few seconds; later
-ones take well under a second). One shared worker serves every compile, through
+ones take well under a second). The inlined WebAssembly is already compressed:
+the package's plain `.wasm` build would be 22 MB to cache and larger to
+download (about 7.1 MB at Cloudflare's brotli against 6.0 MB), so the app uses
+the inlined build. One shared worker serves every compile, through
 a queue, because the package answers requests without ids. A diagram is three
 files: the `.d2` source, the generated `.excalidraw` canvas that holds freehand
 additions and moved shapes, and the `.d2.json` sidecar with the generation
@@ -752,6 +755,13 @@ text and undo history live in `src/features/source/sourceBuffer.ts`, grouped
 as Monaco groups rendered edits, and Monaco replays them when it mounts, so
 Ctrl+Z in Source still undoes an edit made earlier in Rendered. Both stay
 precached for offline use.
+
+**Decision: canvases load when a drawing or diagram first opens.** The drawing
+and diagram views, with Excalidraw's styles, load with the first file of their
+kind; Excalidraw itself when a canvas first shows; D2 and the font it measures
+text with (`src/features/structured/native-font-ttf.json`, 220 kB) with the
+first compile; and the code that pictures a diagram in a note with the first
+such embed. All of it stays precached for offline use.
 
 ## Frontend hosting
 

@@ -52,7 +52,7 @@ import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
-import { nativePathFor, readDiagramCompanion } from "./diagramArtifact";
+import { nativePathFor, readDiagramCompanion } from "./diagramFiles";
 import { RenameDialog } from "./RenameDialog";
 import { prepareProjectLeave, type PrepareProjectLeave } from "./projectLeave";
 import type { OperationSession } from "./operationSession";
@@ -76,8 +76,7 @@ import {
 import { type TabFile } from "./tabs";
 import { MoveDialog } from "./MoveDialog";
 import { DeleteDialog } from "./DeleteDialog";
-import { DrawingView } from "./DrawingView";
-import { DiagramView } from "./DiagramView";
+import { LazyDiagramView as DiagramView, LazyDrawingView as DrawingView } from "./LazyCanvasViews";
 import { FLOW_D2_EXAMPLE } from "@/features/structured/examples";
 import { useFileMoves } from "./useFileMoves";
 import { useFileDeletes } from "./useFileDeletes";

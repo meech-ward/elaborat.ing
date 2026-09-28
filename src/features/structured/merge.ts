@@ -25,6 +25,7 @@
  * only, spreading the current scene so `appState`, `files` and any other
  * root fields survive.
  */
+import { GENERATED_PREFIX, isGeneratedId } from './generated.ts';
 import type {
   ExcalidrawElementSkeleton,
   GeneratedBaseline,
@@ -35,7 +36,6 @@ import type {
   RegenerationRequest,
 } from './types.ts';
 
-const GENERATED_PREFIX = 'd2:';
 const LABEL_SUFFIX = ':label';
 
 export function elementIdForShape(shapeId: string): string {
@@ -50,9 +50,7 @@ export function elementIdForLabel(ownerElementId: string): string {
   return `${ownerElementId}${LABEL_SUFFIX}`;
 }
 
-export function isGeneratedId(id: string): boolean {
-  return id.startsWith(GENERATED_PREFIX);
-}
+export { isGeneratedId };
 
 /** Style keys the generator owns and the merge compares. */
 const STYLE_KEYS = [
