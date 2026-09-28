@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { sectionAnchor, textAnchor } from "../../src/features/comments/placement.ts"
+import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -14,6 +15,7 @@ import { APP_URL } from "./urls.ts"
 test.describe.configure({ timeout: 60_000 })
 
 const PATH = "docs/customer-model.md"
+const SOMEONE_ELSE = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f"
 const NOTE = `# Customer model
 
 How a customer moves from sign-up to their first project, and where agents help.
@@ -59,19 +61,24 @@ async function send(page: Page, body: string) {
  * A project with the note, opened in `view`, with two threads on it unless
  * `threads` is false: one on "where agents help", one on the Steps section.
  */
-async function seeded(page: Page, { threads = true, view = "Split" }: { threads?: boolean; view?: "Split" | "Source" | "Rendered" } = {}): Promise<{ fake: FakeSupabase; id: string }> {
-  const fake = await fakeSupabase(page)
-  const remote = fake.server.remote(person.id)
+async function seeded(
+  page: Page,
+  { threads = true, view = "Split", role }: { threads?: boolean; view?: "Split" | "Source" | "Rendered"; role?: "commenter" | "viewer" } = {},
+): Promise<{ fake: FakeSupabase; id: string }> {
+  const server = new FakeProjectServer()
+  const remote = server.remote(role ? SOMEONE_ELSE : person.id)
   const id = crypto.randomUUID()
   await remote.createProject(id, "Product notes")
   await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: PATH, content: NOTE }])
+  if (role) server.share(id, person.id, role)
+  const fake = await fakeSupabase(page, { server })
   const fileId = [...fake.server.projects.get(id)!.files.values()].find((file) => file.path === PATH)!.id
   const quote = NOTE.indexOf("where agents help")
   for (const [anchor, body] of [
     [textAnchor(NOTE, quote, quote + "where agents help".length), "Which agents?"],
     [sectionAnchor(NOTE, NOTE.indexOf("## Steps")), "Add a step for inviting a teammate."],
   ] as const) {
-    if (threads) fake.comments.call(person.id, "add_comment", { project_id: id, thread_id: crypto.randomUUID(), file_id: fileId, file_version: 1, anchor, body })
+    if (threads) fake.comments.call(role ? SOMEONE_ELSE : person.id, "add_comment", { project_id: id, thread_id: crypto.randomUUID(), file_id: fileId, file_version: 1, anchor, body })
   }
   await signedIn(page)
   await page.goto(new URL(`projects/${id}/${PATH}`, APP_URL).href)
@@ -222,4 +229,33 @@ test("a thread whose text is deleted shows in the panel as detached, with its qu
   const detached = panel(page).getByRole("article").filter({ hasText: "Detached" })
   await expect(detached).toContainText("where agents help")
   await expect(detached).toContainText("Which agents?")
+})
+
+test("a commenter comments on a note they cannot change, from the comment key in Rendered", async ({ page }) => {
+  const { fake } = await seeded(page, { threads: false, view: "Rendered", role: "commenter" })
+  const frame = frameOf(page)
+  await expect(frame.getByRole("textbox", { name: "Rendered document" })).toHaveAttribute("contenteditable", "false")
+  // The caret on a heading, and the comment key: a comment on its section.
+  await frame.getByRole("heading", { name: "Steps" }).click()
+  await page.keyboard.press("ControlOrMeta+Alt+m")
+  await send(page, "Add a step for inviting a teammate.")
+  await expect(thread(page, "section Steps")).toBeVisible()
+  // A selection (made with the pointer: a note that cannot change has no caret to extend), and the comment key.
+  await frame.getByText("Create a project.").click({ clickCount: 3 })
+  await page.keyboard.press("ControlOrMeta+Alt+m")
+  await send(page, "Name the project first.")
+  await expect(thread(page, "“Create a project.”")).toBeVisible()
+  expect(fake.comments.threads.map((entry) => entry.createdBy)).toEqual([person.id, person.id])
+})
+
+test("a viewer sees commented text but is offered no Comment", async ({ page }) => {
+  await seeded(page, { view: "Split", role: "viewer" })
+  const frame = frameOf(page)
+  await expect(frame.locator(".comment-highlight")).toHaveText(["where agents help", "Steps"])
+  await sourceLines(page).getByText("Create a project.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Shift+Home")
+  await frame.getByRole("heading", { name: "Steps" }).hover()
+  await expect(commentButton(page)).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Comment on section" })).toHaveCount(0)
 })
