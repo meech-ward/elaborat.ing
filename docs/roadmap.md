@@ -149,7 +149,8 @@ Also done in this phase: the comment anchoring library (see the task below).
 
 - **All sign-in methods** that exist today: email and password, magic link and
   one-time code (custom SMTP), passkeys, GitHub, Google, and phone codes with
-  Turnstile. (Done in the app: the one-time code, and GitHub and Google
+  Turnstile. (Done in the app: the one-time code; passkeys, added in
+  Settings and used from "Sign in with a passkey"; and GitHub and Google
   buttons that show once their OAuth apps are set up and turned on in
   `config.toml`.)
 - **Generous abuse limits** per user (done: new projects a day and in total,

@@ -8,24 +8,32 @@ export const PROVIDERS = [
 
 export type ProviderId = (typeof PROVIDERS)[number]["id"]
 
-// Auth's public settings list every external provider with whether it is on.
+// Auth's public settings list every external provider with whether it is on,
+// and whether passkey sign-in is on.
 const AuthSettings = z.object({
   external: z.object({ github: z.boolean().optional(), google: z.boolean().optional() }),
+  passkeys_enabled: z.boolean().optional(),
 })
 
+/** The sign-in methods Auth has on besides email: providers, and passkeys. */
+export type SignInOptions = { providers: ProviderId[]; passkeys: boolean }
+
 /**
- * The providers turned on in Supabase Auth, from its public settings
- * (`GET /auth/v1/settings`), in `PROVIDERS` order. Throws when the settings
- * cannot be read.
+ * The providers turned on in Supabase Auth, in `PROVIDERS` order, and whether
+ * passkey sign-in is on, from its public settings (`GET /auth/v1/settings`).
+ * Throws when the settings cannot be read.
  */
-export async function enabledProviders(
+export async function signInOptions(
   config: { supabaseUrl: string; supabasePublishableKey: string },
   fetchSettings: typeof fetch = fetch,
-): Promise<ProviderId[]> {
+): Promise<SignInOptions> {
   const response = await fetchSettings(`${config.supabaseUrl.replace(/\/+$/, "")}/auth/v1/settings`, {
     headers: { apikey: config.supabasePublishableKey },
   })
   if (!response.ok) throw new Error(`Auth settings answered ${response.status}.`)
-  const { external } = AuthSettings.parse(await response.json())
-  return PROVIDERS.filter((provider) => external[provider.id] === true).map((provider) => provider.id)
+  const { external, passkeys_enabled } = AuthSettings.parse(await response.json())
+  return {
+    providers: PROVIDERS.filter((provider) => external[provider.id] === true).map((provider) => provider.id),
+    passkeys: passkeys_enabled === true,
+  }
 }

@@ -411,8 +411,12 @@ editor is not built yet.
   secret in `SUPABASE_AUTH_EXTERNAL_<PROVIDER>_CLIENT_ID` and `_SECRET` for
   `config push`, and `enabled = true`. The sign-in page reads Auth's public
   settings and shows a button only for providers that are on.
-- **Passkeys:** Supabase's passkey sign-in (experimental; the API may change).
-  A person signs up another way first, then adds a passkey.
+- **Passkeys:** Supabase's passkey sign-in (experimental; the API may change,
+  and the client opts in). A person signs up another way first, then adds a
+  passkey in Settings, where they can also remove one; "Sign in with a
+  passkey" needs no email. Both show only while Auth reports passkeys on.
+  `[auth.webauthn]` names `elaborat.ing` as the relying party; changing it
+  makes every existing passkey stop working.
 - **Phone codes:** only with an SMS provider, rate limits and CAPTCHA, because
   SMS costs money per message and attracts abuse.
 - **CAPTCHA:** Cloudflare Turnstile on sign-up, sign-in and password reset.
@@ -744,7 +748,6 @@ secrets supplied through `env()` from GitHub secrets.)
 - **JWT signing keys:** the project must sign with an asymmetric key. New
   projects already do (the hosted project publishes an ES256 key); older
   projects switch in the dashboard.
-- **Passkey and WebAuthn settings:** `config push` doesn't send them yet.
 - **Custom OIDC providers:** dashboard or Auth Admin API only.
 - **Cloudflare API token:** create one from the "Edit Cloudflare Workers"
   template, limited to your account and zone. The deploy build needs

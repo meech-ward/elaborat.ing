@@ -1,7 +1,7 @@
 /**
  * Settings, opened from any page. Appearance: the colour palette, and light,
- * dark or the device's setting. Choices apply at once and are kept on this
- * device.
+ * dark or the device's setting; and Reading. Those apply at once and are
+ * kept on this device. Signed in, with passkey sign-in on: Passkeys.
  */
 import { createContext, useCallback, useContext, useId, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { useAppearance } from "@/features/appearance"
 import { readingPreferencesSchema } from "@/features/appearance/reading"
 import { ColorModeToggle, PaletteSelect } from "@/features/design-system"
+import { PasskeysSection } from "./PasskeysSection"
 
 const SettingsContext = createContext<(() => void) | null>(null)
 
@@ -32,10 +33,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>Kept on this device.</DialogDescription>
+            <DialogDescription>Appearance and reading are kept on this device.</DialogDescription>
           </DialogHeader>
           <AppearanceSection />
           <ReadingSection />
+          <PasskeysSection />
         </DialogContent>
       </Dialog>
     </SettingsContext.Provider>

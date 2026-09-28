@@ -47,7 +47,17 @@ type Options = {
   consentRedirect?: string
   /** The agents (OAuth grants) the person has approved; listing fails when this is "error". */
   grants?: OAuthGrant[] | "error"
+  /** Whether Auth reports passkey sign-in on (see `FakeSupabase.passkeys`). */
+  passkeys?: boolean
 }
+
+/** A passkey the stand-in Auth registered for `person`, with the browser's credential id. */
+export type FakePasskey = { id: string; friendly_name: string; created_at: string; last_used_at?: string; credentialId: string }
+
+// The relying party the stand-in Auth names: WebAuthn needs a domain, so
+// passkey journeys open the app at localhost rather than 127.0.0.1.
+const RP_ID = "localhost"
+const base64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url")
 
 /** An approved agent, as Supabase Auth lists it. */
 export type OAuthGrant = { client: { id: string; name: string; uri: string; logo_uri: string }; scopes: string[]; granted_at: string }
@@ -59,6 +69,8 @@ export type FakeSupabase = {
   requests: Request[]
   /** Requests refused while offline. */
   refused: Request[]
+  /** The passkeys registered through the stand-in Auth, which accepts any credential it registered. */
+  passkeys: FakePasskey[]
   /** While true, every request fails as if the network were down. */
   offline: boolean
   /** Push a change signal for a project over Realtime. */
@@ -79,6 +91,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     comments: new FakeComments(server),
     requests: [],
     refused: [],
+    passkeys: [],
     offline: false,
     signal(projectId, revision) {
       for (const socket of sockets) {
@@ -121,7 +134,54 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (path.endsWith("/user")) return json(route, person)
       if (path.endsWith("/otp")) return json(route, {})
       if (path.endsWith("/settings")) {
-        return json(route, { external: { email: true, github: options.providers?.github ?? false, google: options.providers?.google ?? false }, disable_signup: false })
+        return json(route, {
+          external: { email: true, github: options.providers?.github ?? false, google: options.providers?.google ?? false },
+          disable_signup: false,
+          passkeys_enabled: options.passkeys ?? false,
+        })
+      }
+      // Passkeys: the WebAuthn options Auth sends, and what it answers once
+      // the browser's authenticator has signed them.
+      const challenge = { challenge_id: crypto.randomUUID(), expires_at: Math.floor(Date.now() / 1000) + 300 }
+      if (path.endsWith("/passkeys/registration/options")) {
+        return json(route, {
+          ...challenge,
+          options: {
+            challenge: base64url(crypto.getRandomValues(new Uint8Array(32))),
+            rp: { id: RP_ID, name: "elaborat.ing" },
+            user: { id: base64url(new TextEncoder().encode(person.id)), name: person.email, displayName: person.email },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+            excludeCredentials: fake.passkeys.map((passkey) => ({ type: "public-key", id: passkey.credentialId })),
+            attestation: "none",
+            timeout: 60_000,
+          },
+        })
+      }
+      if (path.endsWith("/passkeys/registration/verify")) {
+        const { credential } = request.postDataJSON() ?? {}
+        const passkey = { id: crypto.randomUUID(), friendly_name: "Test authenticator", created_at: new Date().toISOString(), credentialId: String(credential?.id) }
+        fake.passkeys.push(passkey)
+        return json(route, { id: passkey.id, friendly_name: passkey.friendly_name, created_at: passkey.created_at })
+      }
+      if (path.endsWith("/passkeys/authentication/options")) {
+        return json(route, { ...challenge, options: { challenge: base64url(crypto.getRandomValues(new Uint8Array(32))), rpId: RP_ID, userVerification: "preferred", timeout: 60_000 } })
+      }
+      if (path.endsWith("/passkeys/authentication/verify")) {
+        const { credential } = request.postDataJSON() ?? {}
+        const passkey = fake.passkeys.find((entry) => entry.credentialId === credential?.id)
+        // Auth answers a credential it has no record of as a failed verification.
+        if (!passkey) return json(route, { code: 400, error_code: "webauthn_verification_failed", msg: "Credential verification failed" }, 400)
+        passkey.last_used_at = new Date().toISOString()
+        return json(route, session())
+      }
+      if (path.endsWith("/passkeys") && request.method() === "GET") {
+        return json(route, fake.passkeys.map(({ id, friendly_name, created_at, last_used_at }) => ({ id, friendly_name, created_at, last_used_at })))
+      }
+      const removed = /\/passkeys\/([^/]+)$/.exec(path)?.[1]
+      if (removed && request.method() === "DELETE") {
+        fake.passkeys = fake.passkeys.filter((passkey) => passkey.id !== removed)
+        return route.fulfill({ status: 204, headers: CORS })
       }
       if (path.endsWith("/verify")) {
         const body = request.postDataJSON() ?? {}

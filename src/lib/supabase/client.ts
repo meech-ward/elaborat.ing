@@ -5,7 +5,8 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; the client is created once, from the app's validated
- * configuration, and `supabaseConfigured` says whether there is one.
+ * configuration, with passkey sign-in turned on, and `supabaseConfigured`
+ * says whether there is one.
  */
 import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
 import { ConfigSchema, parseConfig } from '@/lib/config'
@@ -21,7 +22,8 @@ export function supabaseConfigured(): boolean {
 export function createClient(): SupabaseClient {
   if (!client) {
     const config = parseConfig(import.meta.env)
-    client = createSupabaseClient(config.supabaseUrl, config.supabasePublishableKey)
+    // Passkeys are an experimental Auth API that the client opts in to.
+    client = createSupabaseClient(config.supabaseUrl, config.supabasePublishableKey, { auth: { experimental: { passkey: true } } })
   }
   return client
 }

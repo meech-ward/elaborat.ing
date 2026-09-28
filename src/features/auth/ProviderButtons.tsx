@@ -1,26 +1,32 @@
+import { KeyRound } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Banner } from "@/features/design-system"
 import { parseConfig } from "@/lib/config"
+import { safeNextPath } from "@/lib/safe-next-path"
 import { createClient } from "@/lib/supabase/client"
-import { enabledProviders, PROVIDERS, type ProviderId } from "./providers"
+import { browserSupportsPasskeys, passkeyErrorMessage } from "./passkeys"
+import { PROVIDERS, signInOptions, type ProviderId, type SignInOptions } from "./providers"
 import { emailLinkRedirect } from "./returnPath"
 
 /**
- * "Continue with GitHub" and "Continue with Google", under an "or", for the
- * providers Auth has on. The provider sends the person back to the sign-in
- * page with `next`, as the emailed link does. Offline, or when Auth's settings
- * cannot be read, nothing shows.
+ * "Sign in with a passkey", "Continue with GitHub" and "Continue with
+ * Google", under an "or", for the methods Auth has on (a passkey only where
+ * the browser supports them). The provider sends the person back to the
+ * sign-in page with `next`, as the emailed link does; a passkey signs in on
+ * the spot and goes to `next`. Offline, or when Auth's settings cannot be
+ * read, nothing shows.
  */
 export function ProviderButtons({ next }: { next: string | null }) {
-  const [providers, setProviders] = useState<ProviderId[]>([])
+  const [options, setOptions] = useState<SignInOptions>({ providers: [], passkeys: false })
   const [error, setError] = useState<string | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
   useEffect(() => {
     let alive = true
-    enabledProviders(parseConfig(import.meta.env)).then(
+    signInOptions(parseConfig(import.meta.env)).then(
       (enabled) => {
-        if (alive) setProviders(enabled)
+        if (alive) setOptions(enabled)
       },
       () => {},
     )
@@ -29,7 +35,19 @@ export function ProviderButtons({ next }: { next: string | null }) {
     }
   }, [])
 
-  if (providers.length === 0) return null
+  const passkeys = options.passkeys && browserSupportsPasskeys()
+  if (options.providers.length === 0 && !passkeys) return null
+  const signInWithPasskey = async () => {
+    setError(null)
+    setSigningIn(true)
+    const { error } = await createClient().auth.signInWithPasskey()
+    if (error) {
+      setSigningIn(false)
+      setError(passkeyErrorMessage(error, "sign-in"))
+      return
+    }
+    location.href = safeNextPath(next, "/")
+  }
   const continueWith = async (provider: ProviderId) => {
     setError(null)
     const { error } = await createClient().auth.signInWithOAuth({
@@ -45,7 +63,13 @@ export function ProviderButtons({ next }: { next: string | null }) {
         or
         <Separator className="h-px flex-1" />
       </div>
-      {PROVIDERS.filter((provider) => providers.includes(provider.id)).map((provider) => (
+      {passkeys ? (
+        <Button type="button" variant="outline" size="lg" className="w-full" disabled={signingIn} onClick={() => void signInWithPasskey()}>
+          <KeyRound data-icon="inline-start" aria-hidden="true" />
+          {signingIn ? "Signing in..." : "Sign in with a passkey"}
+        </Button>
+      ) : null}
+      {PROVIDERS.filter((provider) => options.providers.includes(provider.id)).map((provider) => (
         <Button key={provider.id} type="button" variant="outline" size="lg" className="w-full" onClick={() => void continueWith(provider.id)}>
           {provider.label}
         </Button>
