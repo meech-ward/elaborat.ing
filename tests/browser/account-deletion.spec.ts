@@ -121,3 +121,20 @@ test("when signing out would lose unreconciled work, nothing is deleted until th
   expect(fake.accountDeleted).toBe(true)
   expect((await storedPartitions(page)).some((partition) => partition.includes(person.id))).toBe(false)
 })
+
+test("when what deleting does cannot be checked for want of a connection, it says so plainly and Try again checks again", async ({ page }) => {
+  await setUp(page)
+  // Registered after the stand-in Supabase, so it answers first.
+  await page.route("**/rest/v1/rpc/account_deletion_summary", (route) => route.abort())
+  await page.getByRole("button", { name: "Look and theme" }).click()
+  await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Delete account..." }).click()
+  const dialog = page.getByRole("alertdialog", { name: "Delete your account?" })
+  const failed = dialog.getByRole("alert")
+  await expect(failed).toContainText("Checking your projects needs a connection.")
+  await expect(failed).not.toContainText("fetch", { ignoreCase: true })
+  await expect(dialog.getByRole("button", { name: "Delete account" })).toBeDisabled()
+
+  await page.unroute("**/rest/v1/rpc/account_deletion_summary")
+  await failed.getByRole("button", { name: "Try again" }).click()
+  await expect(dialog.getByRole("list", { name: "Projects you own" })).toBeVisible()
+})

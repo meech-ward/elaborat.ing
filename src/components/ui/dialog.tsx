@@ -28,7 +28,9 @@
 // app's one dialog shell: the panel colour (popover) with radius 12, padding 20 and
 // the menu shadow over the background at 70%; the title at 15/600; the
 // actions at the bottom right, Cancel first. It stacks above the phone
-// navigation sheet, which can open a dialog.
+// navigation sheet, which can open a dialog. A dialog opened from another
+// dialog dims that one too: its backdrop always renders, at the popups' layer,
+// so it lands above the dialog under it.
 import * as React from "react"
 import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
@@ -65,8 +67,9 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
+      forceRender
       className={cn(
-        "fixed inset-0 isolate z-[20000] bg-[color-mix(in_srgb,var(--bg)_70%,transparent)] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[20001] bg-[color-mix(in_srgb,var(--bg)_70%,transparent)] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}

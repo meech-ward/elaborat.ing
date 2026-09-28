@@ -6,6 +6,7 @@
 import { FunctionsHttpError } from "@supabase/supabase-js"
 import { z } from "zod"
 import { signOutAfter } from "@/features/auth/useAuth"
+import { classify } from "@/features/project-storage/remote"
 import { forgetAccountOnDevice } from "@/features/projects/account"
 import { createClient } from "@/lib/supabase/client"
 import { deleteAccount, type DeletionOutcome } from "./deletionFlow"
@@ -18,15 +19,20 @@ export const DeletionSummary = z.object({
 })
 export type DeletionSummary = z.infer<typeof DeletionSummary>
 
+/** What deleting would do; rejects with a sentence to show. */
 export async function loadDeletionSummary(): Promise<DeletionSummary> {
+  const offline = "Checking your projects needs a connection."
   let response
   try {
     response = await createClient().rpc("account_deletion_summary")
   } catch {
-    throw new Error("Checking your projects needs a connection.")
+    throw new Error(offline)
   }
-  if (response.error) throw new Error(response.error.message || "Checking your projects needs a connection.")
-  return DeletionSummary.parse(response.data)
+  // A request that never reached the server comes back as an error without a code, not as a throw.
+  if (response.error) throw new Error(classify(response.error).kind === "network" ? offline : `Could not check your projects: ${response.error.message}`)
+  const summary = DeletionSummary.safeParse(response.data)
+  if (!summary.success) throw new Error("Could not check your projects. Try again.")
+  return summary.data
 }
 
 async function deleteOnServer(email: string): Promise<void> {

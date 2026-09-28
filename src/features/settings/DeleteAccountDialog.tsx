@@ -102,7 +102,7 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
             </BannerAction>
           }
         >
-          Could not check your projects: {summary.message}
+          {summary.message}
         </Banner>
       ) : (
         <Consequences summary={summary.summary} />
