@@ -91,3 +91,29 @@ jobs:
         run: |
           supabase config push --yes --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | tee push.log
           ! grep -q "credential value was not pushed" push.log
+      # config push (CLI 2.118.0) does not send [auth.passkey] or [auth.webauthn],
+      # so the same values from config.toml go through the Management API.
+      - if: github.event_name == 'push' || inputs.push_config
+        name: Push passkey settings
+        shell: bash
+        run: |
+          body=$(python3 - <<'PY'
+          import json, tomllib
+          c = tomllib.load(open("supabase/config.toml", "rb"))["auth"]
+          w = c.get("webauthn", {})
+          print(json.dumps({
+              "passkey_enabled": bool(c.get("passkey", {}).get("enabled", False)),
+              "webauthn_rp_display_name": w.get("rp_display_name"),
+              "webauthn_rp_id": w.get("rp_id"),
+              "webauthn_rp_origins": ",".join(w.get("rp_origins", [])),
+          }))
+          PY
+          )
+          echo "$body"
+          status=$(curl -sS -o response.json -w '%{http_code}' -X PATCH \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            --data "$body")
+          echo "status $status"
+          if [ "$status" -ge 300 ]; then cat response.json; exit 1; fi
+          python3 -c 'import json; r = json.load(open("response.json")); print({k: r.get(k) for k in ("passkey_enabled", "webauthn_rp_id", "webauthn_rp_origins")})'
