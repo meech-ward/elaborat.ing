@@ -27,7 +27,9 @@
 // `overlayClassName` passthrough lets the workbench keep its backdrop token
 // class while the upstream overlay keeps the starting/ending-style motion;
 // SheetFooter added (upstream export, used by nothing yet); the overlay is
-// the palette's shadow colour in place of upstream's black at 10%.
+// the palette's shadow colour in place of upstream's black at 10%;
+// `container` passthrough to the portal, so a sheet can open inside a
+// frame (the style guide's phone samples).
 "use client"
 
 import * as React from "react"
@@ -72,14 +74,16 @@ function SheetContent({
   side = "right",
   showCloseButton = true,
   overlayClassName,
+  container,
   ...props
 }: SheetPrimitive.Popup.Props & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
   overlayClassName?: string
+  container?: SheetPrimitive.Portal.Props["container"]
 }) {
   return (
-    <SheetPortal>
+    <SheetPortal container={container}>
       <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Popup
         data-slot="sheet-content"

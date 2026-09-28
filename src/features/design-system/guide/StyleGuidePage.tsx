@@ -5,6 +5,7 @@ import { AppearancePicker } from "./AppearancePicker"
 import { CanvasSection } from "./CanvasSection"
 import { ChatCardSection } from "./ChatCardSection"
 import { ColourTokensSection } from "./ColourTokensSection"
+import { CommentsSection } from "./CommentsSection"
 import { ComponentsSheet } from "./ComponentsSheet"
 import { ControlsSection } from "./ControlsSection"
 import { EditorChromeSection } from "./EditorChromeSection"
@@ -65,6 +66,9 @@ export function StyleGuidePage() {
             <GuideCard title="C5 components" className="gap-7 max-sm:overflow-visible">
               <EditorChromeSection />
               <CanvasSection />
+            </GuideCard>
+            <GuideCard title="Comments" className="gap-7 max-sm:overflow-visible">
+              <CommentsSection />
             </GuideCard>
             <GuideCard title="Pages outside a project" className="gap-7">
               <HomeSection />

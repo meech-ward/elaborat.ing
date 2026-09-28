@@ -118,6 +118,29 @@ test("an open menu stays inside the page's landmarks, with this platform's keys"
   await expect(menu).toBeHidden()
 })
 
+test("the comment samples answer: a reply sends with the keyboard, and Resolve folds the thread under Resolved", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" })
+  await page.goto(styleGuideUrl)
+  const card = page.getByRole("region", { name: "Comments", exact: true })
+  for (const group of ["Comment threads", "Composer and markers", "Comments panel", "Comments in the C5 screens"]) {
+    await expect(card.getByRole("region", { name: group, exact: true })).toBeVisible()
+  }
+  // The panel with threads, the first of the panel samples.
+  const panel = card.getByRole("region", { name: "Comments panel", exact: true }).getByText("With threads", { exact: true }).locator("xpath=following-sibling::*[1]")
+  const thread = panel.getByRole("article", { name: /^Comments on section Steps/ })
+  await thread.getByRole("button", { name: "Reply" }).click()
+  const field = thread.getByRole("textbox", { name: "Reply" })
+  await expect(field).toBeFocused()
+  await field.fill("Linked it from step 3.")
+  await field.press("ControlOrMeta+Enter")
+  await expect(thread.getByText("Linked it from step 3.")).toBeVisible()
+  await expect(field).toHaveValue("")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  await expect(thread).toBeHidden()
+  await panel.getByRole("button", { name: "Resolved 2" }).click()
+  await expect(thread.getByRole("button", { name: "Reopen" })).toBeVisible()
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
@@ -160,6 +183,29 @@ test.describe("on a phone", () => {
     }
     const actions = await targets[2].boundingBox()
     expect(actions?.width).toBeGreaterThanOrEqual(40)
+  })
+
+  test("the comments sheet opens from the bottom with 40px targets, and Escape closes it", async ({ page }) => {
+    await page.goto(styleGuideUrl)
+    await page.getByRole("button", { name: "Open the comments sheet" }).click()
+    // The live sheet renders at the end of the page, after the style guide's picture of one.
+    const sheet = page.getByRole("dialog", { name: "Comments" }).last()
+    await expect(sheet).toBeVisible()
+    // Once it has slid in, it sits on the bottom edge.
+    await expect.poll(async () => sheet.evaluate((node) => Math.round(node.getBoundingClientRect().bottom))).toBe(844)
+    const targets = [
+      sheet.getByRole("button", { name: "Close comments" }),
+      sheet.getByRole("button", { name: "Resolve" }).first(),
+      sheet.getByRole("button", { name: "Actions for the comment by Ada Park" }).first(),
+      sheet.getByRole("button", { name: "Reply" }).first(),
+    ]
+    for (const target of targets) {
+      const size = await target.boundingBox()
+      expect(size?.height, String(target)).toBeGreaterThanOrEqual(40)
+    }
+    await page.keyboard.press("Escape")
+    // Only the style guide's picture of the sheet is left.
+    await expect(page.getByRole("dialog", { name: "Comments" })).toHaveCount(1)
   })
 
   test("buttons are at least 40 high on a touch screen", async ({ page }) => {

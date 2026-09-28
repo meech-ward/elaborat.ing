@@ -76,3 +76,34 @@ export { NewProjectCard, ProjectCard, ProjectGrid } from "./ui/ProjectCard"
 export { ScreenPreview } from "./ui/ScreenPreview"
 export { ScaleToFit } from "./ui/ScaleToFit"
 // --- end Pages outside a project ---
+
+// --- Comments (guide/CommentsSection.tsx) ---
+export { CommentComposer } from "./ui/CommentComposer"
+export {
+  CommentActionButton,
+  CommentHighlight,
+  CommentMarker,
+  CommentsButton,
+  DetachedBadge,
+  commentHighlightVariants,
+  commentMarkerVariants,
+} from "./ui/CommentMarker"
+export {
+  CommentsPanel,
+  CommentsSheet,
+  type CommentsBodyProps,
+  type CommentsPanelProps,
+  type CommentsSheetProps,
+  type CommentsStatus,
+} from "./ui/CommentsPanel"
+export { COMMENT_MAX_LENGTH, absoluteTime, commentLength, relativeTime, type CommentLength } from "./ui/commentText"
+export { CommentAnchorLine, CommentDraft, CommentItem, CommentThread, anchorSummary, type CommentThreadProps } from "./ui/CommentThread"
+export {
+  CommentsSizeContext,
+  type CommentAnchorView,
+  type CommentAuthor,
+  type CommentEntry,
+  type CommentResolution,
+  type CommentsSize,
+} from "./ui/commentTypes"
+// --- end Comments ---

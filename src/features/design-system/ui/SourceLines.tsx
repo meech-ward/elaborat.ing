@@ -1,3 +1,4 @@
+import { isValidElement, type ReactElement, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 // No shadcn primitive fits: shadcn has no code view. This is the source
@@ -7,8 +8,11 @@ import { cn } from "@/lib/utils"
 /** The syntax colours: headings, tags and keys, strings, keywords and numbers, fences. */
 export type SourceTone = "head" | "key" | "str" | "kw" | "dim"
 
-/** A piece of a line: plain text, or text in one of the syntax colours. */
-export type SourcePart = string | readonly [tone: SourceTone, text: string]
+/**
+ * A piece of a line: plain text, text in one of the syntax colours, or an
+ * element, such as commented text in a CommentHighlight.
+ */
+export type SourcePart = string | readonly [tone: SourceTone, text: string] | ReactElement
 
 const TONES: Record<SourceTone, string> = {
   head: "text-code-head",
@@ -29,12 +33,15 @@ const TONES: Record<SourceTone, string> = {
 export function SourceLines({
   lines,
   currentLine,
+  markers,
   className,
   "aria-label": ariaLabel,
 }: {
   lines: readonly (readonly SourcePart[])[]
   /** The line the cursor is on, counting from 1. */
   currentLine?: number
+  /** Something at the end of a line, by its number: a CommentMarker. */
+  markers?: Readonly<Record<number, ReactNode>>
   className?: string
   "aria-label"?: string
 }) {
@@ -55,6 +62,8 @@ export function SourceLines({
               {parts.map((part, at) =>
                 typeof part === "string" ? (
                   part
+                ) : isValidElement(part) ? (
+                  <span key={at}>{part}</span>
                 ) : (
                   <span key={at} className={TONES[part[0]]}>
                     {part[1]}
@@ -62,6 +71,7 @@ export function SourceLines({
                 ),
               )}
             </span>
+            {markers?.[index + 1] && <span className="flex h-[22px] shrink-0 items-center pr-3">{markers[index + 1]}</span>}
           </span>
         ))}
       </code>
