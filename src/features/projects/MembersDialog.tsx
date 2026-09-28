@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { personName } from "@/features/auth/accountName"
 import type { Member, ProjectLibrary } from "@/features/project-storage/library"
 import type { MemberRole } from "@/features/project-storage/remote"
 
@@ -42,7 +43,7 @@ function RoleSelect({ label, value, onChange }: { label: string; value: MemberRo
 }
 
 /** Someone by their name, else their email; an account with neither by the start of its id. */
-const nameOf = (member: Member) => member.name ?? member.email ?? `Account ${member.userId.slice(0, 8)}`
+const nameOf = (member: Member) => personName(member.name, member.email) ?? `Account ${member.userId.slice(0, 8)}`
 
 /**
  * Who a project is shared with. Its owner can invite people by email, change

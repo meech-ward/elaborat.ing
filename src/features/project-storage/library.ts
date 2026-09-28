@@ -1,3 +1,4 @@
+import { personName } from "@/features/auth/accountName"
 import type { ProjectDatabase } from "./database"
 import { isDirty, type LocalFile, type LocalProject, type Role } from "./model"
 import { RemoteError, type MemberRole, type ProjectRemote, type RemoteInvitation, type RemoteProject } from "./remote"
@@ -234,7 +235,7 @@ export class ProjectLibrary {
       return listed.map((entry) => ({
         userId: entry.user_id,
         email: entry.email,
-        name: entry.name || entry.email,
+        name: personName(entry.name, entry.email),
         role: entry.role,
         invited: entry.role !== "owner" && entry.accepted_at === null,
       }))

@@ -1,3 +1,4 @@
+import { personName } from "@/features/auth/accountName"
 import type { CommentAnchorView, CommentAuthor, CommentEntry, CommentResolution } from "@/features/design-system"
 import { anchorView } from "../anchorView"
 import type { ThreadPlace } from "../controller"
@@ -22,7 +23,7 @@ export type ThreadView = {
 /** A person as a comment shows them: their name, else their email, or null for a deleted account. */
 export function author(person: RemoteThread["resolved_by"]): CommentAuthor | null {
   if (!person) return null
-  return { name: person.name || person.email || "Unknown account" }
+  return { name: personName(person.name, person.email) ?? "Unknown account" }
 }
 
 /** What the file is called in "Whole note", "Whole drawing" and "Comment on the whole ...". */

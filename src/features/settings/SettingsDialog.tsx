@@ -53,7 +53,7 @@ function SettingsDescription() {
   const signedIn = useAuth().status === "ready"
   return (
     <DialogDescription>
-      Appearance and reading are kept on this device.{signedIn ? " Account settings follow you to every device." : ""}
+      Appearance and reading are kept on this device.{signedIn ? " Your name and passkeys are kept with your account." : ""}
     </DialogDescription>
   )
 }

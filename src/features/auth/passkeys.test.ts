@@ -34,3 +34,20 @@ test("the browser's own WebAuthn errors get a plain message, not the library's t
     "This browser or device could not use a passkey. Sign in another way.",
   )
 })
+
+test("each common WebAuthn error, as the library passes it on, gets its own plain sentence", () => {
+  // name: the browser's DOMException; code: the library's reading of it.
+  const cases: [name: string, code: string, during: "sign-in" | "add", message: string][] = [
+    ["NotAllowedError", "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY", "sign-in", "No passkey was used. Try again, or sign in another way."],
+    ["AbortError", "ERROR_CEREMONY_ABORTED", "add", "No passkey was added."],
+    ["NotSupportedError", "ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG", "add", "This browser or device could not add a passkey."],
+    ["NotSupportedError", "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY", "sign-in", "This browser or device could not use a passkey. Sign in another way."],
+    ["InvalidStateError", "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED", "add", "This device already has a passkey for your account."],
+    ["InvalidStateError", "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY", "sign-in", "This browser or device could not use a passkey. Sign in another way."],
+    ["SecurityError", "ERROR_INVALID_RP_ID", "sign-in", "Passkeys do not work at this web address. Sign in another way."],
+    ["SecurityError", "ERROR_INVALID_DOMAIN", "add", "Passkeys do not work at this web address."],
+  ]
+  for (const [name, code, during, message] of cases) {
+    expect(passkeyErrorMessage({ name, code, message: "library text" }, during)).toBe(message)
+  }
+})

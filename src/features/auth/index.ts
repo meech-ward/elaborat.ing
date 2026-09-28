@@ -1,5 +1,5 @@
 export { AccountHeader } from "./AccountHeader"
-export { accountName, DISPLAY_NAME_KEY, NAME_MAX_LENGTH } from "./accountName"
+export { accountName, DISPLAY_NAME_KEY, NAME_MAX_LENGTH, personName } from "./accountName"
 export { AuthGate, useAccount, type Account } from "./AuthGate"
 export { AuthPage } from "./AuthPage"
 export { withSignOutGuards, type BeforeSignOut } from "./beforeSignOut"

@@ -20,3 +20,12 @@ export function accountName(metadata: Record<string, unknown> | undefined | null
   }
   return null
 }
+
+/**
+ * What the app calls a person everywhere it names one (the account panel,
+ * comments, the members list): their account's name, else their email. Null
+ * when they have neither.
+ */
+export function personName(name: string | null | undefined, email: string | null | undefined): string | null {
+  return name?.trim() || email?.trim() || null
+}

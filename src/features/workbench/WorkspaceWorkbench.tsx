@@ -30,7 +30,7 @@ import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, type Acti
 import { DottedPage } from "@/components/panel";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { accountName, signOut, useAuth } from "@/features/auth";
+import { accountName, personName, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
@@ -1262,14 +1262,13 @@ export function WorkspaceWorkbench({
   );
 }
 
-/** The signed-in person as the account panel shows them: the name comments show (see accountName), else their email. */
+/** The signed-in person as the account panel shows them, by the name comments and members show (personName). */
 function personOf(user: { user_metadata?: Record<string, unknown> }, email: string | null): PanelPerson {
   const meta = user.user_metadata ?? {};
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
-  const address = email ?? "";
   return {
-    name: accountName(meta) ?? (address || "Signed in"),
-    email: address,
+    name: personName(accountName(meta), email) ?? "Signed in",
+    email: email ?? "",
     image: text(meta.avatar_url),
   };
 }

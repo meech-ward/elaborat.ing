@@ -12,6 +12,10 @@ export function passkeyErrorMessage(error: { message: string; code?: string; nam
   if (error.name === "NotAllowedError" || error.name === "AbortError" || error.code === "ERROR_CEREMONY_ABORTED") {
     return during === "sign-in" ? "No passkey was used. Try again, or sign in another way." : "No passkey was added."
   }
+  // The page's address is one passkeys refuse (not https, or not the site's own).
+  if (error.name === "SecurityError" || error.code === "ERROR_INVALID_DOMAIN" || error.code === "ERROR_INVALID_RP_ID") {
+    return during === "sign-in" ? "Passkeys do not work at this web address. Sign in another way." : "Passkeys do not work at this web address."
+  }
   switch (error.code) {
     // Auth answers a passkey it has no record of (one removed in Settings,
     // say) as a failed verification.
@@ -41,4 +45,4 @@ export function passkeyErrorMessage(error: { message: string; code?: string; nam
   }
 }
 
-const BROWSER_ERRORS = new Set(["NotSupportedError", "SecurityError", "InvalidStateError", "ConstraintError", "UnknownError", "WebAuthnError", "WebAuthnUnknownError"])
+const BROWSER_ERRORS = new Set(["NotSupportedError", "InvalidStateError", "ConstraintError", "UnknownError", "WebAuthnError", "WebAuthnUnknownError"])
