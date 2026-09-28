@@ -1,6 +1,5 @@
 import { ChevronRight, CircleAlert, CloudOff, Eye, MessageSquare, MessageSquarePlus, X } from "lucide-react"
-import { useId, type ReactElement, type ReactNode } from "react"
-import { Badge } from "@/components/ui/badge"
+import { useId, useRef, type ReactElement, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -40,6 +39,12 @@ export type CommentsBodyProps = {
   onRetry?: () => void
   /** Show the resolved threads unfolded at first. */
   defaultResolvedOpen?: boolean
+  /**
+   * What just happened, for screen readers ("Reply sent", "Thread resolved,
+   * moved to Resolved", "2 new comments"): read out politely when it
+   * changes. Not for every keystroke.
+   */
+  announcement?: string
   size?: CommentsSize
 }
 
@@ -60,9 +65,10 @@ function CommentsHeader({ title, count, onCommentOnFile, fileNoun, readOnly, siz
       <MessageSquare aria-hidden="true" className={cn("shrink-0 text-muted-foreground", touch ? "size-5" : "size-4")} />
       {title}
       {count > 0 && (
-        <Badge variant="secondary" className="font-mono" aria-label={`${count} open`}>
+        <span className="font-mono text-xs text-dim tabular-nums">
           {count}
-        </Badge>
+          <span className="sr-only"> open</span>
+        </span>
       )}
       <span className="ml-auto flex items-center gap-0.5">
         {onCommentOnFile && !readOnly && (
@@ -125,6 +131,7 @@ function CommentsBody({
   fileNoun = "note",
   onRetry,
   defaultResolvedOpen = false,
+  announcement,
   size = "default",
 }: CommentsBodyProps) {
   const openId = useId()
@@ -213,6 +220,7 @@ function CommentsBody({
                 <Button
                   variant="ghost"
                   size={touch ? "touch" : "xs"}
+                  data-comments-resolved=""
                   className={cn(
                     "justify-start self-start rounded-row px-1 text-dim hover:text-foreground [&[data-panel-open]>svg]:rotate-90 [&>svg]:transition-transform motion-reduce:[&>svg]:transition-none",
                     touch ? "-ml-1 px-1.5" : "pointer-coarse:h-10",
@@ -236,8 +244,13 @@ function CommentsBody({
   return (
     <CommentsSizeContext value={size}>
       {status === "loading" && <LoadingLine label="Loading comments" className="shrink-0" />}
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn("flex flex-col", touch ? "gap-4 p-3 pb-6" : "gap-3.5 p-2.5")}>{content}</div>
+        <div data-slot="comments-body" className={cn("flex flex-col", touch ? "gap-4 p-3 pb-6" : "gap-3.5 p-2.5")}>
+          {content}
+        </div>
       </ScrollArea>
       {readOnly && (
         <p
@@ -293,6 +306,7 @@ export function CommentsPanel({
   fileNoun = "note",
   onRetry,
   defaultResolvedOpen,
+  announcement,
   size = "default",
   className,
   ...props
@@ -325,6 +339,7 @@ export function CommentsPanel({
         fileNoun={fileNoun}
         onRetry={onRetry}
         defaultResolvedOpen={defaultResolvedOpen}
+        announcement={announcement}
         size={size}
       />
     </FloatingPanel>
@@ -342,6 +357,8 @@ export type CommentsSheetProps = Omit<CommentsBodyProps, "size"> & {
   /** Classes for the sheet, e.g. `absolute` in a frame, or another height. */
   className?: string
   overlayClassName?: string
+  /** Makes it a picture of the sheet (the style guide's): no dialog role, nothing to reach. */
+  inert?: boolean
 }
 
 /**
@@ -349,7 +366,8 @@ export type CommentsSheetProps = Omit<CommentsBodyProps, "size"> & {
  * high, radius 14 at the top with a grab bar, the panel shadow. The page
  * behind is dimmed but not blurred, so the commented text above it reads. The same body as the panel
  * at the touch size: 15px text, 40px targets, a 56 high header with a 40px
- * Close.
+ * Close, which takes focus when it opens. A thread's Go to should close
+ * the sheet (or the page lower it) so the commented text shows.
  */
 export function CommentsSheet({
   open,
@@ -368,13 +386,19 @@ export function CommentsSheet({
   fileNoun = "note",
   onRetry,
   defaultResolvedOpen,
+  announcement,
+  inert,
 }: CommentsSheetProps) {
+  const close = useRef<HTMLButtonElement>(null)
   return (
     <Sheet open={open} onOpenChange={(next) => onOpenChange(next)} modal={modal}>
       <SheetContent
         side="bottom"
         showCloseButton={false}
         container={container}
+        initialFocus={close}
+        inert={inert}
+        aria-hidden={inert || undefined}
         // No blur: the commented text above the sheet stays readable.
         overlayClassName={cn("supports-backdrop-filter:backdrop-blur-none", overlayClassName)}
         className={cn("gap-0 overflow-hidden rounded-t-panel border-x border-border p-0 shadow-panel data-[side=bottom]:h-[75svh]", className)}
@@ -390,7 +414,7 @@ export function CommentsSheet({
           readOnly={readOnly}
           size="touch"
           close={
-            <SheetClose render={<Button variant="ghost" size="icon-lg" aria-label="Close comments" />}>
+            <SheetClose render={<Button ref={close} variant="ghost" size="icon-lg" aria-label="Close comments" />}>
               <X aria-hidden="true" />
             </SheetClose>
           }
@@ -406,6 +430,7 @@ export function CommentsSheet({
           fileNoun={fileNoun}
           onRetry={onRetry}
           defaultResolvedOpen={defaultResolvedOpen}
+          announcement={announcement}
           size="touch"
         />
       </SheetContent>

@@ -1,5 +1,5 @@
 import { Bot, Check, CircleCheck, Ellipsis, FileText, Heading, Reply, RotateCcw, Shapes, UserRound } from "lucide-react"
-import { useId, useState, type ComponentProps, type ReactNode } from "react"
+import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -53,6 +53,22 @@ const cardSizes: Record<CommentsSize, string> = {
   touch: "gap-3 p-3.5",
 }
 
+/** Runs `then` once React has shown what an action changed. */
+function afterRender(then: () => void) {
+  requestAnimationFrame(() => requestAnimationFrame(then))
+}
+
+/** Whether focus went with something that left the page (it is on the body, or on nothing). */
+function focusLost() {
+  const active = document.activeElement
+  return active === null || active === document.body
+}
+
+/** The first control in a thread: Go to, or Resolve. */
+function firstControl(thread: Element): HTMLElement | null {
+  return thread.querySelector<HTMLElement>("button:not([disabled]), textarea:not([disabled]), [href]")
+}
+
 /**
  * The thread's context line. Text: the quote after a 2px accent bar, two
  * lines at most. A section: the heading icon and its text. An element: the
@@ -91,7 +107,7 @@ export function CommentAnchorLine({
         <span
           className={cn(
             "line-clamp-2 border-l-2 pl-2 [overflow-wrap:anywhere]",
-            detached ? "border-dashed border-faint text-dim line-through decoration-dim" : "border-primary text-muted-foreground",
+            detached ? "border-dashed border-faint text-dim line-through decoration-dim" : "border-accent-line text-muted-foreground",
           )}
         >
           “{anchor.quote}”
@@ -203,6 +219,7 @@ export function CommentItem({
   return (
     <div
       data-slot="comment"
+      data-comment-id={comment.id}
       data-deleted={deleted || undefined}
       className={cn("group/comment grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2", touch ? "gap-y-1" : "gap-y-0.5", className)}
     >
@@ -226,29 +243,6 @@ export function CommentItem({
           )}
         </span>
       </div>
-      {entries.length > 0 && !editing ? (
-        <ActionMenu
-          entries={entries}
-          contentProps={{ align: "end", "aria-label": menuLabel, className: "min-w-40" }}
-          trigger={
-            <Button
-              variant="ghost"
-              size={touch ? "icon-lg" : "icon-xs"}
-              aria-label={menuLabel}
-              title="Comment actions"
-              className={cn(
-                !touch &&
-                  "opacity-0 group-hover/comment:opacity-100 group-focus-within/comment:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 pointer-coarse:size-10 pointer-coarse:opacity-100",
-                touch && "-my-1 -mr-2",
-              )}
-            >
-              <Ellipsis aria-hidden="true" />
-            </Button>
-          }
-        />
-      ) : (
-        <span />
-      )}
       <div className="col-span-2 col-start-2 min-w-0">
         {editing && onEdit ? (
           <CommentComposer
@@ -256,6 +250,7 @@ export function CommentItem({
             placeholder="Edit comment"
             submitLabel="Save"
             defaultValue={comment.body ?? ""}
+            requireChange
             onSubmit={onEdit}
             onCancel={onCancelEdit}
             autoFocus
@@ -270,6 +265,39 @@ export function CommentItem({
           </p>
         )}
       </div>
+      {/* After the words, so a screen reader hears the comment before its
+      actions; the grid still draws it at the end of the first row. While
+      editing it stays, hidden, so the closing menu does not send focus
+      back to some earlier control: the edit field has it. */}
+      {entries.length > 0 && (
+        <ActionMenu
+          entries={entries}
+          contentProps={{
+            align: "end",
+            "aria-label": menuLabel,
+            className: "min-w-40",
+            finalFocus: () => !editing,
+          }}
+          trigger={
+            <Button
+              variant="ghost"
+              size={touch ? "icon-lg" : "icon-xs"}
+              aria-label={menuLabel}
+              title="Comment actions"
+              data-comment-menu=""
+              className={cn(
+                "col-start-3 row-start-1",
+                editing && "invisible",
+                !touch &&
+                  "opacity-0 group-hover/comment:opacity-100 group-focus-within/comment:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 pointer-coarse:size-10 pointer-coarse:opacity-100",
+                touch && "-my-1 -mr-2",
+              )}
+            >
+              <Ellipsis aria-hidden="true" />
+            </Button>
+          }
+        />
+      )}
     </div>
   )
 }
@@ -286,11 +314,13 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
   canWrite?: boolean
   /** Show the anchor in the file (the context line's button). */
   onSelect?: () => void
-  onResolve?: () => void
-  onReopen?: () => void
+  /** Resolve the thread. Focus then moves to the next thread, or to Resolved when none is left. */
+  onResolve?: () => void | Promise<unknown>
+  onReopen?: () => void | Promise<unknown>
   onReply?: (body: string) => void | Promise<unknown>
   onEdit?: (commentId: string, body: string) => void | Promise<unknown>
-  onDelete?: (commentId: string) => void
+  /** Delete a comment. Focus then moves to the thread's Reply, or to the thread. */
+  onDelete?: (commentId: string) => void | Promise<unknown>
   /** Open the reply field at first (it opens from Reply otherwise). */
   defaultReplying?: boolean
   /** The time relative times count from; now by default. */
@@ -299,11 +329,17 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
 }
 
 /**
- * A thread as a card in the panel: radius 12, the panel border (the accent
- * when `active`, the field fill once resolved), padding 12. The context line
- * with Resolve (or Reopen) at its end; "Resolved by ..." when resolved; the
- * comments, 10 apart; then Reply, which opens a CommentComposer. Viewers
- * and offline readers (`canWrite` false) see the words only.
+ * A thread as a card in the panel: radius 12, the panel border (1px in the
+ * accent line when `active`, the field fill once resolved), padding 12. The
+ * context line with Resolve (or Reopen) at its end; "Resolved by ..." when
+ * resolved; the comments, 10 apart; then Reply, which opens a
+ * CommentComposer. Viewers and offline readers (`canWrite` false) see the
+ * words only.
+ *
+ * Focus never falls to the page: closing Reply goes back to Reply, an edit
+ * back to its comment's actions, Resolve and Reopen to the next thread (or
+ * Resolved), and Delete to Reply or the thread. The card itself takes focus
+ * (tabIndex -1) when a marker in the file opens it.
  */
 export function CommentThread({
   anchor,
@@ -328,19 +364,59 @@ export function CommentThread({
   const [replying, setReplying] = useState(defaultReplying)
   const [editing, setEditing] = useState<string | null>(null)
   const resolvedId = useId()
+  const card = useRef<HTMLElement>(null)
+  const replyButton = useRef<HTMLButtonElement>(null)
   const toggle = resolved ? onReopen : onResolve
+
+  const closeReply = () => {
+    setReplying(false)
+    afterRender(() => replyButton.current?.focus())
+  }
+  const endEdit = (commentId: string) => {
+    setEditing(null)
+    afterRender(() => card.current?.querySelector<HTMLElement>(`[data-comment-id="${commentId}"] [data-comment-menu=""]`)?.focus())
+  }
+  /** Resolve or Reopen moves the thread to the other group, so focus goes on to its neighbour. */
+  const toggleThread = async () => {
+    const item = card.current?.closest("li")
+    const neighbour = (item?.nextElementSibling ?? item?.previousElementSibling)?.querySelector('[data-slot="comment-thread"]') ?? null
+    const body = card.current?.closest<HTMLElement>('[data-slot="comments-body"]') ?? null
+    await toggle?.()
+    afterRender(() => {
+      if (!focusLost()) return
+      const next =
+        (neighbour?.isConnected ? firstControl(neighbour) : null) ??
+        body?.querySelector<HTMLElement>("[data-comments-resolved]") ??
+        body?.querySelector<HTMLElement>('[data-slot="comment-thread"]')
+      next?.focus()
+    })
+  }
+  /** Delete leaves the thread (as a placeholder), or takes it when it was the last comment. */
+  const deleteComment = async (commentId: string) => {
+    const item = card.current?.closest("li")
+    const neighbour = (item?.nextElementSibling ?? item?.previousElementSibling)?.querySelector('[data-slot="comment-thread"]') ?? null
+    await onDelete?.(commentId)
+    afterRender(() => {
+      if (!focusLost()) return
+      const thread = card.current?.isConnected ? card.current : null
+      const next = thread ? (replyButton.current ?? thread) : neighbour?.isConnected ? firstControl(neighbour) : null
+      next?.focus()
+    })
+  }
   return (
     <article
+      ref={card}
+      tabIndex={-1}
       data-slot="comment-thread"
       data-active={active || undefined}
       data-resolved={resolved ? true : undefined}
       aria-label={`Comments on ${anchorSummary(anchor)}`}
       aria-describedby={resolved ? resolvedId : undefined}
       className={cn(
-        "flex flex-col rounded-menu border text-foreground transition-colors motion-reduce:transition-none",
+        "flex scroll-my-2 flex-col rounded-menu border text-foreground transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring motion-reduce:transition-none",
         cardSizes[size],
         resolved ? "border-border bg-field" : "border-border bg-panel",
-        active && "border-primary shadow-[0_0_0_1px_var(--accent)]",
+        active && "border-accent-line",
         className,
       )}
       {...props}
@@ -351,8 +427,8 @@ export function CommentThread({
           <IconButton
             label={resolved ? "Reopen" : "Resolve"}
             tooltipSide="left"
-            onClick={toggle}
-            className={cn("-my-1 -mr-1.5 shrink-0", touch && "size-10", !resolved && "hover:text-primary")}
+            onClick={() => void toggleThread()}
+            className={cn("-my-1 -mr-1.5 shrink-0", touch && "size-10", !resolved && "hover:text-accent-line")}
           >
             {resolved ? <RotateCcw /> : <Check />}
           </IconButton>
@@ -379,11 +455,11 @@ export function CommentThread({
                 onEdit &&
                 (async (body) => {
                   await onEdit(comment.id, body)
-                  setEditing(null)
+                  endEdit(comment.id)
                 })
               }
-              onCancelEdit={() => setEditing(null)}
-              onDelete={canWrite && onDelete ? () => onDelete(comment.id) : undefined}
+              onCancelEdit={() => endEdit(comment.id)}
+              onDelete={canWrite && onDelete ? () => void deleteComment(comment.id) : undefined}
             />
           </li>
         ))}
@@ -396,12 +472,13 @@ export function CommentThread({
             placeholder="Reply"
             submitLabel="Reply"
             onSubmit={onReply}
-            onCancel={() => setReplying(false)}
+            onCancel={closeReply}
             autoFocus={!defaultReplying}
             size={size}
           />
         ) : (
           <Button
+            ref={replyButton}
             variant="ghost"
             size={touch ? "touch" : "xs"}
             onClick={() => setReplying(true)}
@@ -416,9 +493,9 @@ export function CommentThread({
 }
 
 /**
- * A new thread being written: the card outlined in the accent, the context
- * line of what it will be on, and the composer, focused. `onSubmit` starts
- * the thread; Cancel drops it.
+ * A new thread being written: the card with a 1px accent-line border, the
+ * context line of what it will be on, and the composer, focused. `onSubmit`
+ * starts the thread; Cancel drops it.
  */
 export function CommentDraft({
   anchor,
@@ -444,7 +521,7 @@ export function CommentDraft({
       data-slot="comment-draft"
       aria-label={`New comment on ${anchorSummary(anchor)}`}
       className={cn(
-        "flex flex-col rounded-menu border border-primary bg-panel text-foreground shadow-[0_0_0_1px_var(--accent)]",
+        "flex flex-col rounded-menu border border-accent-line bg-panel text-foreground",
         cardSizes[size],
         className,
       )}

@@ -15,13 +15,16 @@ import type { Shortcut } from "./shortcuts"
 // markers are Buttons restyled, and the highlight is a <mark>.
 
 /**
- * A count of comments, as a button that opens them. `gutter`: a small pill
+ * Where threads are, as a button that opens them. `gutter`: a small pill
  * (18 high, radius 5, 11px mono) in accentSoft beside a line or a heading.
  * `element`: a speech-bubble pin on a drawing (24 across, the accent with
- * its text colour, a ring of the panel colour and the island shadow); its
- * bottom-left corner is the point it marks, so place that corner on the
- * spot. `active` is the thread that is open in the panel. Both reach 40px
- * as touch targets without growing.
+ * its text colour and a 1px edge in the accent line, a ring of the panel
+ * colour and the island shadow); its bottom-left corner is the point it
+ * marks, so place that corner on the spot. `active` is the thread that is
+ * open in the panel. Both reach 40px as touch targets without growing.
+ *
+ * The count is of threads, as the Comments button counts them, and shows
+ * only from 2: one thread is the icon alone.
  */
 export const commentMarkerVariants = cva(
   "relative inline-flex shrink-0 cursor-pointer items-center justify-center font-mono font-semibold tabular-nums transition-colors outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring motion-reduce:transition-none pointer-coarse:after:absolute pointer-coarse:after:content-['']",
@@ -31,13 +34,13 @@ export const commentMarkerVariants = cva(
         gutter:
           "h-[18px] min-w-[26px] gap-[3px] rounded-chip px-1 text-[11px] [&_svg]:size-[11px] pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-[11px]",
         element:
-          "size-6 rounded-full rounded-bl-[4px] text-[11px] shadow-island ring-2 ring-panel pointer-coarse:after:-inset-2",
+          "size-6 rounded-full rounded-bl-[4px] border border-accent-line text-[11px] shadow-island ring-2 ring-panel pointer-coarse:after:-inset-2 [&_svg]:size-3",
       },
       active: { true: "", false: "" },
     },
     compoundVariants: [
       { variant: "gutter", active: false, className: "bg-accent-soft text-accent-soft-text hover:bg-[color-mix(in_oklab,var(--accent-soft)_88%,var(--accent))]" },
-      { variant: "gutter", active: true, className: "bg-primary text-primary-foreground" },
+      { variant: "gutter", active: true, className: "bg-primary text-primary-foreground shadow-[inset_0_0_0_1px_var(--focus)]" },
       { variant: "element", active: false, className: "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--accent)_88%,var(--text))]" },
       { variant: "element", active: true, className: "size-7 bg-primary text-[12px] text-primary-foreground ring-4 ring-accent-soft" },
     ],
@@ -53,8 +56,9 @@ export function CommentMarker({
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children" | "aria-label"> & {
+  /** How many threads it opens. */
   count: number
-  /** What the button opens, for screen readers: "2 comments on Steps". */
+  /** What the button opens, for screen readers: "2 threads on Steps". */
   label: string
   variant?: "gutter" | "element"
   active?: boolean
@@ -70,28 +74,32 @@ export function CommentMarker({
       className={cn(commentMarkerVariants({ variant, active }), className)}
       {...props}
     >
-      {variant === "gutter" && <MessageSquare aria-hidden="true" strokeWidth={2.4} />}
-      {count}
+      {(variant === "gutter" || count < 2) && <MessageSquare aria-hidden="true" strokeWidth={2.4} />}
+      {count > 1 && count}
     </button>
   )
 }
 
 /**
- * Commented text: a faint accent wash (8%) over a 2px underline in the
- * accent at half strength, so it reads apart from the selection's
- * accentSoft. The open thread's text (`active`) takes a stronger wash (24%)
- * and the full accent underline. The source and rendered views can use the
- * class on their own decorations.
+ * Commented text: a faint wash (10%) of the accent line over a dotted 2px
+ * underline in the accent line, which shows at 3:1 in every palette. The
+ * dots keep it apart from the selection's accentSoft and from links, which
+ * are solid. The open thread's text (`active`) takes a stronger wash (22%)
+ * and a solid underline. The source and rendered views can use the class on
+ * their own decorations.
  */
-export const commentHighlightVariants = cva("rounded-[2px] text-inherit transition-colors motion-reduce:transition-none", {
-  variants: {
-    active: {
-      false: "bg-[color-mix(in_oklab,var(--accent)_8%,transparent)] shadow-[inset_0_-2px_0_color-mix(in_oklab,var(--accent)_50%,transparent)]",
-      true: "bg-[color-mix(in_oklab,var(--accent)_24%,transparent)] shadow-[inset_0_-2px_0_var(--accent)]",
+export const commentHighlightVariants = cva(
+  "rounded-[2px] text-inherit underline decoration-accent-line decoration-2 underline-offset-[3px] [text-decoration-skip-ink:none] transition-colors motion-reduce:transition-none",
+  {
+    variants: {
+      active: {
+        false: "bg-[color-mix(in_oklab,var(--focus)_10%,transparent)] decoration-dotted",
+        true: "bg-[color-mix(in_oklab,var(--focus)_22%,transparent)] decoration-solid",
+      },
     },
+    defaultVariants: { active: false },
   },
-  defaultVariants: { active: false },
-})
+)
 
 export function CommentHighlight({ active = false, className, ...props }: ComponentProps<"mark"> & { active?: boolean }) {
   return <mark data-slot="comment-highlight" data-active={active || undefined} className={cn(commentHighlightVariants({ active }), className)} {...props} />

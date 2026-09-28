@@ -1,4 +1,5 @@
-import { useId, useState, type KeyboardEvent } from "react"
+import { CircleAlert } from "lucide-react"
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -9,17 +10,18 @@ import { isApplePlatform } from "./shortcuts"
 
 const numbers = new Intl.NumberFormat("en")
 
-/** The send key on this platform: ⌘↵ on Apple platforms, Ctrl+Enter elsewhere. */
+/** The send key on this platform: ⌘↵ on Apple platforms, Ctrl ↵ elsewhere. */
 function sendShortcut(apple: boolean) {
-  return apple ? { label: "⌘↵", aria: "Meta+Enter" } : { label: "Ctrl+Enter", aria: "Control+Enter" }
+  return apple ? { label: "⌘↵", aria: "Meta+Enter" } : { label: "Ctrl ↵", aria: "Control+Enter" }
 }
 
 /**
  * Where a comment is written: a new thread, a reply, or an edit. The shadcn
  * Textarea (the field's fill, radius 9, growing with its text), then Cancel
- * and the send button with its key, ⌘↵ or Ctrl+Enter, which also sends from
+ * and the send button with its key, ⌘↵ or Ctrl ↵, which also sends from
  * the field; Escape cancels. The count shows from 90% of the limit (5,000)
- * and turns to the danger colour past it, when sending is refused.
+ * and turns to the danger colour, with the alert icon, past it, when
+ * sending is refused; while it shows, the button drops its key chip.
  *
  * `onSubmit` gets the trimmed text. While the promise it returns is pending
  * the button is disabled; when it resolves the field empties; when it
@@ -39,6 +41,7 @@ export function CommentComposer({
   disabledReason,
   error: shownError,
   autoFocus,
+  requireChange = false,
   maxLength = COMMENT_MAX_LENGTH,
   size: sizeProp,
   className,
@@ -58,7 +61,10 @@ export function CommentComposer({
   disabledReason?: string | null
   /** A problem to show under the field from outside, such as the store's last error. */
   error?: string | null
+  /** Takes focus when it appears, with the caret after the text. */
   autoFocus?: boolean
+  /** Sending needs text other than `defaultValue` (an edit that changed nothing can't be saved). */
+  requireChange?: boolean
   maxLength?: number
   size?: CommentsSize
   className?: string
@@ -77,12 +83,22 @@ export function CommentComposer({
   const errorId = useId()
   const reasonId = useId()
   const length = commentLength(value, maxLength)
+  const sendable = length.sendable && !(requireChange && value.trim() === defaultValue.trim())
   const shortcut = sendShortcut(isApplePlatform())
+  // The first focus of a composer that opens focused puts the caret after
+  // any text it starts with (an edit), not before it.
+  const placed = useRef(false)
+  const onFocus = (event: FocusEvent<HTMLTextAreaElement>) => {
+    if (!autoFocus || placed.current) return
+    placed.current = true
+    const end = event.currentTarget.value.length
+    event.currentTarget.setSelectionRange(end, end)
+  }
   const disabled = Boolean(disabledReason)
   const touch = size === "touch"
 
   const submit = async () => {
-    if (disabled || pending || !length.sendable) return
+    if (disabled || pending || !sendable) return
     setPending(true)
     setFailed(null)
     try {
@@ -117,6 +133,7 @@ export function CommentComposer({
         onChange={(event) => setValue(event.target.value)}
         readOnly={pending}
         onKeyDown={onKeyDown}
+        onFocus={onFocus}
         disabled={disabled}
         // A composer opens because the person asked to write, so it takes focus.
         autoFocus={autoFocus}
@@ -125,8 +142,9 @@ export function CommentComposer({
         className={cn("max-h-60 resize-none", touch ? "min-h-20 px-3 py-2.5 md:text-[15px]" : "min-h-16")}
       />
       {error && (
-        <p id={errorId} role="alert" className={cn("leading-snug text-destructive", touch ? "text-[13px]" : "text-xs")}>
-          {error}
+        <p id={errorId} role="alert" className={cn("flex items-start gap-1.5 leading-snug text-destructive", touch ? "text-[13px]" : "text-xs")}>
+          <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+          <span className="min-w-0">{error}</span>
         </p>
       )}
       {disabled ? (
@@ -136,7 +154,11 @@ export function CommentComposer({
       ) : (
         <div className="flex items-center gap-2">
           {length.show && (
-            <span id={countId} className={cn("font-mono text-[11px] tabular-nums", length.over ? "text-destructive" : "text-dim")}>
+            <span
+              id={countId}
+              className={cn("flex items-center gap-1 font-mono text-[11px] whitespace-nowrap tabular-nums", length.over ? "text-destructive" : "text-dim")}
+            >
+              {length.over && <CircleAlert aria-hidden="true" className="size-3 shrink-0" />}
               {numbers.format(length.count)} / {numbers.format(maxLength)}
               <span className="sr-only">{length.over ? " characters, too long" : " characters"}</span>
             </span>
@@ -151,12 +173,12 @@ export function CommentComposer({
               type="button"
               size={touch ? "touch" : "sm"}
               aria-keyshortcuts={shortcut.aria}
-              disabled={pending || !length.sendable}
+              disabled={pending || !sendable}
               onClick={() => void submit()}
               className="gap-2"
             >
               {pending ? "Sending…" : submitLabel}
-              {!touch && <ButtonShortcut className="pointer-coarse:hidden">{shortcut.label}</ButtonShortcut>}
+              {!touch && !length.show && <ButtonShortcut className="pointer-coarse:hidden">{shortcut.label}</ButtonShortcut>}
             </Button>
           </span>
         </div>

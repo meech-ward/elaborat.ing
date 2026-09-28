@@ -127,21 +127,30 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, 450))
  * Sample threads that answer like the real ones: reply and edit take a
  * moment, resolve and reopen move a thread between the groups, and delete
  * leaves a placeholder while other comments remain (the thread goes with
- * its last one).
+ * its last one). `announcement` says what the last change did, for the
+ * panel's live region.
  */
 export function useSampleThreads(initial: readonly SampleThread[]) {
   const [threads, setThreads] = useState<readonly SampleThread[]>(initial)
+  const [announcement, setAnnouncement] = useState("")
   const update = (id: string, change: (thread: SampleThread) => SampleThread) =>
     setThreads((current) => current.map((thread) => (thread.id === id ? change(thread) : thread)))
   const handlers = (thread: SampleThread) => ({
-    onResolve: () => update(thread.id, (current) => ({ ...current, resolved: { by: ME, at: new Date() } })),
-    onReopen: () => update(thread.id, (current) => ({ ...current, resolved: null })),
+    onResolve: () => {
+      update(thread.id, (current) => ({ ...current, resolved: { by: ME, at: new Date() } }))
+      setAnnouncement("Thread resolved, moved to Resolved")
+    },
+    onReopen: () => {
+      update(thread.id, (current) => ({ ...current, resolved: null }))
+      setAnnouncement("Thread reopened")
+    },
     onReply: async (body: string) => {
       await pause()
       update(thread.id, (current) => ({
         ...current,
         comments: [...current.comments, { id: crypto.randomUUID(), author: ME, body, createdAt: new Date(), canEdit: true, canDelete: true }],
       }))
+      setAnnouncement("Reply sent")
     },
     onEdit: async (commentId: string, body: string) => {
       await pause()
@@ -149,8 +158,10 @@ export function useSampleThreads(initial: readonly SampleThread[]) {
         ...current,
         comments: current.comments.map((comment) => (comment.id === commentId ? { ...comment, body, editedAt: new Date() } : comment)),
       }))
+      setAnnouncement("Comment saved")
     },
-    onDelete: (commentId: string) =>
+    onDelete: (commentId: string) => {
+      setAnnouncement("Comment deleted")
       setThreads((current) =>
         current.flatMap((each) => {
           if (each.id !== thread.id) return [each]
@@ -159,13 +170,15 @@ export function useSampleThreads(initial: readonly SampleThread[]) {
           )
           return comments.some((comment) => comment.body !== null) ? [{ ...each, comments }] : []
         }),
-      ),
+      )
+    },
   })
   return {
     open: threads.filter((thread) => !thread.resolved),
     resolved: threads.filter((thread) => thread.resolved),
     all: threads,
     handlers,
+    announcement,
     changed: threads !== initial,
     reset: () => setThreads(initial),
   }

@@ -40,7 +40,7 @@ export function SourceLines({
   lines: readonly (readonly SourcePart[])[]
   /** The line the cursor is on, counting from 1. */
   currentLine?: number
-  /** Something at the end of a line, by its number: a CommentMarker. */
+  /** Something at the end of a line, by its number: a CommentMarker. They share one column at the right of the pane. */
   markers?: Readonly<Record<number, ReactNode>>
   className?: string
   "aria-label"?: string
@@ -71,7 +71,7 @@ export function SourceLines({
                 ),
               )}
             </span>
-            {markers?.[index + 1] && <span className="flex h-[22px] shrink-0 items-center pr-3">{markers[index + 1]}</span>}
+            {markers && <span className="flex h-[22px] w-12 shrink-0 items-center pr-3">{markers[index + 1]}</span>}
           </span>
         ))}
       </code>

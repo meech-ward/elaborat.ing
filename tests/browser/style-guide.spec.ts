@@ -137,6 +137,8 @@ test("the comment samples answer: a reply sends with the keyboard, and Resolve f
   await expect(field).toHaveValue("")
   await thread.getByRole("button", { name: "Resolve" }).click()
   await expect(thread).toBeHidden()
+  // Focus goes on to the next thread rather than falling to the page.
+  await expect(panel.locator(":focus")).toHaveCount(1)
   await panel.getByRole("button", { name: "Resolved 2" }).click()
   await expect(thread.getByRole("button", { name: "Reopen" })).toBeVisible()
 })
@@ -188,9 +190,9 @@ test.describe("on a phone", () => {
   test("the comments sheet opens from the bottom with 40px targets, and Escape closes it", async ({ page }) => {
     await page.goto(styleGuideUrl)
     await page.getByRole("button", { name: "Open the comments sheet" }).click()
-    // The live sheet renders at the end of the page, after the style guide's picture of one.
-    const sheet = page.getByRole("dialog", { name: "Comments" }).last()
+    const sheet = page.getByRole("dialog", { name: "Comments" })
     await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole("button", { name: "Close comments" })).toBeFocused()
     // Once it has slid in, it sits on the bottom edge.
     await expect.poll(async () => sheet.evaluate((node) => Math.round(node.getBoundingClientRect().bottom))).toBe(844)
     const targets = [
@@ -204,8 +206,8 @@ test.describe("on a phone", () => {
       expect(size?.height, String(target)).toBeGreaterThanOrEqual(40)
     }
     await page.keyboard.press("Escape")
-    // Only the style guide's picture of the sheet is left.
-    await expect(page.getByRole("dialog", { name: "Comments" })).toHaveCount(1)
+    // The style guide's picture of the sheet is not a dialog.
+    await expect(page.getByRole("dialog", { name: "Comments" })).toHaveCount(0)
   })
 
   test("buttons are at least 40 high on a touch screen", async ({ page }) => {

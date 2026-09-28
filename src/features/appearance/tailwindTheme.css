@@ -82,6 +82,11 @@
   --color-tool-on: var(--tool-on);
   --color-tool-on-ink: var(--tool-on-ink);
   --color-focus: var(--focus);
+  /* The accent as a line, bar, outline or underline: the accent where it
+     shows at 3:1 on the panel and the background, else accentSoftText (the
+     focus rule, tokens.ts). Plain --accent stays for fills that carry
+     accent-text. */
+  --color-accent-line: var(--focus);
 
   --font-sans: var(--ui-font);
   --font-mono: var(--code-font);

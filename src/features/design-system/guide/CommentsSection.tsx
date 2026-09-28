@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronLeft, Info, Maximize2, Minimize2, MoreHorizontal } from "lucide-react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
@@ -110,7 +110,7 @@ function ThreadStates() {
         </GuideValue>
         <GuideLabel>Open in the file, replying</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.steps} active defaultReplying />
-        <GuideValue>The thread shown in the file takes an accent outline. Reply opens the composer; Cancel or Escape closes it.</GuideValue>
+        <GuideValue>The thread shown in the file takes a 1px accent-line border. Reply opens the composer; Cancel or Escape closes it and gives focus back to Reply.</GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Context lines</GuideLabel>
@@ -179,49 +179,52 @@ function ComposerAndMarkers() {
           />
         </div>
         <p aria-live="polite" className="leading-none">
-          <GuideValue>{sent ? `Sent: ${sent}` : `Type, then ${apple ? "⌘↵" : "Ctrl+Enter"} or Comment. Blank text can't be sent.`}</GuideValue>
+          <GuideValue>{sent ? `Sent: ${sent}` : `Type, then ${apple ? "⌘↵" : "Ctrl ↵"} or Comment. Blank text can't be sent.`}</GuideValue>
         </p>
         <GuideLabel>Near and over the limit</GuideLabel>
         <div className="flex w-full max-w-[300px] flex-col gap-3">
           <CommentComposer label="Comment near the limit" defaultValue={LONG_DRAFT} maxLength={220} onSubmit={noop} onCancel={noop} />
           <CommentComposer label="Comment over the limit" defaultValue={`${LONG_DRAFT} Thanks!`} maxLength={200} onSubmit={noop} onCancel={noop} />
         </div>
-        <GuideValue>The count shows from 90% of the limit and turns danger past it, when sending stops. Here the limit is about 200 to fit; comments take 5,000.</GuideValue>
+        <GuideValue>The count shows from 90% of the limit, and the key leaves the button to make room; past it the count turns danger with the alert icon, and sending stops. Here the limit is about 200 to fit; comments take 5,000.</GuideValue>
         <GuideLabel>Failed, and offline</GuideLabel>
         <div className="flex w-full max-w-[300px] flex-col gap-3">
           <FailingComposer />
           <CommentComposer label="Comment, offline" onSubmit={noop} disabledReason="Comments need a connection." />
         </div>
-        <GuideValue>A failed send keeps the text and says why. Offline, the field is off.</GuideValue>
+        <GuideValue>A failed send keeps the text and says why, after the alert icon. Offline, the field is off.</GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Markers</GuideLabel>
         <div className="flex flex-wrap items-center gap-3">
-          <CommentMarker count={3} label="3 comments on line 8" />
-          <CommentMarker count={1} label="1 comment on Steps" active />
-          <GuideValue>gutter · open</GuideValue>
+          <CommentMarker count={1} label="1 thread on line 3" />
+          <CommentMarker count={2} label="2 threads on line 8" />
+          <CommentMarker count={1} label="1 thread on Steps" active />
+          <GuideValue>gutter · 2 threads · open</GuideValue>
         </div>
-        <GuideValue>18 high, radius 5, 11px mono in accentSoft; the thread open in the panel in the accent.</GuideValue>
+        <GuideValue>18 high, radius 5, 11px mono in accentSoft; the thread open in the panel in the accent, with an accent-line edge. Markers count threads, as the Comments button does, from 2.</GuideValue>
         <p className="max-w-[340px] text-[15.5px] leading-[1.6] text-body">
           <CommentHighlight>How a customer moves from sign-up</CommentHighlight> to their first project, and{" "}
           <CommentHighlight active>where agents help</CommentHighlight>.
         </p>
-        <GuideValue>Commented text: an accent wash with a 2px underline, apart from the selection; the open thread&apos;s stronger, with the full underline.</GuideValue>
-        <DottedPage className="relative h-[120px] min-h-0 w-full max-w-[340px] overflow-hidden rounded-tile border border-border">
-          <svg width="340" height="120" viewBox="0 0 340 120" aria-hidden="true" className="absolute top-0 left-0 font-[family-name:Excalifont,cursive]">
-            <rect x="24" y="34" width="120" height="60" rx="14" className="fill-pastel-blue stroke-ink" strokeWidth="2" />
-            <text x="84" y="70" textAnchor="middle" fontSize="20" className="fill-ink">
+        <GuideValue>
+          Commented text: a faint wash over a dotted 2px underline in the accent line (the accent, or accentSoftText where the accent is too light to see), apart from the selection and from links; the open thread&apos;s stronger, solid.
+        </GuideValue>
+        <DottedPage className="relative h-[120px] min-h-0 w-full max-w-[290px] overflow-hidden rounded-tile border border-border">
+          <svg width="290" height="120" viewBox="0 0 290 120" aria-hidden="true" className="absolute top-0 left-0 font-[family-name:Excalifont,cursive]">
+            <rect x="16" y="34" width="112" height="60" rx="14" className="fill-pastel-blue stroke-ink" strokeWidth="2" />
+            <text x="72" y="70" textAnchor="middle" fontSize="20" className="fill-ink">
               Sign up
             </text>
-            <ellipse cx="250" cy="64" rx="66" ry="32" className="fill-pastel-yellow stroke-ink" strokeWidth="2" />
-            <text x="250" y="70" textAnchor="middle" fontSize="20" className="fill-ink">
+            <ellipse cx="206" cy="68" rx="60" ry="30" className="fill-pastel-yellow stroke-ink" strokeWidth="2" />
+            <text x="206" y="74" textAnchor="middle" fontSize="20" className="fill-ink">
               Project
             </text>
           </svg>
-          <CommentMarker variant="element" count={2} label="2 comments on Sign up" className="absolute top-[34px] left-[144px] -translate-y-full" />
-          <CommentMarker variant="element" count={1} active label="1 comment on Project" className="absolute top-[36px] left-[296px] -translate-y-full" />
+          <CommentMarker variant="element" count={2} label="2 threads on Sign up" className="absolute top-[34px] left-[128px] -translate-y-full" />
+          <CommentMarker variant="element" count={1} active label="1 thread on Project" className="absolute top-[46px] left-[248px] -translate-y-full" />
         </DottedPage>
-        <GuideValue>Pins on a drawing: 24, the accent, a panel ring; the point is the bottom-left corner. The open one grows to 28 with an accentSoft ring.</GuideValue>
+        <GuideValue>Pins on a drawing: 24, the accent with an accent-line edge, a panel ring; the point is the bottom-left corner. One thread shows the icon; the open one grows to 28 with an accentSoft ring.</GuideValue>
         <GuideLabel>Comment button</GuideLabel>
         <div className="flex flex-wrap items-center gap-3">
           <CommentActionButton />
@@ -247,7 +250,7 @@ function ComposerAndMarkers() {
         <div className="w-full max-w-[300px]">
           <CommentDraft anchor={{ kind: "text", quote: "Connect an agent." }} onSubmit={noop} onCancel={noop} autoFocus={false} />
         </div>
-        <GuideValue>A thread being written, from Comment: the accent outline, what it will be on, the composer.</GuideValue>
+        <GuideValue>A thread being written, from Comment: a 1px accent-line border, what it will be on, the composer.</GuideValue>
         <div className="w-full max-w-[300px]">
           <CommentDraft anchor={{ kind: "document", label: "Whole drawing" }} onSubmit={noop} onCancel={noop} autoFocus={false} />
         </div>
@@ -281,6 +284,7 @@ function PanelStates() {
         <CommentsPanel
           headingLevel={4}
           className="h-full"
+          announcement={live.announcement}
           openThreads={live.open.map((thread) => threadElement(thread, live, { active, onSelect: setActive }))}
           resolvedThreads={live.resolved.map((thread) => threadElement(thread, live))}
           draft={
@@ -379,15 +383,14 @@ function SplitWithComments() {
   const [active, setActive] = useState<string | null>(sampleThreads.quote.id)
   const [view, setView] = useState<EditorView>("split")
   const [panel, setPanel] = useState(true)
+  const commentsButton = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState<string | null>(OPEN_FILES[0])
   const focus = commandShortcut(".", isApplePlatform())
   const quoteOpen = active === sampleThreads.quote.id
   const stepsOpen = active === sampleThreads.steps.id
   const openCount = state.open.length
-  const quoteMarker = (
-    <CommentMarker count={3} label="3 comments on this text" active={quoteOpen} onClick={() => setActive(sampleThreads.quote.id)} />
-  )
-  const stepsMarker = <CommentMarker count={1} label="1 comment on Steps" active={stepsOpen} onClick={() => setActive(sampleThreads.steps.id)} />
+  const quoteMarker = <CommentMarker count={1} label="1 thread on this text" active={quoteOpen} onClick={() => setActive(sampleThreads.quote.id)} />
+  const stepsMarker = <CommentMarker count={1} label="1 thread on Steps" active={stepsOpen} onClick={() => setActive(sampleThreads.steps.id)} />
   const source = (
     <SourceLines
       aria-label="customer-model.mdx, source, with comments"
@@ -429,7 +432,7 @@ function SplitWithComments() {
             <EditorHeader>
               <TabLine aria-label="Open files, with comments" items={tabItems} value={tab} onValueChange={setTab} />
               <ViewSwitch value={view} onValueChange={setView} />
-              <CommentsButton count={openCount} pressed={panel} onClick={() => setPanel((shown) => !shown)} />
+              <CommentsButton ref={commentsButton} count={openCount} pressed={panel} onClick={() => setPanel((shown) => !shown)} />
               <IconButton label="Focus" shortcut={focus.label} keyShortcuts={focus.aria}>
                 <Maximize2 />
               </IconButton>
@@ -449,10 +452,14 @@ function SplitWithComments() {
             <CommentsPanel
               headingLevel={3}
               className="h-full shrink-0"
+              announcement={state.announcement}
               openThreads={state.open.map((thread) => threadElement(thread, state, { active: active ?? undefined, onSelect: setActive }))}
               resolvedThreads={state.resolved.map((thread) => threadElement(thread, state))}
               onCommentOnFile={noop}
-              onClose={() => setPanel(false)}
+              onClose={() => {
+                setPanel(false)
+                commentsButton.current?.focus()
+              }}
             />
           )}
         </DottedPage>
@@ -528,8 +535,8 @@ function DrawingWithComments() {
           </svg>
           <CommentMarker
             variant="element"
-            count={state.all.find((thread) => thread.id === sampleThreads.signUp.id)?.comments.length ?? 0}
-            label="Comments on Sign up"
+            count={1}
+            label="1 thread on Sign up"
             active={active === sampleThreads.signUp.id}
             onClick={() => setActive(sampleThreads.signUp.id)}
             className="absolute top-[312px] left-[662px] -translate-y-full"
@@ -537,7 +544,7 @@ function DrawingWithComments() {
           <CommentMarker
             variant="element"
             count={1}
-            label="1 comment on Agent?"
+            label="1 thread on Agent?"
             active={active === sampleThreads.agent.id}
             onClick={() => setActive(sampleThreads.agent.id)}
             className="absolute top-[512px] left-[906px] -translate-y-full"
@@ -564,6 +571,7 @@ function DrawingWithComments() {
             headingLevel={4}
             fileNoun="drawing"
             className="absolute top-[76px] right-4 bottom-4"
+            announcement={state.announcement}
             draft={
               draft && (
                 <CommentDraft
@@ -623,13 +631,14 @@ function PhoneSheet() {
           <Callout className="text-[15px] leading-[1.55]">Agents act as the signed-in person in every project they can open.</Callout>
           <p className="flex items-center justify-between text-[21px] font-semibold">
             Steps
-            <CommentMarker count={1} label="1 comment on Steps, phone sample" />
+            <CommentMarker count={1} label="1 thread on Steps, phone sample" />
           </p>
         </div>
         <div ref={setFrame} className="absolute inset-0" />
         {frame && (
           <CommentsSheet
             open
+            inert
             modal={false}
             onOpenChange={noop}
             container={frame}
@@ -641,7 +650,9 @@ function PhoneSheet() {
           />
         )}
       </div>
-      <GuideValue>shadcn&apos;s Sheet from the bottom, 75% of the screen, radius 14 at the top with a grab bar. 15px text; Resolve, the menus, Reply and Close are 40.</GuideValue>
+      <GuideValue>
+        shadcn&apos;s Sheet from the bottom, 75% of the screen, radius 14 at the top with a grab bar. 15px text; Resolve, the menus, Reply and Close are 40. Close takes focus when it opens; a thread&apos;s Go to closes the sheet so the text shows.
+      </GuideValue>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="outline" className="pointer-coarse:h-10" onClick={() => setOpen(true)}>
           Open the comments sheet
@@ -651,7 +662,16 @@ function PhoneSheet() {
       <CommentsSheet
         open={open}
         onOpenChange={setOpen}
-        openThreads={live.open.map((thread) => threadElement(thread, live, { active, onSelect: setActive }))}
+        announcement={live.announcement}
+        openThreads={live.open.map((thread) =>
+          threadElement(thread, live, {
+            active,
+            onSelect: (id) => {
+              setActive(id)
+              setOpen(false)
+            },
+          }),
+        )}
         resolvedThreads={live.resolved.map((thread) => threadElement(thread, live))}
         onCommentOnFile={noop}
       />
