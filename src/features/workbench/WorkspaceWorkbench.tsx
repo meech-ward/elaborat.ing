@@ -30,7 +30,7 @@ import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, type Acti
 import { DottedPage } from "@/components/panel";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { signOut, useAuth } from "@/features/auth";
+import { accountName, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
 import type { ConflictChoice } from "@/features/project-storage/sync";
@@ -992,7 +992,13 @@ export function WorkspaceWorkbench({
       }
     >
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
-    <div className="wb-app" data-compact={narrow} data-focus={focus && !narrow} ref={shell}>
+    <div
+      className="wb-app"
+      data-compact={narrow}
+      data-focus={focus && !narrow}
+      data-comment-draft={(narrow && commentsUi.panelOpen && commentsUi.request !== null) || undefined}
+      ref={shell}
+    >
       <div className="wb-body" inert={filesScreen}>
         <ResizablePanelGroup
           orientation="horizontal"
@@ -1263,7 +1269,7 @@ function personOf(user: { user_metadata?: Record<string, unknown> }, email: stri
   const address = email ?? "";
   const local = address.split("@")[0] ?? "";
   return {
-    name: text(meta.full_name) ?? text(meta.name) ?? (local ? local.charAt(0).toLocaleUpperCase() + local.slice(1) : "Signed in"),
+    name: accountName(meta) ?? (local ? local.charAt(0).toLocaleUpperCase() + local.slice(1) : "Signed in"),
     email: address,
     image: text(meta.avatar_url),
   };

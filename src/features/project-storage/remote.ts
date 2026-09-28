@@ -38,6 +38,8 @@ export type MemberRole = RemoteInvitation["role"]
 export const RemoteMember = z.object({
   user_id: z.uuid(),
   email: z.string().nullable(),
+  /** The name they set or their sign-in provider gave, else their email (older servers leave it out). */
+  name: z.string().nullish(),
   role: Role,
   invited_at: z.string().nullable(),
   accepted_at: z.string().nullable(),

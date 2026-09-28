@@ -179,6 +179,8 @@ export interface CanvasComments {
   pins: readonly CanvasPin[];
   /** Comment is offered: the person may write comments on this file now. */
   canComment: boolean;
+  /** Only the connection keeps the person from commenting: the Comment button shows over a selected element, off, saying so. */
+  offline?: boolean;
   /** The comment key, shown beside Comment. */
   shortcut: { label: string; aria: string };
   /** A pin was chosen: the panel opens at its thread. */
@@ -189,8 +191,12 @@ export interface CanvasComments {
 
 /** What the page asks of a canvas. */
 export interface DrawingCanvasApi {
-  /** Brings an element to the middle of the visible canvas, selects it and gives the canvas the keyboard. False when it is not there. */
-  revealElement: (elementId: string) => boolean;
+  /**
+   * Brings an element to the middle of the visible canvas and selects it;
+   * with `focus` (the default) the canvas takes the keyboard. False when it
+   * is not there.
+   */
+  revealElement: (elementId: string, focus?: boolean) => boolean;
 }
 
 /** Props for the controlled native canvas. Shell owns scene + saves. */

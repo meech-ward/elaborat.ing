@@ -8,7 +8,7 @@ import { APP_URL } from "./urls.ts"
 // The comments panel beside the open file: its toggle and shortcut, whole
 // note comments, replies, resolving and reopening, edits and deletes by
 // role, a viewer's and an offline reader's panel, comments arriving from
-// elsewhere, and the phone's sheet.
+// elsewhere, authors' names and agents, and the phone's sheet.
 
 test.describe.configure({ timeout: 60_000 })
 
@@ -23,13 +23,17 @@ type Opened = { fake: FakeSupabase; id: string; server: FakeProjectServer }
  * `role`), opened on the note. `comments` are someone else's, on the whole
  * note, there before the page opens.
  */
-async function openNote(page: Page, { role, comments = [] }: { role?: "viewer" | "commenter"; comments?: string[] } = {}): Promise<Opened> {
+async function openNote(
+  page: Page,
+  { role, comments = [], name, content = NOTE }: { role?: "viewer" | "commenter"; comments?: string[]; name?: string; content?: string } = {},
+): Promise<Opened> {
   const server = new FakeProjectServer()
   server.emails.set(SOMEONE_ELSE, "ada@example.com")
+  if (name) server.names.set(SOMEONE_ELSE, name)
   const owner = server.remote(role ? SOMEONE_ELSE : person.id)
   const id = crypto.randomUUID()
   await owner.createProject(id, "Plans")
-  await owner.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content: NOTE }])
+  await owner.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content }])
   // Someone else comments too: the owner, or a commenter on the person's project.
   if (role) server.share(id, person.id, role)
   else server.share(id, SOMEONE_ELSE, "commenter")
@@ -42,17 +46,15 @@ async function openNote(page: Page, { role, comments = [] }: { role?: "viewer" |
   return { fake, id, server }
 }
 
-/** A whole note comment from someone else, written as another device would. */
-function commentAsSomeoneElse(fake: FakeSupabase, id: string, body: string) {
+/** A whole note comment from someone else, written as another device would, or by their agent. */
+function commentAsSomeoneElse(fake: FakeSupabase, id: string, body: string, { agent = false } = {}) {
   const file = fake.server.projects.get(id)!.files.get("notes/plan.md")!
-  fake.comments.call(SOMEONE_ELSE, "add_comment", {
-    project_id: id,
-    thread_id: crypto.randomUUID(),
-    file_id: file.id,
-    file_version: file.version,
-    anchor: { kind: "document" },
-    body,
-  })
+  fake.comments.call(
+    SOMEONE_ELSE,
+    "add_comment",
+    { project_id: id, thread_id: crypto.randomUUID(), file_id: file.id, file_version: file.version, anchor: { kind: "document" }, body },
+    { agent },
+  )
 }
 
 const panel = (page: Page) => page.getByRole("complementary", { name: "Comments" })
@@ -134,6 +136,99 @@ test("a whole note comment is added, replied to, resolved, reopened, edited and 
   await expect(whole).toBeHidden()
   await expect(panel(page).getByText("No comments yet")).toBeVisible()
   expect(fake.comments.threads.length).toBe(0)
+})
+
+test("an empty reply field closes when a comment in its thread is deleted; one with words stays", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  await toggle(page).click()
+  await panel(page).getByRole("button", { name: "Comment on the whole note" }).first().click()
+  await panel(page).getByRole("textbox", { name: "New comment" }).fill("Is the plan still current?")
+  await panel(page).getByRole("textbox", { name: "New comment" }).press("ControlOrMeta+Enter")
+  const whole = thread(page, "Comments on Whole note")
+  const threadId = fake.comments.threads[0].id
+  for (const body of ["Yes.", "Until Friday."]) fake.comments.call(person.id, "reply_comment", { thread_id: threadId, comment_id: crypto.randomUUID(), body })
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(whole.getByText("Until Friday.")).toBeVisible()
+  const confirm = page.getByRole("alertdialog", { name: "Delete this comment?" })
+  const actions = whole.getByRole("button", { name: `Actions for the comment by ${person.email}` })
+
+  // Reply opened and left empty: deleting the last reply closes it, and Reply has the keyboard.
+  await whole.getByRole("button", { name: "Reply" }).click()
+  await expect(whole.getByRole("textbox", { name: "Reply" })).toBeFocused()
+  await actions.last().click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await confirm.getByRole("button", { name: "Delete" }).click()
+  await expect(whole.getByText("Until Friday.")).toBeHidden()
+  await expect(whole.getByRole("textbox", { name: "Reply" })).toHaveCount(0)
+  await expect(whole.getByRole("button", { name: "Reply" })).toBeFocused()
+
+  // With words in it, it stays open and keeps them.
+  await whole.getByRole("button", { name: "Reply" }).click()
+  await whole.getByRole("textbox", { name: "Reply" }).fill("Half a thought")
+  await actions.nth(1).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await confirm.getByRole("button", { name: "Delete" }).click()
+  await expect(whole.getByText("Yes.", { exact: true })).toBeHidden()
+  await expect(whole.getByRole("textbox", { name: "Reply" })).toHaveValue("Half a thought")
+})
+
+test("comments show their authors' names, else their emails, and a person sets their own name in Settings", async ({ page }) => {
+  const { fake } = await openNote(page, { comments: ["Please add dates."], name: "Ada Lovelace" })
+  await toggle(page).click()
+  const theirs = thread(page, "Comments on Whole note").filter({ hasText: "Please add dates." })
+  await expect(theirs.getByText("Ada Lovelace", { exact: true })).toBeVisible()
+  await expect(theirs.getByText("ada@example.com")).toHaveCount(0)
+  await expect(theirs.getByRole("button", { name: "Actions for the comment by Ada Lovelace" })).toBeVisible()
+
+  // The person has no name yet: their comment shows their email.
+  await panel(page).getByRole("button", { name: "Comment on the whole note" }).first().click()
+  await panel(page).getByRole("textbox", { name: "New comment" }).fill("Dates by Friday.")
+  await panel(page).getByRole("textbox", { name: "New comment" }).press("ControlOrMeta+Enter")
+  const mine = thread(page, "Comments on Whole note").filter({ hasText: "Dates by Friday." })
+  await expect(mine.getByText(person.email, { exact: true })).toBeVisible()
+
+  // Settings > Account: Your name.
+  await page.getByRole("button", { name: "Look and theme" }).click()
+  const settings = page.getByRole("dialog", { name: "Settings" })
+  const field = settings.getByRole("textbox", { name: "Your name" })
+  await expect(field).toHaveValue("")
+  await expect(settings.getByRole("button", { name: "Save" })).toBeDisabled()
+  await field.fill("  Pat   Person ")
+  await settings.getByRole("button", { name: "Save" }).click()
+  await expect(settings.getByRole("status").filter({ hasText: "Name saved." })).toBeVisible()
+  await expect(field).toHaveValue("Pat Person")
+  const saved = fake.requests.find((request) => request.method() === "PUT" && request.url().endsWith("/auth/v1/user"))
+  expect(saved?.postDataJSON()).toMatchObject({ data: { display_name: "Pat Person" } })
+  await page.keyboard.press("Escape")
+
+  // Comments name them from then on, here and on other devices.
+  await page.reload()
+  await toggle(page).click()
+  await expect(thread(page, "Comments on Whole note").filter({ hasText: "Dates by Friday." }).getByText("Pat Person", { exact: true })).toBeVisible()
+})
+
+test("a comment an agent wrote says so, the person's own agent's included, and is read out as new", async ({ page }) => {
+  const { fake, id } = await openNote(page, { comments: ["Please add dates."] })
+  await toggle(page).click()
+  const whole = thread(page, "Comments on Whole note").filter({ hasText: "Please add dates." })
+  await expect(whole).toBeVisible()
+  await expect(panel(page).getByText("via agent")).toHaveCount(0)
+
+  // The person's agent replies, and someone else's agent starts a thread.
+  const threadId = fake.comments.threads[0].id
+  fake.comments.call(person.id, "reply_comment", { thread_id: threadId, comment_id: crypto.randomUUID(), body: "Dates added for each step." }, { agent: true })
+  commentAsSomeoneElse(fake, id, "Written by their agent too.", { agent: true })
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  const reply = whole.locator('[data-slot="comment"]').filter({ hasText: "Dates added for each step." })
+  await expect(reply.getByText("via agent")).toBeVisible()
+  await expect(reply.getByText("via agent")).toHaveAttribute("title", "Written by their agent")
+  const other = panel(page).locator('[data-slot="comment"]').filter({ hasText: "Written by their agent too." })
+  await expect(other.getByText("via agent")).toBeVisible()
+  // Only the agents' comments say so.
+  await expect(panel(page).getByText("via agent")).toHaveCount(2)
+  await expect(whole.locator('[data-slot="comment"]').filter({ hasText: "Please add dates." }).getByText("via agent")).toHaveCount(0)
+  // Written through their agent, the person's own reply is new to them.
+  await expect(announced(page)).toHaveText("2 new comments")
 })
 
 test("the shortcut shows the panel and focus goes back to the toggle when it closes", async ({ page }) => {
@@ -248,5 +343,38 @@ test.describe("on a phone", () => {
     await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(633)
     await page.keyboard.press("Escape")
     await expect(sheet).toBeHidden()
+  })
+
+  test("a new comment's text, low on the screen, moves up above the sheet", async ({ page }) => {
+    const lines = Array.from({ length: 40 }, (_, index) => `Step ${index + 1} of the plan.`)
+    await openNote(page, { content: `# Plan\n\n${lines.join("\n\n")}\n` })
+    const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+    await expect(frame.getByText("Step 1 of the plan.", { exact: true })).toBeVisible({ timeout: 15_000 })
+    // A step in the bottom part of the screen, where the sheet will be.
+    let target = ""
+    for (const line of lines) {
+      const box = await frame.getByText(line, { exact: true }).boundingBox()
+      if (box && box.y > 844 * 0.6 && box.y + box.height < 800) {
+        target = line
+        break
+      }
+    }
+    expect(target).not.toBe("")
+    await frame.getByText(target, { exact: true }).click({ clickCount: 3 })
+    await page.getByRole("button", { name: "Comment", exact: true }).click()
+    const sheet = page.getByRole("dialog", { name: "Comments" })
+    await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(422)
+    // The text being commented on shows between the file's controls and the sheet.
+    const marked = frame.locator(".comment-highlight")
+    await expect(marked).toHaveText([target])
+    await expect
+      .poll(async () => {
+        const box = (await marked.boundingBox())!
+        const top = (await sheet.boundingBox())!.y
+        return box.y >= 64 && box.y + box.height <= top
+      })
+      .toBe(true)
+    await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
   })
 })

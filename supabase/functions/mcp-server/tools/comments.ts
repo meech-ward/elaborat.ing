@@ -23,7 +23,8 @@ import type { ToolContext } from './types.ts'
 // file. There are no tools to edit or delete a comment: agents resolve, and
 // the database refuses their edits and deletes anyway.
 
-type Person = { user_id: string; email: string | null } | null
+/** `name` is the name they set or their sign-in provider gave, else their email. */
+type Person = { user_id: string; email: string | null; name?: string | null } | null
 
 /** A comment as list_comments returns it. */
 type RemoteComment = {
@@ -119,7 +120,7 @@ function presentThread(thread: RemoteThread, view: FileView | null) {
 function presentComment(comment: RemoteComment) {
   return {
     comment_id: comment.id,
-    author: comment.author?.email ?? null,
+    author: comment.author?.name || comment.author?.email || null,
     via_agent: comment.via_agent,
     body: comment.body,
     created_at: comment.created_at,

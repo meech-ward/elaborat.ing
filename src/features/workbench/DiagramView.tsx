@@ -549,11 +549,12 @@ export function DiagramView({
   const canvasComments = useCanvasComments({
     path,
     elements: scene?.elements ?? null,
-    onReveal: (elementId) => {
+    onReveal: (elementId, focus) => {
       if (view !== "source") {
-        canvasApi.current?.revealElement(elementId);
+        canvasApi.current?.revealElement(elementId, focus);
         return;
       }
+      if (!focus) return;
       revealAfterShow.current = elementId;
       setMode("canvas");
     },

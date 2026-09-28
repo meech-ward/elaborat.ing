@@ -32,7 +32,8 @@ const NO_MARKS: readonly CommentMark[] = []
  * screen (`active`) it is the panel's file; its threads load the first time
  * it is, and each is placed in the text on screen (unsaved edits included),
  * for the panel and for the marks. `onReveal` runs when the panel asks to
- * show a thread's text.
+ * show a thread's text (`focus`: the note takes the keyboard), and on a phone
+ * to show a new comment's text above the sheet (not `focus`).
  */
 export function useNoteComments({
   path,
@@ -46,7 +47,7 @@ export function useNoteComments({
   server: { id: string; version: number } | null | undefined
   active: boolean
   text: string
-  onReveal: (mark: CommentMark) => void
+  onReveal: (mark: CommentMark, focus: boolean) => void
 }): NoteComments {
   const comments = useProjectComments()
   // The controller stays the same for the project; the value around it
@@ -98,9 +99,17 @@ export function useNoteComments({
     return controller.onReveal((threadId) => {
       const range = latest.current.places.get(threadId)?.range
       const kind = latest.current.kinds.get(threadId)
-      if (range && kind) reveal({ id: threadId, kind, from: range.start, to: range.end, active: true })
+      if (range && kind) reveal({ id: threadId, kind, from: range.start, to: range.end, active: true }, true)
     })
   }, [active, controller])
+  const fileId = file?.fileId ?? null
+  useEffect(() => {
+    if (!controller || !active || fileId === null) return
+    return controller.onRevealRequest(({ file: asked, anchor }) => {
+      if (asked.fileId !== fileId || (anchor.kind !== "text" && anchor.kind !== "section")) return
+      reveal({ id: DRAFT_MARK, kind: anchor.kind, from: anchor.position.start, to: anchor.position.end, active: true }, false)
+    })
+  }, [active, controller, fileId])
 
   const canComment = Boolean(comments?.canWrite && file)
   return {

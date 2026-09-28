@@ -187,7 +187,7 @@ Also done in this phase: the comment anchoring library (see the task below).
   there has "Leave project"; leaving is refused while this device holds
   changes to it that have not synced).
 - Member list (done: a project's menu on the projects home has "Members",
-  listing its owner and members with their email and role; the owner changes
+  listing its owner and members with their name, email and role; the owner changes
   a role or removes a member or an invitation there, and agents can read the
   list with the `list_members` tool), and a warning before sharing as editor
   (done: inviting as an editor, or making someone one, asks first).
@@ -207,7 +207,11 @@ Also done in this phase: the comment anchoring library (see the task below).
   detached; a D2 diagram's are on its generated canvas, so they stay through
   Regenerate. Notes mark commented text in Source and Rendered, with a marker
   beside each commented line, and offer Comment on a selection or a heading;
-  a thread whose text is gone shows detached, with its quote.)
+  a thread whose text is gone shows detached, with its quote. Authors show by
+  name (set in Settings > Account, else their sign-in provider's, else their
+  email), with "via agent" on what their agent wrote; an element's pin sits
+  outside its top-right corner; on a phone the text or element being
+  commented on moves above the sheet.)
 
 ## Task: comment anchoring library
 

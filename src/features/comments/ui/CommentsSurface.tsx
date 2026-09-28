@@ -162,6 +162,20 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   // A marker or a highlight's thread takes the keyboard.
   useEffect(() => controller?.onFocusThread(focusThread), [controller])
 
+  // On a phone the sheet covers the bottom half while a comment is written,
+  // and the file ends above it (workbench.css). Once the file has made room,
+  // it shows the new comment's text or element there.
+  const newRequest = compact && open ? ui.request : null
+  useEffect(() => {
+    if (!newRequest || !controller) return
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => controller.revealRequest())
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [controller, newRequest])
+
   // A list that failed offline loads again when the connection is back.
   const online = comments?.online ?? false
   useEffect(() => {

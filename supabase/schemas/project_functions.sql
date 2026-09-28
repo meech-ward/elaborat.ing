@@ -345,10 +345,11 @@ grant execute on function public.list_invitations() to authenticated;
 
 -- Who a project is shared with: the owner first, then accepted members, then
 -- invitations still waiting, which only the owner sees. Each entry has the
--- person's id and email, their role, and when they were invited and accepted
--- (both null for the owner). The owner and accepted members may ask; anyone
--- else, including a person whose invitation is still pending, is refused as
--- for a project they cannot see.
+-- person's id, email and name (private.person_name: the name they set or
+-- their provider gave, else their email), their role, and when they were
+-- invited and accepted (both null for the owner). The owner and accepted
+-- members may ask; anyone else, including a person whose invitation is still
+-- pending, is refused as for a project they cannot see.
 create function private.list_members(project_id uuid)
 returns jsonb
 language plpgsql
@@ -370,6 +371,7 @@ begin
         jsonb_build_object(
           'user_id', x.user_id,
           'email', x.email,
+          'name', x.name,
           'role', x.role,
           'invited_at', x.invited_at,
           'accepted_at', x.accepted_at
@@ -379,13 +381,15 @@ begin
       '[]'::jsonb
     )
     from (
-      select p.owner_id as user_id, u.email::text as email, 'owner' as role,
+      select p.owner_id as user_id, u.email::text as email,
+        private.person_name(u.raw_user_meta_data, u.email::text) as name, 'owner' as role,
         null::timestamptz as invited_at, null::timestamptz as accepted_at, 0 as rank
       from public.projects p
       join auth.users u on u.id = p.owner_id
       where p.id = list_members.project_id
       union all
-      select m.user_id, u.email::text, m.role, m.created_at, m.accepted_at,
+      select m.user_id, u.email::text, private.person_name(u.raw_user_meta_data, u.email::text),
+        m.role, m.created_at, m.accepted_at,
         case when m.accepted_at is null then 2 else 1 end
       from public.project_members m
       join auth.users u on u.id = m.user_id

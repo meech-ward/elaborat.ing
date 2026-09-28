@@ -29,6 +29,20 @@ describe("CommentsController", () => {
     expect(focused).toEqual(["t1"])
   })
 
+  test("the new comment's text is shown in the file when asked, and only while there is one", () => {
+    const controller = new CommentsController()
+    const shown: unknown[] = []
+    const stop = controller.onRevealRequest((asked) => shown.push(asked.anchor))
+    controller.revealRequest()
+    controller.requestComment(request(A))
+    controller.revealRequest()
+    stop()
+    controller.revealRequest()
+    expect(shown).toEqual([request(A).anchor])
+    // Showing it leaves the new comment and the panel as they were.
+    expect(controller.getState()).toMatchObject({ panelOpen: true, request: request(A) })
+  })
+
   test("the panel reveals a thread in the file, which makes it the open one", () => {
     const controller = new CommentsController()
     const revealed: string[] = []

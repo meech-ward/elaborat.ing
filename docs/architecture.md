@@ -368,8 +368,14 @@ editor is not built yet.
   thread's creator deletes it while every live comment in it is theirs. Every
   write needs comment access at the time, and an archived project refuses
   them all (55000) while still listing. Reads are `list_comments`, which
-  returns each author's email the way `list_members` does, and RLS on
-  `readable_project_ids()`.
+  returns each author's email and name the way `list_members` does, and RLS
+  on `readable_project_ids()`.
+- **Names.** A person is named by the name they set in Settings (Auth user
+  metadata `display_name`, written with `updateUser` from their own
+  session), else the one their sign-in provider gave (`full_name`, then
+  `name`), else their email: `private.person_name`, trimmed and cut to 80
+  characters, since metadata is the person's own to change. Comments and
+  `list_members` return it, and agents read it too.
 - **Agents read, add, reply, resolve and reopen, and never edit or delete a
   comment**, their user's own included: both remove someone's words for good
   (an edit keeps no history, and would show the agent's words as the

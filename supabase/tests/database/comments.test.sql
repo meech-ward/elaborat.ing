@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(176);
+select plan(184);
 
 -- People, by name. Alice owns the project; Bob is an editor, Carol a
 -- commenter, Dave a viewer and Gina a commenter, all accepted. Erin has a
@@ -221,7 +221,7 @@ select is(
 );
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'private' and p.proname in ('comment_person', 'comment_json', 'thread_json')
+   where n.nspname = 'private' and p.proname in ('person_name', 'comment_person', 'comment_json', 'thread_json')
      and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'))),
   0,
   'Nobody can call the helpers that read account emails, except the functions that checked access first'
@@ -330,11 +330,41 @@ select is(
 select is(
   (pg_temp.listed(pg_temp.project('P'), pg_temp.t(1)) #> '{comments,0}') - 'id' - 'created_at',
   jsonb_build_object(
-    'author', jsonb_build_object('user_id', pg_temp.id('alice'), 'email', 'alice@example.com'),
+    'author', jsonb_build_object('user_id', pg_temp.id('alice'), 'email', 'alice@example.com', 'name', 'alice@example.com'),
     'via_agent', false, 'body', 'Is this still true?', 'edited_at', null, 'deleted_at', null
   ),
-  'The opening comment names its author by id and email'
+  'The opening comment names its author by id, email and name (the email, when they have no name)'
 );
+
+-- Names: the one a person set in Settings, else their sign-in provider's, else their email.
+reset role;
+update auth.users set raw_user_meta_data = '{"full_name": "Bob Builder", "name": "bob"}' where id = pg_temp.id('bob');
+update auth.users set raw_user_meta_data = '{"display_name": "  Carol \n  C  ", "full_name": "Caroline"}' where id = pg_temp.id('carol');
+select is(private.person_name('{"display_name": "Gina", "full_name": "Regina G", "name": "regina"}', 'g@example.com'), 'Gina', 'A name set in Settings comes first');
+select is(private.person_name('{"full_name": "Regina G", "name": "regina"}', 'g@example.com'), 'Regina G', 'then the full name a provider gave');
+select is(private.person_name('{"name": "regina"}', 'g@example.com'), 'regina', 'then its name');
+select is(private.person_name('{"display_name": "  ", "full_name": ""}', 'g@example.com'), 'g@example.com', 'A blank name falls back to the email');
+select is(private.person_name('{}', null), null, 'No name and no email is null');
+select is(private.person_name(jsonb_build_object('display_name', repeat('x', 100)), 'g@example.com'), repeat('x', 80), 'A name is cut to 80 characters');
+set local role authenticated;
+select pg_temp.act('dave');
+select is(
+  (select jsonb_agg(jsonb_build_array(t #>> '{comments,0,author,email}', t #>> '{comments,0,author,name}') order by t ->> 'id')
+   from jsonb_array_elements(public.list_comments(pg_temp.project('P')) -> 'threads') t),
+  jsonb_build_array(
+    jsonb_build_array('alice@example.com', 'alice@example.com'),
+    jsonb_build_array('bob@example.com', 'Bob Builder'),
+    jsonb_build_array('carol@example.com', 'Carol C')
+  ),
+  'Comments name their authors: the name they set, else their provider''s, else their email'
+);
+select pg_temp.act('dave', true);
+select is(
+  pg_temp.listed(pg_temp.project('P'), pg_temp.t(2)) #>> '{comments,0,author,name}',
+  'Bob Builder',
+  'Agents read the names too'
+);
+select pg_temp.act('dave');
 select is(
   (select jsonb_agg(t ->> 'id') from jsonb_array_elements(public.list_comments(pg_temp.project('P'), pg_temp.file('a')) -> 'threads') t),
   jsonb_build_array(pg_temp.t(1)),

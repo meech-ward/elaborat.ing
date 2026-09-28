@@ -26,7 +26,7 @@ export function pinPlaces(pins: readonly CanvasPin[], elements: readonly PinElem
   for (const pin of pins) {
     const element = live.get(pin.elementId);
     if (!element) continue;
-    const at = sceneToCanvas(pinScenePoint(element, pin.point), view);
+    const at = sceneToCanvas(pinScenePoint(element), view);
     places.set(pin.id, { left: Math.round(at.x * 10) / 10, top: Math.round(at.y * 10) / 10 });
   }
   return places;
@@ -56,8 +56,8 @@ export type PinPlacesStore = ReturnType<typeof createPinPlacesStore>;
  * The pins, over the canvas and under its islands, shown only in the part
  * of the canvas a person can see (the canvas area, see workbench.css), so a
  * pin on an element under a panel stays under it. A pin's bottom-left
- * corner is its point: its element's top-right corner, or the spot the
- * comment marks. Pins whose element is gone are not drawn.
+ * corner is its element's top-right corner, so it sits outside the element
+ * and never covers its label. Pins whose element is gone are not drawn.
  */
 export function CanvasPins({ pins, places, onOpen }: { pins: readonly CanvasPin[]; places: PinPlacesStore; onOpen: (pin: CanvasPin) => void }) {
   const at = useSyncExternalStore(places.subscribe, places.get, places.get);
@@ -151,21 +151,37 @@ export type CommentButtonStore = ReturnType<typeof createCommentButtonStore>;
 /**
  * The library's Comment button over the one selected element, for people
  * who comment on a drawing they cannot change: its canvas has no tools, so
- * a click on an element selects it and this starts the comment.
+ * a click on an element selects it and this starts the comment. `offline`:
+ * the button stays, off, and says comments need a connection.
  */
 export function SelectedElementComment({
   place,
   size,
   shortcut,
+  offline = false,
   onComment,
 }: {
   place: CommentButtonStore;
   size: CommentsSize;
   shortcut: Shortcut;
+  offline?: boolean;
   onComment: () => void;
 }) {
   const at = useSyncExternalStore(place.subscribe, place.get, place.get);
   if (!at) return null;
+  if (offline) {
+    return (
+      <CommentActionButton
+        data-slot="selected-element-comment"
+        disabled
+        size={size}
+        className="absolute z-[3] -translate-x-1/2 disabled:text-dim disabled:opacity-100"
+        style={{ left: at.left, top: at.top }}
+      >
+        Comments need a connection
+      </CommentActionButton>
+    );
+  }
   return (
     <CommentActionButton
       data-slot="selected-element-comment"

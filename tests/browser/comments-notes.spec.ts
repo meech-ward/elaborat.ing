@@ -310,6 +310,7 @@ test("a thread whose text is deleted shows in the panel as detached, with its qu
 test("a commenter comments on a note they cannot change, from the comment key in Rendered", async ({ page }) => {
   const { fake } = await seeded(page, { threads: false, view: "Rendered", role: "commenter" })
   const frame = frameOf(page)
+  await expect(page.getByRole("banner").getByText("You can read and comment on this project.")).toBeVisible()
   await expect(frame.getByRole("textbox", { name: "Rendered document" })).toHaveAttribute("contenteditable", "false")
   // The caret on a heading, and the comment key: a comment on its section.
   await frame.getByRole("heading", { name: "Steps" }).click()

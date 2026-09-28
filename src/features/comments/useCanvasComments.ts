@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef } from "react"
 import { commentsShortcut, isApplePlatform } from "@/features/design-system"
 import { canvasPins, canvasPlaces, nextPinThread, type CanvasElement, type CanvasPin } from "./canvasPins"
-import { useCommentsUi, useFileThreads, useProjectComments } from "./context"
+import { NEEDS_CONNECTION, useCommentsUi, useFileThreads, useProjectComments } from "./context"
 import type { CommentFile } from "./controller"
 import { DRAFT_MARK } from "./noteMarks"
 import { elementLabel, type ElementAnchor } from "./placement"
@@ -11,6 +11,8 @@ import type { RemoteThread } from "./remote"
 export type CanvasCommentsProps = {
   pins: readonly CanvasPin[]
   canComment: boolean
+  /** Only the connection keeps this person from commenting. */
+  offline: boolean
   shortcut: { label: string; aria: string }
   onOpen: (pin: CanvasPin) => void
   onComment: (target: { elementId: string; point?: { x: number; y: number } }) => void
@@ -25,7 +27,9 @@ const NO_PINS: readonly CanvasPin[] = []
  * (unsaved edits included): pins for the live ones, detached for the rest.
  * Element comments hang on the drawing itself, or on a D2 diagram's
  * generated canvas. `onReveal` runs when the panel asks to show a thread's
- * element. Null where the file can have no comments.
+ * element (`focus`: the canvas takes the keyboard), and on a phone to show a
+ * new comment's element above the sheet (not `focus`). Null where the file
+ * can have no comments.
  */
 export function useCanvasComments({
   path,
@@ -35,7 +39,7 @@ export function useCanvasComments({
   path: string
   /** The scene's elements as the canvas shows them, or null before there is a scene. */
   elements: readonly CanvasElement[] | null
-  onReveal: (elementId: string) => void
+  onReveal: (elementId: string, focus: boolean) => void
 }): CanvasCommentsProps | null {
   const comments = useProjectComments()
   const controller = comments?.controller ?? null
@@ -71,15 +75,23 @@ export function useCanvasComments({
     if (!controller || !shown) return
     return controller.onReveal((threadId) => {
       const anchor = latest.current.find((thread) => thread.id === threadId)?.anchor
-      if (anchor?.kind === "element") reveal(anchor.element_id)
+      if (anchor?.kind === "element") reveal(anchor.element_id, true)
     })
   }, [controller, shown])
+  const fileId = file?.fileId ?? null
+  useEffect(() => {
+    if (!controller || fileId === null) return
+    return controller.onRevealRequest(({ file: asked, anchor }) => {
+      if (asked.fileId === fileId && anchor.kind === "element") reveal(anchor.element_id, false)
+    })
+  }, [controller, fileId])
 
   if (!comments || !target) return null
   const canComment = Boolean(comments.canWrite && file)
   return {
     pins: file ? pins : NO_PINS,
     canComment,
+    offline: Boolean(file && comments.writeBlocked === NEEDS_CONNECTION),
     shortcut: commentsShortcut(isApplePlatform()),
     onOpen(pin) {
       if (pin.id === DRAFT_MARK) comments.controller.setPanelOpen(true)

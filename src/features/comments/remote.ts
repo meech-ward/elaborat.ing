@@ -36,8 +36,12 @@ export const RemoteAnchor: z.ZodType<CommentAnchor> = z.union([
   }),
 ])
 
-/** Someone who wrote or resolved a comment, or null for a deleted account. */
-const Person = z.object({ user_id: z.uuid(), email: z.string().nullable() }).nullable()
+/**
+ * Someone who wrote or resolved a comment, or null for a deleted account.
+ * `name` is the name they set or their sign-in provider gave, else their
+ * email (older servers leave it out).
+ */
+const Person = z.object({ user_id: z.uuid(), email: z.string().nullable(), name: z.string().nullish() }).nullable()
 
 /** A comment, or the placeholder a deleted one leaves (no body, `deleted_at` set). */
 export const RemoteComment = z.object({

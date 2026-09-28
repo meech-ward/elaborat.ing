@@ -153,15 +153,17 @@ test("the owner lists everyone, invitations last; a member sees no invitations; 
   const id = await sharedProject(server)
   server.emails.set(OWNER, "owner@example.com")
   server.emails.set(OTHER, "other@example.com")
+  server.names.set(OTHER, "Other Person")
   server.invite(id, THIRD, "commenter")
   server.share(id, OTHER, "editor")
 
   const listed = await server.remote(OWNER).listMembers(id)
   expect(listed).toEqual([
-    { user_id: OWNER, email: "owner@example.com", role: "owner", invited_at: null, accepted_at: null },
-    { user_id: OTHER, email: "other@example.com", role: "editor", invited_at: expect.any(String), accepted_at: expect.any(String) },
+    // Without a name, an account is named by its email.
+    { user_id: OWNER, email: "owner@example.com", name: "owner@example.com", role: "owner", invited_at: null, accepted_at: null },
+    { user_id: OTHER, email: "other@example.com", name: "Other Person", role: "editor", invited_at: expect.any(String), accepted_at: expect.any(String) },
     // An account without an email lists as null.
-    { user_id: THIRD, email: null, role: "commenter", invited_at: expect.any(String), accepted_at: null },
+    { user_id: THIRD, email: null, name: null, role: "commenter", invited_at: expect.any(String), accepted_at: null },
   ])
   expect((await server.remote(OTHER).listMembers(id)).map((member) => member.user_id)).toEqual([OWNER, OTHER])
   expect(await refusal(server.remote(THIRD).listMembers(id))).toBe("Project unavailable")

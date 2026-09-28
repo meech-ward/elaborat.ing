@@ -268,8 +268,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const commentsRef = useRef(comments);
   // Someone who may comment but not change the drawing: a click selects an
   // element (Excalidraw selects none in view mode), and the Comment button
-  // over it starts the comment.
-  const pickToComment = Boolean(viewOnly && comments?.canComment);
+  // over it starts the comment. Offline the button stays, off, saying why.
+  const pickToComment = Boolean(viewOnly && (comments?.canComment || comments?.offline));
   const pickRef = useRef(pickToComment);
   // Latest callbacks without re-subscribing the native component: effects
   // only, never ref writes during render.
@@ -571,7 +571,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   useEffect(() => {
     if (!pageApiRef) return;
     pageApiRef.current = {
-      revealElement: (elementId) => {
+      revealElement: (elementId, focus = true) => {
         const api = apiRef.current;
         const area = visibleArea();
         const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
@@ -583,7 +583,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
           appState: { selectedElementIds: { [elementId]: true } as NativeAppState['selectedElementIds'] },
           captureUpdate: 'NEVER',
         });
-        canvasElement()?.focus();
+        if (focus) canvasElement()?.focus();
         return true;
       },
     };
@@ -636,7 +636,13 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
           {pins && pins.length > 0 && <CanvasPins pins={pins} places={pinStore} onOpen={openPin} />}
           {canComment && comments && <ElementMenuComment store={ui} wrapperRef={wrapperRef} shortcut={comments.shortcut} onComment={commentFromMenu} />}
           {pickToComment && comments && (
-            <SelectedElementComment place={commentButton} size={compact ? 'touch' : 'default'} shortcut={comments.shortcut} onComment={commentOnSelected} />
+            <SelectedElementComment
+              place={commentButton}
+              size={compact ? 'touch' : 'default'}
+              shortcut={comments.shortcut}
+              offline={!comments.canComment}
+              onComment={commentOnSelected}
+            />
           )}
           <CanvasControls
             store={ui}

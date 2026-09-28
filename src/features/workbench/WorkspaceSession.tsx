@@ -338,10 +338,10 @@ export function WorkspaceSession({
     server,
     active,
     text: snapshot.text,
-    onReveal: (mark) => {
+    onReveal: (mark, focus) => {
       const sourceShown = view !== "rendered" || !isNote;
-      if (sourceShown) editorApi.current?.revealRange(mark.from, mark.to, true);
-      if (isNote && view !== "source") renderedApi.current?.revealRange(mark.from, mark.to, !sourceShown);
+      if (sourceShown) editorApi.current?.revealRange(mark.from, mark.to, focus);
+      if (isNote && view !== "source") renderedApi.current?.revealRange(mark.from, mark.to, focus && !sourceShown);
     },
   });
   const commentProps = {

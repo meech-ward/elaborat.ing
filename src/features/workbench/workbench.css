@@ -221,6 +221,10 @@ above the choices. */
 .wb-app[data-compact="true"] .wb-native-view > [aria-live] + :not(.wb-native-stage) { margin-top: 64px; }
 /* A canvas's visible area (CanvasControls.tsx) starts below the floating controls. */
 .wb-app[data-compact="true"] [data-canvas-stage] { --canvas-area-top: 64px; }
+/* While a new comment is written, its sheet covers the bottom half of the
+   screen (CommentsSheet): the open file ends where the sheet starts, and
+   shows the text or element being commented on there (CommentsSurface). */
+.wb-app[data-compact="true"][data-comment-draft] .wb-sessions { padding-bottom: 50svh; }
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {

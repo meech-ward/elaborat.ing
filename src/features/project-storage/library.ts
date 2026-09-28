@@ -38,6 +38,8 @@ export type Member = {
   userId: string
   /** Null for an account without an email address. */
   email: string | null
+  /** The name they set or their sign-in provider gave, else their email; null when neither. */
+  name: string | null
   role: Role
   /** Invited and not yet accepted. Only the owner is shown these. */
   invited: boolean
@@ -229,7 +231,13 @@ export class ProjectLibrary {
     }
     try {
       const listed = await this.remote.listMembers(projectId)
-      return listed.map((entry) => ({ userId: entry.user_id, email: entry.email, role: entry.role, invited: entry.role !== "owner" && entry.accepted_at === null }))
+      return listed.map((entry) => ({
+        userId: entry.user_id,
+        email: entry.email,
+        name: entry.name || entry.email,
+        role: entry.role,
+        invited: entry.role !== "owner" && entry.accepted_at === null,
+      }))
     } catch (error) {
       if (error instanceof RemoteError && error.kind === "network") throw new Error("Seeing who a project is shared with needs a connection. Try again when you are online.")
       throw error

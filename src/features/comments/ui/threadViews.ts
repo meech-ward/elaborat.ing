@@ -19,10 +19,10 @@ export type ThreadView = {
   resolved: CommentResolution | null
 }
 
-/** A person as a comment shows them: their email, or null for a deleted account. */
+/** A person as a comment shows them: their name, else their email, or null for a deleted account. */
 export function author(person: RemoteThread["resolved_by"]): CommentAuthor | null {
   if (!person) return null
-  return { name: person.email ?? "Unknown account" }
+  return { name: person.name || person.email || "Unknown account" }
 }
 
 /** What the file is called in "Whole note", "Whole drawing" and "Comment on the whole ...". */

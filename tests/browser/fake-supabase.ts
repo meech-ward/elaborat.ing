@@ -1,4 +1,5 @@
 import type { Page, Request, Route, WebSocketRoute } from "@playwright/test"
+import { accountName } from "../../src/features/auth/accountName.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
 import { FakeComments } from "./fake-comments.ts"
@@ -86,6 +87,9 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
   server.emails.set(person.id, person.email)
   const remote = server.remote(person.id)
   const sockets: WebSocketRoute[] = []
+  // The person's user metadata, which Settings changes (their name).
+  let metadata: Record<string, unknown> = { ...person.user_metadata }
+  const me = () => ({ ...person, user_metadata: metadata })
   const fake: FakeSupabase = {
     server,
     comments: new FakeComments(server),
@@ -130,8 +134,18 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
 
     // Auth
     if (path.startsWith("/auth/v1/")) {
-      if (path.endsWith("/token")) return json(route, session())
-      if (path.endsWith("/user")) return json(route, person)
+      if (path.endsWith("/token")) return json(route, { ...session(), user: me() })
+      if (path.endsWith("/user")) {
+        const { data } = request.method() === "PUT" ? (request.postDataJSON() ?? {}) : {}
+        if (data && typeof data === "object") {
+          metadata = { ...metadata, ...data }
+          // Comments and members name the person as the database would.
+          const name = accountName(metadata)
+          if (name) server.names.set(person.id, name)
+          else server.names.delete(person.id)
+        }
+        return json(route, me())
+      }
       if (path.endsWith("/otp")) return json(route, {})
       if (path.endsWith("/settings")) {
         return json(route, {

@@ -39,18 +39,18 @@ describe("canvas pins", () => {
     expect(anchorView(threads[1].anchor, places.get("t-gone"))).toEqual({ kind: "element", label: "Old idea", detached: true })
   })
 
-  test("one pin per element and spot, for open threads on live elements; the open thread's is active", () => {
+  test("one pin per element, wherever on it each thread was started, for open threads on live elements; the open thread's is active", () => {
     const threads = [
       thread("t1", on("box", "Sign up")),
-      thread("t2", on("box", "Sign up")),
-      thread("t3", on("box", "Sign up", { x: 0.2, y: 0.5 })),
+      thread("t2", on("box", "Sign up", { x: 0.2, y: 0.5 })),
+      thread("t3", on("note", "Later", { x: 0.9, y: 0.1 })),
       thread("t4", on("note", "Later"), true),
       thread("t5", on("gone", "Old idea")),
     ]
     const pins = canvasPins(threads, canvasPlaces(threads, SCENE), "t2", null)
-    expect(pins.map(({ elementId, point, threadIds, label, active }) => ({ elementId, point, threadIds, label, active }))).toEqual([
-      { elementId: "box", point: undefined, threadIds: ["t1", "t2"], label: "2 threads on Sign up", active: true },
-      { elementId: "box", point: { x: 0.2, y: 0.5 }, threadIds: ["t3"], label: "1 thread on Sign up", active: false },
+    expect(pins).toEqual([
+      { id: "box", elementId: "box", threadIds: ["t1", "t2"], label: "2 threads on Sign up", active: true },
+      { id: "note", elementId: "note", threadIds: ["t3"], label: "1 thread on Later", active: false },
     ])
   })
 
@@ -66,7 +66,7 @@ describe("canvas pins", () => {
 
   test("a new comment on an element has its own pin; one on the whole file has none", () => {
     const draft = canvasPins([], new Map(), null, { anchor: on("note", "Later", { x: 0.5, y: 0.5 }), label: "Later" })
-    expect(draft).toEqual([{ id: DRAFT_MARK, elementId: "note", point: { x: 0.5, y: 0.5 }, threadIds: [], label: "New comment on Later", active: true }])
+    expect(draft).toEqual([{ id: DRAFT_MARK, elementId: "note", threadIds: [], label: "New comment on Later", active: true }])
     expect(canvasPins([], new Map(), null, { anchor: { kind: "document" }, label: "Whole drawing" })).toEqual([])
   })
 

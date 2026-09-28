@@ -59,6 +59,7 @@ const NO_PLACES: ReadonlyMap<string, ThreadPlace> = new Map()
 
 type Listener = () => void
 type ThreadListener = (threadId: string) => void
+type RequestListener = (request: CommentRequest) => void
 
 export class CommentsController {
   private state: CommentsUiState = INITIAL
@@ -66,6 +67,7 @@ export class CommentsController {
   private readonly listeners = new Set<Listener>()
   private readonly revealListeners = new Set<ThreadListener>()
   private readonly focusListeners = new Set<ThreadListener>()
+  private readonly requestListeners = new Set<RequestListener>()
 
   /** Calls `listener` after every change to the state or the places. Returns an unsubscribe function. */
   subscribe = (listener: Listener): (() => void) => {
@@ -144,6 +146,16 @@ export class CommentsController {
     for (const listener of this.revealListeners) listener(threadId)
   }
 
+  /**
+   * Show the new comment's text or element in the file, without taking the
+   * keyboard from its field: on a phone, once the sheet has made room for it
+   * above (the file ends where the sheet starts while a comment is written).
+   */
+  revealRequest(): void {
+    const request = this.state.request
+    if (request) for (const listener of this.requestListeners) listener(request)
+  }
+
   /** The new comment was sent (it is now the thread `threadId`) or given up (no id). */
   finishRequest(threadId?: string): void {
     this.set({ request: null, ...(threadId ? { activeThreadId: threadId } : {}) })
@@ -155,6 +167,12 @@ export class CommentsController {
   onReveal(listener: ThreadListener): () => void {
     this.revealListeners.add(listener)
     return () => this.revealListeners.delete(listener)
+  }
+
+  /** The file views listen: show the new comment's text or element, leaving the keyboard where it is. Returns an unsubscribe function. */
+  onRevealRequest(listener: RequestListener): () => void {
+    this.requestListeners.add(listener)
+    return () => this.requestListeners.delete(listener)
   }
 
   /** The panel listens: scroll to this thread and move the keyboard to it. Returns an unsubscribe function. */

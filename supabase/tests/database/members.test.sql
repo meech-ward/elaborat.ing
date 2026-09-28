@@ -5,19 +5,19 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(19);
+select plan(20);
 
 select function_privs_are('public', 'list_members', array['uuid'], 'authenticated', array['EXECUTE'], 'Signed-in users can list members');
 select function_privs_are('public', 'list_members', array['uuid'], 'anon', array[]::text[], 'Anonymous users cannot list members');
 
 -- Alice owns a project. Bob (editor) and Carol (viewer) accept their
 -- invitations; Dave (commenter) has not yet. Erin has nothing to do with it.
-insert into auth.users (id, email) values
-  ('11111111-1111-4111-8111-111111111111', 'alice@example.com'),
-  ('22222222-2222-4222-8222-222222222222', 'bob@example.com'),
-  ('33333333-3333-4333-8333-333333333333', 'carol@example.com'),
-  ('44444444-4444-4444-8444-444444444444', 'dave@example.com'),
-  ('55555555-5555-4555-8555-555555555555', 'erin@example.com');
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('11111111-1111-4111-8111-111111111111', 'alice@example.com', '{}'),
+  ('22222222-2222-4222-8222-222222222222', 'bob@example.com', '{"full_name": "Bob Builder"}'),
+  ('33333333-3333-4333-8333-333333333333', 'carol@example.com', '{"display_name": "Carol", "name": "carol-c"}'),
+  ('44444444-4444-4444-8444-444444444444', 'dave@example.com', '{}'),
+  ('55555555-5555-4555-8555-555555555555', 'erin@example.com', '{}');
 
 set local role authenticated;
 set local request.jwt.claims to '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
@@ -44,8 +44,13 @@ select is(
 );
 select is(
   (select array_agg(k order by k) from jsonb_object_keys(public.list_members('aaaaaaaa-0000-4000-8000-000000000001') -> 1) k),
-  array['accepted_at', 'email', 'invited_at', 'role', 'user_id'],
-  'Each entry has the id, email, role and the invitation and acceptance times'
+  array['accepted_at', 'email', 'invited_at', 'name', 'role', 'user_id'],
+  'Each entry has the id, email, name, role and the invitation and acceptance times'
+);
+select is(
+  (select jsonb_agg(m ->> 'name') from jsonb_array_elements(public.list_members('aaaaaaaa-0000-4000-8000-000000000001')) m),
+  '["alice@example.com", "Bob Builder", "Carol", "dave@example.com"]'::jsonb,
+  'Each is named as they set it or their provider gave it, else by their email'
 );
 select is(
   public.list_members('aaaaaaaa-0000-4000-8000-000000000001') -> 1 ->> 'user_id',

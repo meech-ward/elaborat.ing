@@ -281,16 +281,45 @@ $$;
 revoke all on function private.check_comment_body(text) from public, anon;
 grant execute on function private.check_comment_body(text) to authenticated;
 
--- An account as comments show it, or null for a deleted account. These two
--- read auth.users, so only the definer functions below call them, after they
--- have checked the caller can read the project.
+-- The name an account shows under: the one its person set in Settings
+-- (`display_name` in its user metadata), else the one a sign-in provider gave
+-- (`full_name`, then `name`), else its email. Metadata is the person's own to
+-- change, so spaces are collapsed and the name cut to 80 characters.
+create function private.person_name(metadata jsonb, email text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    (select named.name
+     from (
+       select nullif(left(btrim(regexp_replace(person_name.metadata ->> k.key, '\s+', ' ', 'g')), 80), '') as name, k.rank
+       from unnest(array['display_name', 'full_name', 'name']) with ordinality as k(key, rank)
+     ) named
+     where named.name is not null
+     order by named.rank
+     limit 1),
+    person_name.email
+  )
+$$;
+
+revoke all on function private.person_name(jsonb, text) from public, anon, authenticated;
+
+-- An account as comments show it, or null for a deleted account: its id,
+-- email and name. These read auth.users, so only the definer functions below
+-- call them, after they have checked the caller can read the project.
 create function private.comment_person(user_id uuid)
 returns jsonb
 language sql
 stable
 set search_path = ''
 as $$
-  select jsonb_build_object('user_id', u.id, 'email', u.email::text)
+  select jsonb_build_object(
+    'user_id', u.id,
+    'email', u.email::text,
+    'name', private.person_name(u.raw_user_meta_data, u.email::text)
+  )
   from auth.users u
   where u.id = comment_person.user_id
 $$;

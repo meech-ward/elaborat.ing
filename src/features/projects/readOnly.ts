@@ -12,5 +12,5 @@ export function readOnlyReason(entry: Pick<ProjectEntry, "archived" | "role"> | 
     return canEdit(entry.role) ? "This project is archived. Unarchive it to make changes." : "This project is archived, so it cannot be changed."
   }
   if (canEdit(entry.role)) return null
-  return entry.role === "commenter" ? "You can comment on this project but not change it." : "You can view this project but not change it."
+  return entry.role === "commenter" ? "You can read and comment on this project." : "You can view this project but not change it."
 }

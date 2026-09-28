@@ -380,7 +380,8 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
  * accent line when `active`, the field fill once resolved), padding 12. The
  * context line with Resolve (or Reopen) at its end; "Resolved by ..." when
  * resolved; the comments, 10 apart; then Reply, which opens a
- * CommentComposer until the reply is sent or cancelled. Viewers and offline
+ * CommentComposer until the reply is sent or cancelled, or a comment is
+ * deleted while it is still empty. Viewers and offline
  * readers (`canWrite` false) see the words only.
  *
  * Focus never falls to the page: closing or sending Reply goes back to Reply, an edit
@@ -409,6 +410,7 @@ export function CommentThread({
   const size = useCommentsSize(sizeProp)
   const touch = size === "touch"
   const [replying, setReplying] = useState(defaultReplying)
+  const [reply, setReply] = useState("")
   const [editing, setEditing] = useState<string | null>(null)
   const resolvedId = useId()
   const card = useRef<HTMLElement>(null)
@@ -420,6 +422,7 @@ export function CommentThread({
   const closeReply = () => {
     replyFocus.current = true
     setReplying(false)
+    setReply("")
   }
   useEffect(() => {
     if (replying || !replyFocus.current) return
@@ -445,11 +448,16 @@ export function CommentThread({
       next?.focus()
     })
   }
-  /** Delete leaves the thread (as a placeholder), or takes it when it was the last comment. */
+  /**
+   * Delete leaves the thread (as a placeholder), or takes it when it was the
+   * last comment. A reply field left open with nothing in it closes, as it
+   * does once a reply is sent.
+   */
   const deleteComment = async (commentId: string) => {
     const item = card.current?.closest("li")
     const neighbour = (item?.nextElementSibling ?? item?.previousElementSibling)?.querySelector('[data-slot="comment-thread"]') ?? null
     await onDelete?.(commentId)
+    if (!reply.trim()) setReplying(false)
     afterRender(() => {
       if (!focusLost()) return
       const thread = card.current?.isConnected ? card.current : null
@@ -527,6 +535,8 @@ export function CommentThread({
             label="Reply"
             placeholder="Reply"
             submitLabel="Reply"
+            value={reply}
+            onValueChange={setReply}
             onSubmit={async (body) => {
               await onReply(body)
               closeReply()

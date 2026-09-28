@@ -258,13 +258,14 @@ test("members lists who a project is shared with, and the owner changes a role a
   const invited = crypto.randomUUID()
   server.emails.set(OWNER, "owner@example.com")
   server.emails.set(OTHER, "other@example.com")
+  server.names.set(OTHER, "Other Person")
   server.share(id, OTHER, "editor")
   server.invite(id, invited, "viewer")
 
   expect(await here.members(id)).toEqual([
-    { userId: OWNER, email: "owner@example.com", role: "owner", invited: false },
-    { userId: OTHER, email: "other@example.com", role: "editor", invited: false },
-    { userId: invited, email: null, role: "viewer", invited: true },
+    { userId: OWNER, email: "owner@example.com", name: "owner@example.com", role: "owner", invited: false },
+    { userId: OTHER, email: "other@example.com", name: "Other Person", role: "editor", invited: false },
+    { userId: invited, email: null, name: null, role: "viewer", invited: true },
   ])
   await here.share(id, OTHER, "viewer")
   await here.share(id, invited, null)

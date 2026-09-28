@@ -50,6 +50,13 @@ export class FakeProjectServer {
   maxFiles = MAX_ENTRIES
   /** Each account's email, as `auth.users` holds it; an account without one lists as null. */
   readonly emails = new Map<string, string>()
+  /** Each account's name, set in Settings or given by its sign-in provider; without one it is named by its email. */
+  readonly names = new Map<string, string>()
+
+  /** An account's name as the database gives it (private.person_name): its name, else its email. */
+  nameOf(id: string): string | null {
+    return this.names.get(id) ?? this.emails.get(id) ?? null
+  }
   /** Emails sent to invite people who had no account, oldest first, as the `share` Edge Function sends them. */
   readonly invitationEmails: Array<{ to: string; projectId: string; role: MemberRole }> = []
   /** Orders invitations and acceptances, newest last, as their times would. */
@@ -164,12 +171,20 @@ export class FakeProjectServer {
       .map(([id, member]): RemoteMember => ({
         user_id: id,
         email: this.emails.get(id) ?? null,
+        name: this.nameOf(id),
         role: member.role,
         invited_at: member.invitedAt,
         accepted_at: member.acceptedAt,
       }))
       .sort((a, b) => Number(a.accepted_at === null) - Number(b.accepted_at === null) || a.invited_at!.localeCompare(b.invited_at!))
-    const owner: RemoteMember = { user_id: project.owner, email: this.emails.get(project.owner) ?? null, role: "owner", invited_at: null, accepted_at: null }
+    const owner: RemoteMember = {
+      user_id: project.owner,
+      email: this.emails.get(project.owner) ?? null,
+      name: this.nameOf(project.owner),
+      role: "owner",
+      invited_at: null,
+      accepted_at: null,
+    }
     return [owner, ...listed]
   }
 

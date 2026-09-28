@@ -5,16 +5,18 @@ import { elementLabel, type CommentAnchor, type LabelElement } from "./placement
 import type { RemoteThread } from "./remote"
 
 // Where a drawing's threads are on its canvas, and the pins it shows: one
-// for each spot with open threads on a live element, and one for a new
-// comment while it is being written. Pure: the canvas and the panel share it.
+// for each live element with open threads, and one for a new comment while
+// it is being written. Pure: the canvas and the panel share it.
 
-/** A comment pin on a drawing: the threads it opens and the spot it marks on its element. */
+/**
+ * A comment pin on a drawing: the threads it opens on its element. It sits
+ * just outside the element's top-right corner, clear of its label, wherever
+ * on the element the comment was started.
+ */
 export type CanvasPin = {
-  /** The element and spot, or DRAFT_MARK for a new comment. */
+  /** The element, or DRAFT_MARK for a new comment. */
   id: string
   elementId: string
-  /** The spot, as fractions of the element's unrotated box; without it the pin sits at the element's top-right corner. */
-  point?: { x: number; y: number }
   /** The threads it opens, in the order a click moves through them. Empty for a new comment. */
   threadIds: readonly string[]
   /** What it opens, for screen readers: "2 threads on Sign up". */
@@ -62,12 +64,10 @@ export function canvasPlaces(threads: readonly RemoteThread[], elements: readonl
   return places
 }
 
-const pointKey = (point?: { x: number; y: number }) => (point ? `${point.x},${point.y}` : "corner")
-
 /**
  * The pins for a drawing: open threads on live elements, one pin per
- * element and spot (threads at the same spot share it), then the new
- * comment's if it is on an element. Ordered as the threads were made.
+ * element (its threads share it), then the new comment's if it is on an
+ * element. Ordered as the threads were made.
  */
 export function canvasPins(
   threads: readonly RemoteThread[],
@@ -75,15 +75,14 @@ export function canvasPins(
   activeThreadId: string | null,
   draft: { anchor: CommentAnchor; label: string } | null,
 ): CanvasPin[] {
-  const pins = new Map<string, { elementId: string; point?: { x: number; y: number }; threadIds: string[]; label: string }>()
+  const pins = new Map<string, { elementId: string; threadIds: string[]; label: string }>()
   for (const thread of threads) {
     const { anchor } = thread
     const place = places.get(thread.id)
     if (thread.resolved_at !== null || anchor.kind !== "element" || !place?.attached) continue
-    const key = `${anchor.element_id}\n${pointKey(anchor.point)}`
-    const pin = pins.get(key)
+    const pin = pins.get(anchor.element_id)
     if (pin) pin.threadIds.push(thread.id)
-    else pins.set(key, { elementId: anchor.element_id, ...(anchor.point ? { point: anchor.point } : {}), threadIds: [thread.id], label: place.text ?? anchor.label })
+    else pins.set(anchor.element_id, { elementId: anchor.element_id, threadIds: [thread.id], label: place.text ?? anchor.label })
   }
   const result: CanvasPin[] = [...pins].map(([key, pin]) => ({
     id: key,
@@ -92,8 +91,7 @@ export function canvasPins(
     active: activeThreadId !== null && pin.threadIds.includes(activeThreadId),
   }))
   if (draft?.anchor.kind === "element") {
-    const { element_id, point } = draft.anchor
-    result.push({ id: DRAFT_MARK, elementId: element_id, ...(point ? { point } : {}), threadIds: [], label: `New comment on ${elementName(draft.label)}`, active: true })
+    result.push({ id: DRAFT_MARK, elementId: draft.anchor.element_id, threadIds: [], label: `New comment on ${elementName(draft.label)}`, active: true })
   }
   return result
 }

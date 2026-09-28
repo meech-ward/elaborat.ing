@@ -53,12 +53,12 @@ const FILES: Row[] = [
   { id: 'aaaaaaaa-0000-4000-8000-000000000004', path: 'notes/plain.md', content: 'No headings here.', version: 1 },
 ]
 
-const person = (email: string) => ({ user_id: '11111111-1111-4111-8111-111111111111', email })
+const person = (email: string, name?: string) => ({ user_id: '11111111-1111-4111-8111-111111111111', email, ...(name ? { name } : {}) })
 
 function comment(body: string, extra: Record<string, unknown> = {}) {
   return {
     id: 'cccccccc-0000-4000-8000-000000000001',
-    author: person('ada@example.com'),
+    author: person('ada@example.com', 'Ada Lovelace'),
     via_agent: false,
     body,
     created_at: TIME,
@@ -305,7 +305,7 @@ Deno.test('add_comment returns the thread as list_comments shows it', async () =
     anchor: { kind: 'text', quote: 'Intro text', line: 3 },
     comments: [{
       comment_id: 'cccccccc-0000-4000-8000-000000000001',
-      author: 'ada@example.com',
+      author: 'Ada Lovelace',
       via_agent: true,
       body: 'Look',
       created_at: TIME,
@@ -453,7 +453,8 @@ Deno.test('resolved threads are left out unless asked for', async () => {
 Deno.test("a deleted file's threads are found by its last path", async () => {
   const gone = { file_id: 'dddddddd-0000-4000-8000-000000000001', path: 'old.md', file_deleted: true }
   const { content, calls } = await listed('old.md', [
-    thread(noteAnchor('text', 'Intro text'), gone),
+    // From a server that gives no names: the author shows by email.
+    thread(noteAnchor('text', 'Intro text'), { ...gone, comments: [comment('Is this right?', { author: person('ada@example.com') })] }),
     thread({ kind: 'document' }, { ...gone, path: 'other.md' }),
     thread({ kind: 'document' }),
   ])

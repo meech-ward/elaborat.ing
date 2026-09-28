@@ -27,6 +27,8 @@ type Comment = {
   id: string
   threadId: string
   authorId: string
+  /** Written by the author's agent (an OAuth client token), not by them in the app. */
+  viaAgent: boolean
   body: string | null
   createdAt: string
   editedAt: string | null
@@ -64,17 +66,20 @@ export class FakeComments {
     ].includes(rpc)
   }
 
-  /** Call a comment function as `user`, as the app's rpc does. Throws RemoteError as the database refuses. */
-  call(user: string, rpc: string, args: Args): unknown {
+  /**
+   * Call a comment function as `user`, as the app's rpc does, or as their
+   * agent (`agent`). Throws RemoteError as the database refuses.
+   */
+  call(user: string, rpc: string, args: Args, { agent = false }: { agent?: boolean } = {}): unknown {
     if (this.server.offline) throw new RemoteError("network", "Failed to fetch")
     if (this.server.limited) throw new RemoteError("account-limit", this.server.limited)
     switch (rpc) {
       case "list_comments":
         return this.list(user, String(args.project_id), typeof args.file_id === "string" ? args.file_id : null)
       case "add_comment":
-        return this.add(user, args)
+        return this.add(user, args, agent)
       case "reply_comment":
-        return this.reply(user, String(args.thread_id), String(args.comment_id), args.body)
+        return this.reply(user, String(args.thread_id), String(args.comment_id), args.body, agent)
       case "edit_comment":
         return this.edit(user, String(args.comment_id), args.body)
       case "resolve_comment":
@@ -135,7 +140,7 @@ export class FakeComments {
   }
 
   private person(userId: string | null) {
-    return userId === null ? null : { user_id: userId, email: this.server.emails.get(userId) ?? null }
+    return userId === null ? null : { user_id: userId, email: this.server.emails.get(userId) ?? null, name: this.server.nameOf(userId) }
   }
 
   private threadJson(thread: Thread) {
@@ -160,7 +165,7 @@ export class FakeComments {
     return {
       id: comment.id,
       author: this.person(comment.authorId),
-      via_agent: false,
+      via_agent: comment.viaAgent,
       body: comment.body,
       created_at: comment.createdAt,
       edited_at: comment.editedAt,
@@ -220,7 +225,7 @@ export class FakeComments {
     return { project_id: projectId, revision: project.revision, threads: threads.map((thread) => this.threadJson(thread)) }
   }
 
-  private add(user: string, args: Args) {
+  private add(user: string, args: Args, agent: boolean) {
     const body = this.checkBody(args.body)
     this.checkAnchor(args.anchor)
     const projectId = String(args.project_id)
@@ -249,11 +254,11 @@ export class FakeComments {
       resolvedBy: null,
     }
     this.threads.push(thread)
-    this.comments.push({ id: crypto.randomUUID(), threadId: thread.id, authorId: user, body, createdAt, editedAt: null, deletedAt: null })
+    this.comments.push({ id: crypto.randomUUID(), threadId: thread.id, authorId: user, viaAgent: agent, body, createdAt, editedAt: null, deletedAt: null })
     return { revision: this.bump(projectId), thread: this.threadJson(thread) }
   }
 
-  private reply(user: string, threadId: string, commentId: string, rawBody: unknown) {
+  private reply(user: string, threadId: string, commentId: string, rawBody: unknown, agent: boolean) {
     const body = this.checkBody(rawBody)
     const thread = this.thread(user, threadId)
     const project = this.writable(user, thread.projectId, true)
@@ -263,7 +268,7 @@ export class FakeComments {
       throw new RemoteError("invalid", "This comment id was already used")
     }
     if (project.archivedAt) throw new RemoteError("archived", "Project is archived")
-    const comment: Comment = { id: commentId, threadId, authorId: user, body, createdAt: this.tick(), editedAt: null, deletedAt: null }
+    const comment: Comment = { id: commentId, threadId, authorId: user, viaAgent: agent, body, createdAt: this.tick(), editedAt: null, deletedAt: null }
     this.comments.push(comment)
     return { revision: this.bump(thread.projectId), comment: this.commentJson(comment) }
   }

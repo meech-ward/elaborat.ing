@@ -5,12 +5,12 @@ import { APP_URL } from "./urls.ts"
 
 // Comments on a drawing's elements: with one element selected, Comment in
 // More tools, in Excalidraw's menu for the element or on the comment key
-// starts a thread on it, at the spot it was pointed at. Each open thread
-// shows as a pin on its element, which follows the view and the element as
-// it moves; a pin opens the panel at its thread, and the panel's Go to shows
-// the element. A deleted element's thread is detached. A D2 diagram's
-// element comments hang on its generated canvas, whose element ids stay
-// through Regenerate.
+// starts a thread on it (the spot it was pointed at is kept). An element
+// with open threads shows a pin just outside its top-right corner, which
+// follows the view and the element as it moves; a pin opens the panel at
+// its thread, and the panel's Go to shows the element. A deleted element's
+// thread is detached. A D2 diagram's element comments hang on its generated
+// canvas, whose element ids stay through Regenerate.
 
 test.describe.configure({ timeout: 90_000 })
 
@@ -134,7 +134,10 @@ const near = (actual: { x: number; y: number }, expected: { x: number; y: number
 }
 
 /** A project with the drawing, opened on its canvas, with a thread on the box when `thread` is set. */
-async function seeded(page: Page, { thread: opening, role }: { thread?: Record<string, unknown>; role?: "viewer" | "commenter" } = {}): Promise<{ fake: FakeSupabase; id: string }> {
+async function seeded(
+  page: Page,
+  { thread: opening, role, phone = false }: { thread?: Record<string, unknown>; role?: "viewer" | "commenter"; phone?: boolean } = {},
+): Promise<{ fake: FakeSupabase; id: string }> {
   const server = new FakeProjectServer()
   const owner = role ? SOMEONE_ELSE : person.id
   const remote = server.remote(owner)
@@ -149,11 +152,12 @@ async function seeded(page: Page, { thread: opening, role }: { thread?: Record<s
   await page.goto(new URL(`projects/${id}/${PATH}`, APP_URL).href)
   await expect(page.getByRole("tabpanel", { name: PATH })).toBeVisible({ timeout: 15_000 })
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole("button", { name: /^Reset zoom, now \d+%$/ })).toBeVisible()
+  // A phone has no zoom island.
+  if (!phone) await expect(page.getByRole("button", { name: /^Reset zoom, now \d+%$/ })).toBeVisible()
   return { fake, id }
 }
 
-test("a shape is commented on from More tools at the spot clicked, its pin opens the thread, and Go to shows the shape", async ({ page }) => {
+test("a shape is commented on from More tools, its pin sits outside its top-right corner and opens the thread, and Go to shows the shape", async ({ page }) => {
   const { fake } = await seeded(page)
   await openPanel(page)
   // Comment waits for one element to be selected.
@@ -173,8 +177,8 @@ test("a shape is commented on from More tools at the spot clicked, its pin opens
     { kind: "element", element_id: "box-1", label: "Sign up", point: { x: expect.closeTo(0.25, 1), y: expect.closeTo(0.5, 1) } },
   ])
 
-  // The pin marks the spot clicked, with its bottom-left corner.
-  near(await pinPoint(page, "1 thread on Sign up"), spot)
+  // The pin's bottom-left corner is the box's top-right corner, clear of its label, wherever the box was clicked.
+  near(await pinPoint(page, "1 thread on Sign up"), await onScreen(page, { x: 200, y: 0 }))
   await expect(pin(page, "1 thread on Sign up")).toHaveAttribute("data-active", "true")
 
   // The pin opens the panel at its thread and gives it the keyboard.
@@ -183,13 +187,13 @@ test("a shape is commented on from More tools at the spot clicked, its pin opens
   await pin(page, "1 thread on Sign up").click()
   await expect(thread(page, "Sign up")).toBeFocused()
 
-  // Go to brings the shape to the middle of the canvas: the spot is 50 left of the box's middle.
+  // Go to brings the shape to the middle of the canvas: its top-right corner is 100 right and 50 up of its middle.
   await page.getByRole("button", { name: "Zoom in" }).click()
   await page.getByRole("button", { name: "Zoom in" }).click()
   const scale = await zoom(page)
   await thread(page, "Sign up").getByRole("button", { name: /Sign up/ }).first().click()
   const area = (await page.locator('[data-slot="canvas-controls"]').boundingBox())!
-  near(await pinPoint(page, "1 thread on Sign up"), { x: area.x + area.width / 2 - 50 * scale, y: area.y + area.height / 2 })
+  near(await pinPoint(page, "1 thread on Sign up"), { x: area.x + area.width / 2 + 100 * scale, y: area.y + area.height / 2 - 50 * scale })
 })
 
 test("Excalidraw's menu for an element comments on it, where it was opened, and so does the comment key", async ({ page }) => {
@@ -202,10 +206,10 @@ test("Excalidraw's menu for an element comments on it, where it was opened, and 
   await expect(menu).toHaveCount(0)
   await send(page, "Is this the next step?")
   await expect(thread(page, "Ellipse")).toBeVisible()
-  near(await pinPoint(page, "1 thread on Ellipse"), spot)
+  near(await pinPoint(page, "1 thread on Ellipse"), await onScreen(page, { x: 480, y: 0 }))
 
-  // The comment key on the selected box: a pin at the spot it was clicked
-  // (clear of the ellipse's properties, which stay until the click).
+  // The comment key on the selected box, clicked clear of the ellipse's
+  // properties (which stay until the click).
   const onBox = await onScreen(page, { x: 180, y: 80 })
   await page.mouse.click(onBox.x, onBox.y)
   await page.keyboard.press("ControlOrMeta+Alt+m")
@@ -220,7 +224,7 @@ test("Excalidraw's menu for an element comments on it, where it was opened, and 
 test("a pin follows the view and its shape as it moves, and a deleted shape's thread is detached", async ({ page }) => {
   await seeded(page, { thread: { kind: "element", element_id: "box-1", label: "Sign up" } })
   const name = "1 thread on Sign up"
-  // Without a spot, the pin sits at the box's top-right corner.
+  // The pin sits at the box's top-right corner.
   near(await pinPoint(page, name), await onScreen(page, { x: 200, y: 0 }))
 
   // Zooming in keeps the middle of the area where it is: the pin moves away from it.
@@ -292,7 +296,7 @@ test("a commenter, whose canvas has no tools, selects a shape with a click and c
   await comment.click()
   await send(page, "Should this say Create account?")
   await expect(thread(page, "Sign up")).toBeVisible()
-  near(await pinPoint(page, "1 thread on Sign up"), spot)
+  near(await pinPoint(page, "1 thread on Sign up"), await onScreen(page, { x: 200, y: 0 }))
 
   // A click on empty canvas selects nothing, and a drag still pans.
   const empty = await onScreen(page, { x: 260, y: 200 })
@@ -318,6 +322,25 @@ test("a commenter, whose canvas has no tools, selects a shape with a click and c
     { element: "idea", author: person.id },
     { element: "box-1", author: person.id },
   ])
+})
+
+test("offline, a commenter's Comment button over a selected shape stays, off, and says why", async ({ page }) => {
+  const { fake } = await seeded(page, { role: "commenter" })
+  await openPanel(page)
+  fake.offline = true
+  // The app notices the connection is gone on its next refresh.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(panel(page).getByText("Comments need a connection")).toBeVisible()
+  const spot = await onScreen(page, { x: 50, y: 50 })
+  await page.mouse.click(spot.x, spot.y)
+  const off = page.locator('[data-slot="selected-element-comment"]')
+  await expect(off).toBeVisible()
+  await expect(off).toBeDisabled()
+  await expect(off).toHaveText("Comments need a connection")
+  // A click on empty canvas selects nothing, and the button goes.
+  const empty = await onScreen(page, { x: 260, y: 200 })
+  await page.mouse.click(empty.x, empty.y)
+  await expect(off).toHaveCount(0)
 })
 
 test("in Split beside the comments panel, the canvas's tools and pins keep to the canvas left of the panel", async ({ page }) => {
@@ -391,4 +414,36 @@ test("a comment on a diagram node hangs on its generated canvas and stays on the
   await expect(pin(page, "1 thread on a")).toBeVisible()
   await expect(thread(page, "a")).not.toContainText("Detached")
   await expect(thread(page, "a")).toContainText("Rename this step.")
+})
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test("a new comment's shape, low on the screen, moves up above the sheet", async ({ page }) => {
+    await seeded(page, { role: "commenter", phone: true })
+    // The canvas opens with the middle of the scene (240, 50) in the middle
+    // of its area, below the floating controls, at 100%: the box's middle is
+    // 140 left of it, in the bottom half of the screen.
+    const area = (await page.locator('[data-slot="canvas-controls"]').boundingBox())!
+    const middle = { x: area.x + area.width / 2, y: area.y + area.height / 2 }
+    expect(middle.y + 50).toBeGreaterThan(844 / 2)
+    await page.mouse.click(middle.x - 140, middle.y)
+    await page.locator('[data-slot="selected-element-comment"]').click()
+    const sheet = page.getByRole("dialog", { name: "Comments" })
+    await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(422)
+    // The new comment's pin is at the box's top-right corner: the box, 100
+    // high, shows between the controls and the sheet. (The sheet keeps the
+    // page behind it out of reach, so the pin is found by its mark.)
+    const draftPin = page.locator('[data-pin="draft"]')
+    await expect(draftPin).toHaveAttribute("aria-label", "New comment on Sign up")
+    await expect
+      .poll(async () => {
+        const box = (await draftPin.boundingBox())!
+        const top = (await sheet.boundingBox())!.y
+        return box.y + box.height >= 64 && box.y + box.height + 100 <= top
+      })
+      .toBe(true)
+    await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
+  })
 })

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { ThreadPlace } from "../controller"
 import { sectionAnchor, textAnchor } from "../placement"
 import type { RemoteComment, RemoteThread } from "../remote"
-import { fileNoun, newComments, threadViews, type Viewer } from "./threadViews"
+import { author, fileNoun, newComments, threadViews, type Viewer } from "./threadViews"
 
 const FILE = "aaaaaaaa-0000-4000-8000-00000000000a"
 const ME = "11111111-1111-4111-8111-111111111111"
@@ -95,6 +95,15 @@ describe("threadViews", () => {
     const view = threadViews([thread(7, { kind: "document" }, [comment(8, null, null), comment(9, OTHER)])], NONE, me, "note").open[0]
     expect(view.comments[0]).toMatchObject({ author: null, body: null, canEdit: false, canDelete: false })
   })
+})
+
+test("people show by their name, else their email", () => {
+  expect(author({ user_id: ME, email: "ada@example.com", name: "Ada Lovelace" })).toEqual({ name: "Ada Lovelace" })
+  expect(author({ user_id: ME, email: "ada@example.com", name: "ada@example.com" })).toEqual({ name: "ada@example.com" })
+  // A server from before names, and an account with neither.
+  expect(author({ user_id: ME, email: "ada@example.com" })).toEqual({ name: "ada@example.com" })
+  expect(author({ user_id: ME, email: null, name: null })).toEqual({ name: "Unknown account" })
+  expect(author(null)).toBeNull()
 })
 
 test("files are called what they are", () => {

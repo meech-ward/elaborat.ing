@@ -41,8 +41,8 @@ function RoleSelect({ label, value, onChange }: { label: string; value: MemberRo
   )
 }
 
-/** An account without an email address is named by the start of its id. */
-const nameOf = (member: Member) => member.email ?? `Account ${member.userId.slice(0, 8)}`
+/** Someone by their name, else their email; an account with neither by the start of its id. */
+const nameOf = (member: Member) => member.name ?? member.email ?? `Account ${member.userId.slice(0, 8)}`
 
 /**
  * Who a project is shared with. Its owner can invite people by email, change
@@ -209,6 +209,7 @@ export function MembersDialog({ library, projectId, title, owner, you, onClose }
                       {name}
                       {member.userId === you ? " (you)" : ""}
                     </span>
+                    {member.email && member.email !== name ? <span className="text-muted-foreground wrap-anywhere">{member.email}</span> : null}
                     {member.invited ? (
                       <span className="text-muted-foreground">Invited, not yet accepted</span>
                     ) : editable ? null : (
