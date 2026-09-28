@@ -190,8 +190,11 @@ test("the comment key comments on a heading's section in Source, and elsewhere s
   await page.keyboard.press("End")
   await page.keyboard.press("Shift+Home")
   await sourceLines(page).getByText("Create a project.").click({ button: "right" })
-  // The menu shows the key beside it.
-  await page.getByRole("menuitem", { name: /^Comment(?! on)/ }).click()
+  // Comment comes first, with the key beside it. (The menu can ignore a click
+  // that comes too soon after it opens, so it is chosen with the keyboard.)
+  await expect(page.getByRole("menuitem").first()).toHaveAccessibleName(/^Comment(?! on)/)
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Enter")
   await send(page, "Name the project first.")
   await expect(thread(page, "“2. Create a project.”")).toBeVisible()
 })
