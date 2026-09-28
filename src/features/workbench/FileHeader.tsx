@@ -26,6 +26,8 @@ export type FileHeaderView = {
   /** The switch's accessible name, such as "Drawing view". */
   label: string;
   onChange: (view: EditorView) => void;
+  /** Starts loading the views' code when the pointer or the keyboard reaches the switch. */
+  preload?: () => void;
 };
 
 /**
@@ -60,7 +62,9 @@ export function FileHeader({
     return (
       <TablineActions active={active}>
         {view && (
-          <ViewSwitch aria-label={view.label} views={view.views} names={view.names} value={view.value} onValueChange={view.onChange} />
+          <span className="contents" onPointerEnter={view.preload} onFocus={view.preload}>
+            <ViewSwitch aria-label={view.label} views={view.views} names={view.names} value={view.value} onValueChange={view.onChange} />
+          </span>
         )}
         {save && <SaveButton disabled={save.disabled} onClick={save.onSave} />}
       </TablineActions>

@@ -1,4 +1,4 @@
-export { SourceEditor, parseErrorPosition, type SourceComments, type SourceEditorApi, type SourceEditorProps } from "./SourceEditor"
+export { SourceEditor, parseErrorPosition, preloadSourceEditor, type SourceComments, type SourceEditorApi, type SourceEditorProps } from "./SourceEditor"
 export {
   languageForFormat,
   syncModelDocument,

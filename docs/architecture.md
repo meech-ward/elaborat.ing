@@ -742,6 +742,15 @@ between. If ProseMirror fixes this upstream, both can go; the browser test
 "Enter straight after arrow keys splits at the caret, every time" shows
 whether they are still needed.
 
+**Decision: the code editor and the rendered note load when they first show.**
+Monaco (about 1 MB gzip) loads with the first Source, Split or Code view, and
+the rendered note with its frame (about 0.6 MB) with the first Rendered or
+Split; pointing at the view switch starts both. Until Monaco loads, the note's
+text and undo history live in `src/features/source/sourceBuffer.ts`, grouped
+as Monaco groups rendered edits, and Monaco replays them when it mounts, so
+Ctrl+Z in Source still undoes an edit made earlier in Rendered. Both stay
+precached for offline use.
+
 ## Frontend hosting
 
 **Decision:** Cloudflare Workers with static assets, which Cloudflare now

@@ -62,14 +62,18 @@ const PROJECT_PAGE = PAGES[3]
 const FEATURES: Feature[] = [
   {
     name: "A note's Source view (Monaco)",
-    start: [/^node_modules\/monaco-editor\/esm\/vs\/languages\/definitions\/markdown\//, /^node_modules\/monaco-editor\/esm\/vs\/languages\/definitions\/mdx\//],
+    start: [
+      "src/features/source/MonacoSourceEditor.tsx",
+      /^node_modules\/monaco-editor\/esm\/vs\/languages\/definitions\/markdown\//,
+      /^node_modules\/monaco-editor\/esm\/vs\/languages\/definitions\/mdx\//,
+    ],
     workers: [/^editor\.worker-/],
     modules: [/node_modules\/monaco-editor\//, /node_modules\/prettier\//, /src\/features\/source\//],
     note: "Markdown and MDX tokenizers and the editor worker; JSON files also start json.worker",
   },
   {
     name: "A note's Rendered view (the frame)",
-    start: [],
+    start: ["src/features/rendered/RenderedEditor.tsx"],
     modules: [/virtual:preview-frame/, /src\/features\/rendered\//, /src\/preview\//, /node_modules\/prosemirror-/, /node_modules\/@mdx-js\//, /node_modules\/(shiki|@shikijs)\//],
     note: "the frame's own code (React, MDX runtime, charts) is one string inside a chunk",
   },

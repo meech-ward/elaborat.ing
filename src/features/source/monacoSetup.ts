@@ -6,6 +6,8 @@ import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import "monaco-editor/languages/definitions/mdx/register.js";
 import "monaco-editor/languages/definitions/markdown/register.js";
 import { createD2MonarchLanguage, D2_LANGUAGE_ID } from "./d2Language";
+import { getPaletteColors, type Appearance } from "@/features/appearance";
+import { monacoTheme } from "./monacoTheme";
 
 /**
  * What every Monaco editor here needs before it is created: the locally
@@ -35,4 +37,14 @@ export function setupMonaco(): void {
       monaco.languages.setMonarchTokensProvider(D2_LANGUAGE_ID, { tokenizer: { root: [] } });
     }
   }
+}
+
+/**
+ * The palette's editor theme. Monaco's theme is global, so every editor on
+ * the page follows it, the compare view's too, whichever sets it last.
+ */
+export function applyMonacoTheme(appearance: Appearance): void {
+  const name = `elaborating-${appearance.theme}-${appearance.scheme}`;
+  monaco.editor.defineTheme(name, monacoTheme(getPaletteColors(appearance), appearance.scheme));
+  monaco.editor.setTheme(name);
 }

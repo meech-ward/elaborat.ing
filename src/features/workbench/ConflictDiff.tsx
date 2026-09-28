@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
-import { setupMonaco } from "@/features/source/monacoSetup";
+import { useAppearance } from "@/features/appearance";
+import { applyMonacoTheme, setupMonaco } from "@/features/source/monacoSetup";
 
 /** Narrower than this, Monaco shows both copies in one column. */
 const SIDE_BY_SIDE_MIN_WIDTH = 700;
@@ -18,6 +19,9 @@ export function ConflictDiff({ theirs, mine, language }: {
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [sideBySide, setSideBySide] = useState(true);
+  // The palette's colours, also when no code editor has shown yet.
+  const { appearance } = useAppearance();
+  useEffect(() => applyMonacoTheme(appearance), [appearance]);
 
   useEffect(() => {
     const element = container.current;

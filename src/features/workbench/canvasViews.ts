@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { EDITOR_VIEWS, isApplePlatform, type EditorView } from "@/features/design-system";
+import { preloadSourceEditor } from "@/features/source";
 import { useCompactWorkbench } from "./compactWorkbench";
 import type { FileHeaderView } from "./FileHeader";
 import { viewShortcutDigit } from "./viewShortcuts";
@@ -57,6 +58,7 @@ export function useCanvasViews(
   }, [active, apple, views]);
   return {
     view,
-    header: { value: switchView(view), views, names: "canvas", label, onChange: (next) => onSelect(canvasView(next)) },
+    // The code editor loads when Code or Split first shows; the pointer on the switch starts it.
+    header: { value: switchView(view), views, names: "canvas", label, onChange: (next) => onSelect(canvasView(next)), preload: preloadSourceEditor },
   };
 }

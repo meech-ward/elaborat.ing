@@ -134,3 +134,30 @@ test("Ctrl+Z in the rendered prose undoes the same way, newest first, and Ctrl+S
   await expect(sourceText(page)).toContainText(`${FIRST} ONE`)
   expect(await saved(page, fake, id)).toBe(NOTE.replace(FIRST, `${FIRST} ONE`))
 })
+
+test("a note opened in Rendered edits and undoes without loading the code editor, and Source takes its history over", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  // Opened again, the note shows Rendered, the view it was left in.
+  await page.reload()
+  await expect(first(page)).toHaveText(FIRST, { timeout: 15_000 })
+  await typeAtEnd(page, first(page), " ONE")
+  await typeAtEnd(page, second(page), " TWO")
+  await expect(second(page)).toHaveText(`${SECOND} TWO`)
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(second(page)).toHaveText(SECOND)
+  await expect(first(page)).toHaveText(`${FIRST} ONE`)
+  // The code editor loads only when Source shows.
+  await expect(page.locator(".monaco-editor")).toHaveCount(0)
+
+  // Source has the same history: TWO can be redone, then both undone in turn.
+  await toSource(page)
+  await expect(sourceText(page)).toContainText(`${FIRST} ONE`)
+  await expect(sourceText(page)).not.toContainText("TWO")
+  await page.keyboard.press("ControlOrMeta+Shift+z")
+  await expect(sourceText(page)).toContainText(`${SECOND} TWO`)
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(sourceText(page)).not.toContainText("TWO")
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(sourceText(page)).not.toContainText("ONE")
+  expect(await saved(page, fake, id)).toBe(NOTE)
+})

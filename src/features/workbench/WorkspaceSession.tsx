@@ -4,10 +4,10 @@ import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, isAppl
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
-import { SourceEditor, type SourceEditorApi } from "@/features/source";
+import { SourceEditor, preloadSourceEditor, type SourceEditorApi } from "@/features/source";
 import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
-import { RenderedEditor } from "@/features/rendered";
+import { LazyRenderedEditor, preloadRenderedEditor } from "./LazyRenderedEditor";
 import type { RenderedPatchOptions } from "../source/renderedHistory";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
@@ -41,6 +41,12 @@ import {
 } from "./session";
 
 type Mode = EditorView;
+
+/** Each view's code loads when it first shows; the pointer on the view switch starts both. */
+function preloadViews() {
+  preloadSourceEditor();
+  preloadRenderedEditor();
+}
 
 /**
  * One open file: its document, undo history and the revision its edits are
@@ -639,7 +645,7 @@ export function WorkspaceSession({
         path={initial.path}
         active={active}
         navigation={navigation}
-        view={isNote ? { value: view, views, names: "note", label: "Editor mode", onChange: switchMode } : undefined}
+        view={isNote ? { value: view, views, names: "note", label: "Editor mode", onChange: switchMode, preload: preloadViews } : undefined}
         save={!readOnly && overallDirty ? { disabled: saveDisabled, onSave: save } : null}
         actions={fileActions}
       />
@@ -789,7 +795,7 @@ export function WorkspaceSession({
               {componentGate.kind === "ask" ? (
                 <CustomCodeNotice files={componentGate.files} onRun={componentGate.run} onShowSource={() => switchMode("source")} />
               ) : (
-              <RenderedEditor
+              <LazyRenderedEditor
                 document={snapshot}
                 active={active && inRendered}
                 documentId={snapshot.docId}
