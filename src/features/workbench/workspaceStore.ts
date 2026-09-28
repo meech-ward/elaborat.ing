@@ -42,6 +42,9 @@ export class MissingFileError extends Error {
   }
 }
 
+/** The key that scopes a project's workbench preferences in this browser (`WorkspaceStore.persistenceKey`). */
+export const workspacePersistenceKey = (partition: string, projectId: string): string => JSON.stringify([partition, projectId])
+
 /**
  * The workbench's storage for one project. `afterSave` runs after every local
  * save (to start a sync); `subscribeSync` reports changes sync makes.
@@ -51,7 +54,7 @@ export function projectWorkspace(
   { afterSave, subscribeSync }: { afterSave: () => void; subscribeSync: (listener: () => void) => () => void },
 ): WorkspaceStore {
   return {
-    persistenceKey: JSON.stringify([store.partition, store.projectId]),
+    persistenceKey: workspacePersistenceKey(store.partition, store.projectId),
     async listEntries() {
       const { files, directories, folders } = await store.listEntries()
       return { files: files.map((file) => ({ ...file, revision: revisionOf(file.revision) })), directories, folders }

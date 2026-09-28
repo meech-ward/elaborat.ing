@@ -20,7 +20,10 @@ async function startWriting(page: Page) {
 
 /** Make a note named `name` holding `text`, and save it. */
 async function writeNote(page: Page, name: string, text: string) {
-  await page.getByRole("button", { name: "New note", exact: true }).click()
+  // From the New file menu: the local project starts with the welcome note, so it is not empty.
+  await page.getByRole("button", { name: "New file" }).click()
+  await page.getByRole("menuitem", { name: "New note", exact: true }).click()
+  await expect(page.getByRole("textbox", { name: /^Name of the new note in / })).toBeFocused()
   await page.keyboard.type(name)
   await page.keyboard.press("Enter")
   await expect(page.getByRole("tab", { name: `${name}.mdx`, exact: true })).toBeVisible()
@@ -84,13 +87,34 @@ test("signing in uploads the local project once, as Local project, and opens it"
   expect([...fake.server.projects.values()].map((project) => project.title).sort()).toEqual(["Earlier", "Local project"])
 })
 
-test("an empty local project uploads nothing", async ({ page }) => {
+test("the first local project opens a welcome note, rendered, with a drawing and a diagram", async ({ page }) => {
+  await fakeSupabase(page)
+  await startWriting(page)
+  await expect(page.getByRole("tab", { name: "welcome.mdx", exact: true })).toHaveAttribute("aria-selected", "true")
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  await expect(frame.getByRole("heading", { level: 1, name: "Welcome to elaborat.ing" })).toBeVisible({ timeout: 30_000 })
+  await expect(frame.locator('[data-resource-pixels="sketch.excalidraw"] svg')).toBeVisible({ timeout: 30_000 })
+  await expect(frame.locator('[data-resource-pixels="flow.d2"] svg')).toBeVisible({ timeout: 30_000 })
+  // The diagram's generated files stay out of the list, as for any diagram.
+  const files = page.getByRole("navigation", { name: "Workspace files" })
+  for (const name of ["welcome.mdx", "sketch.excalidraw", "flow.d2"]) await expect(files.getByRole("button", { name, exact: true })).toBeVisible()
+  await expect(files.getByRole("button", { name: "flow.excalidraw", exact: true })).toHaveCount(0)
+})
+
+test("a local project with only the untouched welcome uploads nothing, and the welcome is made once", async ({ page }) => {
   const fake = await fakeSupabase(page)
   await startWriting(page)
+  await expect(page.getByRole("tab", { name: "welcome.mdx", exact: true })).toBeVisible()
   await signIn(page)
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
   await expect(page.getByText("No projects yet.")).toBeVisible()
   await quiet(fake)
   expect(creates(fake)).toBe(0)
   expect(new URL(page.url()).pathname).toBe("/")
+
+  // Signed out again, a new local project starts empty.
+  await page.getByRole("banner").getByRole("button", { name: `Signed in as ${person.email}` }).click()
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
+  await startWriting(page)
+  await expect(page.getByText("No files yet. Create a note to start.")).toBeVisible()
 })

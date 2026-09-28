@@ -45,3 +45,44 @@ test("an empty local project is not uploaded, only cleared", async () => {
   expect(await db.listProjects(account.partition)).toEqual([])
   expect(await db.listProjects(LOCAL_PARTITION)).toEqual([])
 })
+
+const welcome = [
+  { path: "welcome.mdx", content: '# Welcome\n\n<Diagram src="flow.d2" />\n' },
+  { path: "flow.d2", content: "a -> b\n" },
+]
+
+test("a new local project starts with the starter files, and deleting them does not bring them back", async () => {
+  const db = new MemoryProjectDatabase()
+  let loads = 0
+  const starter = async () => (loads++, welcome)
+  expect(await ensureLocalProject(db, async () => {}, starter)).toBe(true)
+  expect((await local(db).listEntries()).files.map((file) => file.path)).toEqual(["flow.d2", "welcome.mdx"])
+  expect((await local(db).read("welcome.mdx")).content).toBe(welcome[0].content)
+
+  for (const { path } of welcome) await local(db).delete(path, (await local(db).read(path)).revision)
+  expect(await ensureLocalProject(db, async () => {}, starter)).toBe(false)
+  expect((await local(db).listEntries()).files).toEqual([])
+  expect(loads).toBe(1)
+})
+
+test("on signing in, a local project with only the untouched starter files is removed, not uploaded", async () => {
+  const db = new MemoryProjectDatabase()
+  const account = device(new FakeProjectServer(), undefined, db)
+  const starter = async () => welcome
+  await ensureLocalProject(db, async () => {}, starter)
+  expect(await moveLocalProject(db, account.partition, undefined, starter)).toBeNull()
+  expect(await db.listProjects(account.partition)).toEqual([])
+  expect(await db.listProjects(LOCAL_PARTITION)).toEqual([])
+})
+
+test("on signing in, a starter file the person changed moves with the rest", async () => {
+  const db = new MemoryProjectDatabase()
+  const account = device(new FakeProjectServer(), undefined, db)
+  const starter = async () => welcome
+  await ensureLocalProject(db, async () => {}, starter)
+  await put(local(db), "welcome.mdx", "# Mine now\n")
+  const id = await moveLocalProject(db, account.partition, undefined, starter)
+  expect(id).not.toBeNull()
+  expect(await account.paths(id!)).toEqual(["flow.d2", "welcome.mdx"])
+  expect((await account.files(id!).read("welcome.mdx")).content).toBe("# Mine now\n")
+})

@@ -70,7 +70,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   useEffect(() => {
     if (!account.online) return
     let active = true
-    moveLocalProjectTo(library)
+    moveLocalProjectTo(library, () => import("./welcomeNote"))
       .then((id) => (id && active ? navigate({ href: projectHref(id) }) : undefined))
       .catch((cause: unknown) => active && setError(`The local project did not move to your account: ${message(cause)}`))
     return () => {

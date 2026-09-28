@@ -10,7 +10,8 @@ import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
 import { canEdit } from "@/features/project-storage/model"
-import { projectWorkspace } from "@/features/workbench/workspaceStore"
+import { projectWorkspace, workspacePersistenceKey } from "@/features/workbench/workspaceStore"
+import { writeProjectView } from "@/features/workbench/projectViews"
 import { loadWorkbench } from "@/features/workbench/load"
 import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
 import { createClient } from "@/lib/supabase/client"
@@ -79,10 +80,17 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     }
   }, [library, navigate, projectId])
 
-  // Download on first open, then sync.
+  // Download on first open, then sync. A new local project's welcome note
+  // first opens in its Rendered view, on a desktop too.
+  const viewsKey = workspacePersistenceKey(library.partition, projectId)
   useEffect(() => {
     let active = true
-    const opening = account.local ? openLocalProject() : library.open(projectId)
+    const opening = account.local
+      ? openLocalProject(() => import("./welcomeNote")).then((welcome) => {
+          if (welcome) writeProjectView(viewsKey, welcome, "rendered")
+          return true
+        })
+      : library.open(projectId)
     opening
       .then((found) => {
         if (!active) return
@@ -93,7 +101,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     return () => {
       active = false
     }
-  }, [account.local, account.online, library, projectId, syncNow])
+  }, [account.local, account.online, library, projectId, syncNow, viewsKey])
 
   // The project's comments, in memory while it is open. Its own writes are
   // marked as seen, so they do not come back as a change to pull.

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { deleteAccountProjects, IndexedProjectDatabase } from "@/features/project-storage/database"
 import { ProjectFileStore } from "@/features/project-storage/fileStore"
 import { ProjectLibrary, offlineRemote, type LibraryState } from "@/features/project-storage/library"
-import { LOCAL_PARTITION, ensureLocalProject, moveLocalProject } from "@/features/project-storage/localProject"
+import { LOCAL_PARTITION, ensureLocalProject, moveLocalProject, type StarterFiles } from "@/features/project-storage/localProject"
 import { partitionKey } from "@/features/project-storage/model"
 import { SupabaseProjectRemote } from "@/features/project-storage/remote"
 
@@ -75,24 +75,65 @@ export async function forgetAccountOnDevice(userId: string): Promise<void> {
   }
 }
 
-/** Make sure the local project is on this device, for someone without an account. */
-export function openLocalProject(): Promise<boolean> {
+/** Set once this browser has made a local project with the welcome note, so it is made only once. */
+const WELCOMED_KEY = "elaborating.local-welcome.v1"
+
+/**
+ * Loads the welcome note's files (./welcomeNote). Each caller passes its own
+ * `() => import("./welcomeNote")`, so the pages that never need it (and the
+ * code every page shares) do not name its chunk.
+ */
+export type WelcomeLoader = () => Promise<{ WELCOME_NOTE: string; WELCOME_FILES: StarterFiles }>
+
+/**
+ * Make sure the local project is on this device, for someone without an
+ * account. The first one this browser makes starts with the welcome note;
+ * then this resolves to the note's path, otherwise to null.
+ */
+export async function openLocalProject(welcome: WelcomeLoader): Promise<string | null> {
   database ??= new IndexedProjectDatabase()
-  return ensureLocalProject(database).then(() => true)
+  const made: { note?: string } = {}
+  const created = await ensureLocalProject(database, undefined, async () => {
+    if (readFlag(WELCOMED_KEY)) return []
+    const { WELCOME_NOTE, WELCOME_FILES } = await welcome()
+    made.note = WELCOME_NOTE
+    return WELCOME_FILES
+  })
+  if (!created || !made.note) return null
+  writeFlag(WELCOMED_KEY)
+  return made.note
+}
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+function writeFlag(key: string): void {
+  try {
+    localStorage.setItem(key, "1")
+  } catch {
+    // Storage may be blocked; then each new local project is welcomed.
+  }
 }
 
 const moves = new Map<string, Promise<string | null>>()
 
 /**
- * After signing in: move the local project, if it has files, into the
- * account's library, where sync uploads it. Its id, or null. Once per page.
+ * After signing in: move the local project, if it has files of the person's
+ * own, into the account's library, where sync uploads it. Its id, or null.
+ * Once per page.
  */
-export function moveLocalProjectTo(library: ProjectLibrary): Promise<string | null> {
+export function moveLocalProjectTo(library: ProjectLibrary, welcome: WelcomeLoader): Promise<string | null> {
   database ??= new IndexedProjectDatabase()
   const db = database
   let moving = moves.get(library.partition)
   if (!moving) {
-    moving = moveLocalProject(db, library.partition).then(async (id) => {
+    // A local project with only the welcome, as it was made, holds nothing of the person's to keep.
+    moving = moveLocalProject(db, library.partition, undefined, async () => (await welcome()).WELCOME_FILES).then(async (id) => {
       if (id) await library.load()
       return id
     })
