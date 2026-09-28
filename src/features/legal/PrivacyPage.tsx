@@ -25,14 +25,16 @@ export function PrivacyPage() {
       <h2>Where it is stored</h2>
       <ul>
         <li>Supabase, in the United States, holds the database, sign-in and your files.</li>
-        <li>Cloudflare serves the site.</li>
+        <li>
+          Cloudflare serves the site, and its Web Analytics counts page views without cookies and without identifying you.
+        </li>
         <li>Amazon Web Services (SES) sends the app's emails, such as sign-in links and invitations.</li>
       </ul>
       <p>They handle this data only to run the app.</p>
 
       <h2>What is never done with it</h2>
       <p>
-        Your data is not sold, and there are no ads or tracking scripts. The person who runs the app can reach the database, and looks at your data
+        Your data is not sold, and there are no ads or advertising trackers. The person who runs the app can reach the database, and looks at your data
         only to fix a problem, when you ask for help, or when the law requires it.
       </p>
 
