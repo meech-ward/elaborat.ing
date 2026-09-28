@@ -114,28 +114,33 @@ function beforeFocusCheck(first: () => void) {
 /** Commented text to mark, as document ranges; `active` is the thread open in the panel. */
 export type CommentMarkRange = { id: string; from: number; to: number; active: boolean };
 
-type CommentMarksState = { marks: CommentMarkRange[]; flash: string | null; set: DecorationSet };
-type CommentMarksMeta = { marks?: CommentMarkRange[]; flash?: string | null };
+type Flash = { from: number; to: number };
+type CommentMarksState = { marks: CommentMarkRange[]; flash: Flash | null; set: DecorationSet };
+type CommentMarksMeta = { marks?: CommentMarkRange[]; flash?: Flash | null };
 const commentMarksKey = new PluginKey<CommentMarksState>("comment-marks");
 
 /**
  * Marks commented text with the app's highlight classes (the library's
  * commentHighlight.css, which the frame's stylesheet imports). The marks move
  * with edits until the next set arrives; each carries its thread's id, so a
- * click on it can open the thread.
+ * click on it can open the thread. `flash` is text being shown from the
+ * panel, marked as the open thread's and flashed once.
  */
 function commentMarksPlugin() {
-  const decorate = (doc: PMNode, marks: CommentMarkRange[], flash: string | null) =>
-    DecorationSet.create(
-      doc,
-      marks.flatMap((mark) => {
-        const from = Math.max(0, Math.min(mark.from, doc.content.size));
-        const to = Math.max(0, Math.min(mark.to, doc.content.size));
+  const clamp = (doc: PMNode, position: number) => Math.max(0, Math.min(position, doc.content.size));
+  const decorate = (doc: PMNode, marks: CommentMarkRange[], flash: Flash | null) =>
+    DecorationSet.create(doc, [
+      ...marks.flatMap((mark) => {
+        const from = clamp(doc, mark.from);
+        const to = clamp(doc, mark.to);
         if (from >= to) return [];
-        const classes = ["comment-highlight", mark.active && "comment-highlight-active", mark.id === flash && "comment-highlight-flash"];
-        return [Decoration.inline(from, to, { class: classes.filter(Boolean).join(" "), "data-comment-thread": mark.id }, { id: mark.id })];
+        const classes = mark.active ? "comment-highlight comment-highlight-active" : "comment-highlight";
+        return [Decoration.inline(from, to, { class: classes, "data-comment-thread": mark.id })];
       }),
-    );
+      ...(flash && clamp(doc, flash.from) < clamp(doc, flash.to)
+        ? [Decoration.inline(clamp(doc, flash.from), clamp(doc, flash.to), { class: "comment-highlight comment-highlight-active comment-highlight-flash" })]
+        : []),
+    ]);
   return new Plugin<CommentMarksState>({
     key: commentMarksKey,
     state: {
@@ -145,6 +150,7 @@ function commentMarksPlugin() {
         let { marks, flash } = value;
         if (tr.docChanged) {
           marks = marks.map((mark) => ({ ...mark, from: tr.mapping.map(mark.from, 1), to: tr.mapping.map(mark.to, -1) }));
+          if (flash) flash = { from: tr.mapping.map(flash.from, 1), to: tr.mapping.map(flash.to, -1) };
         }
         if (!meta && !tr.docChanged) return value;
         if (meta?.marks) marks = meta.marks;
@@ -559,26 +565,24 @@ export class FluidEditor {
   }
 
   /**
-   * Scroll a mark into view and flash it; `focus` puts the caret at its
-   * start and takes the keyboard. False when there is no such mark.
+   * Scroll commented text (a document range) into view and flash it;
+   * `focus` puts the caret at its start and takes the keyboard.
    */
-  revealCommentMark(id: string, focus: boolean): boolean {
-    const mark = commentMarksKey.getState(this.view.state)?.marks.find((candidate) => candidate.id === id);
-    if (!mark) return false;
+  revealCommentRange(from: number, to: number, focus: boolean) {
     const { doc } = this.view.state;
-    const from = Math.max(0, Math.min(mark.from, doc.content.size));
-    const tr = this.view.state.tr.setMeta(commentMarksKey, { flash: id } satisfies CommentMarksMeta);
-    if (focus) tr.setSelection(TextSelection.near(doc.resolve(from)));
+    const start = Math.max(0, Math.min(from, doc.content.size));
+    const end = Math.max(start, Math.min(to, doc.content.size));
+    const tr = this.view.state.tr.setMeta(commentMarksKey, { flash: { from: start, to: end } } satisfies CommentMarksMeta);
+    if (focus) tr.setSelection(TextSelection.near(doc.resolve(start)));
     this.view.dispatch(tr);
     if (focus) this.view.focus();
-    const element = this.view.dom.querySelector(`[data-comment-thread="${CSS.escape(id)}"]`);
+    const element = this.view.dom.querySelector(".comment-highlight-flash");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     element?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     window.clearTimeout(this.flashTimer);
     this.flashTimer = window.setTimeout(() => {
       this.view.dispatch(this.view.state.tr.setMeta(commentMarksKey, { flash: null } satisfies CommentMarksMeta));
     }, 1500);
-    return true;
   }
 
   destroy() {

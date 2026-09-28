@@ -137,8 +137,8 @@ export type RenderedComments = {
 };
 
 export type RenderedEditorApi = {
-  /** Scroll a commented range into view and flash it; `focus` moves the keyboard to its start. */
-  revealComment(threadId: string, focus: boolean): void;
+  /** Scroll the rendered text of source[from, to) into view and flash it; `focus` moves the keyboard to its start. */
+  revealRange(from: number, to: number, focus: boolean): void;
 };
 
 /** A comment action floating over the frame, at a place in the editor's box. */
@@ -493,12 +493,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
-      revealComment(threadId, focus) {
+      revealRange(from, to, focus) {
         const frame = frameRef.current;
-        if (!frame?.contentWindow) return;
+        const current = authority.current;
+        const range = current ? fluidRangeForSource(current, from, to) : null;
+        if (!frame?.contentWindow || !current || !range) return;
         // The frame can take the keyboard only once the page gives it to the frame.
         if (focus) frame.focus();
-        frame.contentWindow.postMessage({ kind: "comment-reveal", session, id: threadId, focus }, "*");
+        frame.contentWindow.postMessage({ kind: "comment-reveal", session, revision: current.revision, from: range.from, to: range.to, focus }, "*");
       },
     };
     return () => {

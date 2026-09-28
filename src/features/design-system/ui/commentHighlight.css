@@ -21,7 +21,7 @@
   background-color: color-mix(in oklab, var(--focus) 22%, transparent);
   text-decoration-style: solid;
 }
-.comment-highlight.comment-highlight-flash {
+.comment-highlight-flash {
   animation: comment-highlight-flash 1.4s ease-out;
 }
 @keyframes comment-highlight-flash {
@@ -31,6 +31,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .comment-highlight-flash,
   .comment-highlight.comment-highlight-flash {
     animation: none;
     background-color: color-mix(in oklab, var(--focus) 38%, transparent);

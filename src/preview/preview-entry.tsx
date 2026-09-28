@@ -787,7 +787,8 @@ window.addEventListener("message", (event: MessageEvent) => {
     return;
   }
   if (message.kind === "comment-reveal") {
-    fluidEditor?.revealCommentMark(message.id, message.focus);
+    // Ranges are for the revision on screen; one for another is dropped.
+    if (fluidEditor?.shownRevision === message.revision) fluidEditor.revealCommentRange(message.from, message.to, message.focus);
     return;
   }
   if (message.kind === "resources") {

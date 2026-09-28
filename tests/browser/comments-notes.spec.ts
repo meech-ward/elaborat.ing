@@ -204,6 +204,13 @@ test("markers and highlights open the panel at their thread, and the panel shows
   await quote.getByRole("button", { name: /where agents help/ }).first().click()
   await expect(frameOf(page).locator(".comment-highlight-flash")).toHaveText(["where agents help"])
   await expect(frameOf(page).getByRole("textbox", { name: "Rendered document" })).toBeFocused()
+
+  // A resolved thread is no longer marked, and its text still shows from the panel.
+  await quote.getByRole("button", { name: "Resolve" }).click()
+  await expect(frameOf(page).locator(".comment-highlight")).toHaveText(["Steps"])
+  await panel(page).getByRole("button", { name: "Resolved 1" }).click()
+  await quote.getByRole("button", { name: /where agents help/ }).first().click()
+  await expect(frameOf(page).locator(".comment-highlight-flash")).toHaveText(["where agents help"])
 })
 
 test("a thread whose text is deleted shows in the panel as detached, with its quote", async ({ page }) => {

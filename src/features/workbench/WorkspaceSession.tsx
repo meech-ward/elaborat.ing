@@ -341,7 +341,7 @@ export function WorkspaceSession({
     onReveal: (mark) => {
       const sourceShown = view !== "rendered" || !isNote;
       if (sourceShown) editorApi.current?.revealRange(mark.from, mark.to, true);
-      if (isNote && view !== "source") renderedApi.current?.revealComment(mark.id, !sourceShown);
+      if (isNote && view !== "source") renderedApi.current?.revealRange(mark.from, mark.to, !sourceShown);
     },
   });
   const commentProps = {

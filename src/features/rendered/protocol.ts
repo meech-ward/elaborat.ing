@@ -360,11 +360,13 @@ export const parentMessageSchema = z.union([
   resourcesMessageSchema,
   appearanceMessageSchema,
   commentMarksMessageSchema,
-  // Show a commented range: scroll to it, flash it, and take the keyboard if asked.
+  // Show commented text (a document range): scroll to it, flash it, and take the keyboard if asked.
   z.object({
     kind: z.literal("comment-reveal"),
     session: z.string().min(8),
-    id: z.string().min(1).max(64),
+    revision: z.number().int().nonnegative(),
+    from: z.number().int().nonnegative(),
+    to: z.number().int().nonnegative(),
     focus: z.boolean(),
   }).strict(),
 ]);
