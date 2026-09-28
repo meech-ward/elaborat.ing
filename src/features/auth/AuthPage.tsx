@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { DottedPage } from "@/components/panel"
 import { Callout } from "@/features/design-system"
+import { LegalLinks } from "@/features/legal"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabaseConfigured } from "@/lib/supabase/client"
 import { AccountHeader } from "./AccountHeader"
@@ -8,8 +9,9 @@ import { AccountHeader } from "./AccountHeader"
 /**
  * The frame around the sign-in pages: the top bar, then one card 400 wide
  * in the middle of the dotted page, with the title at 21/600 and an
- * optional line under it. `hideTitle` keeps the h1 for screen readers only,
- * for a card that shows its own heading.
+ * optional line under it, and the privacy and terms links at the foot.
+ * `hideTitle` keeps the h1 for screen readers only, for a card that shows
+ * its own heading.
  */
 export function AuthPage({
   title,
@@ -45,6 +47,9 @@ export function AuthPage({
           </CardContent>
         </Card>
       </main>
+      <footer className="px-4 pb-4">
+        <LegalLinks />
+      </footer>
     </DottedPage>
   )
 }

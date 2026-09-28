@@ -72,6 +72,8 @@ A few files hold the hosted instance's values. Change them before you deploy.
 Optional: the email subjects in `config.toml` and the templates in
 `supabase/templates/` name elaborat.ing.
 
+The privacy and terms pages (`/privacy` and `/terms`, in `src/features/legal/`) are generic text, not legal advice: whoever runs a copy, the hosted one included, should review them and change what does not fit, `SOURCE_REPOSITORY` too.
+
 If you don't know `<site>` yet (a `workers.dev` address is shown on the first
 deploy), deploy the app first (steps 4 and 5), then set `site_url` and push the
 config again.
