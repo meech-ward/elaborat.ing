@@ -48,9 +48,10 @@ async function expectNoAxeViolations(page: Page, selector: string) {
 }
 
 const kinds = [
-  { item: "New note", noun: "note", proposed: "untitled.mdx", name: "ideas", path: "ideas.mdx", existing: "# Ideas\n" },
-  { item: "New drawing", noun: "drawing", proposed: "untitled.excalidraw", name: "sketch", path: "sketch.excalidraw", existing: DRAWING },
-  { item: "New diagram", noun: "diagram", proposed: "untitled.d2", name: "flow", path: "flow.d2", existing: "a -> b\n" },
+  { item: "New note", noun: "note", proposed: "untitled.mdx", name: "ideas", path: "ideas.mdx", existing: "# Ideas\n", generated: [] as string[] },
+  { item: "New drawing", noun: "drawing", proposed: "untitled.excalidraw", name: "sketch", path: "sketch.excalidraw", existing: DRAWING, generated: [] as string[] },
+  // Once a diagram compiles, its view saves the canvas and sidecar made from it.
+  { item: "New diagram", noun: "diagram", proposed: "untitled.d2", name: "flow", path: "flow.d2", existing: "a -> b\n", generated: ["flow.d2.json", "flow.excalidraw"] },
 ]
 
 for (const kind of kinds) {
@@ -66,7 +67,7 @@ for (const kind of kinds) {
     await page.keyboard.press("Enter")
     await expect(field).toHaveCount(0)
     await expect(page.getByRole("tab", { name: kind.path })).toBeVisible()
-    await expect.poll(() => serverPaths(fake, id)).toEqual(["a.md", kind.path].sort())
+    await expect.poll(() => serverPaths(fake, id).filter((path) => !kind.generated.includes(path))).toEqual(["a.md", kind.path].sort())
   })
 
   test(`Escape creates no ${kind.noun}, and a taken name is refused in place`, async ({ page }) => {
