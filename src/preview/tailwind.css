@@ -91,6 +91,11 @@
   border-radius: 0.3rem;
   padding: 0.1em 0.35em;
 }
+/* The chip marks inline code, so Typography's literal backticks go. */
+.preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+.preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
 .preview-prose .reading-table {
   border: 1px solid var(--panel-border);
   border-radius: 0.75rem;

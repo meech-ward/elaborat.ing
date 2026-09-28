@@ -1,11 +1,11 @@
 {
   "version": 1,
   "language": "d2",
-  "sourceHash": "90c5ebe6",
+  "sourceHash": "87fcca00",
   "overrides": {},
   "baseline": {
     "language": "d2",
-    "sourceHash": "90c5ebe6",
+    "sourceHash": "87fcca00",
     "elements": {
       "d2:you": {
         "x": 12,
@@ -121,126 +121,8 @@
           "lineHeight": 1.25
         }
       },
-      "d2:project": {
-        "x": 274,
-        "y": 12,
-        "width": 143,
-        "height": 66,
-        "style": {
-          "strokeColor": "#1e1e1e",
-          "backgroundColor": "transparent",
-          "fillStyle": "solid",
-          "strokeWidth": 2,
-          "strokeStyle": "solid",
-          "roughness": 1,
-          "roundness": {
-            "type": 3
-          },
-          "opacity": 100
-        },
-        "snapshot": {
-          "id": "d2:project",
-          "type": "rectangle",
-          "x": 274,
-          "y": 12,
-          "width": 143,
-          "height": 66,
-          "angle": 0,
-          "strokeColor": "#1e1e1e",
-          "backgroundColor": "transparent",
-          "fillStyle": "solid",
-          "strokeWidth": 2,
-          "strokeStyle": "solid",
-          "roughness": 1,
-          "opacity": 100,
-          "groupIds": [],
-          "frameId": null,
-          "index": "a2",
-          "roundness": {
-            "type": 3
-          },
-          "seed": 2503043887,
-          "version": 1,
-          "versionNonce": 1389155892,
-          "isDeleted": false,
-          "boundElements": [
-            {
-              "type": "text",
-              "id": "d2:project:label"
-            },
-            {
-              "type": "arrow",
-              "id": "d2:(you -> project)[0]"
-            },
-            {
-              "type": "arrow",
-              "id": "d2:(project <- agent)[0]"
-            }
-          ],
-          "updated": 1,
-          "link": null,
-          "locked": false
-        }
-      },
-      "d2:project:label": {
-        "x": 296.5,
-        "y": 35,
-        "width": 98,
-        "height": 20,
-        "style": {
-          "strokeColor": "#1e1e1e",
-          "backgroundColor": "transparent",
-          "fillStyle": "solid",
-          "strokeWidth": 2,
-          "strokeStyle": "solid",
-          "roughness": 1,
-          "roundness": null,
-          "opacity": 100,
-          "fontSize": 16,
-          "fontFamily": 5,
-          "textAlign": "center",
-          "verticalAlign": "middle"
-        },
-        "snapshot": {
-          "id": "d2:project:label",
-          "type": "text",
-          "x": 296.5,
-          "y": 35,
-          "width": 98,
-          "height": 20,
-          "angle": 0,
-          "strokeColor": "#1e1e1e",
-          "backgroundColor": "transparent",
-          "fillStyle": "solid",
-          "strokeWidth": 2,
-          "strokeStyle": "solid",
-          "roughness": 1,
-          "opacity": 100,
-          "groupIds": [],
-          "frameId": null,
-          "index": "a3",
-          "roundness": null,
-          "seed": 4063885463,
-          "version": 1,
-          "versionNonce": 1773392580,
-          "isDeleted": false,
-          "boundElements": null,
-          "updated": 1,
-          "link": null,
-          "locked": false,
-          "text": "This project",
-          "fontSize": 16,
-          "fontFamily": 5,
-          "textAlign": "center",
-          "verticalAlign": "middle",
-          "containerId": "d2:project",
-          "originalText": "This project",
-          "autoResize": true,
-          "lineHeight": 1.25
-        }
-      },
       "d2:agent": {
-        "x": 598,
+        "x": 105,
         "y": 12,
         "width": 130,
         "height": 66,
@@ -259,7 +141,7 @@
         "snapshot": {
           "id": "d2:agent",
           "type": "rectangle",
-          "x": 598,
+          "x": 105,
           "y": 12,
           "width": 130,
           "height": 66,
@@ -273,7 +155,7 @@
           "opacity": 100,
           "groupIds": [],
           "frameId": null,
-          "index": "a4",
+          "index": "a2",
           "roundness": {
             "type": 3
           },
@@ -288,7 +170,7 @@
             },
             {
               "type": "arrow",
-              "id": "d2:(project <- agent)[0]"
+              "id": "d2:(agent -> project)[0]"
             }
           ],
           "updated": 1,
@@ -297,7 +179,7 @@
         }
       },
       "d2:agent:label": {
-        "x": 620.5,
+        "x": 127.5,
         "y": 35,
         "width": 85,
         "height": 20,
@@ -318,7 +200,7 @@
         "snapshot": {
           "id": "d2:agent:label",
           "type": "text",
-          "x": 620.5,
+          "x": 127.5,
           "y": 35,
           "width": 85,
           "height": 20,
@@ -332,7 +214,7 @@
           "opacity": 100,
           "groupIds": [],
           "frameId": null,
-          "index": "a5",
+          "index": "a3",
           "roundness": null,
           "seed": 4177585019,
           "version": 1,
@@ -353,11 +235,129 @@
           "lineHeight": 1.25
         }
       },
+      "d2:project": {
+        "x": 37,
+        "y": 249,
+        "width": 143,
+        "height": 66,
+        "style": {
+          "strokeColor": "#1e1e1e",
+          "backgroundColor": "transparent",
+          "fillStyle": "solid",
+          "strokeWidth": 2,
+          "strokeStyle": "solid",
+          "roughness": 1,
+          "roundness": {
+            "type": 3
+          },
+          "opacity": 100
+        },
+        "snapshot": {
+          "id": "d2:project",
+          "type": "rectangle",
+          "x": 37,
+          "y": 249,
+          "width": 143,
+          "height": 66,
+          "angle": 0,
+          "strokeColor": "#1e1e1e",
+          "backgroundColor": "transparent",
+          "fillStyle": "solid",
+          "strokeWidth": 2,
+          "strokeStyle": "solid",
+          "roughness": 1,
+          "opacity": 100,
+          "groupIds": [],
+          "frameId": null,
+          "index": "a4",
+          "roundness": {
+            "type": 3
+          },
+          "seed": 2503043887,
+          "version": 1,
+          "versionNonce": 1389155892,
+          "isDeleted": false,
+          "boundElements": [
+            {
+              "type": "text",
+              "id": "d2:project:label"
+            },
+            {
+              "type": "arrow",
+              "id": "d2:(you -> project)[0]"
+            },
+            {
+              "type": "arrow",
+              "id": "d2:(agent -> project)[0]"
+            }
+          ],
+          "updated": 1,
+          "link": null,
+          "locked": false
+        }
+      },
+      "d2:project:label": {
+        "x": 59.5,
+        "y": 272,
+        "width": 98,
+        "height": 20,
+        "style": {
+          "strokeColor": "#1e1e1e",
+          "backgroundColor": "transparent",
+          "fillStyle": "solid",
+          "strokeWidth": 2,
+          "strokeStyle": "solid",
+          "roughness": 1,
+          "roundness": null,
+          "opacity": 100,
+          "fontSize": 16,
+          "fontFamily": 5,
+          "textAlign": "center",
+          "verticalAlign": "middle"
+        },
+        "snapshot": {
+          "id": "d2:project:label",
+          "type": "text",
+          "x": 59.5,
+          "y": 272,
+          "width": 98,
+          "height": 20,
+          "angle": 0,
+          "strokeColor": "#1e1e1e",
+          "backgroundColor": "transparent",
+          "fillStyle": "solid",
+          "strokeWidth": 2,
+          "strokeStyle": "solid",
+          "roughness": 1,
+          "opacity": 100,
+          "groupIds": [],
+          "frameId": null,
+          "index": "a5",
+          "roundness": null,
+          "seed": 4063885463,
+          "version": 1,
+          "versionNonce": 1773392580,
+          "isDeleted": false,
+          "boundElements": null,
+          "updated": 1,
+          "link": null,
+          "locked": false,
+          "text": "This project",
+          "fontSize": 16,
+          "fontFamily": 5,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "containerId": "d2:project",
+          "originalText": "This project",
+          "autoResize": true,
+          "lineHeight": 1.25
+        }
+      },
       "d2:(you -> project)[0]": {
-        "x": 90,
-        "y": 45,
-        "width": 179,
-        "height": 0,
+        "x": 48.5,
+        "y": 83,
+        "width": 0,
+        "height": 161,
         "style": {
           "strokeColor": "#1e1e1e",
           "backgroundColor": "transparent",
@@ -373,18 +373,18 @@
               0
             ],
             [
-              179,
-              0
+              0,
+              161
             ]
           ]
         },
         "snapshot": {
           "id": "d2:(you -> project)[0]",
           "type": "arrow",
-          "x": 90,
-          "y": 45,
-          "width": 179,
-          "height": 0,
+          "x": 48.5,
+          "y": 83,
+          "width": 0,
+          "height": 161,
           "angle": 0,
           "strokeColor": "#1e1e1e",
           "backgroundColor": "transparent",
@@ -416,8 +416,8 @@
               0
             ],
             [
-              179,
-              0
+              0,
+              161
             ]
           ],
           "lastCommittedPoint": null,
@@ -426,8 +426,8 @@
             "focus": 0,
             "gap": 5,
             "fixedPoint": [
-              1.0684931506849316,
-              0.5001
+              0.5001,
+              1.0757575757575757
             ]
           },
           "endBinding": {
@@ -435,8 +435,8 @@
             "focus": 0,
             "gap": 5,
             "fixedPoint": [
-              -0.03496503496503497,
-              0.5001
+              0.08041958041958042,
+              -0.07575757575757576
             ]
           },
           "startArrowhead": null,
@@ -448,8 +448,8 @@
         }
       },
       "d2:(you -> project)[0]:label": {
-        "x": 155,
-        "y": 35,
+        "x": 24,
+        "y": 153.5,
         "width": 49,
         "height": 20,
         "style": {
@@ -469,8 +469,8 @@
         "snapshot": {
           "id": "d2:(you -> project)[0]:label",
           "type": "text",
-          "x": 155,
-          "y": 35,
+          "x": 24,
+          "y": 153.5,
           "width": 49,
           "height": 20,
           "angle": 0,
@@ -504,11 +504,11 @@
           "lineHeight": 1.25
         }
       },
-      "d2:(project <- agent)[0]": {
-        "x": 422,
-        "y": 45,
-        "width": 171,
-        "height": 0,
+      "d2:(agent -> project)[0]": {
+        "x": 133.08,
+        "y": 83,
+        "width": 0,
+        "height": 161,
         "style": {
           "strokeColor": "#1e1e1e",
           "backgroundColor": "transparent",
@@ -524,18 +524,18 @@
               0
             ],
             [
-              171,
-              0
+              0,
+              161
             ]
           ]
         },
         "snapshot": {
-          "id": "d2:(project <- agent)[0]",
+          "id": "d2:(agent -> project)[0]",
           "type": "arrow",
-          "x": 422,
-          "y": 45,
-          "width": 171,
-          "height": 0,
+          "x": 133.08,
+          "y": 83,
+          "width": 0,
+          "height": 161,
           "angle": 0,
           "strokeColor": "#1e1e1e",
           "backgroundColor": "transparent",
@@ -548,14 +548,14 @@
           "frameId": null,
           "index": "a8",
           "roundness": null,
-          "seed": 1625196220,
+          "seed": 2468292860,
           "version": 1,
-          "versionNonce": 1855152040,
+          "versionNonce": 635759081,
           "isDeleted": false,
           "boundElements": [
             {
               "type": "text",
-              "id": "d2:(project <- agent)[0]:label"
+              "id": "d2:(agent -> project)[0]:label"
             }
           ],
           "updated": 1,
@@ -567,40 +567,40 @@
               0
             ],
             [
-              171,
-              0
+              0,
+              161
             ]
           ],
           "lastCommittedPoint": null,
           "startBinding": {
-            "elementId": "d2:project",
-            "focus": 0,
-            "gap": 5,
-            "fixedPoint": [
-              1.034965034965035,
-              0.5001
-            ]
-          },
-          "endBinding": {
             "elementId": "d2:agent",
             "focus": 0,
             "gap": 5,
             "fixedPoint": [
-              -0.038461538461538464,
-              0.5001
+              0.2160000000000001,
+              1.0757575757575757
             ]
           },
-          "startArrowhead": "arrow",
-          "endArrowhead": null,
+          "endBinding": {
+            "elementId": "d2:project",
+            "focus": 0,
+            "gap": 5,
+            "fixedPoint": [
+              0.6718881118881119,
+              -0.07575757575757576
+            ]
+          },
+          "startArrowhead": null,
+          "endArrowhead": "arrow",
           "elbowed": true,
           "fixedSegments": null,
           "startIsSpecial": null,
           "endIsSpecial": null
         }
       },
-      "d2:(project <- agent)[0]:label": {
-        "x": 487,
-        "y": 35,
+      "d2:(agent -> project)[0]:label": {
+        "x": 112.58,
+        "y": 153.5,
         "width": 41,
         "height": 20,
         "style": {
@@ -618,10 +618,10 @@
           "verticalAlign": "middle"
         },
         "snapshot": {
-          "id": "d2:(project <- agent)[0]:label",
+          "id": "d2:(agent -> project)[0]:label",
           "type": "text",
-          "x": 487,
-          "y": 35,
+          "x": 112.58,
+          "y": 153.5,
           "width": 41,
           "height": 20,
           "angle": 0,
@@ -636,9 +636,9 @@
           "frameId": null,
           "index": "a9",
           "roundness": null,
-          "seed": 494355464,
+          "seed": 1774245064,
           "version": 1,
-          "versionNonce": 1196307069,
+          "versionNonce": 127694909,
           "isDeleted": false,
           "boundElements": null,
           "updated": 1,
@@ -649,7 +649,7 @@
           "fontFamily": 5,
           "textAlign": "center",
           "verticalAlign": "middle",
-          "containerId": "d2:(project <- agent)[0]",
+          "containerId": "d2:(agent -> project)[0]",
           "originalText": "edits",
           "autoResize": true,
           "lineHeight": 1.25

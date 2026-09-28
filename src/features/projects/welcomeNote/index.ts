@@ -51,12 +51,13 @@ A component is a tag, like \`<Callout>\` above.
 Your work here is saved in this browser only. Sign up to keep it across devices and to connect agents like Claude or ChatGPT.
 `
 
-const FLOW = `direction: right
+// Downwards, with both arrows into the project, so it fits a phone's width.
+const FLOW = `direction: down
 you: You
-project: This project
 agent: Your agent
+project: This project
 you -> project: writes
-project <- agent: edits
+agent -> project: edits
 `
 
 export const WELCOME_FILES: StarterFiles = [
