@@ -199,7 +199,9 @@ password_requirements = ""
 
 # Configure passkey sign-ins.
 # elaborat.ing: on. A person signs in another way first, then adds a passkey
-# in Settings.
+# in Settings. `config push` does not send this section or [auth.webauthn]
+# yet (CLI 2.118.0), so the hosted project sets the same values in the
+# dashboard (Authentication, Passkeys); `supabase start` applies them.
 [auth.passkey]
 enabled = true
 

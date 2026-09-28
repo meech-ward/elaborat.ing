@@ -748,6 +748,9 @@ secrets supplied through `env()` from GitHub secrets.)
 - **JWT signing keys:** the project must sign with an asymmetric key. New
   projects already do (the hosted project publishes an ES256 key); older
   projects switch in the dashboard.
+- **Passkey and WebAuthn settings:** `config push` doesn't send them yet.
+  Turn passkeys on in the dashboard (Authentication, Passkeys) with the
+  relying party values from `[auth.passkey]` and `[auth.webauthn]`.
 - **Custom OIDC providers:** dashboard or Auth Admin API only.
 - **Cloudflare API token:** create one from the "Edit Cloudflare Workers"
   template, limited to your account and zone. The deploy build needs

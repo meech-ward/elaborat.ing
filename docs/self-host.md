@@ -59,7 +59,7 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | --- | --- | --- |
 | `supabase/config.toml` | `[auth]` `site_url` | `<site>`. Auth builds email links from it, and sends agents to `<site>/oauth/consent` for consent. |
 | `supabase/config.toml` | `[auth]` `additional_redirect_urls` | `["<site>/**", "http://localhost:5173/**"]` (the second is `bun run dev`) |
-| `supabase/config.toml` | `[auth.webauthn]` `rp_id`, `rp_origins` | `<site>`'s host name, and `["<site>"]`. Passkeys work only on that domain, and changing it later makes every passkey stop working. Or set `[auth.passkey]` `enabled = false`. |
+| `supabase/config.toml` | `[auth.webauthn]` `rp_id`, `rp_origins` | `<site>`'s host name, and `["<site>"]`. Passkeys work only on that domain, and changing it later makes every passkey stop working. `config push` does not send these: turn passkeys on in the dashboard (Authentication, Passkeys) with the same values, or leave them off. |
 | `supabase/config.toml` | `[auth.email.smtp]` `host`, `port`, `admin_email`, `sender_name` | Your provider's values, or `enabled = false` (see [Email](#email-smtp-is-optional)) |
 | `supabase/config.toml` | `[db.pooler]` `default_pool_size`, `max_client_conn` | `config push` sets these on your pooler. They hold the hosted project's values; if `config diff` shows a change, set them to your project's current values. |
 | `wrangler.jsonc` | `vars.MCP_UPSTREAM` | `https://<ref>.supabase.co/functions/v1/mcp-server` |

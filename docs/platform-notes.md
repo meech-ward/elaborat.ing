@@ -49,7 +49,8 @@ before relying on it for something new, and update this page when it moves.
 - **`supabase config push`** writes API, database settings, network
   restrictions, SSL enforcement, Auth and Storage settings. It is not a full
   reconciler: undeclared remote values are left alone. It never sets JWT signing
-  keys. It pushes `[auth.passkey]` and `[auth.webauthn]` (2.118.0).
+  keys, and it does not push passkey or WebAuthn settings in 2.118.0 (not
+  even listed in `config diff`), though `supabase start` applies them.
   `[auth.oauth_server]` is pushed.
 - **Storage buckets** in `config.toml` are applied by `supabase seed buckets`,
   not `config push`.
