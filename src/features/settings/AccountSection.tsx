@@ -41,7 +41,8 @@ function YourName({ user }: { user: User }) {
       setNotice({ tone: "danger", text: `Could not save your name: ${error.message}` })
       return
     }
-    setValue(name)
+    // Without a name of their own, the one their sign-in provider gave shows again.
+    setValue(accountName({ ...user.user_metadata, [DISPLAY_NAME_KEY]: name || null }) ?? "")
     setNotice({ tone: "info", text: name ? "Name saved." : "Name removed." })
   }
 
