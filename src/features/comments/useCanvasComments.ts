@@ -13,6 +13,8 @@ export type CanvasCommentsProps = {
   canComment: boolean
   /** Only the connection keeps this person from commenting. */
   offline: boolean
+  /** The element a new comment is being written on, or null. */
+  composing: string | null
   shortcut: { label: string; aria: string }
   onOpen: (pin: CanvasPin) => void
   onComment: (target: { elementId: string; point?: { x: number; y: number } }) => void
@@ -92,6 +94,7 @@ export function useCanvasComments({
     pins: file ? pins : NO_PINS,
     canComment,
     offline: Boolean(file && comments.writeBlocked === NEEDS_CONNECTION),
+    composing: request ? (request.anchor as ElementAnchor).element_id : null,
     shortcut: commentsShortcut(isApplePlatform()),
     onOpen(pin) {
       if (pin.id === DRAFT_MARK) comments.controller.setPanelOpen(true)

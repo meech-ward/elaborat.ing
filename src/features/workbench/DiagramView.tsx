@@ -120,6 +120,9 @@ export function DiagramView({
   const generatedFrom = useRef<string | null>(null);
   // Set at open when the canvas had to be generated (none saved, or the code changed since).
   const generatedAtOpen = useRef(false);
+  // While that canvas is saved on its own, the header offers no Save: it would
+  // show for a moment and go, moving the view switch under the pointer.
+  const [savingAtOpen, setSavingAtOpen] = useState(false);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -285,6 +288,7 @@ export function DiagramView({
         setPendingLabels(result.pendingLabels);
         generatedFrom.current = opened.source;
         generatedAtOpen.current = result.ok && result.scene !== result.persistedScene && !result.conflicts.length;
+        setSavingAtOpen(generatedAtOpen.current);
         if (!result.ok) setMode("source");
         setBootError(null);
       } catch (error) {
@@ -461,13 +465,12 @@ export function DiagramView({
   // agent wrote, for example). If that save fails, the diagram shows as unsaved.
   useEffect(() => {
     if (!generatedAtOpen.current || !booted || locked || saving || !scene) return;
-    if (source !== savedSource || baseRevision === null || pendingLabels.length) {
-      generatedAtOpen.current = false;
-      return;
-    }
+    // With edits of the person's, or a file never saved, saving is theirs.
+    const edited = source !== savedSource || baseRevision === null || pendingLabels.length > 0;
     const timer = window.setTimeout(() => {
       generatedAtOpen.current = false;
-      void save();
+      if (edited) setSavingAtOpen(false);
+      else void save().finally(() => setSavingAtOpen(false));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [booted, locked, saving, scene, source, savedSource, baseRevision, pendingLabels.length, save]);
@@ -608,7 +611,7 @@ export function DiagramView({
         active={active}
         navigation={navigation}
         view={viewHeader}
-        save={!readOnly && dirty ? { disabled: saving, onSave: () => void save() } : null}
+        save={!readOnly && dirty && !savingAtOpen ? { disabled: saving, onSave: () => void save() } : null}
         actions={[
           ...(readOnly ? [] : [{ label: regenerating ? "Regenerating…" : "Regenerate", disabled: regenerating, onSelect: () => void regenerate() }]),
           ...(readOnly ? [] : [{ label: "Save", disabled: saving, onSelect: () => void save() }]),

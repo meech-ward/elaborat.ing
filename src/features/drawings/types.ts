@@ -181,6 +181,8 @@ export interface CanvasComments {
   canComment: boolean;
   /** Only the connection keeps the person from commenting: the Comment button shows over a selected element, off, saying so. */
   offline?: boolean;
+  /** The element a new comment is being written on: the Comment button does not show over it. */
+  composing?: string | null;
   /** The comment key, shown beside Comment. */
   shortcut: { label: string; aria: string };
   /** A pin was chosen: the panel opens at its thread. */

@@ -181,7 +181,8 @@ test("axe finds nothing in Split for a drawing and a diagram at 1280", async ({ 
   await toSplit(page)
   await check()
   await page.getByRole("navigation", { name: "Workspace files" }).getByRole("button", { name: "flow.d2", exact: true }).click()
-  await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
+  // The diagram's own view switch, which shows once it has compiled: until then the drawing's is on screen.
+  await expect(page.getByRole("group", { name: "Diagram view" })).toBeVisible({ timeout: 45_000 })
   await toSplit(page)
   await check()
 })

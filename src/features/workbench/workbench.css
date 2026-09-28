@@ -111,7 +111,9 @@
   --color-on-surface: var(--text);
   --color-border: var(--panel-border);
 }
-.wb-app :focus-visible:where(:not([data-slot])) {
+/* Not on Excalidraw's container: it fills the window and takes the keyboard
+   when an element is clicked, and Excalidraw draws no ring around it. */
+.wb-app :focus-visible:where(:not([data-slot], .excalidraw)) {
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: -2px;
 }

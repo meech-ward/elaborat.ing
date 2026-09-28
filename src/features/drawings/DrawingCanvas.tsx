@@ -301,7 +301,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     const view = { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY };
     pinStore.set(pinPlaces(commentsRef.current?.pins ?? [], pinElements(elements), view));
     const selected = Object.keys(state.selectedElementIds).filter((id) => state.selectedElementIds[id]);
-    const element = pickRef.current && selected.length === 1 ? pinElements(elements).find((candidate) => candidate.id === selected[0] && !candidate.isDeleted) : undefined;
+    // Not while a new comment is being written on that element: its draft pin shows it.
+    const element = pickRef.current && selected.length === 1 && selected[0] !== commentsRef.current?.composing ? pinElements(elements).find((candidate) => candidate.id === selected[0] && !candidate.isDeleted) : undefined;
     const area = element ? visibleArea() : null;
     commentButton.set(element && area ? commentButtonPlace(element, view, area, compact ? { height: 40, half: 70 } : { height: 32, half: 90 }) : null);
   };

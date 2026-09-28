@@ -324,6 +324,18 @@ test("a commenter, whose canvas has no tools, selects a shape with a click and c
   ])
 })
 
+test("a commenter's click on a shape gives the canvas the keyboard, with no ring around the window", async ({ page }) => {
+  await seeded(page, { role: "commenter" })
+  const spot = await onScreen(page, { x: 50, y: 50 })
+  await page.mouse.click(spot.x, spot.y)
+  await expect(page.locator('[data-slot="selected-element-comment"]')).toBeVisible()
+  const canvas = page.locator(".excalidraw").first()
+  expect(await canvas.evaluate((element) => ({ focused: document.activeElement === element, outline: getComputedStyle(element).outlineStyle }))).toEqual({
+    focused: true,
+    outline: "none",
+  })
+})
+
 test("offline, a commenter's Comment button over a selected shape stays, off, and says why", async ({ page }) => {
   const { fake } = await seeded(page, { role: "commenter" })
   await openPanel(page)
@@ -431,6 +443,8 @@ test.describe("on a phone", () => {
     await page.locator('[data-slot="selected-element-comment"]').click()
     const sheet = page.getByRole("dialog", { name: "Comments" })
     await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
+    // The shape's Comment button goes while its comment is being written.
+    await expect(page.locator('[data-slot="selected-element-comment"]')).toHaveCount(0)
     await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(422)
     // The new comment's pin is at the box's top-right corner: the box, 100
     // high, shows between the controls and the sheet. (The sheet keeps the

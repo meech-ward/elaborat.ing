@@ -44,12 +44,22 @@ async function menuAction(page: Page, name: string) {
 }
 
 test("a diagram compiles in the browser, opening saves its generated files in one call, and reopening writes nothing", async ({ page }) => {
+  // Notes whether the header ever offers Save while the diagram opens.
+  await page.addInitScript(() => {
+    const seen = { save: false }
+    Object.assign(window, { seenSave: seen })
+    new MutationObserver(() => {
+      if ([...document.querySelectorAll('[data-slot="editor-header"] button')].some((button) => button.textContent?.startsWith("Save"))) seen.save = true
+    }).observe(document, { subtree: true, childList: true })
+  })
   const { fake, id } = await openProject(page, { "flow.d2": "a -> b: hello\n" }, "flow.d2")
   const before = saves(fake).length
   await compiled(page)
   expect(await elementCount(page)).toBeGreaterThan(2)
   // The generated files follow from the saved code, so opening saves them: nothing is left unsaved.
   await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
+  // That save is no edit of the person's: the header never offers Save for it, so nothing in it moves.
+  expect(await page.evaluate(() => (window as unknown as { seenSave: { save: boolean } }).seenSave.save)).toBe(false)
   await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
   const native = JSON.parse(fake.server.content(id, "flow.excalidraw")!)
   expect(native.type).toBe("excalidraw")
