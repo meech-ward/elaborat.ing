@@ -80,6 +80,23 @@ test("a diagram compiles in the browser, opening saves its generated files in on
   expect(saves(fake).length, "reopening a saved diagram sends nothing").toBe(settled)
 })
 
+test("a diagram compiles when the server labels D2's engine as something other than application/wasm", async ({ page }) => {
+  // Streaming compilation needs that label; a copy on another server may send a generic one.
+  let relabelled = 0
+  await page.route("**/*.wasm", async (route) => {
+    const response = await route.fetch()
+    const headers: Record<string, string> = { ...response.headers(), "content-type": "application/octet-stream" }
+    delete headers["content-encoding"]
+    delete headers["content-length"]
+    relabelled++
+    await route.fulfill({ response, headers })
+  })
+  await openProject(page, { "flow.d2": "a -> b: hello\n" }, "flow.d2")
+  await compiled(page)
+  expect(await elementCount(page)).toBeGreaterThan(2)
+  expect(relabelled).toBe(1)
+})
+
 test("when a generated file changed elsewhere, a save keeps all three files as they were", async ({ page }) => {
   const { fake, id } = await openProject(page, { "flow.d2": "a -> b\n" }, "flow.d2")
   await compiled(page)

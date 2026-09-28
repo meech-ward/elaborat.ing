@@ -2,7 +2,8 @@
  * The D2 engine's worker (see d2Engine.ts). The page sends where the engine's
  * files are and the text of its two small scripts, then compile requests,
  * each answered under its id. It starts the engine the way the package's own
- * worker does, with one difference: the wasm compiles while it downloads.
+ * worker does, with one difference: the wasm compiles while it downloads
+ * (when its server labels it application/wasm, as streaming needs).
  */
 import type { D2CompileRequest } from './compiler.ts';
 
@@ -29,6 +30,15 @@ async function text(url: string): Promise<string> {
   return response.text();
 }
 
+/** Compiles the wasm as it downloads; a server that labels it otherwise gets the whole file compiled at once. */
+async function instantiate(url: string, imports: WebAssembly.Imports): Promise<WebAssembly.Instance> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} answered ${response.status}.`);
+  const type = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
+  if (type === 'application/wasm') return (await WebAssembly.instantiateStreaming(response, imports)).instance;
+  return (await WebAssembly.instantiate(await response.arrayBuffer(), imports)).instance;
+}
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 async function load({ wasmUrl, elkUrl, wasmExec, setup }: Extract<D2EngineRequest, { type: 'init' }>) {
@@ -39,7 +49,7 @@ async function load({ wasmUrl, elkUrl, wasmExec, setup }: Extract<D2EngineReques
     run(elk);
     run(setup);
   });
-  const [, { instance }] = await Promise.all([layout, WebAssembly.instantiateStreaming(fetch(wasmUrl), go.importObject)]);
+  const [, instance] = await Promise.all([layout, instantiate(wasmUrl, go.importObject)]);
   // ELK registers its layout algorithms on a timer; let it run first.
   await new Promise((resolve) => setTimeout(resolve, 0));
   void go.run(instance);
