@@ -59,7 +59,7 @@ test("on the projects home, the person is told, and unsaved changes are offered 
   const id = await theirProject(server)
   await fakeSupabase(page, { server })
   await signedIn(page)
-  // Leaving with an unsaved edit, and removing it, each ask first.
+  // Leaving with an unsaved edit asks first.
   page.on("dialog", (dialog) => void dialog.accept().catch(() => {}))
   await page.goto(new URL(`projects/${id}/notes/a.md`, APP_URL).href)
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
@@ -87,6 +87,14 @@ test("on the projects home, the person is told, and unsaved changes are offered 
   expect(new TextDecoder().decode(entries["notes/a.md"])).toBe("# A\nNot saved.")
 
   await banner.getByRole("button", { name: "Remove from this device" }).click()
+  const confirm = page.getByRole("alertdialog", { name: "Remove Their notes from this device?" })
+  await expect(confirm).toContainText("Its unsaved changes are lost unless you downloaded them.")
+  // Cancel keeps it; Remove removes it.
+  await confirm.getByRole("button", { name: "Cancel" }).click()
+  await expect(confirm).toBeHidden()
+  await expect(banner).toBeVisible()
+  await banner.getByRole("button", { name: "Remove from this device" }).click()
+  await confirm.getByRole("button", { name: "Remove", exact: true }).click()
   await expect(page.getByText("Their notes was deleted by its owner.")).toHaveCount(0)
   await page.reload()
   await expect(page.getByText("No projects yet.")).toBeVisible()
@@ -114,6 +122,7 @@ test("with unsaved changes on the open project, the page offers them and removes
   expect((await downloading).suggestedFilename()).toBe("Their notes unsaved changes.zip")
 
   await page.getByRole("button", { name: "Remove from this device" }).click()
+  await page.getByRole("alertdialog", { name: "Remove Their notes from this device?" }).getByRole("button", { name: "Remove", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible()
   await expect(page.getByText("No projects yet.")).toBeVisible()
   await expect(page.getByText("Their notes")).toHaveCount(0)
