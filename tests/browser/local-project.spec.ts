@@ -23,11 +23,14 @@ async function writeNote(page: Page, name: string, text: string) {
   await page.getByRole("button", { name: "New note", exact: true }).click()
   await page.keyboard.type(name)
   await page.keyboard.press("Enter")
-  await expect(page.getByRole("tab", { name: `${name}.md` })).toBeVisible()
+  await expect(page.getByRole("tab", { name: `${name}.mdx`, exact: true })).toBeVisible()
   await editorText(page).click()
   await page.keyboard.type(text)
+  // Saved only once the tab has shown the change and then lost its mark.
+  const unsaved = page.getByRole("tab", { name: `${name}.mdx, unsaved changes`, exact: true })
+  await expect(unsaved).toBeVisible()
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(page.getByRole("tab", { name: `${name}.md, unsaved changes` })).toHaveCount(0)
+  await expect(unsaved).toHaveCount(0)
 }
 
 async function signIn(page: Page) {

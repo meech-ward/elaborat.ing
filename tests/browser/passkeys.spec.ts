@@ -55,6 +55,9 @@ test("a person adds a passkey in Settings, signs out, and signs back in with it"
   await expect(settings.getByText("No passkeys yet.")).toBeVisible()
   await settings.getByRole("button", { name: "Add a passkey" }).click()
   await expect(settings.getByRole("status").filter({ hasText: "Passkey added." })).toBeVisible()
+  // The dialog scrolls at this size: the notice and Add a passkey under it stay in sight.
+  await expect(settings.getByRole("status").filter({ hasText: "Passkey added." })).toBeInViewport({ ratio: 1 })
+  await expect(settings.getByRole("button", { name: "Add a passkey" })).toBeInViewport({ ratio: 0.9 })
   await expect(settings.getByRole("list", { name: "Passkeys" }).getByRole("listitem")).toContainText(["Test authenticator"])
   expect(await authenticator.credentials()).toMatchObject([{ rpId: "localhost", isResidentCredential: true }])
   expect(fake.passkeys).toHaveLength(1)

@@ -457,10 +457,17 @@ export function CommentThread({
     const item = card.current?.closest("li")
     const neighbour = (item?.nextElementSibling ?? item?.previousElementSibling)?.querySelector('[data-slot="comment-thread"]') ?? null
     await onDelete?.(commentId)
-    if (!reply.trim()) setReplying(false)
+    const closing = replying && !reply.trim()
+    if (closing) setReplying(false)
     afterRender(() => {
       if (!focusLost()) return
       const thread = card.current?.isConnected ? card.current : null
+      if (thread && closing && !replyButton.current) {
+        // Reply has not shown yet (a busy page can take longer than two frames): it takes the keyboard when it does.
+        replyFocus.current = true
+        thread.focus()
+        return
+      }
       const next = thread ? (replyButton.current ?? thread) : neighbour?.isConnected ? firstControl(neighbour) : null
       next?.focus()
     })

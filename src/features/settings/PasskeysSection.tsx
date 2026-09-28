@@ -63,6 +63,11 @@ function Passkeys() {
     }
   }, [attempt])
 
+  // A notice shows above Add a passkey, at the foot of a dialog that may scroll: keep both in sight.
+  useEffect(() => {
+    if (notice) addButton.current?.scrollIntoView({ block: "nearest" })
+  }, [notice])
+
   const add = async () => {
     setAdding(true)
     setNotice(null)
