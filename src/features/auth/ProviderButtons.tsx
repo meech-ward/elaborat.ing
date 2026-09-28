@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Banner } from "@/features/design-system"
 import { parseConfig } from "@/lib/config"
-import { safeNextPath } from "@/lib/safe-next-path"
 import { createClient } from "@/lib/supabase/client"
 import { browserSupportsPasskeys, passkeyErrorMessage } from "./passkeys"
 import { PROVIDERS, signInOptions, type ProviderId, type SignInOptions } from "./providers"
@@ -44,9 +43,8 @@ export function ProviderButtons({ next }: { next: string | null }) {
     if (error) {
       setSigningIn(false)
       setError(passkeyErrorMessage(error, "sign-in"))
-      return
     }
-    location.href = safeNextPath(next, "/")
+    // Otherwise signed in: the sign-in page moves on once the session is confirmed (routes/sign-in.tsx).
   }
   const continueWith = async (provider: ProviderId) => {
     setError(null)

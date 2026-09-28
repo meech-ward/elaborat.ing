@@ -336,10 +336,10 @@ test.describe("on a phone", () => {
     await expect(sheet).toBeVisible()
     await expect(sheet.getByRole("button", { name: "Close comments" })).toBeFocused()
     await expect(sheet.getByText("Looks good.")).toBeVisible()
-    const reply = await sheet.getByRole("button", { name: "Reply" }).boundingBox()
-    expect(reply?.height).toBeGreaterThanOrEqual(40)
-    const goTo = await sheet.getByRole("button", { name: "Go to Whole note" }).boundingBox()
-    expect(goTo?.height).toBeGreaterThanOrEqual(40)
+    // Polled: while the sheet is still settling, its scale can make a button a hair short of 40.
+    const height = async (name: string) => (await sheet.getByRole("button", { name }).boundingBox())?.height ?? 0
+    await expect.poll(() => height("Reply")).toBeGreaterThanOrEqual(40)
+    await expect.poll(() => height("Go to Whole note")).toBeGreaterThanOrEqual(40)
     const tall = (await sheet.boundingBox())!.height
     expect(tall).toBeCloseTo(844 * 0.75, -1)
     // While a new comment is written the sheet is half the screen, so the note shows above it.

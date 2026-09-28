@@ -4,7 +4,8 @@
  * Licensed under the Apache License 2.0
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
- * app's modules; after signing in it goes to the home page unless a `next` path is given;
+ * app's modules; after signing in the sign-in page goes on to the home page unless a
+ * `next` path is given;
  * it is one card that emails a sign-in link and code first, with the password
  * as the other option and the enabled providers below; messages and links
  * are the app's banners and link buttons.
@@ -12,7 +13,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
-import { safeNextPath } from '@/lib/safe-next-path'
 import { createClient } from '@/lib/supabase/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,17 +51,17 @@ export function LoginForm({ next }: { next: string | null }) {
       if (usePassword) {
         const { error } = await createClient().auth.signInWithPassword({ email, password })
         if (error) throw error
-        location.href = safeNextPath(next, '/')
-      } else {
-        const { error } = await sendSignInEmail(email, next)
-        if (error) throw error
-        setSent(true)
+        // Signed in: the sign-in page moves on once the session is confirmed
+        // (routes/sign-in.tsx), so there is one navigation, not two racing.
+        return
       }
+      const { error } = await sendSignInEmail(email, next)
+      if (error) throw error
+      setSent(true)
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
-    } finally {
-      setIsLoading(false)
     }
+    setIsLoading(false)
   }
 
   return (

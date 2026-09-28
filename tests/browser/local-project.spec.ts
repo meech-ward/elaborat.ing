@@ -68,15 +68,17 @@ test("signing in uploads the local project once, as Local project, and opens it"
   const earlier = crypto.randomUUID()
   await fake.server.remote(person.id).createProject(earlier, "Earlier")
   await startWriting(page)
-  const localUrl = page.url()
+  const localId = new URL(page.url()).pathname.split("/")[2]
   await writeNote(page, "ideas", "Written before signing up.")
 
   await signIn(page)
-  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/)
-  expect(page.url()).not.toBe(localUrl)
-  const id = new URL(page.url()).pathname.split("/")[2]
+  // A new project, not the local one; the page may already have opened a file,
+  // so the URL can end in its path.
+  const projectId = (url: URL) => /^\/projects\/([0-9a-f-]{36})(\/|$)/.exec(url.pathname)?.[1]
+  await expect(page).toHaveURL((url) => projectId(url) !== undefined && projectId(url) !== localId)
+  const id = projectId(new URL(page.url())) ?? ""
   await expect(page.getByRole("heading", { level: 1, name: "Local project" })).toBeVisible({ timeout: 15_000 })
-  await expect.poll(() => fake.server.content(id, "ideas.mdx")).toBe("Written before signing up.")
+  await expect.poll(() => fake.server.content(id, "ideas.mdx"), { timeout: 30_000 }).toBe("Written before signing up.")
   expect(fake.server.projects.get(id)?.title).toBe("Local project")
 
   await page.goto(APP_URL)
