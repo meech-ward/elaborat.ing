@@ -294,3 +294,20 @@ test("a new file that was never saved can be renamed, and nothing else can", asy
   await expect(store.renameDraft("notes/ideas.md", "a.md/inside.md")).rejects.toThrow("a.md is a file, so it cannot contain a.md/inside.md.")
   expect((await store.read("notes/ideas.md")).content).toBe("An idea.")
 })
+
+test("a snapshot has every file's saved copy and unsaved edits, and the explicit folders", async () => {
+  const { store } = await setup()
+  const a = await store.write("a.md", "saved", null)
+  await store.write("gone.md", "deleted", null).then((gone) => store.delete("gone.md", gone.revision))
+  await store.persistDrafts([
+    { path: "a.md", content: "edited", baseRevision: a.revision },
+    { path: "new.md", content: "never saved", baseRevision: null },
+  ])
+  await store.createDirectory("empty")
+  const snapshot = await store.snapshot()
+  expect(snapshot.files.sort((x, y) => (x.path < y.path ? -1 : 1))).toEqual([
+    { path: "a.md", saved: "saved", draft: "edited" },
+    { path: "new.md", saved: null, draft: "never saved" },
+  ])
+  expect(snapshot.folders).toEqual(["empty"])
+})

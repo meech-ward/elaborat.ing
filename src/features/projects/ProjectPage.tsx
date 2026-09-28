@@ -15,6 +15,7 @@ import { loadWorkbench } from "@/features/workbench/load"
 import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
 import { createClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
+import { useProjectDownload } from "./DownloadProject"
 import { MembersDialog } from "./MembersDialog"
 import { projectMenuEntries } from "./projectMenu"
 import { readOnlyReason } from "./readOnly"
@@ -61,6 +62,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
   const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open")
+  const download = useProjectDownload(library, onError)
   const entry = state.entries.find((candidate) => candidate.id === projectId)
 
   const syncNow = useCallback(async () => {
@@ -255,11 +257,13 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   }
 
   const readOnly = readOnlyReason(entry)
-  // The project menu starts with the other projects and the way home; the workbench adds the actions.
+  // The project menu starts with the other projects, the way home and Download project; the workbench adds its other actions.
   const go = (href: string) => void navigate({ href })
-  const projectMenu: MenuEntry[] = account.local
-    ? [{ label: "Home", group: "home", onSelect: () => go("/") }]
-    : projectMenuEntries(state.entries, projectId, go)
+  const projectName = account.local ? "Local project" : (entry?.title ?? "Project")
+  const projectMenu: MenuEntry[] = [
+    ...(account.local ? [{ label: "Home", group: "home", onSelect: () => go("/") }] : projectMenuEntries(state.entries, projectId, go)),
+    { label: "Download project", group: "actions", onSelect: () => void download.start(projectId, projectName) },
+  ]
   const problem = departureError ?? error
   const notices = (
     <>
@@ -294,7 +298,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         <WorkspaceWorkbench
           client={workspace}
           projectId={projectId}
-          projectName={account.local ? "Local project" : (entry?.title ?? "Project")}
+          projectName={projectName}
           projectMenu={projectMenu}
           onShare={entry?.role === "owner" && account.online ? () => setSharing(true) : undefined}
           projectNotices={notices}
@@ -306,6 +310,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           readOnly={readOnly}
           local={account.local}
         />
+        {download.dialog}
         {sharing && entry ? (
           <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
         ) : null}

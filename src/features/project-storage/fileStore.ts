@@ -185,6 +185,22 @@ export class ProjectFileStore {
     return { files: refs, directories: [...directories].sort(), folders: explicit.sort() }
   }
 
+  /**
+   * Every file and explicit folder on this device, read at once, for a
+   * download: each file's saved copy (null for a new file that is only a
+   * draft) and its unsaved edits (null without any).
+   */
+  async snapshot(): Promise<{ files: Array<{ path: string; saved: string | null; draft: string | null }>; folders: string[] }> {
+    return this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      const files = (await tx.listFiles(this.projectId))
+        .filter((file) => file.content !== null || file.draft !== null)
+        .map((file) => ({ path: file.path, saved: file.content, draft: file.draft?.content ?? null }))
+      const folders = (await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path)
+      return { files, folders }
+    })
+  }
+
   async read(path: string): Promise<StoredFile> {
     checkPath(path)
     const file = await this.db.transaction(this.partition, "readonly", async (tx) => {

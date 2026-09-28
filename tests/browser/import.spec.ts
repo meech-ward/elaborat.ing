@@ -41,7 +41,7 @@ async function home(page: Page) {
 
 /** Import the fixture and return the new project's id from the report's link. */
 async function importFixture(page: Page) {
-  await page.getByLabel("Import a project").setInputFiles(exportFile("notes.json", exported))
+  await page.getByLabel("Import a prototype export").setInputFiles(exportFile("notes.json", exported))
   const report = page.getByRole("status").filter({ hasText: "Imported" })
   await expect(report).toContainText("Imported From the prototype: 6 files and 5 folders.")
   const href = await report.getByRole("link", { name: "From the prototype" }).getAttribute("href")
@@ -73,9 +73,9 @@ test("an export becomes a new project with every byte, and paths this app cannot
 
 test("an export that fails the checks says why, and creates nothing", async ({ page }) => {
   const fake = await home(page)
-  await page.getByLabel("Import a project").setInputFiles(exportFile("later.json", { ...exported, version: 2 }))
+  await page.getByLabel("Import a prototype export").setInputFiles(exportFile("later.json", { ...exported, version: 2 }))
   await expect(page.getByRole("alert")).toHaveText("later.json could not be imported. Only version 1 of the prototype's export can be imported.")
-  await page.getByLabel("Import a project").setInputFiles(exportFile("twice.json", { ...exported, files: [...files, files[0]] }))
+  await page.getByLabel("Import a prototype export").setInputFiles(exportFile("twice.json", { ...exported, files: [...files, files[0]] }))
   await expect(page.getByRole("alert")).toHaveText("twice.json could not be imported. notes/intro.mdx appears more than once.")
   await expect(page.getByText("No projects yet.")).toBeVisible()
   expect(fake.server.projects.size).toBe(0)

@@ -8,6 +8,7 @@ import type { Invitation, ProjectEntry } from "@/features/project-storage/librar
 import { canEdit } from "@/features/project-storage/model"
 import { libraryFor, moveLocalProjectTo, useLibraryState, type ProjectAccount } from "./account"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
+import { useProjectDownload } from "./DownloadProject"
 import { ImportProjectButton, ImportReport, useProjectImport } from "./ImportProject"
 import { MembersDialog } from "./MembersDialog"
 import { statusLabel, syncDot } from "./statusLabel"
@@ -16,13 +17,14 @@ import { useBackgroundRefresh } from "./useBackgroundRefresh"
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /**
- * A project's menu, by role: everyone sees its members, owners and editors
- * archive and unarchive, the owner deletes permanently, and anyone else can
- * leave.
+ * A project's menu, by role: everyone sees its members and downloads it,
+ * owners and editors archive and unarchive, the owner deletes permanently,
+ * and anyone else can leave.
  */
-function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
+function ProjectMenu({ entry, onMembers, onDownload, onArchive, onDelete, onLeave }: {
   entry: ProjectEntry
   onMembers: () => void
+  onDownload: () => void
   /** Archive, or unarchive an archived project. */
   onArchive: () => void
   onDelete: () => void
@@ -30,6 +32,7 @@ function ProjectMenu({ entry, onMembers, onArchive, onDelete, onLeave }: {
 }) {
   const items: MenuEntry[] = [
     { label: "Members", onSelect: onMembers },
+    { label: "Download project", onSelect: onDownload },
     ...(canEdit(entry.role) ? [{ label: entry.archived ? "Unarchive" : "Archive", onSelect: onArchive }] : []),
     ...(entry.role === "owner" ? [{ label: "Delete permanently", onSelect: onDelete, destructive: true }] : [{ label: "Leave project", onSelect: onLeave }]),
   ]
@@ -60,6 +63,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
   const [membersOf, setMembersOf] = useState<ProjectEntry | null>(null)
   const importing = useProjectImport(library)
   const onError = useCallback((text: string) => setError(text), [])
+  const download = useProjectDownload(library, onError)
   useBackgroundRefresh(library, onError, { invitations: true })
 
   // Just signed in with work in the local project: it joins the account's projects and opens (the project page uploads it).
@@ -167,6 +171,11 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
               setNotice(null)
               setMembersOf(entry)
             }}
+            onDownload={() => {
+              setError(null)
+              setNotice(null)
+              void download.start(entry.id, entry.title)
+            }}
             onArchive={() => void setArchived(entry)}
             onDelete={() => void askToDelete(entry)}
             onLeave={() => void leave(entry)}
@@ -185,7 +194,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           </h1>
           {state.loaded && state.entries.length === 0 ? <p className="text-[15px] text-muted-foreground">No projects yet.</p> : null}
         </div>
-        <ImportProjectButton state={importing.state} onChoose={(input) => void importing.choose(input)} />
+        <ImportProjectButton state={importing.state} onChoose={(input, source) => void importing.choose(input, source)} />
       </div>
       {offline || error || notice || importing.state.kind !== "idle" ? (
         <div className="flex flex-col gap-2">
@@ -237,6 +246,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           onClose={() => setMembersOf(null)}
         />
       ) : null}
+      {download.dialog}
       {deleting ? (
         <DeleteProjectDialog
           title={deleting.entry.title}

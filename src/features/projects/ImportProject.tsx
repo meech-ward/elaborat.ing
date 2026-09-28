@@ -1,12 +1,12 @@
 import { Link } from "@tanstack/react-router"
 import { FileUp } from "lucide-react"
-import { useState } from "react"
-import { buttonVariants } from "@/components/ui/button"
-import { Banner, Hint } from "@/features/design-system"
+import { useRef, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { ActionMenu, Banner, type MenuEntry } from "@/features/design-system"
 import type { ProjectLibrary } from "@/features/project-storage/library"
 import { projectHref } from "@/features/navigation"
-import { cn } from "@/lib/utils"
 import { fileStoreFor } from "./account"
+import { folderEntries, planArchive, titleFrom, unzipFiles, zipEntries } from "./projectArchive"
 import { importPrototype, planImport, readPrototypeExport, type ImportPlan } from "./prototypeImport"
 
 export type ImportState =
@@ -17,28 +17,65 @@ export type ImportState =
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
+/** The largest .zip read: its files are unpacked in memory, and a project holds at most 64 MiB of text. */
+const MAX_ZIP_BYTES = 256 * 1024 * 1024
+
+/** What to import from: a project's .zip, a folder, or the prototype's .json export. */
+export type ImportSource = "zip" | "folder" | "prototype"
+
+/** Plan an import from what was chosen, or say why it cannot be imported. */
+async function planFrom(source: ImportSource, files: File[]): Promise<{ ok: true; plan: ImportPlan } | { ok: false; error: string }> {
+  if (source === "folder") {
+    const folder = folderEntries(files)
+    const read = async (paths: string[]) => {
+      const found = new Map<string, Uint8Array>()
+      for (const path of paths) {
+        const file = folder.byPath.get(path)
+        if (file) found.set(path, new Uint8Array(await file.arrayBuffer()))
+      }
+      return found
+    }
+    return planArchive(titleFrom(folder.name), folder.entries, read)
+  }
+  const file = files[0]
+  if (source === "prototype") {
+    const read = readPrototypeExport(await file.text())
+    return read.ok ? { ok: true, plan: planImport(read.value) } : read
+  }
+  if (file.size > MAX_ZIP_BYTES) return { ok: false, error: "The .zip is larger than 256 MiB." }
+  const zip = new Uint8Array(await file.arrayBuffer())
+  let entries
+  try {
+    entries = zipEntries(zip)
+  } catch {
+    return { ok: false, error: "This file is not a .zip archive, or it is damaged." }
+  }
+  return planArchive(titleFrom(file.name), entries, async (paths) => unzipFiles(zip, new Set(paths)))
+}
+
 /**
- * Importing a project exported from the prototype as a .json file: the
- * state, and `choose` for the file field. A file that fails the checks
- * creates nothing; paths this app cannot store are skipped and listed with
- * the reason for each.
+ * Importing a project: from a .zip (such as one this app downloaded), a
+ * folder, or the prototype's .json export. The state, and `choose` for the
+ * file fields. Something that fails the checks creates nothing; paths this
+ * app cannot store are skipped and listed with the reason for each.
  */
 export function useProjectImport(library: ProjectLibrary) {
   const [state, setState] = useState<ImportState>({ kind: "idle" })
 
-  const choose = async (input: HTMLInputElement) => {
-    const file = input.files?.[0]
+  const choose = async (input: HTMLInputElement, source: ImportSource) => {
+    const files = [...(input.files ?? [])]
     // Let the same file be chosen again.
     input.value = ""
-    if (!file) return
-    setState({ kind: "importing", name: file.name })
-    const read = readPrototypeExport(await file.text())
-    if (!read.ok) {
-      setState({ kind: "failed", message: `${file.name} could not be imported. ${read.error}` })
-      return
-    }
-    const plan = planImport(read.value)
+    if (files.length === 0) return
+    const name = source === "folder" ? titleFrom(folderEntries(files).name) : files[0].name
+    setState({ kind: "importing", name })
     try {
+      const planned = await planFrom(source, files)
+      if (!planned.ok) {
+        setState({ kind: "failed", message: `${name} could not be imported. ${planned.error}` })
+        return
+      }
+      const { plan } = planned
       const projectId = await importPrototype(library, (id) => fileStoreFor(library, id), plan)
       void library.syncProject(projectId)
       setState({
@@ -56,43 +93,57 @@ export function useProjectImport(library: ProjectLibrary) {
   return { state, choose }
 }
 
+/** Whether this browser can pick a whole folder. */
+const folderPicking = () => typeof HTMLInputElement !== "undefined" && "webkitdirectory" in HTMLInputElement.prototype
+
 /**
- * Import a project, as a quiet ghost button: the file field is hidden
- * behind its label, which looks like the button and says what file it takes
- * in a tooltip (and to screen readers).
+ * Import a project, as a quiet ghost button with a menu: a .zip, a folder
+ * (where the browser can pick one), or the prototype's export. Each opens
+ * its own hidden file field.
  */
-export function ImportProjectButton({ state, onChoose }: { state: ImportState; onChoose: (input: HTMLInputElement) => void }) {
+export function ImportProjectButton({ state, onChoose }: { state: ImportState; onChoose: (input: HTMLInputElement, source: ImportSource) => void }) {
+  const zip = useRef<HTMLInputElement>(null)
+  const folder = useRef<HTMLInputElement>(null)
+  const prototype = useRef<HTMLInputElement>(null)
+  const busy = state.kind === "importing"
+  const entries: MenuEntry[] = [
+    { label: "A .zip file", onSelect: () => zip.current?.click() },
+    ...(folderPicking() ? [{ label: "A folder", onSelect: () => folder.current?.click() }] : []),
+    { label: "A prototype export (.json)", onSelect: () => prototype.current?.click() },
+  ]
+  const field = (ref: React.RefObject<HTMLInputElement | null>, label: string, source: ImportSource, props: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input
+      ref={ref}
+      type="file"
+      aria-label={label}
+      tabIndex={-1}
+      disabled={busy}
+      onChange={(event) => onChoose(event.currentTarget, source)}
+      className="sr-only"
+      {...props}
+    />
+  )
   return (
     <span className="flex">
-      <input
-        id="import-project"
-        type="file"
-        accept=".json,application/json"
-        aria-describedby="import-project-hint"
-        disabled={state.kind === "importing"}
-        onChange={(event) => onChoose(event.currentTarget)}
-        className="peer sr-only"
+      {field(zip, "Import a .zip file", "zip", { accept: ".zip,application/zip" })}
+      {field(folder, "Import a folder", "folder", { webkitdirectory: "", multiple: true } as React.InputHTMLAttributes<HTMLInputElement>)}
+      {field(prototype, "Import a prototype export", "prototype", { accept: ".json,application/json" })}
+      <ActionMenu
+        entries={entries}
+        trigger={
+          <Button variant="ghost" disabled={busy}>
+            <FileUp aria-hidden="true" />
+            Import a folder or .zip
+          </Button>
+        }
+        contentProps={{ align: "end" }}
       />
-      <Hint label={HINT}>
-        <label
-          htmlFor="import-project"
-          className={cn(
-            buttonVariants({ variant: "ghost" }),
-            "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-focus-visible:outline-solid peer-disabled:pointer-events-none peer-disabled:opacity-45",
-          )}
-        >
-          <FileUp aria-hidden="true" />
-          Import a project
-        </label>
-      </Hint>
-      <span id="import-project-hint" className="sr-only">
-        {HINT}
-      </span>
     </span>
   )
 }
 
-const HINT = "A .json file exported from the prototype."
+/** The most skipped paths listed; a folder with, say, a .git folder skips thousands. */
+const SKIPPED_SHOWN = 100
 
 /** How the import is going: under way, failed, or what it made and what it skipped. */
 export function ImportReport({ state }: { state: ImportState }) {
@@ -119,12 +170,13 @@ export function ImportReport({ state }: { state: ImportState }) {
           <>
             <span>{count(state.skipped.length, "path was", "paths were")} skipped, because this app cannot store them:</span>
             <ul className="grid gap-1 pl-4">
-              {state.skipped.map(({ path, reason }) => (
-                <li key={path} className="list-disc [overflow-wrap:anywhere]">
+              {state.skipped.slice(0, SKIPPED_SHOWN).map(({ path, reason }, index) => (
+                <li key={index} className="list-disc [overflow-wrap:anywhere]">
                   <code>{path}</code> {reason}
                 </li>
               ))}
             </ul>
+            {state.skipped.length > SKIPPED_SHOWN ? <span>And {state.skipped.length - SKIPPED_SHOWN} more.</span> : null}
           </>
         ) : null}
       </span>

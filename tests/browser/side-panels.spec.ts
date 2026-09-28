@@ -100,7 +100,7 @@ test("the project panel switches to another project and back to all projects", a
   // The project's name opens its menu: the projects, the way home, then the project's actions.
   await page.getByRole("button", { name: "Alpha, project menu" }).click()
   const menu = page.getByRole("menu")
-  await expect(menu.getByRole("menuitem")).toHaveText(["Alpha", "Beta", "All projects", "Import a file", "Refresh file list", "Command palette"])
+  await expect(menu.getByRole("menuitem")).toHaveText(["Alpha", "Beta", "All projects", "Download project", "Import a file", "Refresh file list", "Command palette"])
   await expect(menu.getByRole("menuitem", { name: "Alpha" })).toHaveAttribute("aria-current", "page")
   await menu.getByRole("menuitem", { name: "Beta" }).click()
   await expect(page).toHaveURL(projectUrl(beta))

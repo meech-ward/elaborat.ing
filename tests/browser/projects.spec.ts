@@ -318,7 +318,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await expect(page.getByText("No projects yet.")).toBeVisible()
 })
 
-test("a project's menu depends on the role: a viewer can only see its members and leave", async ({ page }) => {
+test("a project's menu depends on the role: a viewer can only see its members, download it and leave", async ({ page }) => {
   const server = new FakeProjectServer()
   await serverProject(server, "Mine", {})
   await sharedWithMe(server, "Edited", {}, true)
@@ -327,9 +327,9 @@ test("a project's menu depends on the role: a viewer can only see its members an
   await fakeSupabase(page, { server })
   await signedIn(page)
   await home(page)
-  expect(await menuItems(page, "Mine")).toEqual(["Members", "Archive", "Delete permanently"])
-  expect(await menuItems(page, "Edited")).toEqual(["Members", "Archive", "Leave project"])
-  expect(await menuItems(page, "Viewed")).toEqual(["Members", "Leave project"])
+  expect(await menuItems(page, "Mine")).toEqual(["Members", "Download project", "Archive", "Delete permanently"])
+  expect(await menuItems(page, "Edited")).toEqual(["Members", "Download project", "Archive", "Leave project"])
+  expect(await menuItems(page, "Viewed")).toEqual(["Members", "Download project", "Leave project"])
 })
 
 test("the projects home does not download the editor", async ({ page }) => {

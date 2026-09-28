@@ -139,8 +139,8 @@ this repository once the steps before them have landed.
     come back with no network, and a new version waits until the person
     chooses "Update ready".
 16. **Projects exported from the prototype import into elaborat.ing (done).**
-    "Import a project" on the projects home reads the prototype's one-file
-    JSON export, creates the project on this device in saves of at most 500
+    "A prototype export" in the projects home's import menu reads the
+    prototype's one-file JSON export, creates the project on this device in saves of at most 500
     files and 8 MiB, and lists any path this app cannot store with the reason.
 
 Also done in this phase: the comment anchoring library (see the task below).
@@ -158,6 +158,15 @@ Also done in this phase: the comment anchoring library (see the task below).
 - **Generous abuse limits** per user (done: new projects a day and in total,
   saves, searches and agent tool calls a minute, counted in the database so
   every path gets them; see "Limits" in `architecture.md`).
+- **Download and import projects** (done: "Download project" in the project
+  menu and on each project's card on the projects home saves a .zip of the
+  project's files in their folders, exactly as saved, built on the device so
+  it works offline; unsaved changes are left out unless the person includes
+  them. The local project downloads too. "Import a folder or .zip" on the
+  projects home makes a new project from a .zip or a chosen folder, with the
+  prototype import's limits and report: saves of at most 500 files and 8 MiB,
+  and each path it cannot store listed with the reason, such as a file that is
+  not UTF-8 text. A downloaded .zip imports back byte for byte.)
 - **Component isolation on a sandbox domain**, with a custom-code notice on
   shared projects (the notice is done: a note in a shared project that runs
   custom code asks before it runs it, in the app and in the chat card, and so

@@ -108,7 +108,7 @@ export const SAVE_FILES = 500
 export const SAVE_BYTES = 8 * 1024 * 1024
 
 /** Decide what to import, and in which saves. File contents stay exactly as exported. */
-export function planImport(exported: PrototypeExport): ImportPlan {
+export function planImport(exported: Pick<PrototypeExport, "title" | "files" | "directories">): ImportPlan {
   const skipped: ImportPlan["skipped"] = []
   const usable = (path: string) => {
     const reason = projectPathProblem(path)
