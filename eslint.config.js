@@ -6,6 +6,7 @@ export default defineConfig(
   {
     ignores: [
       "dist/",
+      "dist-visualize/",
       "dist-next/",
       "tests/browser/harness/dist/",
       "test-results/",

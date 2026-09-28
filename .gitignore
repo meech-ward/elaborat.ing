@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# `bun run build:visualize`
+dist-visualize/
 .wrangler/
 .dev.vars*
 src/routeTree.gen.ts

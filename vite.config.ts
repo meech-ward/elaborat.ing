@@ -5,6 +5,7 @@ import babel from "@rolldown/plugin-babel"
 import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
+import { bundleVisualizer } from "./vite-plugins/bundle-visualizer.ts"
 import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
 import { monacoLanguageServices } from "./vite-plugins/monaco-language-services.ts"
 import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
@@ -83,6 +84,8 @@ export default defineConfig({
         ],
       },
     }),
+    // Only in `bun run build:visualize` (see the plugin).
+    bundleVisualizer(),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
   // Workers are ES modules. Firefox (at least the build the browser tests

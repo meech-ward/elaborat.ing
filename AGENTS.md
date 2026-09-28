@@ -39,6 +39,10 @@ bun run test
 bun run build:browser-test && bun run build:harness && bun run build:next-version
 npx playwright install --with-deps chromium firefox
 npx playwright test
+
+# Bundle size: the production build with a treemap (dist-visualize/stats.html),
+# then what each page and feature downloads, with gzip and brotli sizes
+bun run build:visualize && bun run report:bundle
 ```
 
 Edge Functions run on Deno 2. In a function's folder, such as

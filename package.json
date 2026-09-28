@@ -14,6 +14,8 @@
     "build:browser-test": "vite build --mode browser-test",
     "build:next-version": "vite build --mode browser-test --config tests/browser/next-version/vite.config.ts",
     "build:chat-card": "bun scripts/build-chat-card.ts",
+    "build:visualize": "vite build --mode visualize",
+    "report:bundle": "bun scripts/bundle-report.ts",
     "palette-css": "bun scripts/palette-css.ts",
     "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"
@@ -79,6 +81,7 @@
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "fake-indexeddb": "6.2.5",
+    "rollup-plugin-visualizer": "7.1.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0",
     "vite": "8.2.2",
