@@ -28,8 +28,17 @@ export type CommentsBodyProps = {
   openThreads: readonly ReactElement[]
   resolvedThreads?: readonly ReactElement[]
   status?: CommentsStatus
-  /** Viewers read comments and can't write: no new-comment button, and a line saying why. */
-  readOnly?: boolean
+  /**
+   * Viewers read comments and can't write: no new-comment button, and a line
+   * saying why at the foot. A string says another reason there, such as an
+   * archived project's.
+   */
+  readOnly?: boolean | string
+  /**
+   * Shown in place of the threads when this file can have none here, such
+   * as an EmptyState saying why (signed out, a file not synced yet).
+   */
+  placeholder?: ReactNode
   /** A CommentDraft being written, shown first. */
   draft?: ReactNode
   /** Start a comment on the whole file; shows the header button and the empty state's action. */
@@ -126,6 +135,7 @@ function CommentsBody({
   resolvedThreads = [],
   status = "ready",
   readOnly = false,
+  placeholder,
   draft,
   onCommentOnFile,
   fileNoun = "note",
@@ -139,7 +149,9 @@ function CommentsBody({
   const touch = size === "touch"
   const empty = openThreads.length === 0 && resolvedThreads.length === 0 && !draft
   let content: ReactNode
-  if (empty && status === "loading") {
+  if (placeholder) {
+    content = placeholder
+  } else if (empty && status === "loading") {
     content = <ThreadSkeletons />
   } else if (empty && status === "offline") {
     content = (
@@ -260,7 +272,7 @@ function CommentsBody({
           )}
         >
           <Eye aria-hidden="true" className="size-3.5 shrink-0" />
-          You can read comments. Writing them needs commenter access.
+          {typeof readOnly === "string" ? readOnly : "You can read comments. Writing them needs commenter access."}
         </p>
       )}
     </CommentsSizeContext>
@@ -301,6 +313,7 @@ export function CommentsPanel({
   resolvedThreads,
   status,
   readOnly = false,
+  placeholder,
   draft,
   onCommentOnFile,
   fileNoun = "note",
@@ -317,9 +330,9 @@ export function CommentsPanel({
       <CommentsHeader
         title={<Heading className="text-sm leading-none font-semibold">{title}</Heading>}
         count={openThreads.length}
-        onCommentOnFile={onCommentOnFile}
+        onCommentOnFile={placeholder ? undefined : onCommentOnFile}
         fileNoun={fileNoun}
-        readOnly={readOnly}
+        readOnly={Boolean(readOnly)}
         size={size}
         close={
           onClose && (
@@ -334,6 +347,7 @@ export function CommentsPanel({
         resolvedThreads={resolvedThreads}
         status={status}
         readOnly={readOnly}
+        placeholder={placeholder}
         draft={draft}
         onCommentOnFile={onCommentOnFile}
         fileNoun={fileNoun}
@@ -381,6 +395,7 @@ export function CommentsSheet({
   resolvedThreads,
   status,
   readOnly = false,
+  placeholder,
   draft,
   onCommentOnFile,
   fileNoun = "note",
@@ -409,9 +424,9 @@ export function CommentsSheet({
         <CommentsHeader
           title={<SheetTitle className="text-[17px] leading-none font-semibold">{title}</SheetTitle>}
           count={openThreads.length}
-          onCommentOnFile={onCommentOnFile}
+          onCommentOnFile={placeholder ? undefined : onCommentOnFile}
           fileNoun={fileNoun}
-          readOnly={readOnly}
+          readOnly={Boolean(readOnly)}
           size="touch"
           close={
             <SheetClose render={<Button ref={close} variant="ghost" size="icon-lg" aria-label="Close comments" />}>
@@ -425,6 +440,7 @@ export function CommentsSheet({
           resolvedThreads={resolvedThreads}
           status={status}
           readOnly={readOnly}
+          placeholder={placeholder}
           draft={draft}
           onCommentOnFile={onCommentOnFile}
           fileNoun={fileNoun}

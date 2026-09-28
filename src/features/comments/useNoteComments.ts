@@ -47,12 +47,15 @@ export function useNoteComments({
   onReveal: (mark: CommentMark) => void
 }): NoteComments {
   const comments = useProjectComments()
+  // The controller stays the same for the project; the value around it
+  // changes with the person's access, which must not count as leaving.
+  const controller = comments?.controller ?? null
   const ui = useCommentsUi()
   const serverId = server?.id ?? null
   const serverVersion = server?.version ?? null
   const file = useMemo<CommentFile | null>(
-    () => (comments && serverId !== null && serverVersion !== null ? { path, fileId: serverId, fileVersion: serverVersion } : null),
-    [comments, path, serverId, serverVersion],
+    () => (controller && serverId !== null && serverVersion !== null ? { path, fileId: serverId, fileVersion: serverVersion } : null),
+    [controller, path, serverId, serverVersion],
   )
   // Threads load once the note has been on screen, and stay current after.
   const [shown, setShown] = useState(active)
@@ -70,15 +73,15 @@ export function useNoteComments({
   // The note on screen is the panel's file. Another file's view takes over
   // when it is shown; leaving clears it only if no other view has.
   useEffect(() => {
-    if (comments && active) comments.controller.show({ path, file })
-  }, [active, comments, file, path])
+    if (controller && active) controller.show({ path, file })
+  }, [active, controller, file, path])
   useEffect(() => {
-    if (!comments || !active) return
-    return () => comments.controller.leave(path)
-  }, [active, comments, path])
+    if (!controller || !active) return
+    return () => controller.leave(path)
+  }, [active, controller, path])
   useEffect(() => {
-    if (comments && file && shown) comments.controller.place(file.fileId, places)
-  }, [comments, file, places, shown])
+    if (controller && file && shown) controller.place(file.fileId, places)
+  }, [controller, file, places, shown])
 
   const latest = useRef<{ places: ReadonlyMap<string, ThreadPlace>; kinds: ReadonlyMap<string, "text" | "section" | null> }>({ places, kinds: new Map() })
   useLayoutEffect(() => {
@@ -89,13 +92,13 @@ export function useNoteComments({
   }, [places, threads])
   const reveal = useEffectEvent(onReveal)
   useEffect(() => {
-    if (!comments || !active) return
-    return comments.controller.onReveal((threadId) => {
+    if (!controller || !active) return
+    return controller.onReveal((threadId) => {
       const range = latest.current.places.get(threadId)?.range
       const kind = latest.current.kinds.get(threadId)
       if (range && kind) reveal({ id: threadId, kind, from: range.start, to: range.end, active: true })
     })
-  }, [active, comments])
+  }, [active, controller])
 
   const canComment = Boolean(comments?.canWrite && file)
   return {

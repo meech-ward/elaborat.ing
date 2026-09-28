@@ -94,6 +94,16 @@ export class ProjectComments {
     })
   }
 
+  /**
+   * Reloads every file listed before, whatever its revision: for when
+   * signals may have been missed, such as each time the change channel
+   * (re)joins. A reload already running is followed by one more.
+   */
+  refresh(): void {
+    for (const [fileId, file] of this.files) this.files.set(fileId, { ...file, revision: -1 })
+    this.changed(this.newest)
+  }
+
   /** Resolves once no reload is running. For tests and callers that need a settled store. */
   async settled(): Promise<void> {
     while (this.reloading) await this.reloading

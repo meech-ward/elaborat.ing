@@ -15,6 +15,7 @@ import {
   type MenuEntry,
   type ViewNames,
 } from "@/features/design-system";
+import { CommentsToggle } from "@/features/comments";
 import { TablineActions, useDesktopFrame, useFileActions } from "./tabline";
 
 export type FileHeaderView = {
@@ -31,10 +32,10 @@ export type FileHeaderView = {
  * One open file's header, the same for notes, drawings and diagrams. On a
  * desktop its view switch and Save go to the editor's top line while it is
  * the active file, and its actions to its tab's menu. On a phone they float
- * over the file, as C5 draws them: Back at the top left; "..." and Save at
- * the top right, with the views (Source and Rendered, or Code and Canvas)
- * as a choice at the top of "..." above the actions. Save shows only while
- * there is something to save.
+ * over the file, as C5 draws them: Back at the top left; the comments, "..."
+ * and Save at the top right, with the views (Source and Rendered, or Code
+ * and Canvas) as a choice at the top of "..." above the actions. Save shows
+ * only while there is something to save.
  */
 export function FileHeader({
   path,
@@ -78,6 +79,7 @@ export function FileHeader({
   };
   return (
     <PhoneHeader back={navigation}>
+      <CommentsToggle size="touch" />
       <ActionMenu
         entries={actions}
         choice={choice}

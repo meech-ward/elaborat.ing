@@ -39,7 +39,8 @@ import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { TablineProvider } from "./tabline";
-import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, isApplePlatform } from "@/features/design-system";
+import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, commentsShortcut, isApplePlatform } from "@/features/design-system";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
@@ -48,6 +49,7 @@ import { AccountPanel, FilesPanel, NewButtons, ProjectPanel, TreeScroller, type 
 import { SignUpTo } from "@/features/projects/LocalProject";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
+import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
 import { readDiagramCompanion } from "./diagramArtifact";
@@ -177,6 +179,11 @@ export function WorkspaceWorkbench({
   // screen, which shows over the open file until a file is opened.
   const [sidebar, setSidebar] = useState(() => !narrow);
   const [panel, setPanel] = useState(false);
+  // The comments of the file on screen (from the project page), and their
+  // panel; without an account the panel only links to sign-up.
+  const comments = useProjectComments();
+  const commentsUi = useCommentsUi();
+  const [guestComments, setGuestComments] = useState(false);
   // Element that opened the command palette; Escape/focus return goes here.
   const paletteInvoker = useRef<HTMLElement | null>(null);
   // The project panel, whose menu button the palette returns focus to when the menu opened it.
@@ -737,6 +744,19 @@ export function WorkspaceWorkbench({
   const awaitingTarget = Boolean(targetPath && targetPath !== state.active);
   const hideSessions = Boolean(linkProblem || awaitingTarget);
   const navigationOutsideSession = hideSessions;
+  // A drawing or a diagram on screen is the comments panel's file (a note's
+  // session says so itself, as it also places the threads in its text).
+  const commentsPath = !hideSessions && state.active && kindForPath(state.active) !== "note" && kindForPath(state.active) !== "text" ? state.active : null;
+  const commentsServer = commentsPath ? (files.find((file) => file.path === commentsPath)?.server ?? null) : null;
+  const commentsFileId = commentsServer?.id ?? null;
+  const commentsVersion = commentsServer?.version ?? null;
+  const commentsController = comments?.controller ?? null;
+  useEffect(() => {
+    if (!commentsController || !commentsPath) return;
+    const file = commentsFileId !== null && commentsVersion !== null ? { path: commentsPath, fileId: commentsFileId, fileVersion: commentsVersion } : null;
+    commentsController.show({ path: commentsPath, file });
+    return () => commentsController.leave(commentsPath);
+  }, [commentsController, commentsPath, commentsFileId, commentsVersion]);
   const openFromNavigation = async (path: string) => {
     if (await openPath(path)) { if (narrow) setSidebar(false); }
   };
@@ -822,6 +842,9 @@ export function WorkspaceWorkbench({
   const commands: QuickOpenCommand[] = [
     { label: "Toggle explorer", shortcut: commandShortcut("b", apple), run: () => setSidebar((v) => !v) },
     { label: "Toggle bottom panel", shortcut: commandShortcut("j", apple), run: () => setPanel((v) => !v) },
+    ...((comments || local) && state.active
+      ? [{ label: "Toggle comments", shortcut: commentsShortcut(apple), run: () => (comments ? comments.controller.setPanelOpen(!commentsUi.panelOpen) : setGuestComments((v) => !v)) }]
+      : []),
     { label: "Settings", run: () => { afterClose.current = openSettings; } },
     ...(narrow ? [] : [{ label: focus ? "Exit full screen" : "Focus", shortcut: commandShortcut(".", apple), run: () => setFocus((v) => !v) }]),
     ...(readOnly
@@ -947,6 +970,7 @@ export function WorkspaceWorkbench({
   const focusKey = commandShortcut(".", isApplePlatform());
   const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
+    <CommentsGuestProvider value={local ? { open: guestComments, onOpenChange: setGuestComments, signUp: <SignUpTo>Sign up to comment</SignUpTo> } : null}>
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
     <div className="wb-app" data-compact={narrow} data-focus={focus && !narrow} ref={shell}>
       <div className="wb-body" inert={filesScreen}>
@@ -1010,6 +1034,7 @@ export function WorkspaceWorkbench({
                 className={focus ? "hidden" : undefined}
               />
               {!narrow && <div className="contents" ref={setTablineSlot} />}
+              {!narrow && state.active && !hideSessions && <CommentsToggle />}
               {!narrow && (
                 <IconButton label={focus ? "Exit full screen" : "Focus"} shortcut={focusKey.label} keyShortcuts={focusKey.aria} onClick={() => setFocus((v) => !v)}>
                   {focus ? <Minimize2 /> : <Maximize2 />}
@@ -1148,7 +1173,12 @@ export function WorkspaceWorkbench({
             </main>
           </ResizablePanel>
         </ResizablePanelGroup>
+        {/* The comments float beside the editor, 16 from it; in focus mode below its floating controls. */}
+        {!narrow && !hideSessions && state.active && (
+          <CommentsSurface compact={false} className={cn("relative z-[1] ml-4", focus && "mt-[60px] h-[calc(100%-60px)]")} />
+        )}
       </div>
+      {narrow && !hideSessions && state.active && <CommentsSurface compact />}
       {filesScreen && (
         <section aria-label="Files and projects" data-files-screen="" className="absolute inset-0 z-40 overflow-y-auto overscroll-contain">
         <DottedPage className="flex min-h-full flex-col gap-2.5 pt-[calc(12px+env(safe-area-inset-top))] pr-[calc(12px+env(safe-area-inset-right))] pb-[calc(12px+env(safe-area-inset-bottom))] pl-[calc(12px+env(safe-area-inset-left))]">
@@ -1202,6 +1232,7 @@ export function WorkspaceWorkbench({
 
     </div>
     </SidebarProvider>
+    </CommentsGuestProvider>
   );
 }
 

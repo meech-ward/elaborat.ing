@@ -8,6 +8,9 @@ import { APP_URL } from "./urls.ts"
 // and mode switch, the approved sheet's components card, and the rest of the
 // library's sections in their places.
 
+// The page holds every component in every state; axe over all of it takes a while.
+test.describe.configure({ timeout: 60_000 })
+
 const styleGuideUrl = new URL("style-guide", APP_URL).href
 const supabase = palettes.find((palette) => palette.id === "supabase-green")!
 const glacier = palettes.find((palette) => palette.id === "glacier-cyan")!

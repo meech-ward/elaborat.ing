@@ -21,6 +21,8 @@ export type ProjectCommentsValue = {
   canWrite: boolean
   /** Why writing is off for someone who could otherwise write ("Comments need a connection."), or null. */
   writeBlocked: string | null
+  /** The device reaches the server: without it the panel says comments need a connection. */
+  online: boolean
 }
 
 const ProjectCommentsContext = createContext<ProjectCommentsValue | null>(null)

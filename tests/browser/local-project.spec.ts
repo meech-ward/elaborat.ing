@@ -51,6 +51,10 @@ test("without an account, the local project keeps a note across a reload, and wh
   await expect(page.getByRole("tab", { name: "ideas.mdx" })).toBeVisible({ timeout: 15_000 })
   await expect(editorText(page)).toContainText("Kept in this browser.")
   expect(creates(fake)).toBe(0)
+
+  // Comments need an account too.
+  await page.getByRole("button", { name: "Comments", exact: true }).click()
+  await expect(page.getByRole("complementary", { name: "Comments" }).getByRole("link", { name: "Sign up to comment" })).toHaveAttribute("href", "/sign-up")
 })
 
 test("signing in uploads the local project once, as Local project, and opens it", async ({ page }) => {

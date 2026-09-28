@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ChevronLeft, Info, Maximize2, Minimize2, MoreHorizontal } from "lucide-react"
+import { ChevronLeft, CloudUpload, Info, LogIn, Maximize2, Minimize2, MoreHorizontal } from "lucide-react"
 import { DottedPage } from "@/components/panel"
 import { Button } from "@/components/ui/button"
 import { ensureGeneratedNativeFont } from "@/features/drawings"
@@ -13,6 +13,7 @@ import { CommentsPanel, CommentsSheet } from "../ui/CommentsPanel"
 import { CommentAnchorLine, CommentDraft, CommentThread } from "../ui/CommentThread"
 import type { CommentAnchorView } from "../ui/commentTypes"
 import { EditorHeader } from "../ui/EditorHeader"
+import { EmptyState } from "../ui/EmptyState"
 import { FloatingPanel } from "../ui/FloatingPanel"
 import { IconButton, RoundIconButton } from "../ui/IconButton"
 import { KindBadge } from "../ui/KindBadge"
@@ -20,7 +21,7 @@ import { NoteProse } from "../ui/NoteProse"
 import { PhoneHeader } from "../ui/PhoneHeader"
 import { SaveButton } from "../ui/SaveButton"
 import { ScaleToFit } from "../ui/ScaleToFit"
-import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
+import { commandShortcut, commentsShortcut, isApplePlatform } from "../ui/shortcuts"
 import { SourceLines, type SourcePart } from "../ui/SourceLines"
 import { SplitPanes } from "../ui/SplitPanes"
 import { TabLine, type TabLineItem } from "../ui/TabLine"
@@ -344,6 +345,39 @@ function PanelStates() {
       <PanelSample label="Did not load" caption="A failed first load, with Try again.">
         <CommentsPanel headingLevel={4} className="h-full" openThreads={[]} status="error" onRetry={noop} onClose={noop} />
       </PanelSample>
+      <PanelSample label="Archived" caption="Everyone reads; the foot says why nobody writes.">
+        <CommentsPanel
+          headingLevel={4}
+          className="h-full"
+          readOnly="This project is archived, so its comments can't change."
+          openThreads={[sampleThreads.whole].map((thread) => threadElement(thread, staticState, { canWrite: false }))}
+          onClose={noop}
+        />
+      </PanelSample>
+      <PanelSample label="None here" caption="A placeholder in place of the threads: without an account, or on a file not synced yet.">
+        <CommentsPanel
+          headingLevel={4}
+          className="h-full"
+          openThreads={[]}
+          placeholder={
+            <div className="flex flex-col gap-3">
+              <EmptyState
+                icon={<LogIn />}
+                title="Comments need an account"
+                description="Sign up to comment and to read what others say."
+                actions={
+                  <Button variant="secondary" onClick={noop}>
+                    Sign up to comment
+                  </Button>
+                }
+                className="py-10"
+              />
+              <EmptyState icon={<CloudUpload />} title="Not synced yet" description="Comments start once this file is on the server." className="py-6" />
+            </div>
+          }
+          onClose={noop}
+        />
+      </PanelSample>
     </div>
   )
 }
@@ -394,6 +428,7 @@ function SplitWithComments() {
   const commentsButton = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState<string | null>(OPEN_FILES[0])
   const focus = commandShortcut(".", isApplePlatform())
+  const comments = commentsShortcut(isApplePlatform())
   const quoteOpen = active === sampleThreads.quote.id
   const stepsOpen = active === sampleThreads.steps.id
   const openCount = state.open.length
@@ -440,7 +475,7 @@ function SplitWithComments() {
             <EditorHeader>
               <TabLine aria-label="Open files, with comments" items={tabItems} value={tab} onValueChange={setTab} />
               <ViewSwitch value={view} onValueChange={setView} />
-              <CommentsButton ref={commentsButton} count={openCount} pressed={panel} onClick={() => setPanel((shown) => !shown)} />
+              <CommentsButton ref={commentsButton} count={openCount} pressed={panel} shortcut={comments} onClick={() => setPanel((shown) => !shown)} />
               <IconButton label="Focus" shortcut={focus.label} keyShortcuts={focus.aria}>
                 <Maximize2 />
               </IconButton>

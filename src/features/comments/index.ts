@@ -37,3 +37,5 @@ export {
 export { SupabaseCommentsRemote, offline, type CommentList, type CommentsRemote, type NewThread, type RemoteComment, type RemoteThread } from "./remote"
 export { ProjectComments, type CommentsStatus } from "./store"
 export { useNoteComments, type NoteCommentRequest, type NoteComments } from "./useNoteComments"
+export { CommentsGuestProvider, CommentsSurface, CommentsToggle } from "./ui/CommentsSurface"
+export { fileNoun, threadViews, type ThreadView, type Viewer } from "./ui/threadViews"

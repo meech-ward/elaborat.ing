@@ -187,8 +187,12 @@ Also done in this phase: the comment anchoring library (see the task below).
   drawing elements. (Database and agent side done: threads, replies, edits,
   resolving and deletes with the access rules for each role, pgTAP tests for
   every role and for agents, the MCP comment tools, and the app's comments
-  adapter and store. See "Comments" in `architecture.md`. Next: the comment
-  panel, composer and highlights in the editor.)
+  adapter and store. See "Comments" in `architecture.md`. The comments panel
+  is done too: beside the file on a desktop and a sheet on a phone, toggled
+  from the editor's top line or ⌘⌥M / Ctrl+Alt+M, live through the project's
+  change signals, with whole-file comments, replies, edits, deletes, resolve
+  and reopen by role. Next: highlights, markers and new comments in the notes
+  and drawings.)
 
 ## Task: comment anchoring library
 

@@ -189,6 +189,16 @@ describe("ProjectComments", () => {
     expect(store.threads(B)[0].resolved_at).not.toBeNull()
   })
 
+  test("refresh reloads the listed files even with no newer revision", async () => {
+    const { server, store } = await setup()
+    await store.load(A)
+    store.refresh()
+    await store.settled()
+    expect(server.lists).toEqual([A, A])
+    // A file never listed stays unlisted.
+    expect(store.status(B)).toBe("idle")
+  })
+
   test("a write after a change it has not heard of reloads", async () => {
     const { server, store } = await setup()
     await store.load(A)

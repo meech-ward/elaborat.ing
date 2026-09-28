@@ -21,6 +21,11 @@ export function viewShortcut(digit: 1 | 2 | 3, apple: boolean): Shortcut {
     : { label: `Ctrl+Alt+${digit}`, aria: `Control+Alt+${digit}` }
 }
 
+/** Show or hide the comments: ⌘⌥M on Apple platforms, Ctrl+Alt+M elsewhere (⌘M minimises the window). */
+export function commentsShortcut(apple: boolean): Shortcut {
+  return apple ? { label: "⌘⌥M", aria: "Meta+Alt+M" } : { label: "Ctrl+Alt+M", aria: "Control+Alt+M" }
+}
+
 /** A command-key shortcut such as Save (⌘S, Ctrl+S) or Focus (⌘., Ctrl+.). */
 export function commandShortcut(key: string, apple: boolean): Shortcut {
   const name = key.toUpperCase()

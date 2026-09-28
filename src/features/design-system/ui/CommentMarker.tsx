@@ -153,14 +153,16 @@ export function DetachedBadge({ className, ...props }: Omit<ComponentProps<typeo
 /**
  * Opens and closes the comments: in the editor's header, the icon and the
  * open count as a ghost button (30 high, radius 8, muted; seg while the
- * panel is open, `pressed`). On phones (`touch`) the round 40 button over
- * the file, with the count on an accent bubble at its top right.
+ * panel is open, `pressed`), with its key in the tooltip. On phones
+ * (`touch`) the round 40 button over the file, with the count on an accent
+ * bubble at its top right.
  */
 export function CommentsButton({
   count,
   pressed = false,
   size = "default",
   label = "Comments",
+  shortcut,
   className,
   ...props
 }: Omit<ComponentProps<typeof Button>, "variant" | "size" | "children" | "aria-label"> & {
@@ -168,6 +170,8 @@ export function CommentsButton({
   pressed?: boolean
   size?: CommentsSize
   label?: string
+  /** The key that shows and hides the comments (commentsShortcut). */
+  shortcut?: Shortcut
 }) {
   const name = count > 0 ? `${label}, ${count} open` : label
   if (size === "touch") {
@@ -196,12 +200,13 @@ export function CommentsButton({
     )
   }
   return (
-    <Hint label={label}>
+    <Hint label={label} shortcut={shortcut?.label}>
       <Button
         variant="ghost"
         size="sm"
         aria-label={name}
         aria-pressed={pressed}
+        aria-keyshortcuts={shortcut?.aria}
         className={cn(
           "h-[30px] gap-1.5 rounded-tool px-2 font-mono text-xs font-medium tabular-nums aria-pressed:bg-seg aria-pressed:text-foreground pointer-coarse:h-10",
           className,

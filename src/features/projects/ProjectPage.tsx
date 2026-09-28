@@ -106,10 +106,19 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   // and the comments listed so far reload.
   useEffect(() => {
     if (!account.online || opened !== "open") return
-    const changes = new ProjectChanges(createClient(), projectId, 0, (revision) => {
-      void syncNow()
-      comments?.store.changed(revision)
-    })
+    const changes = new ProjectChanges(
+      createClient(),
+      projectId,
+      0,
+      (revision) => {
+        void syncNow()
+        comments?.store.changed(revision)
+      },
+      // Signals sent while the channel was away are not replayed, so each (re)join reloads the comments listed so far.
+      (status) => {
+        if (status === "SUBSCRIBED") comments?.store.refresh()
+      },
+    )
     seenRevisions.listen(changes)
     return () => {
       seenRevisions.listen(null)
@@ -165,6 +174,31 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     [account.online, library, projectId, syncNow],
   )
 
+  // What this person may do with comments: viewers read them; commenters,
+  // editors and the owner write them while online and the project is not archived.
+  const role = entry?.role ?? null
+  const archived = entry?.archived ?? false
+  const commentsOffline = !account.online || state.offline
+  const commentsViewer = role === "viewer"
+  const commentsValue: ProjectCommentsValue | null =
+    comments && role
+      ? {
+          ...comments,
+          userId: account.userId,
+          owner: role === "owner",
+          viewer: commentsViewer,
+          canWrite: !commentsViewer && !archived && !commentsOffline,
+          writeBlocked: commentsViewer
+            ? null
+            : archived
+              ? "This project is archived, so its comments can't change."
+              : commentsOffline
+                ? "Comments need a connection."
+                : null,
+          online: !commentsOffline,
+        }
+      : null
+
   if (opened === "missing") {
     return (
       <PanelPage>
@@ -213,18 +247,6 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   // The sync state sits with the person in the account panel.
   const offline = !account.online || state.offline
   const sync = entry && !account.local ? syncDot(entry, offline) : null
-  const viewer = entry?.role === "viewer"
-  const commentsValue: ProjectCommentsValue | null =
-    comments && entry
-      ? {
-          ...comments,
-          userId: account.userId,
-          owner: entry.role === "owner",
-          viewer,
-          canWrite: !viewer && !entry.archived && !offline,
-          writeBlocked: viewer ? null : entry.archived ? "This project is archived." : offline ? "Comments need a connection." : null,
-        }
-      : null
 
   return (
     <ProjectCommentsProvider value={commentsValue}>
