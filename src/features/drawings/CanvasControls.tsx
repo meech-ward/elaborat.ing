@@ -54,6 +54,7 @@ export function CanvasControls({
   areaRef,
   size,
   viewOnly,
+  comment = null,
 }: {
   store: CanvasUiStore;
   commands: CanvasCommands;
@@ -61,6 +62,8 @@ export function CanvasControls({
   areaRef: RefObject<HTMLDivElement | null>;
   size: IslandSize;
   viewOnly: boolean;
+  /** Comment on the one selected element, first in More tools; null where comments cannot be written. */
+  comment?: { shortcut: { label: string; aria: string }; onComment: () => void } | null;
 }) {
   const ui = useSyncExternalStore(store.subscribe, store.get, store.get);
   // Read when More tools opens: undo and redo are Excalidraw's own state.
@@ -79,6 +82,23 @@ export function CanvasControls({
   const undoKey = commandShortcut("Z", apple);
   const redoKey = apple ? { label: "⌘⇧Z", aria: "Meta+Shift+Z" } : { label: "Ctrl+Shift+Z", aria: "Control+Shift+Z" };
   const entries: MenuEntry[] = [
+    ...(comment
+      ? [
+          {
+            label: "Comment",
+            shortcut: comment.shortcut.label,
+            keyShortcuts: comment.shortcut.aria,
+            group: "comment",
+            // It comments on one element: select one first.
+            disabled: ui.single === null,
+            onSelect: () => {
+              // The new comment's field takes the keyboard.
+              focusAfter("stay");
+              comment.onComment();
+            },
+          },
+        ]
+      : []),
     ...[...more.map((tool) => ({ ...tool, group: "tools" })), ...extraTools].map((tool) => ({
       label: tool.label,
       shortcut: tool.shortcut,

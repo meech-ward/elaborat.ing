@@ -20,8 +20,13 @@ export type CommentFile = {
   fileVersion: number
 }
 
-/** The file on screen. `file` is null when it cannot have comments yet (not on the server). */
-export type CommentTarget = { path: string; file: CommentFile | null }
+/**
+ * The file on screen. `file` is null when it cannot have comments yet (not
+ * on the server). `elements` is the file its drawing elements' comments hang
+ * on when that is another file: a D2 diagram's generated canvas. The panel
+ * lists both files' threads.
+ */
+export type CommentTarget = { path: string; file: CommentFile | null; elements?: CommentFile | null }
 
 /**
  * Where a thread is in the text on screen now. `attached: false` is a
@@ -78,12 +83,13 @@ export class CommentsController {
    */
   show(target: CommentTarget): void {
     const current = this.state.target
-    if (current && current.path === target.path && sameFile(current.file, target.file)) return
+    if (current && current.path === target.path && sameFile(current.file, target.file) && sameFile(current.elements ?? null, target.elements ?? null)) return
     const sameFileId = current?.file?.fileId !== undefined && current.file.fileId === target.file?.fileId
+    const request = this.state.request
     this.set({
       target,
       activeThreadId: sameFileId ? this.state.activeThreadId : null,
-      request: this.state.request && this.state.request.file.fileId === target.file?.fileId ? this.state.request : null,
+      request: request && (request.file.fileId === target.file?.fileId || request.file.fileId === target.elements?.fileId) ? request : null,
     })
   }
 

@@ -1,5 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { OPENING_MARGIN, READABLE_ZOOM, canvasUiFrom, createCanvasUiStore, followArea, islandTool, nativeTool, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from "./canvasView";
+import {
+  OPENING_MARGIN,
+  READABLE_ZOOM,
+  canvasToScene,
+  canvasUiFrom,
+  centreOn,
+  createCanvasUiStore,
+  elementPoint,
+  followArea,
+  islandTool,
+  nativeTool,
+  openingViewport,
+  pinScenePoint,
+  sceneToCanvas,
+  zoomViewport,
+  type CanvasArea,
+  type CanvasViewport,
+} from "./canvasView";
 
 /** Where a scene point lands on the canvas. */
 const onScreen = (view: CanvasViewport, x: number, y: number) => ({ x: (x + view.scrollX) * view.zoom, y: (y + view.scrollY) * view.zoom });
@@ -72,7 +89,7 @@ describe("zoomViewport", () => {
 describe("the controls' state", () => {
   test("reads the tool, lock, zoom and selection, and names tools as the island does", () => {
     const ui = canvasUiFrom({ activeTool: { type: "freedraw", locked: true }, zoom: { value: 0.8 }, selectedElementIds: { a: true } });
-    expect(ui).toEqual({ tool: "freedraw", locked: true, zoom: 0.8, selected: true });
+    expect(ui).toEqual({ tool: "freedraw", locked: true, zoom: 0.8, selected: true, single: "a", elementMenu: null });
     expect(islandTool("freedraw")).toBe("draw");
     expect(islandTool("selection")).toBe("select");
     expect(islandTool("frame")).toBe("frame");
@@ -93,5 +110,57 @@ describe("the controls' state", () => {
     store.set({ ...first, zoom: 2 });
     expect(calls).toBe(1);
     expect(store.get().zoom).toBe(2);
+  });
+});
+
+describe("comments on elements", () => {
+  const base = { activeTool: { type: "selection", locked: false }, zoom: { value: 1 } };
+
+  test("one element selected is the one Comment is for; several, or none, is none", () => {
+    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true } }).single).toBe("a");
+    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true, b: true } }).single).toBeNull();
+    expect(canvasUiFrom({ ...base, selectedElementIds: {} }).single).toBeNull();
+  });
+
+  test("Excalidraw's menu for an element is told apart from the canvas's", () => {
+    const element = { left: 40, top: 60, items: ["separator", { name: "cut" }, { name: "copy" }] };
+    const canvas = { left: 40, top: 60, items: [{ name: "paste" }, { name: "copyAsPng" }] };
+    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true }, contextMenu: element }).elementMenu).toEqual({ left: 40, top: 60 });
+    expect(canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: canvas }).elementMenu).toBeNull();
+    expect(canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: null }).elementMenu).toBeNull();
+  });
+
+  const box = { x: 100, y: 50, width: 200, height: 100 };
+
+  test("a pin marks an element's top-right corner, or its spot, and turns with it", () => {
+    expect(pinScenePoint(box)).toEqual({ x: 300, y: 50 });
+    expect(pinScenePoint(box, { x: 0.25, y: 0.5 })).toEqual({ x: 150, y: 100 });
+    // Turned a quarter clockwise about its middle (200, 100): the top-right corner goes to the bottom right.
+    const turned = pinScenePoint({ ...box, angle: Math.PI / 2 });
+    expect(turned.x).toBeCloseTo(250);
+    expect(turned.y).toBeCloseTo(200);
+    // A line's box is the one around its points.
+    expect(pinScenePoint({ x: 10, y: 10, width: 0, height: 0, points: [[0, 0], [-20, 40]] })).toEqual({ x: 10, y: 10 });
+  });
+
+  test("a spot on an element is kept as fractions of its box, found again after it moves or turns", () => {
+    expect(elementPoint(box, { x: 150, y: 100 })).toEqual({ x: 0.25, y: 0.5 });
+    expect(elementPoint(box, { x: 99, y: 100 })).toBeNull();
+    const turned = { ...box, angle: 0.6 };
+    const spot = pinScenePoint(turned, { x: 0.3, y: 0.8 });
+    expect(elementPoint(turned, spot)).toEqual({ x: 0.3, y: 0.8 });
+    const moved = { ...turned, x: 400 };
+    const after = pinScenePoint(moved, { x: 0.3, y: 0.8 });
+    expect(after.x - spot.x).toBeCloseTo(300);
+    expect(after.y).toBeCloseTo(spot.y);
+  });
+
+  test("scene points go to the screen and back through the viewport", () => {
+    const view: CanvasViewport = { zoom: 2, scrollX: -50, scrollY: 10 };
+    expect(sceneToCanvas({ x: 100, y: 20 }, view)).toEqual({ x: 100, y: 60 });
+    expect(canvasToScene({ x: 100, y: 60 }, view)).toEqual({ x: 100, y: 20 });
+    const centred = centreOn(view, area, { x: 300, y: 400 });
+    expect(sceneToCanvas({ x: 300, y: 400 }, centred)).toEqual({ x: 280 + 580, y: 60 + 420 });
+    expect(centred.zoom).toBe(2);
   });
 });

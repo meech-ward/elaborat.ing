@@ -52,7 +52,7 @@ import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
-import { readDiagramCompanion } from "./diagramArtifact";
+import { nativePathFor, readDiagramCompanion } from "./diagramArtifact";
 import { RenameDialog } from "./RenameDialog";
 import { prepareProjectLeave, type PrepareProjectLeave } from "./projectLeave";
 import type { OperationSession } from "./operationSession";
@@ -746,17 +746,23 @@ export function WorkspaceWorkbench({
   const navigationOutsideSession = hideSessions;
   // A drawing or a diagram on screen is the comments panel's file (a note's
   // session says so itself, as it also places the threads in its text).
+  // A diagram's element comments hang on its generated canvas file.
   const commentsPath = !hideSessions && state.active && kindForPath(state.active) !== "note" && kindForPath(state.active) !== "text" ? state.active : null;
   const commentsServer = commentsPath ? (files.find((file) => file.path === commentsPath)?.server ?? null) : null;
   const commentsFileId = commentsServer?.id ?? null;
   const commentsVersion = commentsServer?.version ?? null;
+  const canvasPath = commentsPath && kindForPath(commentsPath) === "diagram" ? nativePathFor(commentsPath) : null;
+  const canvasServer = canvasPath ? (files.find((file) => file.path === canvasPath)?.server ?? null) : null;
+  const canvasFileId = canvasServer?.id ?? null;
+  const canvasVersion = canvasServer?.version ?? null;
   const commentsController = comments?.controller ?? null;
   useEffect(() => {
     if (!commentsController || !commentsPath) return;
     const file = commentsFileId !== null && commentsVersion !== null ? { path: commentsPath, fileId: commentsFileId, fileVersion: commentsVersion } : null;
-    commentsController.show({ path: commentsPath, file });
+    const elements = canvasPath === null ? undefined : canvasFileId !== null && canvasVersion !== null ? { path: canvasPath, fileId: canvasFileId, fileVersion: canvasVersion } : null;
+    commentsController.show({ path: commentsPath, file, ...(elements === undefined ? {} : { elements }) });
     return () => commentsController.leave(commentsPath);
-  }, [commentsController, commentsPath, commentsFileId, commentsVersion]);
+  }, [commentsController, commentsPath, commentsFileId, commentsVersion, canvasPath, canvasFileId, canvasVersion]);
   const openFromNavigation = async (path: string) => {
     if (await openPath(path)) { if (narrow) setSidebar(false); }
   };

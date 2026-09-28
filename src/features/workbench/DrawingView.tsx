@@ -11,9 +11,11 @@ import {
   saveDrawingFile,
   scenesEqual,
   summarizeDrawing,
+  type DrawingCanvasApi,
   type DrawingScene,
   type ParsedDrawing,
 } from "@/features/drawings/index.ts";
+import { useCanvasComments } from "@/features/comments";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { SourceEditor, type SourceEditorApi } from "@/features/source";
@@ -384,6 +386,17 @@ export function DrawingView({
     setNotice(`Exported ${result.filename}.`);
   }, [view, scene, sourceDraft, path]);
 
+  // Comments on the drawing's elements: pins on the canvas, and Comment on
+  // the selected element. The panel's Go to shows an element on the canvas.
+  const canvasApi = useRef<DrawingCanvasApi | null>(null);
+  const canvasComments = useCanvasComments({
+    path,
+    elements: scene?.elements ?? null,
+    onReveal: (elementId) => {
+      canvasApi.current?.revealElement(elementId);
+    },
+  });
+
   const duplicateKey = commandShortcut("D", isApplePlatform());
   const fullBleed = desktop && active && view !== "source" && scene !== null;
   const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
@@ -497,6 +510,8 @@ export function DrawingView({
             compact={!desktop}
             active={active && view !== "source"}
             viewOnly={canvasViewOnly}
+            comments={canvasComments}
+            apiRef={canvasApi}
           />
         </div>
       )}

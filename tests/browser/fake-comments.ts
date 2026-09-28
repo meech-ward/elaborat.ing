@@ -199,6 +199,19 @@ export class FakeComments {
         (position.start as number) < (position.end as number)
       if (!valid) throw new RemoteError("invalid", "Invalid anchor")
     }
+    if (record.kind === "element") {
+      const point = record.point as Record<string, unknown> | undefined
+      const unit = (value: unknown) => typeof value === "number" && value >= 0 && value <= 1
+      const valid =
+        typeof record.element_id === "string" &&
+        record.element_id.length >= 1 &&
+        record.element_id.length <= 256 &&
+        typeof record.label === "string" &&
+        record.label.length <= 200 &&
+        (point === undefined ||
+          (typeof point === "object" && point !== null && Object.keys(point).sort().join() === "x,y" && unit(point.x) && unit(point.y)))
+      if (!valid) throw new RemoteError("invalid", "Invalid anchor")
+    }
   }
 
   private list(user: string, projectId: string, fileId: string | null) {

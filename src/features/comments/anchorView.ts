@@ -14,7 +14,7 @@ export function anchorView(anchor: CommentAnchor, place?: ThreadPlace): CommentA
     case "document":
       return { kind: "document" }
     case "element":
-      return { kind: "element", label: anchor.label, ...(detached ? { detached } : {}) }
+      return detached ? { kind: "element", label: anchor.label, detached } : { kind: "element", label: place?.text ?? anchor.label }
     case "text":
       return detached ? { kind: "text", quote: anchor.quote.exact, detached } : { kind: "text", quote: place?.text ?? anchor.quote.exact }
     case "section":

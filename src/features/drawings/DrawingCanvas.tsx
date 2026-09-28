@@ -38,16 +38,32 @@
 // scene (which must also typecheck without the package for pure-helper
 // tests) and the vendor unions.
 
-import { Component, Suspense, lazy, useEffect, useRef, useState } from 'react';
-import type { ComponentProps, ComponentType, ReactNode } from 'react';
-import { Banner, BannerAction } from '@/features/design-system';
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import type { ComponentProps, ComponentType, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { Banner, BannerAction, isApplePlatform } from '@/features/design-system';
+import type { CanvasPin } from '@/features/comments';
 import { mergeLibraryUpdate, snapshotLibraryState } from './merge.ts';
 import type { LibrarySnapshot } from './merge.ts';
 import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
-import { OPENING_MARGIN, canvasUiFrom, createCanvasUiStore, followArea, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
+import { CanvasPins, ElementMenuComment, createPinPlacesStore, pinPlaces, type PinElement } from './CanvasComments.tsx';
+import {
+  OPENING_MARGIN,
+  canvasToScene,
+  canvasUiFrom,
+  centreOn,
+  createCanvasUiStore,
+  elementBox,
+  elementPoint,
+  followArea,
+  openingViewport,
+  zoomViewport,
+  type CanvasArea,
+  type CanvasViewport,
+  type ScenePoint,
+} from './canvasView.ts';
 import './drawingCanvas.css';
 
 type NativeExcalidraw = typeof import('@excalidraw/excalidraw')['Excalidraw'];
@@ -182,6 +198,11 @@ function presented(present: DrawingCanvasProps['present'], scene: DrawingScene):
   return present ? present(scene) : scene;
 }
 
+/** The scene's elements as the comment pins read them (geometry and id). */
+function pinElements(elements: readonly unknown[]): readonly PinElement[] {
+  return elements as readonly PinElement[];
+}
+
 /** Pan and zoom the canvas, outside undo. */
 function setViewport(api: NativeAPI, view: CanvasViewport): void {
   (api.updateScene as (sceneData: NativeUpdateScene) => void)({
@@ -212,7 +233,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, compact = false, onError } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   // The canvas controls' layer, which covers the part of the canvas a person can see.
@@ -233,13 +254,80 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const onChangeRef = useRef(onChange);
   const onErrorRef = useRef(onError);
   const onScrollRef = useRef(onScrollChange);
+  const commentsRef = useRef(comments);
   // Latest callbacks without re-subscribing the native component: effects
   // only, never ref writes during render.
   useEffect(() => {
     onChangeRef.current = onChange;
     onErrorRef.current = onError;
     onScrollRef.current = onScrollChange;
+    commentsRef.current = comments;
   });
+
+  // Comment pins follow their elements and the view: placed again on every
+  // change the canvas reports, and when the pins change.
+  const [pinStore] = useState(createPinPlacesStore);
+  const layoutPins = (elements: readonly unknown[], state: { zoom: { value: number }; scrollX: number; scrollY: number }) => {
+    pinStore.set(pinPlaces(commentsRef.current?.pins ?? [], pinElements(elements), { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }));
+  };
+  const pins = comments?.pins;
+  useEffect(() => {
+    const api = apiRef.current;
+    if (api) layoutPins(api.getSceneElements(), api.getAppState());
+    else pinStore.set(new Map());
+  });
+  // Where the last click landed on an element, as a spot on it: More tools
+  // and the comment key comment there when that element is the selected one.
+  const lastSpotRef = useRef<{ elementId: string; point: ScenePoint | null } | null>(null);
+  const stopPointerRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => {
+    stopPointerRef.current?.();
+    stopPointerRef.current = null;
+  }, []);
+
+  /** Comment on an element, at a scene point on it (kept if it is on the element). */
+  const commentOn = useCallback((elementId: string, at: ScenePoint | null) => {
+    const api = apiRef.current;
+    const current = commentsRef.current;
+    if (!api || !current?.canComment) return;
+    const element = api.getSceneElements().find((candidate) => candidate.id === elementId);
+    if (!element) return;
+    const point = at ? elementPoint(pinElements([element])[0], at) : null;
+    current.onComment({ elementId, ...(point ? { point } : {}) });
+  }, []);
+  /** Comment on the one selected element (More tools, the comment key). */
+  const commentOnSelected = useCallback(() => {
+    const elementId = ui.get().single;
+    if (!elementId) return;
+    const spot = lastSpotRef.current;
+    const api = apiRef.current;
+    const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
+    if (!element) return;
+    const current = commentsRef.current;
+    if (!current?.canComment) return;
+    const point = spot?.elementId === elementId ? spot.point : null;
+    current.onComment({ elementId, ...(point ? { point } : {}) });
+  }, [ui]);
+  /** Comment from Excalidraw's menu for an element: close it, and comment where it was opened. */
+  const commentFromMenu = useCallback((elementId: string, at: { x: number; y: number }) => {
+    const api = apiRef.current;
+    if (!api) return;
+    (api.updateScene as (sceneData: NativeUpdateScene) => void)({ appState: { contextMenu: null }, captureUpdate: 'NEVER' });
+    const state = api.getAppState();
+    commentOn(elementId, canvasToScene(at, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }));
+  }, [commentOn]);
+  // ⌘⌥M or Ctrl+Alt+M on the canvas comments on the selected element; with
+  // nothing selected the page takes it (it shows and hides the comments).
+  const onCommentKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!commentsRef.current?.canComment || event.code !== 'KeyM' || !event.altKey || event.shiftKey) return;
+    const apple = isApplePlatform();
+    if (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return;
+    if (event.target instanceof HTMLElement && event.target.closest('textarea, input')) return;
+    if (!ui.get().single) return;
+    event.preventDefault();
+    commentOnSelected();
+  };
+  const openPin = useCallback((pin: CanvasPin) => commentsRef.current?.onOpen(pin), []);
 
   // Read by the native canvas on mount only; later scenes arrive through
   // updateScene, so this stays stable across re-renders and StrictMode.
@@ -364,6 +452,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
 
   const handleLibraryChange: NativeOnChange = (elements, appState, files) => {
     ui.set(canvasUiFrom(appState));
+    layoutPins(elements, appState);
     let current: LibrarySnapshot;
     try {
       // Workbench appearance is presentation-only, never an authored theme edit.
@@ -430,6 +519,32 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     canvas: canvasElement,
   };
 
+  // The page's handle: show an element (the comments panel's Go to).
+  useEffect(() => {
+    if (!pageApiRef) return;
+    pageApiRef.current = {
+      revealElement: (elementId) => {
+        const api = apiRef.current;
+        const area = visibleArea();
+        const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
+        if (!api || !area || !element) return false;
+        const box = elementBox(pinElements([element])[0]);
+        const state = api.getAppState();
+        setViewport(api, centreOn({ zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }, area, { x: box.x + box.width / 2, y: box.y + box.height / 2 }));
+        (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+          appState: { selectedElementIds: { [elementId]: true } as NativeAppState['selectedElementIds'] },
+          captureUpdate: 'NEVER',
+        });
+        canvasElement()?.focus();
+        return true;
+      },
+    };
+    return () => {
+      pageApiRef.current = null;
+    };
+  });
+
+  const canComment = Boolean(comments?.canComment);
   return (
     <div
       ref={wrapperRef}
@@ -437,6 +552,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       data-slot="drawing-canvas"
       className="relative"
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
+      onKeyDown={comments ? onCommentKey : undefined}
     >
       <CanvasErrorBoundary onError={onError}>
         <Suspense fallback={<div aria-label="Loading drawing canvas" className="p-3 text-[13px] text-muted-foreground">Loading drawing canvas…</div>}>
@@ -450,6 +566,11 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
             autoFocus={autoFocus ?? false}
             excalidrawAPI={(api: NativeAPI) => {
               apiRef.current = api;
+              stopPointerRef.current?.();
+              stopPointerRef.current = api.onPointerDown((_tool, pointerDown) => {
+                const hit = pointerDown.hit.element;
+                lastSpotRef.current = hit ? { elementId: hit.id, point: elementPoint(pinElements([hit])[0], pointerDown.origin) } : null;
+              });
               const pending = pendingRef.current;
               if (pending !== null) {
                 pendingRef.current = null;
@@ -462,7 +583,16 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               onScrollRef.current?.(scrollX, scrollY, zoom.value);
             }}
           />
-          <CanvasControls store={ui} commands={commands} areaRef={areaRef} size={compact ? 'touch' : 'default'} viewOnly={viewOnly ?? false} />
+          {pins && pins.length > 0 && <CanvasPins pins={pins} places={pinStore} onOpen={openPin} />}
+          {canComment && comments && <ElementMenuComment store={ui} wrapperRef={wrapperRef} shortcut={comments.shortcut} onComment={commentFromMenu} />}
+          <CanvasControls
+            store={ui}
+            commands={commands}
+            areaRef={areaRef}
+            size={compact ? 'touch' : 'default'}
+            viewOnly={viewOnly ?? false}
+            comment={canComment && comments ? { shortcut: comments.shortcut, onComment: commentOnSelected } : null}
+          />
         </Suspense>
       </CanvasErrorBoundary>
     </div>

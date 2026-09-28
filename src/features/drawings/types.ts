@@ -12,6 +12,8 @@
 // seed, versionNonce, per-element extras, top-level extras) survive
 // parse, in-memory edits and serialize untouched.
 
+import type { CanvasPin } from '@/features/comments';
+
 /** One native canvas element. Unknown fields are preserved, never stripped. */
 export interface DrawingElement {
   id: string;
@@ -167,6 +169,30 @@ export type DrawingCanvasTheme = 'light' | 'dark';
  */
 export type DrawingChangeKind = 'authored';
 
+/**
+ * Comments on the canvas's elements: the pins, which follow their elements
+ * as they move and the view as it pans and zooms, and Comment on the one
+ * selected element, from More tools, Excalidraw's menu for the element and
+ * the comment key.
+ */
+export interface CanvasComments {
+  pins: readonly CanvasPin[];
+  /** Comment is offered: the person may write comments on this file now. */
+  canComment: boolean;
+  /** The comment key, shown beside Comment. */
+  shortcut: { label: string; aria: string };
+  /** A pin was chosen: the panel opens at its thread. */
+  onOpen: (pin: CanvasPin) => void;
+  /** Comment on an element, at the spot it was pointed at if there is one. */
+  onComment: (target: { elementId: string; point?: { x: number; y: number } }) => void;
+}
+
+/** What the page asks of a canvas. */
+export interface DrawingCanvasApi {
+  /** Brings an element to the middle of the visible canvas, selects it and gives the canvas the keyboard. False when it is not there. */
+  revealElement: (elementId: string) => boolean;
+}
+
 /** Props for the controlled native canvas. Shell owns scene + saves. */
 export interface DrawingCanvasProps {
   /** Controlled scene. A new identity from outside is applied to the canvas. */
@@ -191,4 +217,8 @@ export interface DrawingCanvasProps {
   /** Phone controls: the touch-sized tool island at the bottom, and no zoom island. Default false. */
   compact?: boolean;
   onError?: (message: string) => void;
+  /** Comments on the drawing's elements, where the file can have them. */
+  comments?: CanvasComments | null;
+  /** Set to the canvas's API while it is mounted. */
+  apiRef?: { current: DrawingCanvasApi | null };
 }

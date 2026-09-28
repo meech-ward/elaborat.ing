@@ -12,6 +12,8 @@
 
 export type {
   BinaryFileData,
+  CanvasComments,
+  DrawingCanvasApi,
   DrawingCanvasProps,
   DrawingCanvasTheme,
   DrawingChangeKind,

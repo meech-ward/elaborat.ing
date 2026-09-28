@@ -191,8 +191,12 @@ Also done in this phase: the comment anchoring library (see the task below).
   is done too: beside the file on a desktop and a sheet on a phone, toggled
   from the editor's top line or ⌘⌥M / Ctrl+Alt+M, live through the project's
   change signals, with whole-file comments, replies, edits, deletes, resolve
-  and reopen by role. Next: highlights, markers and new comments in the notes
-  and drawings.)
+  and reopen by role. Drawings and diagrams have comments on elements: pins
+  on the canvas that follow their elements, Comment on the selected element
+  from More tools, its menu or the comment key, and a deleted element's
+  thread shown detached; a D2 diagram's are on its generated canvas, so they
+  stay through Regenerate. Next: highlights, markers and new comments in the
+  notes.)
 
 ## Task: comment anchoring library
 

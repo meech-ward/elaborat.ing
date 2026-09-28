@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { Banner, BannerAction, PhoneHeader, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
 // Excalidraw's own layout, for the generated canvas.
 import "@excalidraw/excalidraw/index.css";
-import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingScene } from "@/features/drawings/index.ts";
+import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingCanvasApi, type DrawingScene } from "@/features/drawings/index.ts";
+import { useCanvasComments } from "@/features/comments";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import { saveDrawingFile } from "@/features/drawings/serialize.ts";
 import { LocalConflictError, type LocalChange } from "@/features/project-storage/fileStore";
@@ -539,6 +540,18 @@ export function DiagramView({
   const fullBleed = desktop && active && view !== "source" && booted && !bootError && scene !== null;
   const [stageRef, onStageScroll] = useCanvasStage(fullBleed);
 
+  // Comments on the generated canvas's elements (they hang on its file, so a
+  // node keeps its comments through Regenerate): pins, and Comment on the
+  // selected element. The panel's Go to shows an element on the canvas.
+  const canvasApi = useRef<DrawingCanvasApi | null>(null);
+  const canvasComments = useCanvasComments({
+    path,
+    elements: scene?.elements ?? null,
+    onReveal: (elementId) => {
+      canvasApi.current?.revealElement(elementId);
+    },
+  });
+
   if (!booted) {
     return (
       <div className="wb-native-view">
@@ -691,6 +704,8 @@ export function DiagramView({
           compact={!desktop}
           active={active && view !== "source"}
           viewOnly={canvasViewOnly}
+          comments={canvasComments}
+          apiRef={canvasApi}
         />
       </div>
     </div>

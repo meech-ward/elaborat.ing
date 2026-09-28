@@ -53,6 +53,20 @@ describe("CommentsController", () => {
     expect(controller.getState()).toMatchObject({ activeThreadId: null, request: null })
   })
 
+  test("a diagram's new comment on its canvas file stays while the diagram is on screen", () => {
+    const code: CommentFile = { path: "flow.d2", fileId: "aaaaaaaa-0000-4000-8000-00000000000c", fileVersion: 2 }
+    const canvas: CommentFile = { path: "flow.excalidraw", fileId: "aaaaaaaa-0000-4000-8000-00000000000d", fileVersion: 2 }
+    const controller = new CommentsController()
+    controller.show({ path: code.path, file: code, elements: canvas })
+    const onNode = { file: canvas, anchor: { kind: "element" as const, element_id: "d2:a", label: "a" }, text: "a" }
+    controller.requestComment(onNode)
+    // Saving the diagram gives its canvas a new version: the target changes, the new comment stays.
+    controller.show({ path: code.path, file: code, elements: { ...canvas, fileVersion: 3 } })
+    expect(controller.getState()).toMatchObject({ target: { elements: { fileVersion: 3 } }, request: onNode })
+    controller.show({ path: B.path, file: B })
+    expect(controller.getState().request).toBeNull()
+  })
+
   test("sending or giving up the new comment ends it; closing the panel ends both", () => {
     const controller = new CommentsController()
     controller.requestComment(request(A))

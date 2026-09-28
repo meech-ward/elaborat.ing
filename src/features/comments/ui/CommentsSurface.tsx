@@ -57,18 +57,38 @@ function focusThread(threadId: string) {
   })
 }
 
-/** The file on screen's threads, placed, live. */
+/**
+ * The file on screen's threads, placed, live. A D2 diagram's include the
+ * ones on its generated canvas's elements (`elementsId`).
+ */
 function useFileComments(comments: ProjectCommentsValue | null, ui: CommentsUiState) {
   const file = ui.target?.file ?? null
   const fileId = file?.fileId ?? null
-  const { threads, status } = useFileThreads(fileId)
+  const elementsFileId = ui.target?.elements?.fileId ?? null
+  const elementsId = elementsFileId !== fileId ? elementsFileId : null
+  const own = useFileThreads(fileId)
+  const onElements = useFileThreads(elementsId)
+  const threads = useMemo(
+    () =>
+      onElements.threads.length === 0
+        ? own.threads
+        : [...own.threads, ...onElements.threads].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)),
+    [own.threads, onElements.threads],
+  )
+  const statuses = [own.status, onElements.status]
+  // Loading until both lists are in, so the second is not read out as new comments.
+  const status =
+    statuses.includes("error") ? "error" : statuses.includes("loading") || (elementsId !== null && onElements.status === "idle") ? "loading" : own.status
   const controller = comments?.controller
-  const places = useSyncExternalStore(controller?.subscribe ?? noSubscription, () => (controller && fileId ? controller.placesFor(fileId) : NO_PLACES))
+  const subscribe = controller?.subscribe ?? noSubscription
+  const ownPlaces = useSyncExternalStore(subscribe, () => (controller && fileId ? controller.placesFor(fileId) : NO_PLACES))
+  const elementPlaces = useSyncExternalStore(subscribe, () => (controller && elementsId ? controller.placesFor(elementsId) : NO_PLACES))
+  const places = useMemo(() => (elementPlaces.size === 0 ? ownPlaces : new Map([...ownPlaces, ...elementPlaces])), [ownPlaces, elementPlaces])
   const userId = comments?.userId ?? null
   const owner = comments?.owner ?? false
   const noun = ui.target ? fileNoun(ui.target.path) : "note"
   const views = useMemo(() => threadViews(threads, places, { userId, owner }, noun), [threads, places, userId, owner, noun])
-  return { file, fileId, threads, status, views, noun }
+  return { file, fileId, elementsId, threads, status, views, noun }
 }
 
 /**
@@ -105,7 +125,7 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   const comments = useProjectComments()
   const guest = useContext(GuestContext)
   const ui = useCommentsUi()
-  const { file, fileId, threads, status, views, noun } = useFileComments(comments, ui)
+  const { file, fileId, elementsId, threads, status, views, noun } = useFileComments(comments, ui)
   const controller = comments?.controller ?? null
   const store = comments?.store ?? null
   const open = guest ? guest.open : ui.panelOpen
@@ -146,8 +166,8 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   // A list that failed offline loads again when the connection is back.
   const online = comments?.online ?? false
   useEffect(() => {
-    if (store && fileId && online && store.status(fileId) === "error") void store.load(fileId)
-  }, [store, fileId, online])
+    for (const id of [fileId, elementsId]) if (store && id && online && store.status(id) === "error") void store.load(id)
+  }, [store, fileId, elementsId, online])
 
   // Comments that arrive from elsewhere are read out: "2 new comments".
   const known = useRef<{ fileId: string | null; ids: Set<string> | null }>({ fileId: null, ids: null })
@@ -173,7 +193,7 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   if (!ui.target && !guest) return null
 
   const canWrite = comments?.canWrite ?? false
-  const request = ui.request && fileId && ui.request.file.fileId === fileId ? ui.request : null
+  const request = ui.request && fileId && (ui.request.file.fileId === fileId || ui.request.file.fileId === elementsId) ? ui.request : null
   const problem = (what: string, error: unknown) => say(`${what}: ${error instanceof Error ? error.message : String(error)}`)
 
   const threadElement = (thread: ThreadView): ReactElement => (
@@ -272,7 +292,7 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
     onCommentOnFile: canWrite && file && controller ? () => controller.requestComment({ file, anchor: { kind: "document" } }) : undefined,
     fileNoun: noun,
     onRetry: () => {
-      if (store && fileId) void store.load(fileId)
+      for (const id of [fileId, elementsId]) if (store && id) void store.load(id)
     },
     announcement,
   }
