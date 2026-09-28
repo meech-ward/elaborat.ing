@@ -1,12 +1,13 @@
 /**
  * Settings > Passkeys: the signed-in person's passkeys, from Supabase Auth,
- * with "Add a passkey" and a way to remove each. Shows only when Auth has
- * passkey sign-in on and the browser supports passkeys.
+ * with "Add a passkey" and a way to remove each, once confirmed. Shows only
+ * when Auth has passkey sign-in on and the browser supports passkeys.
  */
 import { KeyRound } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { PasskeyListItem } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
+import { AlertDialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Banner, BannerAction } from "@/features/design-system"
 import { browserSupportsPasskeys, passkeyErrorMessage } from "@/features/auth/passkeys"
 import { signInOptions } from "@/features/auth/providers"
@@ -42,7 +43,13 @@ function Passkeys() {
   const [list, setList] = useState<List>({ status: "loading" })
   const [attempt, setAttempt] = useState(0)
   const [notice, setNotice] = useState<{ tone: "info" | "danger"; text: string } | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
+  // The passkey whose Remove waits for the person to confirm it (kept while the confirmation closes).
+  const [confirming, setConfirming] = useState<PasskeyListItem | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const addButton = useRef<HTMLButtonElement>(null)
+  const confirmed = useRef(false)
 
   useEffect(() => {
     let alive = true
@@ -57,10 +64,10 @@ function Passkeys() {
   }, [attempt])
 
   const add = async () => {
-    setBusy("add")
+    setAdding(true)
     setNotice(null)
     const { data, error } = await createClient().auth.registerPasskey()
-    setBusy(null)
+    setAdding(false)
     if (error || !data) {
       setNotice({ tone: "danger", text: error ? passkeyErrorMessage(error, "add") : "No passkey was added." })
       return
@@ -70,10 +77,10 @@ function Passkeys() {
   }
 
   const remove = async (passkey: PasskeyListItem) => {
-    setBusy(passkey.id)
+    setRemoving(passkey.id)
     setNotice(null)
     const { error } = await createClient().auth.passkey.delete({ passkeyId: passkey.id })
-    setBusy(null)
+    setRemoving(null)
     if (error) {
       setNotice({ tone: "danger", text: `Could not remove the passkey: ${error.message}` })
       return
@@ -123,8 +130,18 @@ function Passkeys() {
                     {passkey.last_used_at ? `, last used ${onDate(passkey.last_used_at)}` : ""}
                   </span>
                 </div>
-                <Button variant="outline" size="sm" aria-label={`Remove ${name}`} disabled={busy !== null} onClick={() => void remove(passkey)}>
-                  {busy === passkey.id ? "Removing..." : "Remove"}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Remove ${name}`}
+                  disabled={adding || removing !== null}
+                  onClick={() => {
+                    confirmed.current = false
+                    setConfirming(passkey)
+                    setConfirmOpen(true)
+                  }}
+                >
+                  {removing === passkey.id ? "Removing..." : "Remove"}
                 </Button>
               </li>
             )
@@ -133,11 +150,34 @@ function Passkeys() {
       )}
       {notice ? <Banner tone={notice.tone}>{notice.text}</Banner> : null}
       <div>
-        <Button variant="outline" size="sm" disabled={busy !== null || list.status !== "ready"} onClick={() => void add()}>
+        {/* Not off while a passkey is removed: the keyboard moves here from the confirmation. */}
+        <Button ref={addButton} variant="outline" size="sm" disabled={adding || list.status !== "ready"} onClick={() => void add()}>
           <KeyRound data-icon="inline-start" aria-hidden="true" />
-          {busy === "add" ? "Adding..." : "Add a passkey"}
+          {adding ? "Adding..." : "Add a passkey"}
         </Button>
       </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        {/* A removed passkey's row goes, so the keyboard moves on to Add a passkey; Cancel returns it to Remove. */}
+        <DialogContent showCloseButton={false} finalFocus={() => (confirmed.current ? addButton.current : true)}>
+          <DialogHeader>
+            <DialogTitle>Remove {confirming?.friendly_name || "Passkey"}?</DialogTitle>
+            <DialogDescription>It no longer signs you in, though your device may still offer it.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                confirmed.current = true
+                setConfirmOpen(false)
+                if (confirming) void remove(confirming)
+              }}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </AlertDialog>
     </section>
   )
 }

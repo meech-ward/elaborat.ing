@@ -25,3 +25,12 @@ test("Auth's passkey error codes get plain messages, and anything else keeps its
   expect(passkeyErrorMessage({ code: "too_many_passkeys", message: "x" }, "add")).toBe("Your account has as many passkeys as it can hold. Remove one first.")
   expect(passkeyErrorMessage({ code: "unexpected_failure", message: "Something broke" }, "add")).toBe("Something broke")
 })
+
+test("the browser's own WebAuthn errors get a plain message, not the library's text", () => {
+  const unsupported = { name: "WebAuthnUnknownError", code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY", message: "a Non-Webauthn related error has occurred" }
+  expect(passkeyErrorMessage(unsupported, "sign-in")).toBe("This browser or device could not use a passkey. Sign in another way.")
+  expect(passkeyErrorMessage(unsupported, "add")).toBe("This browser or device could not add a passkey.")
+  expect(passkeyErrorMessage({ name: "NotSupportedError", message: "Resident credentials or empty allowCredentials lists are not supported" }, "sign-in")).toBe(
+    "This browser or device could not use a passkey. Sign in another way.",
+  )
+})

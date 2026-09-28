@@ -30,6 +30,15 @@ export function passkeyErrorMessage(error: { message: string; code?: string; nam
     case "passkey_disabled":
       return "Passkeys are turned off for this site."
     default:
+      // The browser's own WebAuthn errors (codes ERROR_..., or a DOMException's
+      // name) are written for developers, not for the person.
+      if (error.code?.startsWith("ERROR_") || (error.name !== undefined && BROWSER_ERRORS.has(error.name))) {
+        return during === "sign-in"
+          ? "This browser or device could not use a passkey. Sign in another way."
+          : "This browser or device could not add a passkey."
+      }
       return error.message
   }
 }
+
+const BROWSER_ERRORS = new Set(["NotSupportedError", "SecurityError", "InvalidStateError", "ConstraintError", "UnknownError", "WebAuthnError", "WebAuthnUnknownError"])
