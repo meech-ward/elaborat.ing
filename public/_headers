@@ -10,6 +10,11 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
+# Built files carry a hash of their content in their name, and a new version
+# has new names, so a browser keeps them without asking again.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # The style guide is for the people building the app, not for search.
 /style-guide
   X-Robots-Tag: noindex

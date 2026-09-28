@@ -16,6 +16,10 @@ export function UpdateReady() {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    // Only once the page has loaded, so the worker's download of the whole
+    // app for offline use does not compete with what the page is loading,
+    // and finds the page's own files in the browser's cache.
+    immediate: false,
     // The new version has taken over this tab.
     onNeedReload() {
       if (chosen.current) window.location.reload()

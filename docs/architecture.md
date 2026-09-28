@@ -774,6 +774,18 @@ startup, so drawings work offline and no font request leaves the site. The
 font-subset worker is built as its own worker graph; bundled as app code it
 imports the DOM entry and fails.
 
+**Decision: chunks follow what loads together, and libraries keep their own.**
+`vite.config.ts` declares the app's own modules free of side effects (except
+the entry), so a page that imports one thing from a feature's `index.ts` does
+not download the rest of that feature. Libraries go in chunks named after
+them (react, router, supabase, ui, zod on first paint; monaco, prettier,
+prosemirror, mdx and the preview frame later), and the app code every page
+starts with goes in `app`, so a deploy that changes only the app's code leaves
+those files and their hashes alone and an update downloads only what changed.
+A group never moves lazy code into an earlier load: first-paint groups take
+only what the entry imports, the others split by what loads them. `bun run
+build:visualize` and `bun run report:bundle` show the result.
+
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,
 16px text controls on touch screens and iOS pinch gestures cancelled, in the
@@ -788,12 +800,15 @@ no network**: a reload, a new tab or a browser restart. A service worker from
 [vite-plugin-pwa](https://vite-pwa-org.netlify.app/), using Workbox's
 generated worker (`generateSW`), configured in `vite.config.ts`:
 
-- **It precaches every file the build writes** except Cloudflare's `_headers`
-  and Excalidraw's CJK drawing font: every chunk including lazy ones, styles,
-  workers, the fonts of the app's own interface and of drawings (Excalifont,
-  the default for new text, among them), the preview frame (inlined in a
-  chunk), the D2 compiler, `.wasm` files and the license texts. That is about
-  29 MB. The largest chunks are over Workbox's 2 MiB default, so
+- **It precaches every file the build writes** except Cloudflare's `_headers`,
+  Excalidraw's CJK drawing font, and Excalidraw's translations other than
+  English (the app never sets its language, so they never load): every chunk
+  including lazy ones, styles, workers, the fonts of the app's own interface
+  and of drawings (Excalifont, the default for new text, among them), the
+  preview frame (a chunk of its own), the D2 compiler, `.wasm` files and the
+  license texts. That is about 28.6 MB. The worker registers once the page
+  has loaded, so this download does not compete with the page's own files,
+  and it finds those in the browser's cache. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
   fails if any other shipped file is missing from the precache list.
   Navigations fall back to the cached `index.html`.
@@ -819,7 +834,8 @@ generated worker (`generateSW`), configured in `vite.config.ts`:
   that installed it (`clientsClaim`), so lazy chunks come from the cache if the
   connection drops later in that visit.
 - `public/_headers` serves `/sw.js` and `/manifest.webmanifest` with
-  `Cache-Control: no-cache`.
+  `Cache-Control: no-cache`, and the hashed files under `/assets/` as
+  `immutable` for a year.
 
 **Decision: Babel stays on 7.** Workbox bundles its generated worker with
 `@rollup/plugin-babel`, which works only with Babel 7. The React Compiler's
