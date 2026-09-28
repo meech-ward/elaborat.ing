@@ -64,6 +64,8 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   state: CardState
   /** Whether the host lets the card save, so a note can be edited here. */
   canEdit: boolean
+  /** Why a note cannot be edited here, where it otherwise could: the footer says it in place of Edit. */
+  editNote?: string | null
   /** The note editor, shown while editing and in a conflict. */
   editor?: ReactNode
   /** The components' preview: a note's in place of its HTML once drawn, or a component file's. */
@@ -80,7 +82,7 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  * dotted canvas); problems in banners; and Edit, Save, Load latest and
  * Cancel with the save status under it.
  */
-export function CardView({ state, canEdit, editor, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
+export function CardView({ state, canEdit, editNote = null, editor, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
   return (
     <section
@@ -96,7 +98,7 @@ export function CardView({ state, canEdit, editor, preview = null, onEdit, onSav
           <Banner tone={shown.banner.tone}>{shown.banner.text}</Banner>
         </div>
       )}
-      {shown && <CardFooter state={shown} canEdit={canEdit} onEdit={onEdit} onSave={onSave} onCancel={onCancel} onReload={onReload} />}
+      {shown && <CardFooter state={shown} canEdit={canEdit} editNote={editNote} onEdit={onEdit} onSave={onSave} onCancel={onCancel} onReload={onReload} />}
     </section>
   )
 }
@@ -373,13 +375,15 @@ function DrawingBody({ embed, svgs }: { embed: CardEmbed; svgs: Record<string, s
 function CardFooter({
   state,
   canEdit,
+  editNote,
   onEdit,
   onSave,
   onCancel,
   onReload,
-}: Pick<CardViewProps, "canEdit" | "onEdit" | "onSave" | "onCancel" | "onReload"> & { state: Extract<CardState, { phase: "shown" }> }) {
+}: Pick<CardViewProps, "canEdit" | "editNote" | "onEdit" | "onSave" | "onCancel" | "onReload"> & { state: Extract<CardState, { phase: "shown" }> }) {
   const { mode, busy, dirty, status, file } = state
   const editable = canEdit && file.source !== null
+  const note = mode === "read" && !editable && file.source !== null ? editNote : null
   const statusText =
     status.kind === "saving" ? (
       <StatusDot status="unsaved">Saving</StatusDot>
@@ -388,9 +392,10 @@ function CardFooter({
     ) : mode === "edit" && dirty ? (
       <StatusDot status="unsaved" />
     ) : null
-  if (mode === "read" && !editable && !statusText) return null
+  if (mode === "read" && !editable && !statusText && !note) return null
   return (
     <footer className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3 max-[500px]:px-3">
+      {note && <p className="text-[13px] leading-snug text-muted-foreground">{note}</p>}
       {mode === "read" && editable && (
         <Button variant="secondary" disabled={busy} onClick={onEdit}>
           <Pencil aria-hidden="true" data-icon="inline-start" />

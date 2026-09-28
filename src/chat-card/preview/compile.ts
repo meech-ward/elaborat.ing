@@ -6,7 +6,9 @@
  * card compiles them here into plain JavaScript, which is only text, and the
  * component preview's frame runs it as ordinary inline scripts
  * (frameDocument.ts). Nothing is evaluated from a string, so it runs under
- * the MCP Apps default policy, which has no 'unsafe-eval'.
+ * the MCP Apps default policy, which has no 'unsafe-eval'. The card loads
+ * this file as a module of its own (../lazy/compile.ts), when it first
+ * previews something.
  *
  * The module rules are the app's (componentModules.ts): the same imports,
  * reserved names, React allowlist and limits, so a preview here fails where
@@ -15,6 +17,7 @@
 import { compile } from "@mdx-js/mdx"
 import remarkFrontmatter from "remark-frontmatter"
 import remarkGfm from "remark-gfm"
+import { CHART_COMPONENT_CATALOG } from "@/features/document/chartCatalog"
 import {
   componentModulePath,
   inspectComponentModule,
@@ -37,7 +40,16 @@ export type PreviewProgram = {
   items: Array<{ name: string; props: Record<string, unknown> }> | null
   /** The files whose custom code this runs: component files by path, and null for a note's own exports. */
   code?: Array<string | null>
+  /** Whether the note draws a chart, so the frame loads the charts' library. */
+  charts?: boolean
 }
+
+/** A chart's outer component in compiled code: every chart has one (a chart, or ChartContainer around it). */
+const CHART = new RegExp(
+  `\\b(?:${CHART_COMPONENT_CATALOG.map((entry) => entry.name)
+    .filter((name) => name === "ChartContainer" || name.endsWith("Chart"))
+    .join("|")})\\b`,
+)
 
 /** Reads component files from the sources the server sent. */
 function loaderFor(sources: Record<string, string>): ComponentSourceLoader {
@@ -108,7 +120,7 @@ export async function compileNote(source: string, sources: Record<string, string
   } catch (error) {
     throw new Error(`Invalid MDX: ${compileErrorMessage(error)}`)
   }
-  return { modules: environment.modules, note, target: null, items: null, code: environment.code.map((entry) => entry.path) }
+  return { modules: environment.modules, note, target: null, items: null, code: environment.code.map((entry) => entry.path), charts: CHART.test(note) }
 }
 
 /**

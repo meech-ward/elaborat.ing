@@ -64,8 +64,9 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | `supabase/config.toml` | `[db.pooler]` `default_pool_size`, `max_client_conn` | `config push` sets these on your pooler. They hold the hosted project's values; if `config diff` shows a change, set them to your project's current values. |
 | `wrangler.jsonc` | `vars.MCP_UPSTREAM` | `https://<ref>.supabase.co/functions/v1/mcp-server` |
 | `wrangler.jsonc` | `routes` | Your domain, or remove it to serve from `workers.dev`. You may rename `name` too. |
-| `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here. |
+| `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here, and its view's policy lets it load its editor, previews and fonts from here. |
 | `src/chat-card/toolResult.ts` | `APP_ORIGIN` | `<site>/`, then `bun run build:chat-card`. The chat card follows only links to this origin. |
+| `scripts/build-chat-card.ts` | `MODULES_URL` | `<site>/chat-card/`, then `bun run build:chat-card`. Where the chat card loads its editor, previews and fonts from (`public/chat-card`). |
 | `supabase/functions/share/index.ts` | `redirectTo` | `<site>/`. Where an invitation email's link lands. (Auth sends a link it does not allow to `site_url` instead, so leaving it does no harm once the hosted origin is out of your redirect list.) |
 
 Optional: the email subjects in `config.toml` and the templates in

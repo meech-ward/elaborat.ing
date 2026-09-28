@@ -1,11 +1,14 @@
 /**
- * The component preview's frame document: the frame's stylesheet and
- * runtime (runtime.tsx), then one inline script per compiled component file
- * and one for the note. Each wraps the compiler's function body in an async
- * function, as MDX's own `run` does, and hands it to the runtime, which
- * calls them in order once the card says what to show. The browser runs
- * them as the document's own inline scripts: nothing is evaluated from a
- * string, which the MCP Apps default policy would block.
+ * The component preview's frame document: the frame's stylesheet, one inline
+ * script per compiled component file and one for the note, and the frame's
+ * runtime (runtime.tsx), which the frame imports from elaborat.ing (the
+ * card's modules, ../modules.ts). Each compiled file's script wraps the
+ * compiler's function body in an async function, as MDX's own `run` does,
+ * and puts it in the document's registry; the runtime calls them in order
+ * once the card says what to show. The browser runs them as the document's
+ * own inline scripts: nothing is evaluated from a string, which the view's
+ * policy would block. If the runtime does not load, the frame tells the card,
+ * which keeps what it showed.
  */
 import type { PreviewProgram } from "./compile"
 
@@ -20,7 +23,11 @@ export function inlineScript(code: string): string {
 
 const script = (code: string) => `<script>${inlineScript(code)}</script>`
 
+/** What the card says when the frame's runtime did not load. */
+export const FRAME_NOT_LOADED = "the preview could not load from elaborat.ing."
+
 export type FrameDocumentOptions = {
+  /** The runtime's and the stylesheet's addresses. */
   runtime: string
   style: string
   program: PreviewProgram
@@ -31,16 +38,21 @@ export type FrameDocumentOptions = {
 }
 
 export function frameDocument({ runtime, style, program, run, scheme }: FrameDocumentOptions): string {
-  if (/<\/style/i.test(style)) throw new Error("The preview stylesheet cannot be inlined.")
   const root = scheme ? ` data-scheme="${scheme}"${scheme === "dark" ? ' class="dark"' : ""}` : ""
+  const failed = JSON.stringify({ type: "failed", run: Number(run), message: FRAME_NOT_LOADED })
+  const attribute = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
   return (
     `<!doctype html><html lang="en"${root}><head><meta charset="utf-8">` +
-    `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${style}</style></head>` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    // Before the stylesheet, so the runtime loads alongside it. The runtime waits for the whole document.
+    script(
+      `var preview={run:${Number(run)},modules:[],note:null};` +
+        `import(${JSON.stringify(runtime)}).then(function(runtime){runtime.open(preview)},function(){parent.postMessage(${failed},"*")})`,
+    ) +
+    `<link rel="stylesheet" href="${attribute(style)}"></head>` +
     `<body><div id="root"></div>` +
-    script(runtime) +
-    script(`var preview=elaboratingPreview.open(${Number(run)})`) +
-    program.modules.map((module, index) => script(`preview.module(${index},async function(){\n${module.code}\n})`)).join("") +
-    (program.note === null ? "" : script(`preview.note(async function(){\n${program.note}\n})`)) +
+    program.modules.map((module, index) => script(`preview.modules[${index}]=async function(){\n${module.code}\n}`)).join("") +
+    (program.note === null ? "" : script(`preview.note=async function(){\n${program.note}\n}`)) +
     `</body></html>`
   )
 }

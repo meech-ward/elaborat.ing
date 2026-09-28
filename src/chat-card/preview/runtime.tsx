@@ -4,15 +4,18 @@
  * sandbox="allow-scripts" and nothing else, inside the card's own frame.
  * That is an opaque origin: code here cannot reach the card's page, its
  * bridge to the host (tool calls, links, model context), storage or cookies,
- * and the policy the frame inherits from the card allows no requests.
+ * and the policy the frame inherits from the card allows no requests but
+ * scripts, styles and fonts from elaborat.ing.
  *
- * `bun run build:chat-card` builds this file into one script (and
- * runtime.css into one stylesheet) that the card puts in each frame
- * document. The document's later inline scripts register the compiled
- * component files and note with `open()`'s registry; when the card sends
- * setup, the frame runs them in order with the app's JSX runtime, its
- * trusted React exports and its built-in components (catalog.tsx), and
- * renders the note, or the components with their sample props. A component
+ * `bun run build:chat-card` builds this file as an ES module (and
+ * runtime.css as a stylesheet) into public/chat-card, served from
+ * elaborat.ing; each frame document imports it (frameDocument.ts) and calls
+ * `open()` with the registry its inline scripts filled with the compiled
+ * component files and note. When the card sends setup, the frame runs them in
+ * order with the app's JSX runtime, its trusted React exports and its
+ * built-in components (catalog.tsx), and renders the note, or the components
+ * with their sample props. A note with a chart loads the charts' library
+ * first, from the same place; without it, charts show as a box. A component
  * that throws shows an error in its place (the compiler wraps each outermost
  * element in the guard); anything else that fails is reported to the card,
  * which falls back to what it showed before.
@@ -36,7 +39,8 @@ type ModuleScope = Record<string, unknown>
 /** A compiled file's function body, wrapped by frameDocument.ts: it takes the runtime and returns the file's exports. */
 type ModuleBody = (runtime: Record<string, unknown>) => Promise<Record<string, unknown>>
 
-type Registry = { modules: Array<ModuleBody | undefined>; note: ModuleBody | null }
+/** What the frame document's inline scripts fill in (frameDocument.ts). */
+type Registry = { run: number; modules: Array<ModuleBody | undefined>; note: ModuleBody | null }
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -186,11 +190,19 @@ async function runModules(plan: PreviewPlan, registry: Registry): Promise<Module
   return workspaceModules
 }
 
+/** The charts' components (the app's, on Recharts), or null where they did not load: the boxes stay. */
+const loadCharts = () =>
+  import("@/features/rendered/documentCharts").then(
+    (charts): Record<string, unknown> => charts.DOCUMENT_CHART_COMPONENTS,
+    () => null,
+  )
+
 async function start(plan: PreviewPlan, registry: Registry) {
   const mount = document.getElementById("root")!
   watchSize(mount)
   watchLinks()
   const root = createRoot(mount)
+  const charts = plan.kind === "note" && plan.charts ? loadCharts() : null
   const workspaceModules = await runModules(plan, registry)
   if (plan.kind === "note") {
     if (!registry.note) throw new Error("The note could not be loaded.")
@@ -198,6 +210,7 @@ async function start(plan: PreviewPlan, registry: Registry) {
     const Content = exports.default as (props: { components: Record<string, unknown> }) => ReactNode
     const components = {
       ...PREVIEW_COMPONENTS,
+      ...(await charts),
       [GUARD_NAME]: Guard,
       Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} plan={plan} />,
       Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} plan={plan} />,
@@ -242,13 +255,13 @@ function MissingExport({ name }: { name: string }): ReactNode {
 }
 
 /**
- * Called by the frame document's second script with this run's number.
- * Returns the registry the compiled files' scripts register with, and waits
- * for the card's setup.
+ * Called by the frame document once this module has loaded, with the
+ * registry its scripts fill in. Waits for the whole document (every
+ * compiled file registered), tells the card it is ready, and waits for the
+ * card's setup.
  */
-export function open(runNumber: number) {
-  run = runNumber
-  const registry: Registry = { modules: [], note: null }
+export function open(registry: Registry) {
+  run = registry.run
   let started = false
   window.addEventListener("message", (event: MessageEvent<CardToFrame>) => {
     if (event.source !== window.parent || typeof event.data !== "object" || event.data === null) return
@@ -260,14 +273,7 @@ export function open(runNumber: number) {
     addFonts(message.fonts)
     start(message.plan, registry).catch((error: unknown) => post({ type: "failed", run, message: messageOf(error) }))
   })
-  // Every script in the document has run by now: the files are registered.
-  document.addEventListener("DOMContentLoaded", () => post({ type: "ready", run }))
-  return {
-    module(index: number, body: ModuleBody) {
-      registry.modules[index] = body
-    },
-    note(body: ModuleBody) {
-      registry.note = body
-    },
-  }
+  const ready = () => post({ type: "ready", run })
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready, { once: true })
+  else ready()
 }

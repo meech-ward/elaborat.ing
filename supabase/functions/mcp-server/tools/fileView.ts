@@ -21,7 +21,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v10.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v11.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -33,10 +33,23 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v7.html',
   'ui://elaborating/file-view-v8.html',
   'ui://elaborating/file-view-v9.html',
+  'ui://elaborating/file-view-v10.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
 const APP_ORIGIN = 'https://elaborat.ing'
+
+/**
+ * The view's policy: the spec's default, plus scripts, styles and fonts from
+ * the app's site, where the view loads its editor and component previews when
+ * they are first needed (public/chat-card, served with CORS). ChatGPT also
+ * reads its older `openai/widgetCSP`. A host that does not allow the origin
+ * still shows the card, read-only.
+ */
+export const FILE_VIEW_META = {
+  ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [APP_ORIGIN] } },
+  'openai/widgetCSP': { connect_domains: [], resource_domains: [APP_ORIGIN] },
+}
 
 /** Characters of a note rendered in the view; the rest is a click away. */
 const PREVIEW_LIMIT = 40_000
@@ -190,7 +203,7 @@ export function registerFileView(server: McpServer, { supabase, userClaims }: To
             mimeType: MCP_APP_MIME_TYPE,
             text: FILE_VIEW_HTML,
             // The view draws its own card, so the host adds no frame of its own.
-            _meta: { ui: { prefersBorder: false } },
+            _meta: FILE_VIEW_META,
           },
         ],
       })

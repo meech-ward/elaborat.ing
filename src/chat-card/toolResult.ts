@@ -4,9 +4,10 @@
  * preview_component's view of a component file (componentPreview.ts), and
  * write_file's outcome. The host passes them on from the server, so every
  * field is checked; links count only when they go to elaborat.ing, and a
- * drawing only when it is SVG markup the server drew.
+ * drawing only when it is SVG markup the server drew. Zod Mini, which the
+ * card's small script tree-shakes, where full Zod would all come along.
  */
-import { z } from "zod"
+import { z } from "zod/mini"
 import type { CardEmbed, FileKind } from "./embedText"
 
 /** The app's origin: the only place the card links to. */
@@ -68,36 +69,36 @@ export type ShowOutcome = { ok: true; file: CardFile } | { ok: false; message: s
 export type WriteOutcome = { kind: "saved"; version: number | null } | { kind: "conflict" } | { kind: "failed"; message: string }
 
 const STATUSES = ["drawn", "stale", "not_drawn", "missing", "unreadable", "empty", "too_big", "not_shown", "unsupported"] as const
-const kindSchema = z.enum(["note", "drawing", "diagram", "file", "component"]).catch("file")
-const appUrl = z.string().startsWith(APP_ORIGIN).nullable().catch(null)
+const kindSchema = z.catch(z.enum(["note", "drawing", "diagram", "file", "component"]), "file")
+const appUrl = z.catch(z.nullable(z.string().check(z.startsWith(APP_ORIGIN))), null)
 
-const embedSchema = z
-  .object({ kind: kindSchema, path: z.string(), url: appUrl, status: z.enum(STATUSES).catch("drawn") })
-  .nullable()
-  .catch(null)
+const embedSchema = z.catch(
+  z.nullable(z.object({ kind: kindSchema, path: z.string(), url: appUrl, status: z.catch(z.enum(STATUSES), "drawn") })),
+  null,
+)
 
 const viewSchema = z.object({
   project_id: z.unknown(),
   path: z.string(),
   kind: kindSchema,
-  version: z.number().nullable().catch(null),
+  version: z.catch(z.nullable(z.number()), null),
   url: appUrl,
-  truncated: z.boolean().catch(false),
-  embeds: z.array(embedSchema).catch([]),
-  component: z.string().nullable().catch(null).optional(),
-  props: z.record(z.string(), z.unknown()).nullable().catch(null).optional(),
-  draft: z.boolean().catch(false).optional(),
-  shared: z.boolean().catch(true).optional(),
+  truncated: z.catch(z.boolean(), false),
+  embeds: z.catch(z.array(embedSchema), []),
+  component: z.optional(z.catch(z.nullable(z.string()), null)),
+  props: z.optional(z.catch(z.nullable(z.record(z.string(), z.unknown())), null)),
+  draft: z.optional(z.catch(z.boolean(), false)),
+  shared: z.optional(z.catch(z.boolean(), true)),
 })
 
-const componentsSchema = z
-  .object({ modules: z.record(z.string(), z.string()), editors: z.record(z.string(), z.string()).catch({}).optional() })
-  .nullable()
-  .catch(null)
+const componentsSchema = z.catch(
+  z.nullable(z.object({ modules: z.record(z.string(), z.string()), editors: z.optional(z.catch(z.record(z.string(), z.string()), {})) })),
+  null,
+)
 
-const metaSchema = z.record(z.string(), z.unknown()).catch({})
+const metaSchema = z.catch(z.record(z.string(), z.unknown()), {})
 
-const showSchema = z.object({ structuredContent: viewSchema, _meta: z.unknown().optional() })
+const showSchema = z.object({ structuredContent: viewSchema, _meta: z.optional(z.unknown()) })
 
 const firstTextSchema = z.object({ content: z.tuple([z.object({ text: z.string() })], z.unknown()) })
 
@@ -157,7 +158,7 @@ export const hasMeta = (raw: unknown) => z.object({ _meta: z.record(z.string(), 
 const writeSchema = z.object({
   structuredContent: z.object({
     status: z.string(),
-    changes: z.array(z.object({ path: z.string(), version: z.number() }).nullable().catch(null)).catch([]),
+    changes: z.catch(z.array(z.catch(z.nullable(z.object({ path: z.string(), version: z.number() })), null)), []),
   }),
 })
 

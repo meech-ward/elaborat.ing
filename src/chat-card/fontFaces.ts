@@ -1,26 +1,19 @@
 /**
- * Adds fonts from bytes the page already holds: a font made that way is not
- * a request, so the MCP Apps default policy (which blocks font files) allows
- * it. The card adds its own fonts with this (fonts.ts) and hands the same
- * sources to the component preview's frame, which adds them the same way.
+ * Adds fonts by address. The card adds its own with this (fonts.ts) and hands
+ * the same sources to the component preview's frame, which adds them the same
+ * way. The view declares the fonts' origin, which puts it in the policy's
+ * font-src; where a host does not allow it, a font does not load and the
+ * host's fonts or the system's stand in.
  */
 
-/** A font's family, its bytes as a base64 data URL, and its weight range. */
-export type FontSource = readonly [family: string, dataUrl: string, weight: string]
+/** A font's family, its file's address, and its weight range. */
+export type FontSource = readonly [family: string, url: string, weight: string]
 
-/** The bytes of a base64 data URL. */
-function bytesOf(dataUrl: string): ArrayBuffer {
-  const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes.buffer
-}
-
-/** Adds each font under its family name. A font the browser cannot read is left out. */
+/** Adds each font under its family name. A font that does not load is left out. */
 export function addFonts(sources: readonly FontSource[]) {
-  for (const [family, data, weight] of sources) {
+  for (const [family, url, weight] of sources) {
     try {
-      const face = new FontFace(family, bytesOf(data), { weight, style: "normal" })
+      const face = new FontFace(family, `url(${JSON.stringify(url)})`, { weight, style: "normal", display: "swap" })
       document.fonts.add(face)
       face.load().catch(() => document.fonts.delete(face))
     } catch {

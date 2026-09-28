@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* The chat card's built modules are minified code, not the app's markup. */
+@source not "../public/chat-card";
 @import "./features/appearance/radii.css";
 /* The design tokens as Tailwind theme values, shared with the chat card. */
 @import "./features/appearance/tailwindTheme.css";

@@ -10,14 +10,20 @@
  * previewed in a sandboxed frame of their own (preview/ComponentPreview.tsx)
  * that cannot reach the bridge; a note shows the server's HTML until its
  * preview has drawn, and again if the preview fails.
+ *
+ * The editor and the previews load from elaborat.ing when they are first
+ * needed (modules.ts). Where the host does not allow that, the card stays
+ * read-only with the server's HTML, and says why.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
-import { z } from "zod"
+import { z } from "zod/mini"
 import type { HostBridge } from "./bridge"
-import { startCardEditor, type CardEditor, type EmbedRef } from "./cardEditor"
-import { cardReducer, INITIAL_CARD_STATE } from "./cardState"
+import type { CardEditor, EmbedRef } from "./cardEditor"
+import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, type CardPreview } from "./CardView"
+import { addCardFonts } from "./fonts"
+import { blockModules, loadModule, ModuleNotLoaded, modulesAllowed } from "./modules"
 import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
 import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
@@ -49,6 +55,8 @@ function previewNote(path: string, outcome: PreviewOutcome): string | null {
 export function ChatCard({ host }: { host: HostBridge }) {
   const [state, dispatch] = useReducer(cardReducer, INITIAL_CARD_STATE)
   const [canCallTools, setCanCallTools] = useState(false)
+  // The editor could not load from elaborat.ing, or the host said it would not allow it.
+  const [editorBlocked, setEditorBlocked] = useState(false)
   const editor = useRef<CardEditor | null>(null)
   // The last result the host sent, drawn again if ChatGPT's globals bring its _meta late.
   const lastResult = useRef<unknown>(null)
@@ -79,6 +87,13 @@ export function ChatCard({ host }: { host: HostBridge }) {
           case "tool-cancelled":
             return dispatch({ type: "problem", message: "The tool call was cancelled.", tone: "info" })
           case "ready":
+            // The fonts and modules come from the origin the view declares, unless the host said it does not allow it.
+            if (modulesAllowed(event.resourceDomains) === false) {
+              blockModules()
+              setEditorBlocked(true)
+            } else {
+              addCardFonts()
+            }
             return setCanCallTools(event.canCallTools)
           case "globals": {
             if (lastResult.current === null || hasMeta(lastResult.current)) return
@@ -193,7 +208,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
     <main onKeyDown={onKeyDown} onClick={onClick}>
       <CardView
         state={state}
-        canEdit={canCallTools}
+        canEdit={canCallTools && !editorBlocked}
+        editNote={canCallTools && editorBlocked ? CARD_TEXT.editorNotLoaded : null}
         editor={
           shown && shown.mode !== "read" && shown.file.source !== null ? (
             <NoteEditor
@@ -203,6 +219,10 @@ export function ChatCard({ host }: { host: HostBridge }) {
                 dispatch({ type: "editor-ready" })
               }}
               onFail={(error) => {
+                if (error instanceof ModuleNotLoaded) {
+                  setEditorBlocked(true)
+                  return dispatch({ type: "cancel" })
+                }
                 console.error("The note editor could not start.", error)
                 dispatch({ type: "editor-failed" })
               }}
@@ -230,9 +250,9 @@ export function ChatCard({ host }: { host: HostBridge }) {
 type Island = { id: number; host: HTMLElement; embed: CardEmbed }
 
 /**
- * The app's rendered editor on the note's source (cardEditor.ts), for as long
- * as it is on screen. Its embeds show the drawings the server drew, in the
- * library's embed box.
+ * The app's rendered editor on the note's source (cardEditor.ts, loaded the
+ * first time), for as long as it is on screen. Its embeds show the drawings
+ * the server drew, in the library's embed box.
  */
 function NoteEditor({
   file,
@@ -263,14 +283,16 @@ function NoteEditor({
       setIslands((list) => [...list.filter((island) => island.host.isConnected), { id, host, embed: found }])
       return host
     }
-    return startCardEditor({
-      mount: element,
-      text: file.source ?? "",
-      format: file.path.toLowerCase().endsWith(".mdx") ? "mdx" : "md",
-      embed,
-      notice: (text) => onNotice(text),
-      change: (dirty) => onChange(dirty),
-    })
+    return loadModule("editor").then(({ startCardEditor }) =>
+      startCardEditor({
+        mount: element,
+        text: file.source ?? "",
+        format: file.path.toLowerCase().endsWith(".mdx") ? "mdx" : "md",
+        embed,
+        notice: (text) => onNotice(text),
+        change: (dirty) => onChange(dirty),
+      }),
+    )
   })
   const ready = useEffectEvent((editor: CardEditor) => {
     onReady(editor)

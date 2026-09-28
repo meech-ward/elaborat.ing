@@ -1,9 +1,11 @@
 /**
  * The component preview in the chat card: a note with components, or a
  * component file, drawn by the app's own components in a frame nested in
- * the card. The card compiles the sources the server sent (compile.ts),
- * builds the frame's document with the compiled code in it
- * (frameDocument.ts) and shows it in an iframe with sandbox="allow-scripts"
+ * the card. The card compiles the sources the server sent (compile.ts,
+ * which it loads from elaborat.ing the first time: ../modules.ts), builds
+ * the frame's document with the compiled code in it (frameDocument.ts, whose
+ * runtime the frame loads from there too) and shows it in an iframe with
+ * sandbox="allow-scripts"
  * only: an opaque origin, so the note's code cannot reach the card's page or
  * its bridge to the host, and cannot call tools. The card then sends it data
  * only (what to show, the server's drawings, props, colours and fonts), and
@@ -19,16 +21,13 @@
  * imports are.
  */
 import { useEffect, useEffectEvent, useRef, useState } from "react"
-import { CARD_FONTS } from "../fonts"
+import { cardFonts } from "../fonts"
+import { frameModules, loadModule, ModuleNotLoaded } from "../modules"
 import type { CardFile } from "../toolResult"
-import { compileComponents, compileErrorMessage, compileNote, type PreviewProgram } from "./compile"
-import { frameDocument } from "./frameDocument"
+import type { PreviewProgram } from "./compile"
+import { FRAME_NOT_LOADED, frameDocument } from "./frameDocument"
 import { linkSpot, readFrameMessage } from "./frameMessages"
 import type { CardToFrame, ComponentError, PreviewAppearance, PreviewPlan } from "./protocol"
-
-/** The frame's script and stylesheet (runtime.tsx), which scripts/build-chat-card.ts builds first and sets here. */
-declare const PREVIEW_RUNTIME: string
-declare const PREVIEW_STYLE: string
 
 /** How long the frame has to draw before the card stops waiting for it. */
 const LOAD_TIMEOUT = 15_000
@@ -61,19 +60,30 @@ function currentAppearance(): PreviewAppearance {
 
 let runs = 0
 
-async function prepare(file: CardFile): Promise<Prepared> {
+/** Compiles the file, with the compiler loaded the first time; a failure's message as the card shows it. */
+async function compile(file: CardFile): Promise<PreviewProgram> {
+  const compiler = await loadModule("compile").catch((error: unknown) => {
+    throw error instanceof ModuleNotLoaded ? new Error(FRAME_NOT_LOADED) : error
+  })
   const sources = file.components ?? {}
-  const program: PreviewProgram =
-    file.kind === "component"
-      ? await compileComponents(file.path, sources, { component: file.preview?.component ?? null, props: file.preview?.props ?? null })
-      : await compileNote(file.source ?? "", sources)
+  try {
+    return file.kind === "component"
+      ? await compiler.compileComponents(file.path, sources, { component: file.preview?.component ?? null, props: file.preview?.props ?? null })
+      : await compiler.compileNote(file.source ?? "", sources)
+  } catch (error) {
+    throw new Error(compiler.compileErrorMessage(error))
+  }
+}
+
+async function prepare(file: CardFile): Promise<Prepared> {
+  const program = await compile(file)
   const run = ++runs
   const modules = program.modules.map((module) => module.path)
   const plan: PreviewPlan =
     program.note !== null
-      ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs }
+      ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs, charts: program.charts ?? false }
       : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [] }
-  const srcdoc = frameDocument({ runtime: PREVIEW_RUNTIME, style: PREVIEW_STYLE, program, run, scheme: currentAppearance().scheme })
+  const srcdoc = frameDocument({ ...frameModules(), program, run, scheme: currentAppearance().scheme })
   const draft = file.kind === "component" && file.preview?.draft === true
   const code = [...new Set((program.code ?? []).map((path) => path ?? file.path))].filter((path) => !(draft && path === file.path))
   return { file, run, srcdoc, plan, code }
@@ -108,7 +118,7 @@ export function ComponentPreview({
         if (!stale) setPrepared(ready)
       },
       (error: unknown) => {
-        if (!stale) outcome({ status: "failed", message: compileErrorMessage(error) })
+        if (!stale) outcome({ status: "failed", message: error instanceof Error ? error.message : String(error) })
       },
     )
     return () => {
@@ -135,7 +145,7 @@ export function ComponentPreview({
       if (!message || message.run !== prepared.run) return
       switch (message.type) {
         case "ready":
-          return send({ type: "setup", plan: prepared.plan, appearance: currentAppearance(), fonts: CARD_FONTS })
+          return send({ type: "setup", plan: prepared.plan, appearance: currentAppearance(), fonts: cardFonts() })
         case "size":
           shownHeight.current = Math.min(message.height, MAX_HEIGHT)
           return setHeight(shownHeight.current)

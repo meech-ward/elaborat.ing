@@ -1,10 +1,15 @@
+import { existsSync, readFileSync } from "node:fs"
+import path from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import { FILE_VIEW_HTML } from "../../supabase/functions/mcp-server/tools/fileViewHtml.ts"
 
 // The show_file view (the chat card) in a stand-in MCP Apps host: a page that
-// frames the view the way Claude and ChatGPT do (sandboxed, under the spec's
-// default Content Security Policy) and answers its bridge messages. The note
-// is edited in the card and saved with write_file.
+// frames the view the way Claude and ChatGPT do (sandboxed, under the policy
+// the view declares: the spec's default plus resources from elaborat.ing) and
+// answers its bridge messages. The note is edited in the card and saved with
+// write_file. The card loads its editor and component previews from
+// elaborat.ing, which the tests answer from public/chat-card; a host that
+// allows only the default policy gets the card without them.
 
 const PROJECT = "6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e"
 const PATH = "notes/plan.mdx"
@@ -64,17 +69,54 @@ function shown(version: number, source: string) {
   }
 }
 
-// The spec's default policy for a view that declares no `_meta.ui.csp`.
-const CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'"
+// The spec's default policy for a view that declares no `_meta.ui.csp`, and
+// the policy for the view's declaration (fileView.ts): resourceDomains adds
+// its origin to script-src, style-src, img-src, font-src and media-src.
+const DEFAULT_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'"
+const APP = "https://elaborat.ing"
+const DECLARED_CSP = `default-src 'none'; script-src 'self' 'unsafe-inline' ${APP}; style-src 'self' 'unsafe-inline' ${APP}; img-src 'self' data: ${APP}; font-src ${APP}; media-src 'self' data: ${APP}; connect-src 'none'; object-src 'none'`
 
-type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown }
+/**
+ * The host's policy for the view: the one it declares, the default one from a
+ * host that does not say, or the default one from a host that says in
+ * `hostCapabilities.sandbox.csp` that it allows no resource origins.
+ */
+type Policy = "declared" | "default" | "default-said"
+type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy }
+
+const MODULES = path.join(import.meta.dirname, "..", "..", "public", "chat-card")
+
+const askedFor = new WeakMap<Page, string[]>()
+/** The card's files asked for so far, by name without their hash ("editor", "documentCharts", "excalifont-latin"). */
+const asked = (page: Page) => (askedFor.get(page) ?? []).map((file) => file.replace(/-[\w-]{8}\.\w+$/, ""))
+
+/** Answers elaborat.ing's /chat-card/ as the site does (public/_headers), and notes each file asked for. */
+async function serveModules(page: Page) {
+  const asked: string[] = []
+  askedFor.set(page, asked)
+  await page.route(`${APP}/chat-card/**`, (route) => {
+    const name = new globalThis.URL(route.request().url()).pathname.replace(/^\/chat-card\//, "")
+    asked.push(name)
+    const file = path.join(MODULES, name)
+    if (!/^[\w.-]+$/.test(name) || !existsSync(file)) return route.fulfill({ status: 404 })
+    return route.fulfill({
+      body: readFileSync(file),
+      contentType: name.endsWith(".css") ? "text/css" : name.endsWith(".woff2") ? "font/woff2" : "text/javascript",
+      headers: { "access-control-allow-origin": "*" },
+    })
+  })
+}
 
 /** Opens the stand-in host with the view in it; answers come from window.answers. */
 async function openHost(page: Page, host: Host) {
+  const policy = host.policy ?? "declared"
+  const csp = policy === "declared" ? DECLARED_CSP : DEFAULT_CSP
+  const sandbox = policy === "declared" ? { csp: { resourceDomains: [APP] } } : policy === "default-said" ? { csp: {} } : undefined
   const view = FILE_VIEW_HTML.replace(
     "<head>",
-    `<head><meta http-equiv="Content-Security-Policy" content="${CSP}"><script>window.violations=[];document.addEventListener('securitypolicyviolation',(e)=>window.violations.push(e.violatedDirective+' '+e.blockedURI))</script>`,
+    `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><script>window.violations=[];document.addEventListener('securitypolicyviolation',(e)=>window.violations.push(e.violatedDirective+' '+e.blockedURI))</script>`,
   )
+  await serveModules(page)
   await page.route("https://host.test/", (route) =>
     route.fulfill({ contentType: "text/html", body: '<!doctype html><html><body style="margin:0"><iframe sandbox="allow-scripts" style="width:100%;height:900px;border:0"></iframe></body></html>' }),
   )
@@ -101,7 +143,7 @@ async function openHost(page: Page, host: Host) {
           reply(message.id, {
             protocolVersion: "2026-01-26",
             hostInfo: { name: "stand-in", version: "1.0.0" },
-            hostCapabilities: host.tools ? { serverTools: {}, openLinks: {} } : { openLinks: {} },
+            hostCapabilities: { ...(host.tools ? { serverTools: {}, openLinks: {} } : { openLinks: {} }), ...(host.sandbox ? { sandbox: host.sandbox } : {}) },
             hostContext: { theme: host.theme, styles: host.styles },
           })
         } else if (message.method === "ui/notifications/initialized") {
@@ -125,7 +167,7 @@ async function openHost(page: Page, host: Host) {
       })
       frame.srcdoc = view
     },
-    { view, host },
+    { view, host: { ...host, sandbox } },
   )
   return page.frameLocator("iframe")
 }
@@ -163,7 +205,11 @@ test("a note is edited in the chat card and saved with write_file, byte for byte
   const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE) })
   await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
   await expect(card.getByText("v4", { exact: true })).toBeVisible()
+  // The card shows the note with what it carries, and its fonts; the editor loads when Edit is pressed.
+  expect(asked(page).filter((name) => !name.endsWith("latin"))).toEqual([])
   await edit(page)
+  expect(asked(page)).toContain("editor")
+  expect(asked(page)).not.toContain("frame")
 
   await answer(page, "write_file", { content: [{ type: "text", text: "{}" }], structuredContent: { status: "saved", changes: [{ op: "put", path: PATH, version: 5 }] } })
   await answer(page, "show_file", shown(5, EDITED))
@@ -185,7 +231,7 @@ test("a note is edited in the chat card and saved with write_file, byte for byte
   expect(contexts.map((context) => context.content[0].text)).toEqual([
     `The user edited ${PATH} in the elaborat.ing card and saved it as version 5. Read it again before changing it.`,
   ])
-  // The app's fonts come from the card's own script, so the default policy allows them.
+  // The app's fonts load from elaborat.ing too, which the declared policy allows.
   const fonts = () => page.frames()[1].evaluate(() => [...document.fonts].map((font) => [font.family.replaceAll('"', ""), font.status]))
   await expect.poll(fonts).toEqual([
     ["Space Grotesk Variable", "loaded"],
@@ -292,7 +338,7 @@ const SNEAKY = [
   "  const call = { jsonrpc: '2.0', id: 99, method: 'tools/call', params: { name: 'write_file', arguments: { path: 'x' } } }",
   "  window.parent.postMessage(call, '*')",
   "  window.top.postMessage(call, '*')",
-  "  const run = Number(/open\\((\\d+)\\)/.exec(document.scripts[1].textContent)[1])",
+  "  const run = Number(/run:(\\d+)/.exec(document.scripts[0].textContent)[1])",
   "  window.parent.postMessage({ type: 'link', run, href: 'https://example.com/unasked' }, '*')",
   "  return <p>Parent page: {reach}. Code from strings: {strings}.</p>",
   "}",
@@ -372,6 +418,9 @@ for (const theme of ["light", "dark"] as const) {
     await card.getByRole("button", { name: "Open", exact: true }).click()
     await expect.poll(links).toEqual([{ url: "https://example.com/docs" }])
 
+    // The compiler and the frame's runtime loaded for the preview; the charts' library did not.
+    expect(asked(page)).toEqual(expect.arrayContaining(["compile", "frame"]))
+    expect(asked(page)).not.toContain("documentCharts")
     // In the host's scheme: the frame's words take the card's colour, and the app's fonts load there too.
     const cardText = await card.locator("header p").first().evaluate((element) => getComputedStyle(element).color)
     await expect(note.getByRole("heading", { name: "Launch plan" })).toHaveCSS("color", cardText)
@@ -526,3 +575,52 @@ test("a component file whose code does not compile is a problem in the card, and
   await expect.poll(() => contexts(page)).toHaveLength(1)
   expect((await contexts(page))[0]).toMatch(/^The preview of components\/metric\.mdx in the elaborat\.ing card failed: /)
 })
+
+test("a chart in a note draws in the preview, with the charts' library loaded for it", async ({ page }) => {
+  const note = [
+    "# Visitors",
+    "",
+    '<ChartContainer config={{ visitors: { label: "Visitors", color: "var(--chart-1)" } }} aria-label="Monthly visitors" description="Visitors grew from 120 to 180.">',
+    '  <BarChart accessibilityLayer data={[{ month: "Jan", visitors: 120 }, { month: "Feb", visitors: 160 }, { month: "Mar", visitors: 180 }]}>',
+    '    <XAxis dataKey="month" />',
+    '    <Bar dataKey="visitors" fill="var(--color-visitors)" isAnimationActive={false} />',
+    "  </BarChart>",
+    "</ChartContainer>",
+    "",
+  ].join("\n")
+  const card = await openHost(page, { tools: true, theme: "dark", result: withComponents(note, {}) })
+  const shownPreview = preview(page, PATH)
+  await expect(shownPreview.getByRole("heading", { name: "Visitors" })).toBeVisible()
+  // Recharts draws the bars, in place of the box that says charts show in elaborat.ing.
+  await expect(shownPreview.locator(".recharts-bar-rectangle")).toHaveCount(3)
+  await expect(shownPreview.getByText("Charts show in elaborat.ing.")).toHaveCount(0)
+  await expect(shownPreview.getByRole("group", { name: "Monthly visitors" }).getByText("Jan")).toBeVisible()
+  expect(asked(page)).toContain("documentCharts")
+  await expect(card.getByText("Version 4 as rendered by the server.")).toBeHidden()
+  expect(await violations(page)).toEqual([])
+})
+
+for (const policy of ["default", "default-said"] as const) {
+  test(`where the host allows only the default policy, the card shows the server's HTML, read-only, and says why (${policy === "default" ? "found on Edit" : "said up front"})`, async ({ page }) => {
+    const card = await openHost(page, { tools: true, theme: "light", policy, result: withComponents(COMPONENT_NOTE, { "components/metric.mdx": METRIC, "components/sneaky.mdx": SNEAKY }) })
+    // The note as the server rendered it, and why its components are not shown.
+    await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
+    await expect(card.getByRole("status").filter({ hasText: "The components in this note could not be shown here: the preview could not load from elaborat.ing." })).toBeVisible()
+    await expect(card.locator("iframe")).toHaveCount(0)
+    const editing = card.getByText("This chat did not let the editor load from elaborat.ing. Open the note there to change it.")
+    if (policy === "default") {
+      // A host that does not say finds out when Edit is pressed.
+      await card.getByRole("button", { name: "Edit" }).click()
+      await expect(editing).toBeVisible()
+      expect(await violations(page)).toContainEqual(expect.stringMatching(/^script-src(-elem)? https:\/\/elaborat\.ing\/chat-card\//))
+    } else {
+      await expect(editing).toBeVisible()
+      // A host that says so is not asked at all.
+      expect(await violations(page)).toEqual([])
+    }
+    await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0)
+    await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
+    await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toBeVisible()
+    expect(asked(page)).toEqual([])
+  })
+}

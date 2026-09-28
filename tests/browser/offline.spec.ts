@@ -72,9 +72,14 @@ const onFirstUse = (file: string) => file.startsWith("excalidraw-assets/fonts/Xi
 /** Excalidraw's translations other than English: the app never sets its language, so they never load. */
 const neverLoaded = (file: string) => file.startsWith("assets/excalidraw-locales/") && !file.startsWith("assets/excalidraw-locales/en-")
 
+/** The chat card's modules, which chats load from the site; the app never does. */
+const forChats = (file: string) => file.startsWith("chat-card/")
+
 test("the service worker caches every file the build ships, except the CJK drawing font until it is used and translations the app never loads", () => {
   const list = precached(DIST)
-  const files = shipped(DIST).filter((file) => file !== "_headers" && file !== "sw.js" && !/^workbox-[\w-]+\.js$/.test(file))
+  expect(shipped(DIST).filter(forChats).length).toBeGreaterThan(0)
+  expect([...list].filter(forChats)).toEqual([])
+  const files = shipped(DIST).filter((file) => file !== "_headers" && file !== "sw.js" && !/^workbox-[\w-]+\.js$/.test(file) && !forChats(file))
   expect(files.length).toBeGreaterThan(100)
   expect(files.filter((file) => !onFirstUse(file) && !neverLoaded(file) && !list.has(file))).toEqual([])
   expect(files.filter(onFirstUse).length).toBeGreaterThan(100)

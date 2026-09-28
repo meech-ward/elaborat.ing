@@ -3,9 +3,12 @@ import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 // The HTML an MCP Apps host (Claude, ChatGPT) renders for show_file, in a
 // sandboxed frame: the chat card, a small React app built from the app's
 // component library (src/chat-card, built into cardEditorScript.ts by
-// `bun run build:chat-card`). It is self-contained: an inline stylesheet and
-// script (which carries the app's fonts as bytes) and no network requests,
-// so it runs under the spec's default policy with no `_meta.ui.csp`. It
+// `bun run build:chat-card`). An inline stylesheet and script (which carries
+// the app's fonts as bytes) show the note, drawing or diagram with no network
+// requests. The editor and the component previews load as modules from
+// https://elaborat.ing/chat-card/ when first needed, which the view's
+// `_meta.ui.csp` declares (fileView.ts); where a host does not allow them the
+// card stays read-only, as it runs under the spec's default policy. It
 // talks to the host over the MCP Apps postMessage bridge: ui/initialize,
 // then the tool-input and tool-result notifications, theme changes, size
 // changes and ui/open-link. Drawings arrive as SVG the server drew, in the

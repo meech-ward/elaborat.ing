@@ -3,10 +3,11 @@
  * them to a note: the same ones the app's preview frame gives
  * (src/preview/preview-entry.tsx), without its editing controls. Code blocks
  * show as plain code, as the rest of the card shows them, which keeps the
- * highlighter's grammars out of the card. Charts show as a box with the
- * chart's description that says they show in elaborat.ing: their library
- * would add about half a megabyte to the card. Drawing and Diagram come from
- * the frame, which draws them from the server's pictures (runtime.tsx).
+ * highlighter's grammars out of the card. Charts are the app's, which the
+ * frame loads only for a note with a chart (runtime.tsx); until then, or
+ * where they do not load, a chart shows as a box with its description that
+ * says charts show in elaborat.ing. Drawing and Diagram come from the frame,
+ * which draws them from the server's pictures (runtime.tsx).
  */
 import type { ReactNode } from "react"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"

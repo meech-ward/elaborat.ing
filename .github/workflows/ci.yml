@@ -26,13 +26,16 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run test
-      # The chat card's editor script is built from the app's editor and
-      # committed, because the functions deploy without building the app.
-      - name: Check that the chat card's editor script is up to date
+      # The chat card is built from the app's components and committed: the
+      # view's script, because the functions deploy without building the app,
+      # and the modules it loads from the site, which every app deploy serves.
+      - name: Check that the chat card is up to date
         run: |
           bun run build:chat-card
-          if ! git diff --quiet -- supabase/functions/mcp-server/tools/cardEditorScript.ts; then
-            echo "::error::supabase/functions/mcp-server/tools/cardEditorScript.ts is out of date. Run 'bun run build:chat-card' and commit it."
+          changes="$(git status --porcelain -- supabase/functions/mcp-server/tools/cardEditorScript.ts public/chat-card)"
+          if [ -n "$changes" ]; then
+            echo "::error::The chat card is out of date. Run 'bun run build:chat-card' and commit cardEditorScript.ts and public/chat-card."
+            echo "$changes"
             exit 1
           fi
 

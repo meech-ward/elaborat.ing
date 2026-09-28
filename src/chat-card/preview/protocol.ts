@@ -31,6 +31,8 @@ export type PreviewPlan =
       modules: string[]
       embeds: CardEmbed[]
       svgs: Record<string, string>
+      /** The note draws a chart: the frame loads the charts' library before it shows the note. */
+      charts: boolean
     }
   | {
       kind: "components"

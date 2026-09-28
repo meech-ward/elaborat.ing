@@ -52,6 +52,7 @@ const NONE: CardStatus = { kind: "none" }
 
 export const CARD_TEXT = {
   cannotEdit: "This note cannot be edited here. Open it in elaborat.ing to change it.",
+  editorNotLoaded: "This chat did not let the editor load from elaborat.ing. Open the note there to change it.",
   conflict: "This note changed since it was loaded, so your edit was not saved. Load the latest version to edit it again.",
   reloadFailed: "The latest version could not be loaded. Open it in elaborat.ing.",
   notSaved: (message: string) => (message ? `Not saved: ${message}` : "Not saved. Try again."),

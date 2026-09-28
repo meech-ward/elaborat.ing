@@ -8,7 +8,7 @@
  * `_meta` to window.openai.
  * https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
  */
-import { z } from "zod"
+import { z } from "zod/mini"
 
 /** The spec version this view speaks. */
 export const PROTOCOL_VERSION = "2026-01-26"
@@ -18,8 +18,12 @@ export type HostEvent =
   | { type: "tool-input"; args: unknown }
   | { type: "tool-result"; result: unknown }
   | { type: "tool-cancelled" }
-  /** Initialized: whether the host lets the card call this server's tools. */
-  | { type: "ready"; canCallTools: boolean }
+  /**
+   * Initialized: whether the host lets the card call this server's tools, and
+   * the origins it approved for scripts and other resources, or null when it
+   * did not say (`hostCapabilities.sandbox.csp.resourceDomains`).
+   */
+  | { type: "ready"; canCallTools: boolean; resourceDomains: string[] | null }
   /** ChatGPT set its globals, which may hold a result's `_meta` that came late. */
   | { type: "globals" }
 
@@ -47,39 +51,47 @@ declare global {
   }
 }
 
-const capabilitiesSchema = z
-  .object({ serverTools: z.unknown().optional(), openLinks: z.unknown().optional() })
-  .catch({})
+const capabilitiesSchema = z.catch(
+  z.object({
+    serverTools: z.optional(z.unknown()),
+    openLinks: z.optional(z.unknown()),
+    sandbox: z.catch(z.optional(z.object({ csp: z.catch(z.optional(z.object({ resourceDomains: z.optional(z.catch(z.array(z.string()), [])) })), undefined) })), undefined),
+  }),
+  {},
+)
 
-const insetsSchema = z.object({ top: z.number(), right: z.number(), bottom: z.number(), left: z.number() }).partial()
+const insetsSchema = z.partial(z.object({ top: z.number(), right: z.number(), bottom: z.number(), left: z.number() }))
 
 /** The parts of the host context the card uses; anything else is ignored. */
-const contextSchema = z
-  .object({
-    theme: z.enum(["light", "dark"]).optional().catch(undefined),
-    safeAreaInsets: insetsSchema.optional().catch(undefined),
-    styles: z
-      .object({
-        variables: z.record(z.string(), z.string().optional()).optional().catch(undefined),
-        css: z.object({ fonts: z.string().optional() }).optional().catch(undefined),
-      })
-      .optional()
-      .catch(undefined),
-  })
-  .catch({})
+const contextSchema = z.catch(
+  z.object({
+    theme: z.catch(z.optional(z.enum(["light", "dark"])), undefined),
+    safeAreaInsets: z.catch(z.optional(insetsSchema), undefined),
+    styles: z.catch(
+      z.optional(
+        z.object({
+          variables: z.catch(z.optional(z.record(z.string(), z.optional(z.string()))), undefined),
+          css: z.catch(z.optional(z.object({ fonts: z.optional(z.string()) })), undefined),
+        }),
+      ),
+      undefined,
+    ),
+  }),
+  {},
+)
 
 type HostContext = z.infer<typeof contextSchema>
 
 const messageSchema = z.object({
   jsonrpc: z.literal("2.0"),
-  id: z.union([z.string(), z.number()]).optional(),
-  method: z.string().optional(),
-  params: z.unknown().optional(),
-  result: z.unknown().optional(),
-  error: z.unknown().optional(),
+  id: z.optional(z.union([z.string(), z.number()])),
+  method: z.optional(z.string()),
+  params: z.optional(z.unknown()),
+  result: z.optional(z.unknown()),
+  error: z.optional(z.unknown()),
 })
 
-const argumentsSchema = z.object({ arguments: z.unknown() }).catch({ arguments: undefined })
+const argumentsSchema = z.catch(z.object({ arguments: z.unknown() }), { arguments: undefined })
 
 /**
  * Follows the host's theme, safe area and fonts. The colours stay the app's
@@ -201,12 +213,13 @@ export function connectHost(appVersion: string): HostBridge {
     protocolVersion: PROTOCOL_VERSION,
   }).then(
     (raw) => {
-      const result = z.object({ hostCapabilities: z.unknown(), hostContext: z.unknown() }).partial().catch({}).parse(raw ?? {})
+      const result = z.catch(z.partial(z.object({ hostCapabilities: z.unknown(), hostContext: z.unknown() })), {}).parse(raw ?? {})
       capabilities = capabilitiesSchema.parse(result.hostCapabilities ?? {})
       applyContext(result.hostContext)
       notify("ui/notifications/initialized")
       watchSize(notify)
-      emit({ type: "ready", canCallTools: canCallTools() })
+      const csp = capabilities.sandbox?.csp
+      emit({ type: "ready", canCallTools: canCallTools(), resourceDomains: csp ? (csp.resourceDomains ?? []) : null })
     },
     () => {},
   )

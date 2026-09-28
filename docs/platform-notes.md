@@ -244,6 +244,16 @@ Re-check it against OpenAI's pages linked below.
   the view. Checked in Chromium and Firefox in the repository's stand-in host
   (`tests/browser/chat-card.spec.ts`), 2026-09-28; not yet checked in Claude
   or ChatGPT themselves.
+- **A view can import ES modules from an origin it declares.** With the
+  origin in `resourceDomains`, `import()` from the view's inline script, and
+  from a nested `srcdoc` frame's (which inherits the policy), loads modules
+  from there, and `FontFace` loads font files from there. Module scripts and
+  fonts load in CORS mode from an opaque origin (the sandboxed frames send
+  `Origin: null`), so the files need `Access-Control-Allow-Origin: *`. A
+  blocked import rejects, which the view can catch. Checked in Chromium and
+  Firefox in the repository's stand-in host (`tests/browser/chat-card.spec.ts`)
+  with the policy the spec says hosts build from the declaration,
+  2026-09-28; not yet checked in Claude or ChatGPT themselves.
 - **The official SDK assumes views cannot use `eval`.** Its `App` class says
   views "typically run under a strict CSP without `unsafe-eval`", puts Zod in
   jitless mode by default for that reason, and offers `allowUnsafeEval` only

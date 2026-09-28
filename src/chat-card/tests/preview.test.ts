@@ -4,7 +4,7 @@ import { COMPONENT_CATALOG } from "@/features/document/componentCatalog"
 import { PREVIEW_COMPONENTS } from "../preview/catalog"
 import { componentCaption, MAX_CAPTION } from "../preview/caption"
 import { compileComponents, compileErrorMessage, compileNote } from "../preview/compile"
-import { frameDocument, inlineScript } from "../preview/frameDocument"
+import { FRAME_NOT_LOADED, frameDocument, inlineScript } from "../preview/frameDocument"
 import { linkSpot, MAX_MESSAGE, readFrameMessage } from "../preview/frameMessages"
 import { parseShowResult } from "../toolResult"
 
@@ -43,6 +43,14 @@ describe("what the card compiles", () => {
     expect(program.note).toContain("inline: true")
   })
 
+  test("a note with a chart says so, and the frame loads the charts' library only then", async () => {
+    const chart = '<ChartContainer config={{}} aria-label="Visits">\n  <BarChart data={[{ a: 1 }]}>\n    <Bar dataKey="a" />\n  </BarChart>\n</ChartContainer>\n'
+    expect((await compileNote(`# Plan\n\n${chart}`, {})).charts).toBe(true)
+    expect((await compileNote("# Plan\n\n<LineChart data={[]} />\n", {})).charts).toBe(true)
+    // A workspace component named like a chart's part, or a word in the text, is not a chart.
+    expect((await compileNote("import { Chart } from 'workspace:components/chart.mdx'\n\nA bar chart.\n\n<Chart title=\"Q3\" />\n", SOURCES)).charts).toBe(false)
+  })
+
   test("a note fails with the app's messages: a missing file, a reserved name, broken MDX", async () => {
     await expect(compileNote("import { Gone } from 'workspace:components/gone.mdx'\n", {})).rejects.toThrow("No component file at components/gone.mdx.")
     await expect(compileNote("export const Callout = () => null\n", {})).rejects.toThrow("Component name Callout is reserved")
@@ -74,22 +82,25 @@ describe("the frame's document", () => {
       'const a = "<\\/script><script>alert(1)<\\/script>"; const b = /<\\u0021--/',
     )
     const html = frameDocument({
-      runtime: "var elaboratingPreview={open(){}}",
-      style: ":root{}",
+      runtime: "https://elaborat.ing/chat-card/frame-a.js",
+      style: "https://elaborat.ing/chat-card/frame-b.css",
       program: { modules: [{ path: "a.mdx", code: 'return {x: "</SCRIPT>"}' }], note: "return {}", target: null, items: null },
       run: 7,
       scheme: "dark",
     })
     expect(html).toStartWith('<!doctype html><html lang="en" data-scheme="dark" class="dark">')
-    expect(html.match(/<script>/g)?.length).toBe(4)
-    expect(html.match(/<\/script>/gi)?.length).toBe(4)
-    expect(html).toContain("<script>var preview=elaboratingPreview.open(7)</script>")
-    expect(html).toContain("<script>preview.module(0,async function(){\nreturn {x: \"<\\/SCRIPT>\"}\n})</script>")
-    expect(html).toContain("<script>preview.note(async function(){\nreturn {}\n})</script>")
+    expect(html.match(/<script>/g)?.length).toBe(3)
+    expect(html.match(/<\/script>/gi)?.length).toBe(3)
+    // The registry first, then the runtime from the card's modules, which tells the card when it does not load.
+    expect(html).toContain('<script>var preview={run:7,modules:[],note:null};import("https://elaborat.ing/chat-card/frame-a.js").then(')
+    expect(html).toContain(`parent.postMessage({"type":"failed","run":7,"message":"${FRAME_NOT_LOADED}"},"*")`)
+    expect(html).toContain('<link rel="stylesheet" href="https://elaborat.ing/chat-card/frame-b.css">')
+    expect(html).toContain("<script>preview.modules[0]=async function(){\nreturn {x: \"<\\/SCRIPT>\"}\n}</script>")
+    expect(html).toContain("<script>preview.note=async function(){\nreturn {}\n}</script>")
   })
 
   test("with no scheme from the host, the frame follows the device", () => {
-    const html = frameDocument({ runtime: "", style: "", program: { modules: [], note: null, target: "a.mdx", items: [] }, run: 1, scheme: null })
+    const html = frameDocument({ runtime: "x.js", style: "x.css", program: { modules: [], note: null, target: "a.mdx", items: [] }, run: 1, scheme: null })
     expect(html).toStartWith('<!doctype html><html lang="en"><head>')
   })
 })

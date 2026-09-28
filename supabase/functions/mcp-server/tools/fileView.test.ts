@@ -112,7 +112,11 @@ Deno.test('the file view is listed and read as an MCP App resource', async () =>
     assertEquals(content.uri, FILE_VIEW_URI)
     assertEquals(content.mimeType, MCP_APP_MIME_TYPE)
     assert('text' in content && content.text === FILE_VIEW_HTML)
-    assertEquals(content._meta, { ui: { prefersBorder: false } })
+    // The view may load its editor and previews from the app's site, and from nowhere else.
+    assertEquals(content._meta, {
+      ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: ['https://elaborat.ing'] } },
+      'openai/widgetCSP': { connect_domains: [], resource_domains: ['https://elaborat.ing'] },
+    })
 
     // Hosts that have not refreshed the tool list still get the view at the old URI.
     const old = await client.readResource({ uri: 'ui://elaborating/file-view-v1.html' })
@@ -149,9 +153,13 @@ Deno.test('the card script makes no requests, runs no code from strings, and sta
   for (const pattern of [/\bfetch\(|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon|new Worker/, /\beval\(|new Function\b/, /<\/script|<!--/i]) {
     assertFalse(pattern.test(CARD_SCRIPT), `card script matches ${pattern}`)
   }
-  // What hosts load for the view: the card, its editor, its fonts, its stylesheet, and the
-  // component preview's frame (React and the app's components, but not the charts' library).
-  assert(FILE_VIEW_HTML.length < 1_600_000, `the view is ${FILE_VIEW_HTML.length} characters`)
+  // The modules it imports when needed, and its fonts, are the app's own, from the origin the view declares.
+  const modules = new Set([...CARD_SCRIPT.matchAll(/["'`](https:\/\/[^"'`]+\.(?:js|css|woff2))["'`]/g)].map((match) => match[1]))
+  assertEquals(modules.size, 7)
+  for (const url of modules) assert(url.startsWith('https://elaborat.ing/chat-card/'), url)
+  // What hosts load for the view: the card and its stylesheet. Its fonts, the editor and the
+  // component previews are files it loads when it needs them.
+  assert(FILE_VIEW_HTML.length < 500_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 
 Deno.test('rendered Markdown shows raw HTML as text and drops unsafe links and images', () => {

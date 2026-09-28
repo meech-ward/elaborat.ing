@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { CARD_SCRIPT } from "../../../supabase/functions/mcp-server/tools/cardEditorScript"
 import { cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
+import { modulesAllowed } from "../modules"
 import { parseShowResult, parseWriteResult, type CardFile } from "../toolResult"
 
 const URL = "https://elaborat.ing/projects/p/notes/plan.md"
@@ -106,4 +108,42 @@ test("the card's words have no em dashes", () => {
   for (const name of ["CardView.tsx", "ChatCard.tsx", "cardState.ts", "toolResult.ts"]) {
     expect(readFileSync(new globalThis.URL(`../${name}`, import.meta.url), "utf8")).not.toContain("—")
   }
+})
+
+describe("the modules the card loads from elaborat.ing", () => {
+  const modules = new globalThis.URL("../../../public/chat-card/", import.meta.url)
+  const addresses = [...new Set([...CARD_SCRIPT.matchAll(/["'`]https:\/\/elaborat\.ing\/chat-card\/([\w.-]+)["'`]/g)].map((match) => match[1]))]
+
+  test("every file the view names is committed, with every file it imports, in the current build", () => {
+    const builds = JSON.parse(readFileSync(new globalThis.URL("builds.json", modules), "utf8")) as { current: string[] }
+    // The editor, the compiler, the frame's runtime and stylesheet, and three fonts.
+    expect(addresses.length).toBe(7)
+    const seen = new Set<string>()
+    const visit = (name: string) => {
+      if (seen.has(name)) return
+      seen.add(name)
+      expect(existsSync(new globalThis.URL(name, modules)), name).toBe(true)
+      if (!name.endsWith(".js")) return
+      const code = readFileSync(new globalThis.URL(name, modules), "utf8")
+      for (const [, next] of code.matchAll(/(?:from|import)\s*\(?\s*["'`]\.\/([\w.-]+)["'`]/g)) visit(next)
+    }
+    for (const name of addresses) visit(name)
+    expect([...seen].filter((name) => !builds.current.includes(name))).toEqual([])
+    // The charts' library is one of them: a module the frame imports only for a note with a chart.
+    expect([...seen].some((name) => name.startsWith("documentCharts-"))).toBe(true)
+  })
+
+  test("the site serves them to any origin, including the preview frame's opaque one", () => {
+    const headers = readFileSync(new globalThis.URL("../../../public/_headers", import.meta.url), "utf8")
+    expect(headers).toMatch(/^\/chat-card\/\*\n {2}Access-Control-Allow-Origin: \*$/m)
+  })
+
+  test("the card knows the host allows them only when it says so", () => {
+    Object.assign(globalThis, { CARD_MODULES: { editor: "", compile: "", frame: "https://elaborat.ing/chat-card/frame.js", frameStyle: "" } })
+    expect(modulesAllowed(null)).toBeNull()
+    expect(modulesAllowed([])).toBe(false)
+    expect(modulesAllowed(["https://example.com", "not a url"])).toBe(false)
+    expect(modulesAllowed(["https://elaborat.ing"])).toBe(true)
+    expect(modulesAllowed(["https://elaborat.ing/"])).toBe(true)
+  })
 })

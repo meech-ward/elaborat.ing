@@ -155,7 +155,8 @@ export default defineConfig({
         // Excalidraw's translations other than English are left out too: the
         // app never sets its language (langCode), so they never load. If it
         // ever does, cache them on first use like the drawing fonts.
-        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/Xiaolai/**", "assets/excalidraw-locales/!(en-*)"],
+        // The chat card's modules (public/chat-card) are for chats, not the app.
+        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/Xiaolai/**", "assets/excalidraw-locales/!(en-*)", "chat-card/**"],
         // Workbox skips files over 2 MiB by default, and the largest chunks
         // are bigger. tests/browser/offline.spec.ts checks nothing is skipped.
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
