@@ -132,13 +132,18 @@ const ancestors = (path: string): string[] => {
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"))
 }
 
+/** How much one read asks for, by the sizes the entries declare; what is not text is let go before the next read. */
+const READ_BATCH_BYTES = 16 * 1024 * 1024
+
 /**
  * Decide what to import from a .zip or a folder: entries this app cannot
  * store are skipped with the reason (a path it refuses, a name used twice, a
  * file over 2 MiB or not UTF-8 text, a file where a folder has to be); the
  * rest is split into saves as the prototype import does. `read` unpacks the
- * files that pass the checks on paths and sizes. Refused as a whole when
- * what is left is over the project limits.
+ * files that pass the checks on paths and sizes, a batch at a time in path
+ * order. Refused as a whole when what is left is over the project limits,
+ * and reading stops as soon as it is, so a huge folder or .zip is not held
+ * in memory whole.
  */
 export async function planArchive(
   title: string,
@@ -167,49 +172,57 @@ export async function planArchive(
     seen.add(entry.path)
   }
 
-  const bytes = await read(files.map((file) => file.path))
-  const texts = new Map<string, { content: string; size: number }>()
-  for (const { path } of files) {
-    const data = bytes.get(path)
-    if (!data) {
-      skip(path, "The file could not be read.")
-      continue
-    }
-    if (data.length > MAX_FILE_BYTES) {
-      skip(path, "The file is larger than 2 MiB.")
-      continue
-    }
-    try {
-      texts.set(path, { content: decoder.decode(data), size: data.length })
-    } catch {
-      skip(path, "The file is not UTF-8 text, and this app stores only text.")
-    }
-  }
-
-  // A file cannot sit inside another file; the shorter path wins. A file wins over a folder with its path.
+  // Path order puts a file before every path inside it. A file cannot sit
+  // inside another file, so the shorter path wins.
+  files.sort((a, b) => (a.path < b.path ? -1 : 1))
   const kept: Array<{ path: string; content: string }> = []
   const keptPaths = new Set<string>()
   let total = 0
-  for (const [path, { content, size }] of [...texts].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const file = ancestors(path).find((ancestor) => keptPaths.has(ancestor))
-    if (file !== undefined) {
-      skip(path, `${file} is a file, so it cannot contain this path.`)
-      continue
+  for (let start = 0; start < files.length; ) {
+    let end = start + 1
+    let size = files[start].size
+    while (end < files.length && size + files[end].size <= READ_BATCH_BYTES) size += files[end++].size
+    const batch = files.slice(start, end).map((file) => file.path)
+    start = end
+    const bytes = await read(batch)
+    for (const path of batch) {
+      const data = bytes.get(path)
+      if (!data) {
+        skip(path, "The file could not be read.")
+        continue
+      }
+      if (data.length > MAX_FILE_BYTES) {
+        skip(path, "The file is larger than 2 MiB.")
+        continue
+      }
+      let content: string
+      try {
+        content = decoder.decode(data)
+      } catch {
+        skip(path, "The file is not UTF-8 text, and this app stores only text.")
+        continue
+      }
+      const file = ancestors(path).find((ancestor) => keptPaths.has(ancestor))
+      if (file !== undefined) {
+        skip(path, `${file} is a file, so it cannot contain this path.`)
+        continue
+      }
+      kept.push({ path, content })
+      keptPaths.add(path)
+      total += data.length
+      if (kept.length > MAX_ENTRIES) return { ok: false, error: `A project can hold at most ${MAX_ENTRIES} files, and this has more than that.` }
+      if (total > MAX_PROJECT_BYTES) return { ok: false, error: "The files add up to more than 64 MiB, the most a project can hold." }
     }
-    kept.push({ path, content })
-    keptPaths.add(path)
-    total += size
   }
+
+  // A file wins over a folder with its path.
   const directories = [...folders].filter((path) => {
     const file = [...ancestors(path), path].find((ancestor) => keptPaths.has(ancestor))
     if (file === path) skip(`${path}/`, "A file has this path, so it cannot also be a folder.")
     else if (file !== undefined) skip(`${path}/`, `${file} is a file, so it cannot contain this folder.`)
     return file === undefined
   })
-
-  if (kept.length > MAX_ENTRIES) return { ok: false, error: `A project can hold at most ${MAX_ENTRIES} files, and this has ${kept.length}.` }
   if (directories.length > MAX_ENTRIES) return { ok: false, error: `A project can hold at most ${MAX_ENTRIES} folders, and this has ${directories.length}.` }
-  if (total > MAX_PROJECT_BYTES) return { ok: false, error: "The files add up to more than 64 MiB, the most a project can hold." }
 
   const plan = planImport({ title, files: kept, directories })
   const all = [...skipped, ...plan.skipped].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))

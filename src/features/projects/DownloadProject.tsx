@@ -12,7 +12,9 @@ import { filesToDownload, zipName, zipProject } from "./projectArchive"
 type Snapshot = Awaited<ReturnType<ReturnType<typeof fileStoreFor>["snapshot"]>>
 
 function save(snapshot: Snapshot, title: string, drafts: boolean) {
-  const zip = zipProject(filesToDownload(snapshot.files, drafts), snapshot.folders)
+  const files = filesToDownload(snapshot.files, drafts)
+  if (files.length === 0 && snapshot.folders.length === 0) throw new Error("This project has no saved files or folders yet.")
+  const zip = zipProject(files, snapshot.folders)
   downloadBlob(new Blob([zip], { type: "application/zip" }), zipName(title))
 }
 

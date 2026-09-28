@@ -145,12 +145,35 @@ describe("importing a .zip or a folder", () => {
   test("more than a project can hold is refused as a whole", async () => {
     const entries: ArchiveEntry[] = Array.from({ length: 4097 }, (_, index) => ({ kind: "file", path: `f${index}.md`, size: 1 }))
     const result = await planArchive("Too many", entries, async (paths) => new Map(paths.map((path) => [path, encode("x")])))
-    expect(result).toEqual({ ok: false, error: "A project can hold at most 4096 files, and this has 4097." })
+    expect(result).toEqual({ ok: false, error: "A project can hold at most 4096 files, and this has more than that." })
 
     const heavy: ArchiveEntry[] = Array.from({ length: 33 }, (_, index) => ({ kind: "file", path: `h${index}.md`, size: 2 * MiB }))
     const block = new Uint8Array(2 * MiB).fill(97)
     const tooBig = await planArchive("Too big", heavy, async (paths) => new Map(paths.map((path) => [path, block])))
     expect(tooBig).toEqual({ ok: false, error: "The files add up to more than 64 MiB, the most a project can hold." })
+  })
+
+  test("files are read a batch at a time, and reading stops once what is kept is over the limits", async () => {
+    const heavy: ArchiveEntry[] = Array.from({ length: 1000 }, (_, index) => ({ kind: "file", path: `h${String(index).padStart(4, "0")}.md`, size: 2 * MiB }))
+    const block = new Uint8Array(2 * MiB).fill(97)
+    const asked: string[][] = []
+    const tooBig = await planArchive("Too big", heavy, async (paths) => {
+      asked.push(paths)
+      return new Map(paths.map((path) => [path, block]))
+    })
+    expect(tooBig).toEqual({ ok: false, error: "The files add up to more than 64 MiB, the most a project can hold." })
+    expect(asked.every((paths) => paths.length * 2 * MiB <= 16 * MiB)).toBe(true)
+    expect(asked.flat().length).toBeLessThan(48)
+  })
+
+  test("files that are not text do not count toward the limits, however many are read", async () => {
+    const binary: ArchiveEntry[] = Array.from({ length: 40 }, (_, index) => ({ kind: "file", path: `photos/p${index}.png`, size: 2 * MiB }))
+    const plan = await planned("Photos", [...binary, { kind: "file", path: "notes.md", size: 5 }], {
+      ...Object.fromEntries(binary.map(({ path }) => [path, new Uint8Array(2 * MiB).fill(0xff)])),
+      "notes.md": encode("notes"),
+    })
+    expect(plan.saves.flat().map((file) => file.path)).toEqual(["notes.md"])
+    expect(plan.skipped).toHaveLength(40)
   })
 
   test("a file that is not a .zip is refused, and only the files asked for are unpacked", () => {

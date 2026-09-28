@@ -180,3 +180,17 @@ test("a file that is not a .zip says so and creates nothing", async ({ page }) =
   await expect(page.getByRole("alert")).toHaveText("notes.zip could not be imported. This file is not a .zip archive, or it is damaged.")
   expect(fake.server.projects.size).toBe(0)
 })
+
+test("a project with nothing in it says so instead of saving an empty .zip", async ({ page }) => {
+  const server = new FakeProjectServer()
+  await serverProject(server, "Empty", {})
+  await fakeSupabase(page, { server })
+  await signedIn(page)
+  await page.goto(APP_URL)
+  let downloads = 0
+  page.on("download", () => downloads++)
+  await page.getByRole("button", { name: "Actions for Empty" }).click()
+  await page.getByRole("menuitem", { name: "Download project" }).click()
+  await expect(page.getByRole("alert")).toContainText("Not downloaded: This project has no saved files or folders yet.")
+  expect(downloads).toBe(0)
+})
