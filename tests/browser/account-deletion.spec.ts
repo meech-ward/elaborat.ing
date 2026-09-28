@@ -114,10 +114,14 @@ test("Transfer first hands a shared project to a member, so deleting the account
   await confirm.getByRole("button", { name: "Make bob@example.com the owner" }).click()
   await expect(confirm).toBeHidden()
 
-  await expect(dialog.getByRole("status")).toHaveText("bob@example.com is now the owner of Team notes, so it is kept. You stay on as an editor.")
+  const note = dialog.getByRole("status")
+  await expect(note).toHaveText("bob@example.com is now the owner of Team notes, so it is kept. You stay on as an editor.")
   expect(fake.server.projects.get(team)?.owner).toBe(BOB)
   await expect(owned.getByRole("listitem")).toHaveText(["SoloOnly you"])
-  await expect(dialog).toContainText("The project you own is deleted, for everyone it is shared with. To keep a copy, choose Download project in its menu first.")
+  // The button that opened the transfer is gone, so focus moves to what happened.
+  await expect(note).toBeFocused()
+  // Solo is shared with nobody.
+  await expect(dialog).toContainText("The project you own is deleted. To keep a copy, choose Download project in its menu first.")
   await expect(dialog).toContainText("You leave the 2 projects shared with you.")
 
   await dialog.getByLabel(`Type ${person.email} to confirm`).fill(person.email)

@@ -6,7 +6,7 @@
  * Deleting runs the same guards as signing out; when one would keep unsaved
  * work, it says why and offers "Delete anyway".
  */
-import { useEffect, useId, useState, type FormEvent } from "react"
+import { useEffect, useId, useRef, useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -49,6 +49,7 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
   const [problem, setProblem] = useState<Problem>(null)
   const [transferring, setTransferring] = useState<Owned | null>(null)
   const [transferred, setTransferred] = useState<string | null>(null)
+  const transferNote = useRef<HTMLParagraphElement>(null)
   const confirmed = normal(typed) === normal(email)
 
   useEffect(() => {
@@ -78,6 +79,19 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
     }
     setPending(false)
     setProblem(outcome)
+  }
+
+  const handedOver = async (name: string, project: Owned) => {
+    setTransferred(`${name} is now the owner of ${project.title}, so it is kept. You stay on as an editor.`)
+    setTransferring(null)
+    // Read the summary again: the project has left the list.
+    try {
+      setSummary({ status: "ready", summary: await loadDeletionSummary() })
+    } catch (cause) {
+      setSummary({ status: "error", message: cause instanceof Error ? cause.message : String(cause) })
+    }
+    // Its Transfer first button, which had focus, is gone.
+    transferNote.current?.focus()
   }
 
   const submit = (event: FormEvent) => {
@@ -114,7 +128,11 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
       ) : (
         <Consequences summary={summary.summary} onTransfer={pending ? undefined : setTransferring} />
       )}
-      {transferred ? <p role="status" className="text-[13px]">{transferred}</p> : null}
+      {transferred ? (
+        <p ref={transferNote} role="status" tabIndex={-1} className="rounded-sm text-[13px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          {transferred}
+        </p>
+      ) : null}
       <div className="grid gap-2">
         <Label htmlFor={inputId}>Type {email} to confirm</Label>
         <Input
@@ -152,12 +170,7 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
           library={libraryFor({ userId, email, online: true })}
           projectId={transferring.id}
           title={transferring.title}
-          onTransferred={(name) => {
-            setTransferred(`${name} is now the owner of ${transferring.title}, so it is kept. You stay on as an editor.`)
-            setTransferring(null)
-            // Read the summary again: the project has left the list.
-            setAttempt((value) => value + 1)
-          }}
+          onTransferred={(name) => void handedOver(name, transferring)}
           onClose={() => setTransferring(null)}
         />
       ) : null}
@@ -169,6 +182,7 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
 function Consequences({ summary, onTransfer }: { summary: DeletionSummary; onTransfer?: (project: Owned) => void }) {
   const { owned, shared } = summary
   const transferable = owned.some((project) => project.members > 0)
+  const forEveryone = transferable ? (owned.length === 1 ? ", for everyone it is shared with" : ", for everyone they are shared with") : ""
   return (
     <ul className="grid list-disc gap-2 pl-5 text-[13px] leading-normal">
       <li>
@@ -177,9 +191,7 @@ function Consequences({ summary, onTransfer }: { summary: DeletionSummary; onTra
         ) : (
           <div className="grid gap-2">
             <span>
-              {owned.length === 1
-                ? "The project you own is deleted, for everyone it is shared with."
-                : `The ${owned.length} projects you own are deleted, for everyone they are shared with.`}{" "}
+              {owned.length === 1 ? `The project you own is deleted${forEveryone}.` : `The ${owned.length} projects you own are deleted${forEveryone}.`}{" "}
               {transferable ? "To keep a shared project going, transfer it to someone it is shared with first. " : ""}To keep a copy, choose Download
               project in its menu first.
             </span>
