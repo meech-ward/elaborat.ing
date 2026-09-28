@@ -98,7 +98,7 @@ export class RemoteError extends Error {
 
 type PostgrestLikeError = { code?: string; message?: string; details?: string | null }
 
-function classify(error: PostgrestLikeError): RemoteError {
+export function classify(error: PostgrestLikeError): RemoteError {
   const message = error.message ?? "The project service refused the request."
   switch (error.code) {
     case "42501":

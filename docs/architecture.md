@@ -326,10 +326,72 @@ approach Hypothesis uses, rather than anything custom.
 - On read, it is re-anchored with approximate string matching
   (`approx-string-match`, the library Hypothesis uses), scoring candidates by
   quote, context and closeness to the stored position.
-- A section comment quotes its heading. A document comment has no selector.
+- A section comment quotes its heading line. A document comment has no selector.
 - A drawing comment uses the Excalidraw element ID, which is stable.
 - A comment that can no longer be found is shown as detached, at document
   level, with its original quote. Nothing is ever written into the source.
+
+**Decision: the database and agent side** (`supabase/schemas/comments.sql`,
+`src/features/comments/`, the MCP comment tools). The comment panel in the
+editor is not built yet.
+
+- **Two tables.** `comment_threads` holds a thread's anchor, its file and
+  whether it is resolved; `comments` holds the opening comment and every
+  reply. The client chooses thread and reply ids, so sending one again returns
+  what the first send made instead of posting twice.
+- **Anchors** are stored once, in the app's shape (`placement.ts`), and never
+  rewritten; "detached" is worked out by each reader, never stored.
+  - `{ kind: "document" }`: the whole file. Any file.
+  - `{ kind: "text", quote, position }`: a selection in the source, as
+    `describeRange` describes it, at most 5,000 characters. Any text file
+    except drawings.
+  - `{ kind: "section", quote, position }`: a note's heading line (for a
+    setext heading, its text line). It stays attached only while the match
+    still starts a heading line, so a heading turned into prose never latches
+    onto nearby text.
+  - `{ kind: "element", element_id, label, point? }`: an element of a drawing.
+    `label` (its text, the text bound to it, or its type, at most 200
+    characters) is what shows once it is gone; `point` is a spot on it, as
+    fractions of its width and height. A D2 diagram's element comments are on
+    its generated `.excalidraw` canvas.
+- **Threads hang off the file id, not the path.** A rename or move keeps the
+  id, so its threads follow it. There is no foreign key to the file: deleting
+  a file (any editor or agent can, and history can undo it) keeps its threads,
+  listed under its last path as `file_deleted`; they still take replies and
+  resolves, but a deleted file takes no new threads. A new file at the old path
+  has a new id and none of them.
+- **Who may do what.** Viewers read comments; commenters, editors and the owner
+  write them. Anyone who can comment resolves or reopens any thread. Only a
+  comment's author edits it (no history is kept; `edited_at` shows it). The
+  author or the owner deletes a comment; the owner deletes any thread, and a
+  thread's creator deletes it while every live comment in it is theirs. Every
+  write needs comment access at the time, and an archived project refuses
+  them all (55000) while still listing. Reads are `list_comments`, which
+  returns each author's email the way `list_members` does, and RLS on
+  `readable_project_ids()`.
+- **Agents read, add, reply, resolve and reopen, and never delete a comment**,
+  their user's own included: deleting removes someone's words for good, and
+  only a person permanently deletes. The database refuses both deletes from an
+  OAuth-client session. A comment an agent wrote records its OAuth client id
+  from the token, and reads show it as `via_agent`.
+- **Deleting leaves a placeholder.** A deleted comment keeps its row, author
+  and time, without its body, while its thread has live comments, so replies
+  keep their context. When the last live comment goes, the thread goes too.
+  A deleted account's comments stay, with no author.
+- **Signals.** Every comment write that changes something raises the project
+  revision, so the existing change signal announces it on `project:<id>` and
+  open projects reload their comments with no new Realtime code. The signal
+  carries nothing about the comment. Each write returns the new revision, so
+  the writer marks it as seen.
+- **Comments need a connection.** Nothing is queued or kept on the device, as
+  with search: a queued comment could land in a thread resolved or deleted
+  meanwhile. The app shows the last list it loaded in this session, and none
+  after a reload while offline. The no-account local project, a project not
+  yet created on the server and a file not yet synced have no comments.
+- **One anchoring code for the app and the MCP server.** `anchoring.ts` and
+  `placement.ts` are copied into `supabase/functions/_shared/comments/`, since
+  the functions deploy without building the app; `sharedCopies.test.ts` fails
+  when a copy drifts.
 
 ## Accounts
 
@@ -412,6 +474,7 @@ files panel's search shows it; the MCP server returns it to the agent as is.
 | Searches | 120 a minute | `hybrid_search` (the `search` function, which answers 429, and the MCP `search` tool) |
 | Agent tool calls | 300 a minute | the MCP server calls `count_tool_call()` before every tool runs |
 | Invitations by email | 50 a day | `prepare_email_invitation`, which the `share` function calls for every invitation, for the owner |
+| Comment changes | 120 a minute | every comment write: new threads, replies, edits, resolves, reopens and deletes (retries included) |
 
 Limits that were there already, kept as they are:
 
@@ -423,6 +486,11 @@ Limits that were there already, kept as they are:
 - **Per save:** 1 to 4,096 changes (`save_files`). The app's import saves at
   most 500 files and 8 MiB at a time.
 - **Per search:** a query of 1 to 500 characters and at most 30 passages.
+- **Comments** (errcode `54000` for the caps): at most 1,000 threads a file
+  and 10,000 comments a project, resolved threads, deleted files' threads and
+  placeholders included. A comment is 1 to 5,000 characters, a quoted
+  selection at most 5,000, with 32 characters of context on each side, and an
+  element's label at most 200.
 - **Per API read:** at most 1,000 rows (`max_rows` in `config.toml`).
 - **MCP Apps card:** 8 drawings per note, 200,000 characters of SVG each and
   600,000 per result, 3,000 elements per scene.
@@ -450,6 +518,12 @@ secrets.
   batch saves carry the MCP destructive annotation. There is no tool to
   permanently delete a project or accept an invitation; the database refuses
   both for agents anyway. Search is added with hybrid search.
+- **Comment tools** (`tools/comments.ts`): `list_comments` (counts per file,
+  or one file's threads found again in the saved file), `add_comment` (on a
+  quote copied from the source, a note's heading, a drawing element, or the
+  whole file; the tool turns that into the app's anchor), `reply_comment` and
+  `resolve_comment` (which also reopens). There are no tools to edit or delete
+  a comment, and the database refuses agents' deletes anyway.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with

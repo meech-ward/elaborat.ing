@@ -1,5 +1,6 @@
 import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 
+import { registerCommentTools } from './comments.ts'
 import { registerFileView } from './fileView.ts'
 import { registerProjectTools } from './projects.ts'
 import { registerSearchTool } from './search.ts'
@@ -15,4 +16,5 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerProjectTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
+  registerCommentTools(server, context)
 }

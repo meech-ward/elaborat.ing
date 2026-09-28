@@ -184,7 +184,11 @@ Also done in this phase: the comment anchoring library (see the task below).
   list with the `list_members` tool), and a warning before sharing as editor
   (done: inviting as an editor, or making someone one, asks first).
 - The commenter role, and comments on documents, sections, text selections and
-  drawing elements.
+  drawing elements. (Database and agent side done: threads, replies, edits,
+  resolving and deletes with the access rules for each role, pgTAP tests for
+  every role and for agents, the MCP comment tools, and the app's comments
+  adapter and store. See "Comments" in `architecture.md`. Next: the comment
+  panel, composer and highlights in the editor.)
 
 ## Task: comment anchoring library
 

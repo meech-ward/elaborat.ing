@@ -1,7 +1,7 @@
 import { expect } from "jsr:@std/expect@1.0.17"
 import { describe, it as test } from "jsr:@std/testing@1.0.16/bdd"
 import LZString from "npm:lz-string@1.5.0"
-import { extractPassages, type Passage } from "./passages.ts"
+import { extractPassages, noteHeadings, type Passage } from "./passages.ts"
 
 /** The span of the first occurrence of `text` in `source`, running to `until` if given. */
 function span(source: string, text: string, until = text): { start: number; end: number } {
@@ -329,4 +329,53 @@ test("every passage's span covers the source its text came from", () => {
     ["Café 😀", "Code"],
   ])
   expectSpansCoverText(source, passages)
+})
+
+describe("noteHeadings", () => {
+  /** A heading's line as noteHeadings reports it. */
+  const line = (source: string, text: string) => ({ start: source.indexOf(text), end: source.indexOf(text) + text.length })
+
+  test("ATX headings give their whole line and their path", () => {
+    const source = "# Guide\n\nIntro.\n\n## Setup ##\n\nSteps.\n\n### Tools\n\n## Use\n"
+    expect(noteHeadings("notes/guide.md", source)).toEqual([
+      { depth: 1, text: "Guide", path: "Guide", ...line(source, "# Guide") },
+      { depth: 2, text: "Setup", path: "Guide > Setup", ...line(source, "## Setup ##") },
+      { depth: 3, text: "Tools", path: "Guide > Setup > Tools", ...line(source, "### Tools") },
+      { depth: 2, text: "Use", path: "Guide > Use", ...line(source, "## Use") },
+    ])
+  })
+
+  test("setext headings give their text line, not the underline", () => {
+    const source = "Guide\r\n=====\r\n\r\nIntro.\r\n\r\nSetup\r\n-----\r\n"
+    expect(noteHeadings("notes/guide.md", source)).toEqual([
+      { depth: 1, text: "Guide", path: "Guide", start: 0, end: 5 },
+      { depth: 2, text: "Setup", path: "Guide > Setup", ...line(source, "Setup") },
+    ])
+  })
+
+  test("headings with inline code and links read as plain text", () => {
+    const source = "# The `save_files` [call](https://example.com)\n\nText.\n"
+    expect(noteHeadings("notes/api.md", source)).toEqual([
+      { depth: 1, text: "The save_files call", path: "The save_files call", start: 0, end: source.indexOf("\n") },
+    ])
+  })
+
+  test("MDX notes skip frontmatter, imports and headings inside components", () => {
+    const source = [
+      "---\ntitle: Plan\n---",
+      'import { Callout } from "workspace:components/callout.mdx"',
+      "# Plan 😀",
+      "<Callout>\n\n## Inside\n\n</Callout>",
+      "## Steps",
+    ].join("\n\n")
+    expect(noteHeadings("notes/plan.mdx", source)).toEqual([
+      { depth: 1, text: "Plan 😀", path: "Plan 😀", ...line(source, "# Plan 😀") },
+      { depth: 2, text: "Steps", path: "Plan 😀 > Steps", ...line(source, "## Steps") },
+    ])
+  })
+
+  test("only notes have headings", () => {
+    expect(noteHeadings("plan.d2", "# not a heading")).toEqual([])
+    expect(noteHeadings("sketch.excalidraw.md", "# Excalidraw Data")).toEqual([])
+  })
 })

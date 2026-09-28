@@ -22,7 +22,8 @@ as $$
     ('saves_per_minute', 300, interval '1 minute', 'saves a minute'),
     ('searches_per_minute', 120, interval '1 minute', 'searches a minute'),
     ('tool_calls_per_minute', 300, interval '1 minute', 'agent tool calls a minute'),
-    ('invitations_per_day', 50, interval '1 day', 'invitations a day')
+    ('invitations_per_day', 50, interval '1 day', 'invitations a day'),
+    ('comment_writes_per_minute', 120, interval '1 minute', 'comment changes a minute')
 $$;
 
 revoke all on function private.limits() from public, anon;

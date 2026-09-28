@@ -72,7 +72,8 @@ Developer first, friendly for everyone.
 - **Invites by email**, including people without an account yet.
 - **Comments** on a whole document, a section (heading), a text selection, or a
   drawing element. Comments stay attached as the document changes, and show as
-  detached, with their original quote, if their text is gone.
+  detached, with their original quote, if their text is gone. Viewers can read
+  comments; commenters, editors and the owner can write them.
 
 ## Accounts
 

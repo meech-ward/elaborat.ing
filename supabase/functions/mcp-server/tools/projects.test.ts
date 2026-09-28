@@ -211,8 +211,18 @@ Deno.test('the tests cover every tool the server lists', async () => {
   await client.connect(clientTransport)
   try {
     const { tools } = await client.listTools()
-    // search is tested in search.test.ts, show_file in fileView.test.ts.
-    const tested = [...CASES.map(([name]) => name), 'create_project', 'search', 'show_file'].sort()
+    // search is tested in search.test.ts, show_file in fileView.test.ts, and
+    // the comment tools in comments.test.ts.
+    const tested = [
+      ...CASES.map(([name]) => name),
+      'create_project',
+      'search',
+      'show_file',
+      'list_comments',
+      'add_comment',
+      'reply_comment',
+      'resolve_comment',
+    ].sort()
     assertEquals(tools.map((tool) => tool.name).sort(), tested)
   } finally {
     await client.close()
@@ -321,8 +331,8 @@ Deno.test('invalid input is rejected before any Supabase call', async () => {
   }
 })
 
-Deno.test('no tool permanently deletes a project or accepts an invitation', async () => {
-  const forbidden = ['delete_project', 'accept_invitation']
+Deno.test('no tool permanently deletes a project, accepts an invitation, or edits or deletes a comment', async () => {
+  const forbidden = ['delete_project', 'accept_invitation', 'edit_comment', 'delete_comment', 'delete_comment_thread']
   for (const [name, args, , answers] of CASES) {
     assert(!forbidden.includes(name), `${name} is a tool`)
     const { calls } = await callTool(name, args, answers)

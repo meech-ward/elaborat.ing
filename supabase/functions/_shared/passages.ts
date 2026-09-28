@@ -64,6 +64,65 @@ export function extractPassages(path: string, source: string): Passage[] {
   }
 }
 
+/** A note's heading, for anchoring comments to its section. */
+export type NoteHeading = {
+  depth: number
+  /** The heading's plain text. */
+  text: string
+  /** The headings above it and its own text, outermost first, joined with " > " as search shows them. */
+  path: string
+  /**
+   * UTF-16 offsets of the heading's line in the source: the whole line of an
+   * ATX heading (`## Setup`), or the text line of a setext heading, right
+   * above its `===` or `---`.
+   */
+  start: number
+  end: number
+}
+
+/**
+ * The top-level headings of a note (`.md` or `.mdx`), in order. Headings
+ * inside lists, quotes or components start no section and are left out.
+ * Anything else has no headings.
+ */
+export function noteHeadings(path: string, source: string): NoteHeading[] {
+  if (/\.excalidraw(\.md)?$/i.test(path)) return []
+  const extension = /\.([^./]+)$/.exec(path)?.[1].toLowerCase()
+  if (extension !== "md" && extension !== "mdx") return []
+  const tree = extension === "md" ? markdown.parse(source) : parseMdx(source)
+  const headings: NoteHeading[] = []
+  const above: { depth: number; text: string }[] = []
+  for (const node of tree.children ?? []) {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    if (node.type !== "heading" || start === undefined || end === undefined) continue
+    const depth = Number(node.depth)
+    const text = phrasingText(node.children).trim()
+    while (above.length > 0 && above[above.length - 1].depth >= depth) above.pop()
+    above.push({ depth, text })
+    // An ATX heading is one line. A setext heading ends with its underline,
+    // and its text line is the one before it.
+    const setext = source.slice(start, end).includes("\n")
+    const line = lineAround(source, setext ? source.lastIndexOf("\n", end - 1) - 1 : start)
+    headings.push({
+      depth,
+      text,
+      path: above.map((heading) => heading.text).filter((label) => label !== "").join(" > "),
+      ...line,
+    })
+  }
+  return headings
+}
+
+/** The line holding `offset`: its start, and its end before the line break. */
+function lineAround(source: string, offset: number): { start: number; end: number } {
+  const start = source.lastIndexOf("\n", offset - 1) + 1
+  const newline = source.indexOf("\n", offset)
+  let end = newline === -1 ? source.length : newline
+  if (end > start && source[end - 1] === "\r") end--
+  return { start, end }
+}
+
 function parseMdx(source: string): Node {
   try {
     return mdx.parse(source)

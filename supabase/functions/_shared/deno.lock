@@ -7,6 +7,7 @@
     "jsr:@std/internal@^1.0.10": "1.0.14",
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "jsr:@std/testing@1.0.16": "1.0.16",
+    "npm:approx-string-match@2.0.0": "2.0.0",
     "npm:lz-string@1.5.0": "1.5.0",
     "npm:remark-frontmatter@5.0.0": "5.0.0",
     "npm:remark-gfm@4.0.1": "4.0.1",
@@ -85,6 +86,9 @@
     "acorn@8.18.0": {
       "integrity": "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==",
       "bin": true
+    },
+    "approx-string-match@2.0.0": {
+      "integrity": "sha512-03v8MsWnZYV4Svv82EYWoVw1RIKAJ/zubmhG1FYvhJwOsBnLPxx6CPHF2dXN/yW8uwHK+653j52IwiNluJR97w=="
     },
     "bail@2.0.2": {
       "integrity": "sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw=="
