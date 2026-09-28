@@ -53,6 +53,18 @@ describe("show_file's result", () => {
     expect([shared(true), shared(false), shared("yes"), shared()]).toEqual([true, false, true, false])
   })
 
+  test("who last changed a shared note's component files comes with them; unreadable names are left out, not the files", () => {
+    const withEditors = (editors: unknown) => {
+      const shown = parseShowResult(
+        result({ path: "notes/plan.mdx", shared: true }, { "elaborat.ing/source": "# Plan\n", "elaborat.ing/components": { modules: { "ui/card.mdx": "x" }, editors } }),
+      )
+      return shown.ok ? [shown.file.components, shown.file.editors] : null
+    }
+    expect(withEditors({ "ui/card.mdx": "Ana" })).toEqual([{ "ui/card.mdx": "x" }, { "ui/card.mdx": "Ana" }])
+    expect(withEditors({ "ui/card.mdx": 3 })).toEqual([{ "ui/card.mdx": "x" }, {}])
+    expect(withEditors(undefined)).toEqual([{ "ui/card.mdx": "x" }, {}])
+  })
+
   test("an error or an unreadable result is a problem with the server's words", () => {
     expect(parseShowResult({ isError: true, content: [{ type: "text", text: "No file at x." }], structuredContent: {} })).toEqual({ ok: false, message: "No file at x." })
     expect(parseShowResult({ structuredContent: { path: 3 } })).toEqual({ ok: false, message: "Something went wrong." })

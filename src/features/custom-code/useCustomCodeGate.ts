@@ -14,7 +14,8 @@ export type CustomCodeGate =
 /**
  * Whether a note's rendered view may run its custom components now. Without
  * a policy (the person's own project) it always may. In a shared project a
- * note that imports component files, or exports code itself, waits until
+ * note that imports component files, exports code itself, or has an
+ * expression in its text that runs code (componentModules.ts) waits until
  * the person chooses to run that exact code; the choice is remembered per
  * file version (approvals.ts). Built-in components never ask.
  *

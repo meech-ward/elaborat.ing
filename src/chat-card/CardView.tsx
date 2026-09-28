@@ -29,11 +29,13 @@ export { CARD_NOTE_CLASS, EmbedFigure } from "./cardNote"
  */
 export type CardPreview = {
   frame: ReactNode
-  /** "asking": a note from a shared project waits for Run components before its code runs. */
+  /** "asking": custom code from a shared project waits for Run code before it runs. */
   status: "loading" | "shown" | "failed" | "asking"
   /** Why the preview failed. */
   message: string | null
-  /** Runs a shared note's custom components. */
+  /** While asking: the files whose code would run, by path. */
+  files?: readonly string[]
+  /** Runs the shared project's custom component code. */
   onRun?: () => void
   /**
    * A link clicked in the preview, which opens only when the person says so
@@ -51,7 +53,10 @@ export type CardPreview = {
 export const PREVIEW_TEXT = {
   noteFailed: (message: string | null) => `The components in this note could not be shown here${message ? `: ${message}` : "."}`,
   componentFailed: (message: string | null) => `This component could not be shown${message ? `: ${message}` : "."}`,
-  asking: "This note from a shared project runs custom components. They run in an isolated frame, with no network and no access to your account.",
+  asking: (kind: CardFile["kind"]) =>
+    kind === "note" ? "This note from a shared project runs custom code." : "These components are in a shared project and run custom code.",
+  askingFiles: "The code comes from:",
+  isolated: "It runs in an isolated frame, with no network and no access to your account.",
   openLink: (url: string) => `Open ${url}?`,
 }
 
@@ -120,6 +125,35 @@ function CardHeader({ state }: { state: CardState }) {
         </a>
       )}
     </header>
+  )
+}
+
+/**
+ * Asks before a preview runs custom code from a shared project: the files it
+ * comes from and who last changed them (where the server says), where it
+ * runs, and Run code. `column`: in a note's 680 column.
+ */
+function AskingBanner({ file, preview, column = false }: { file: CardFile; preview: CardPreview; column?: boolean }) {
+  return (
+    <div className={column ? "px-6 pt-4 max-[500px]:px-4" : "p-4 max-[500px]:p-3"}>
+      <Banner tone="info" className={cn(column && "mx-auto max-w-[680px]")}>
+        <p>
+          {PREVIEW_TEXT.asking(file.kind)} {PREVIEW_TEXT.askingFiles}
+        </p>
+        <ul aria-label="Files with custom code" className="my-1.5 flex flex-col gap-0.5">
+          {(preview.files ?? []).map((path) => (
+            <li key={path} className="wrap-anywhere">
+              <span className="font-mono text-xs">{path}</span>
+              {file.kind === "note" && path === file.path ? " (this note)" : ""}
+              {file.editors[path] ? `, last changed by ${file.editors[path]}` : ""}
+            </li>
+          ))}
+        </ul>
+        <p>
+          {PREVIEW_TEXT.isolated} <BannerAction onClick={preview.onRun}>Run code</BannerAction>
+        </p>
+      </Banner>
+    </div>
   )
 }
 
@@ -206,13 +240,7 @@ function CardBody({ state, editor, preview }: { state: CardState; editor?: React
     // A note with components shows the server's HTML until their preview has drawn, and again if it fails.
     return (
       <>
-        {preview?.status === "asking" && (
-          <div className="px-6 pt-4 max-[500px]:px-4">
-            <Banner tone="info" className="mx-auto max-w-[680px]" action={<BannerAction onClick={preview.onRun}>Run components</BannerAction>}>
-              {PREVIEW_TEXT.asking}
-            </Banner>
-          </div>
-        )}
+        {preview?.status === "asking" && <AskingBanner file={file} preview={preview} column />}
         {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />}
         {preview && preview.status !== "failed" && <PreviewSlot preview={preview} column />}
         {preview?.status === "failed" && (
@@ -230,7 +258,8 @@ function CardBody({ state, editor, preview }: { state: CardState; editor?: React
   if (file.kind === "component") {
     return (
       <>
-        {preview?.status !== "shown" && preview?.status !== "failed" && <LoadingLines />}
+        {preview?.status === "asking" && <AskingBanner file={file} preview={preview} />}
+        {preview?.status !== "shown" && preview?.status !== "failed" && preview?.status !== "asking" && <LoadingLines />}
         {preview && preview.status !== "failed" && <PreviewSlot preview={preview} />}
         {preview?.status === "failed" && (
           <div className="p-4 max-[500px]:p-3">

@@ -29,6 +29,21 @@ describe("custom component code", () => {
     expect(await tokens(note("Words."), chart("two"))).not.toEqual(first)
   })
 
+  test("an expression in the note's text that runs code is the note's own code; a comment or a literal value is not", async () => {
+    const own = async (text: string) => (await prepareComponentEnvironment(`# Plan\n\n${text}\n`)).code
+    for (const text of ["{/* a comment */}", "{2}", '<Counter initial={-2} label="x" />', "<Chart data={[{ x: 1, y: 'a' }, null]} />", "{`plain`}"]) {
+      expect(await own(text)).toEqual([])
+    }
+    for (const text of ["{(() => 'ran')()}", "{`${1 + 1}`}", "<Counter initial={Math.random()} />", "<Callout {...{ tone: 'warn' }}>Hi</Callout>", "Inline {window.name} too."]) {
+      expect((await own(text)).map((entry) => entry.path)).toEqual([null])
+    }
+    // A changed expression is new code; the words around it are not.
+    const tokens = async (text: string) => (await codeFiles(await own(text), "notes/plan.mdx")).map((file) => file.token)
+    const first = await tokens("Before {1 + 1} after.")
+    expect(await tokens("Other words {1 + 1} here.")).toEqual(first)
+    expect(await tokens("Before {1 + 2} after.")).not.toEqual(first)
+  })
+
   test("the note's own exports are its own file, under its path", async () => {
     const environment = await prepareComponentEnvironment("export const Pill = () => <b>hi</b>\n\n<Pill />\n")
     const [file] = await codeFiles(environment.code, "notes/plan.mdx")

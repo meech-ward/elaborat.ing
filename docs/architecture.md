@@ -676,23 +676,30 @@ the document's compiled code and rendered images, never tokens or other files)
 and a notice on shared projects that they run custom code.
 
 **Decision: in a project shared with the person, a note that runs custom
-component code asks first.** A note that imports component files
-(`workspace:` specifiers) or exports code itself shows a notice in place of
-its rendered view (`src/features/custom-code/`): the files the code comes
-from and who last changed each (`project_files.updated_by`, named from the
-member list when the server can say), that the code runs in an isolated frame
-with no network and no access to their account, and Run components or Show
-as text (the Source view). The choice is kept on the device, per person and
-project, as a SHA-256 of each file's path and its imports and exports as
-written, so a new version of a component file asks again and edits to a
-note's prose do not; the person's own unsaved edits to a running note's
-exports keep it running. The rendered view is only given components whose
-code was checked. Owners, the local project and built-in components never
-ask; expressions in a note's text are not custom components and do not ask.
-The chat card asks the same way before its nested frame runs a shared note's
-components (`show_file` sends `shared` with the component files); it does not
-remember the choice, since its storage belongs to the host. The notice is a
-mitigation: the frame is the boundary.
+code asks first.** A note that imports component files (`workspace:`
+specifiers), exports code itself, or has an expression in its text that does
+more than state a value shows a notice in place of its rendered view
+(`src/features/custom-code/`). Comments and literal values such as `{2}` or
+`<Chart data={[1, 2]} />` are not code; `{fetch(...)}` or `{(() => ...)()}`
+is, since a member who wanted to run code without asking would otherwise
+write it there. The notice lists the files the code comes from and who last
+changed each (`project_files.updated_by`, named from the member list when the
+server can say), says that the code runs in an isolated frame with no network
+and no access to their account, and offers Run code or Show as text (the
+Source view). The choice is kept on the device, per person and project, as a
+SHA-256 of each file's path and its code as written (imports, exports, and
+for the note its code-running expressions), so code someone else changed asks
+again and edits to a note's prose do not. The person's own edits to code that
+is running here (a note's code, or a component file open in its own tab) are
+theirs and keep it running; their edits on another device ask again. The
+rendered view is only given components whose code was checked. Owners, the
+local project and built-in components never ask. The chat card asks the same
+way, with the files and who last changed them, before its nested frame runs a
+shared note's code or a shared component file (`show_file` and
+`preview_component` send `shared`, and the names beside the component files);
+an agent's draft is its own, so only the saved files it imports ask. The card
+does not remember the choice, since its storage belongs to the host. The
+notice is a mitigation: the frame is the boundary.
 
 **Open:** the sandbox domain name, and whether to add it to the Public Suffix
 List so each document's subdomain is isolated from every other.

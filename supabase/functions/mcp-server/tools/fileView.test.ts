@@ -17,8 +17,15 @@ const PROJECT = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e'
 /** The signed-in user, and the project's owner unless a test says otherwise. */
 const ME = '0b6a4a52-6f3e-4c1a-9d59-3b7f1c2a9e01'
 const UPDATED = '2026-09-26T00:00:00Z'
+/** Another member of a shared project. */
+const ANA = 'c9d8e7f6-a5b4-4c3d-8e2f-1a0b9c8d7e6f'
+/** The project's members, as list_members answers. */
+const MEMBERS = [
+  { user_id: ANA, email: 'ana@example.com', name: 'Ana', role: 'owner' },
+  { user_id: ME, email: 'me@example.com', name: null, role: 'editor' },
+]
 
-type Row = { path: string; content: string; version: number; updated_at: string }
+type Row = { path: string; content: string; version: number; updated_at: string; updated_by?: string | null }
 
 const file = (path: string, content: string): Row => ({ path, content, version: 1, updated_at: UPDATED })
 
@@ -33,6 +40,7 @@ async function withClient<T>(files: Row[], use: (client: Client, queries: unknow
   const supabase = {
     rpc(name: string, args: { changes: { op: string; path: string; content: string; base_version?: number }[] }) {
       queries.push([['rpc', name, JSON.parse(JSON.stringify(args))]])
+      if (name === 'list_members') return Promise.resolve({ data: MEMBERS, error: null })
       const [change] = args.changes
       const row = files.find((entry) => entry.path === change.path)
       if (change.op !== 'put' || (row?.version ?? undefined) !== change.base_version) {
@@ -59,7 +67,9 @@ async function withClient<T>(files: Row[], use: (client: Client, queries: unknow
           }),
         then: (resolve: (value: unknown) => void) => {
           const paths = arg('in', 'path') as string[]
-          resolve({ data: files.filter((row) => paths.includes(row.path)).map(({ path, content }) => ({ path, content })), error: null })
+          const rows = files.filter((row) => paths.includes(row.path))
+          const editors = query.some((step) => step[0] === 'select' && step[1] === 'path, updated_by')
+          resolve({ data: rows.map(({ path, content, updated_by }) => (editors ? { path, updated_by: updated_by ?? null } : { path, content })), error: null })
         },
       }
       return builder
@@ -527,10 +537,18 @@ Deno.test('show_file sends an MDX note with components the component files it im
   assertFalse(JSON.stringify(result.structuredContent).includes('export'))
 })
 
-Deno.test("show_file says when a note with components is in a project shared with the user", async () => {
-  const files = [file('notes/plan.mdx', COMPONENT_NOTE), file('components/chart.mdx', 'export const Chart = () => null\n')]
-  const shared = await showFile('notes/plan.mdx', files, 'c9d8e7f6-a5b4-4c3d-8e2f-1a0b9c8d7e6f')
+Deno.test("show_file says when a note with components is in a project shared with the user, and who last changed their files", async () => {
+  const files = [
+    { ...file('notes/plan.mdx', COMPONENT_NOTE), updated_by: ME },
+    { ...file('components/chart.mdx', 'export const Chart = () => null\n'), updated_by: ANA },
+  ]
+  const shared = await showFile('notes/plan.mdx', files, ANA)
   assertEquals((shared.result.structuredContent as { shared: boolean }).shared, true)
+  const sent = (shared.result._meta as Record<string, { editors?: Record<string, string> }>)[COMPONENTS_META_KEY]
+  assertEquals(sent.editors, { 'notes/plan.mdx': 'you', 'components/chart.mdx': 'Ana' })
+  // The person's own project names no one.
+  const own = await showFile('notes/plan.mdx', files)
+  assertFalse('editors' in (own.result._meta as Record<string, Record<string, unknown>>)[COMPONENTS_META_KEY])
   // A note shown without a preview does not look the project up.
   const markdown = await showFile('notes/plan.md', [file('notes/plan.md', COMPONENT_NOTE)], 'c9d8e7f6-a5b4-4c3d-8e2f-1a0b9c8d7e6f')
   assertFalse('shared' in (markdown.result.structuredContent as Record<string, unknown>))
@@ -581,15 +599,32 @@ Deno.test('preview_component shows a saved component file with the files it impo
     draft: false,
     component: 'Chart',
     props: { title: 'Q3' },
+    shared: false,
   })
   assertEquals((result._meta as Record<string, unknown>)[COMPONENTS_META_KEY], {
     modules: { 'components/chart.mdx': CHART, 'components/axis.mdx': 'export const Axis = () => <hr />\n' },
   })
-  // The file, then its import, both as the user.
-  assertEquals(queries.map((query) => query.find((step) => step[0] === 'eq' && step[1] === 'project_id')), [
+  // The file, then its import, both as the user, then whose project it is.
+  assertEquals(queries.map((query) => query.find((step) => step[0] === 'eq')), [
     ['eq', 'project_id', PROJECT],
     ['eq', 'project_id', PROJECT],
+    ['eq', 'id', PROJECT],
   ])
+})
+
+Deno.test('preview_component says when the component file is in a project shared with the user, and who last changed the files', async () => {
+  const files = [
+    { ...file('components/chart.mdx', CHART), updated_by: ANA },
+    { ...file('components/axis.mdx', 'export const Axis = () => <hr />\n'), updated_by: ME },
+  ]
+  const { result } = await withClient(
+    files,
+    async (client) => ({ result: (await client.callTool({ name: 'preview_component', arguments: { project_id: PROJECT, path: 'components/chart.mdx' } })) as CallToolResult }),
+    ANA,
+  )
+  assertEquals((result.structuredContent as { shared: boolean }).shared, true)
+  const sent = (result._meta as Record<string, { editors?: Record<string, string> }>)[COMPONENTS_META_KEY]
+  assertEquals(sent.editors, { 'components/chart.mdx': 'Ana', 'components/axis.mdx': 'you' })
 })
 
 Deno.test('preview_component shows a draft that is not saved, and refuses other files', async () => {

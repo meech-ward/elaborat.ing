@@ -62,3 +62,51 @@ export async function componentSources(
   }
   return found
 }
+
+/**
+ * Whether a project is shared with the user rather than their own, so the
+ * view asks before it runs the project's custom component code. Unknown
+ * counts as shared.
+ */
+export async function sharedWithUser(supabase: SupabaseClient, projectId: string, userId: string | undefined): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.from('projects').select('owner_id').eq('id', projectId).maybeSingle()
+    return Boolean(error) || !data || !userId || data.owner_id !== userId
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Who last changed each of these files, by path, named as list_members names
+ * them ("you" for the user), for the view to show beside the files whose code
+ * it asks about. Files and people it cannot name are left out; when the
+ * server cannot say, none are named.
+ */
+export async function componentEditors(
+  supabase: SupabaseClient,
+  projectId: string,
+  paths: string[],
+  userId: string | undefined
+): Promise<Record<string, string>> {
+  try {
+    const [files, members] = await Promise.all([
+      supabase.from('project_files').select('path, updated_by').eq('project_id', projectId).in('path', paths),
+      supabase.rpc('list_members', { project_id: projectId }),
+    ])
+    if (files.error || members.error) return {}
+    const names = new Map<string, string>()
+    for (const member of (members.data ?? []) as { user_id?: unknown; name?: unknown; email?: unknown }[]) {
+      const name = typeof member.name === 'string' && member.name ? member.name : typeof member.email === 'string' ? member.email : ''
+      if (typeof member.user_id === 'string' && name) names.set(member.user_id, member.user_id === userId ? 'you' : name)
+    }
+    const editors: Record<string, string> = {}
+    for (const row of (files.data ?? []) as { path: string; updated_by: string | null }[]) {
+      const name = row.updated_by ? names.get(row.updated_by) : undefined
+      if (name) editors[row.path] = name
+    }
+    return editors
+  } catch {
+    return {}
+  }
+}

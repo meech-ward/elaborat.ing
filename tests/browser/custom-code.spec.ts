@@ -5,12 +5,12 @@ import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supaba
 import { APP_URL } from "./urls.ts"
 import { showView } from "./views.ts"
 
-// A note in a project shared with the person that runs custom components
-// (imported from the project's files, or exported by the note) waits behind
-// a notice: who last changed the files, where the code runs, and Run
-// components or Show as text. The choice holds on this device until a
-// component file changes. The person's own projects, and built-in
-// components, never ask.
+// A note in a project shared with the person that runs custom code
+// (components imported from the project's files, the note's own exports, or
+// an expression in its text that runs code) waits behind a notice: who last
+// changed the files, where the code runs, and Run code or Show as text. The
+// choice holds on this device until someone else changes the code. The
+// person's own projects, built-in components and literal values never ask.
 
 test.describe.configure({ timeout: 60_000 })
 
@@ -20,8 +20,9 @@ const PREVIEW = 'iframe[title="Isolated document preview"]'
 const card = (words: string) => `export const ReleaseCard = ({ title }) => <section className="card"><h3>{title}</h3><p>${words}</p></section>\n`
 const NOTE = `import { ReleaseCard } from "workspace:${MODULE}"\n\n# Plan\n\n<ReleaseCard title="Launch" />\n`
 const BUILT_IN = "# Plain\n\n<Counter initial={2} />\n"
+const EXPRESSION = "# Sum\n\n{(() => ['expr', 'ran', String(6 * 7)].join('-'))()}\n"
 const projectUrl = (id: string, path: string) => new URL(`projects/${id}/${path}`, APP_URL).href
-const notice = (page: Page) => page.getByText("This note runs custom components")
+const notice = (page: Page) => page.getByRole("heading", { name: "This note runs custom code" })
 const shownCard = (page: Page) => page.frameLocator(PREVIEW).locator("section.card")
 
 /** A project with the card component and a note using it, owned by `owner` and shared with the person unless they own it. */
@@ -34,6 +35,7 @@ async function openProject(page: Page, path: string, owner = SOMEONE_ELSE, role:
     { op: "put", path: MODULE, content: card("First version") },
     { op: "put", path: "notes/plan.mdx", content: NOTE },
     { op: "put", path: "notes/plain.mdx", content: BUILT_IN },
+    { op: "put", path: "notes/expression.mdx", content: EXPRESSION },
   ])
   if (owner !== person.id) server.share(id, person.id, role)
   const fake = await fakeSupabase(page, { server })
@@ -54,11 +56,11 @@ async function changeElsewhere(fake: FakeSupabase, id: string, content: string) 
 test("a shared note asks before running its components, runs them when asked, and the choice holds across a reload", async ({ page }) => {
   await openProject(page, "notes/plan.mdx")
   await expect(notice(page)).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole("list", { name: "Files with component code" })).toHaveText("ui/card.mdx, last changed by Ana")
-  await expect(page.getByText("They run in an isolated frame, with no network and no access to your account.", { exact: false })).toBeVisible()
+  await expect(page.getByRole("list", { name: "Files with custom code" })).toHaveText("ui/card.mdx, last changed by Ana")
+  await expect(page.getByText("It runs in an isolated frame, with no network and no access to your account.", { exact: false })).toBeVisible()
   await expect(page.locator(PREVIEW)).toHaveCount(0)
 
-  await page.getByRole("button", { name: "Run components" }).click()
+  await page.getByRole("button", { name: "Run code" }).click()
   await expect(shownCard(page).locator("h3")).toHaveText("Launch", { timeout: 15_000 })
   await expect(notice(page)).toHaveCount(0)
 
@@ -70,14 +72,23 @@ test("a shared note asks before running its components, runs them when asked, an
 
 test("a component file changed by someone else asks again, and runs its new version when asked", async ({ page }) => {
   const { fake, id } = await openProject(page, "notes/plan.mdx", SOMEONE_ELSE, "viewer")
-  await page.getByRole("button", { name: "Run components" }).click()
+  await page.getByRole("button", { name: "Run code" }).click()
   await expect(shownCard(page).locator("p")).toHaveText("First version", { timeout: 15_000 })
 
   await changeElsewhere(fake, id, card("Second version"))
   await expect(notice(page)).toBeVisible({ timeout: 15_000 })
   await expect(page.locator(PREVIEW)).toHaveCount(0)
-  await page.getByRole("button", { name: "Run components" }).click()
+  await page.getByRole("button", { name: "Run code" }).click()
   await expect(shownCard(page).locator("p")).toHaveText("Second version", { timeout: 15_000 })
+})
+
+test("an expression in a shared note's text that runs code asks too", async ({ page }) => {
+  await openProject(page, "notes/expression.mdx", SOMEONE_ELSE, "viewer")
+  await expect(notice(page)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("list", { name: "Files with custom code" })).toHaveText("notes/expression.mdx (this note), last changed by Ana")
+  await expect(page.locator(PREVIEW)).toHaveCount(0)
+  await page.getByRole("button", { name: "Run code" }).click()
+  await expect(page.frameLocator(PREVIEW).getByText("expr-ran-42")).toBeVisible({ timeout: 15_000 })
 })
 
 test("Show as text opens the note's source instead", async ({ page }) => {

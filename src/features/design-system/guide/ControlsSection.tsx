@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ChevronDown, Diamond, Maximize2, Plus, Settings, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import { CustomCodeNotice, CustomCodeProvider, type CodeFile, type CustomCodePolicy } from "@/features/custom-code"
 import { ActionContextMenu, ActionMenu } from "../ui/ActionMenu"
 import { Banner } from "../ui/Banner"
 import { ButtonShortcut } from "../ui/ButtonShortcut"
@@ -14,8 +15,8 @@ import { fileActions } from "./fileActions"
 import { GuideGroup, GuideLabel, GuideValue, useGuidePortal } from "./parts"
 
 // The Controls group: the button sizes and disabled states, keys, tooltips,
-// live menus, the empty state, the other banner tones and status, the
-// unsaved dot and loading lines. The approved sheet at the top of the page
+// live menus, the empty state and the custom code notice built on it, the
+// other banner tones and status, the unsaved dot and loading lines. The approved sheet at the top of the page
 // has the buttons, the menu and the warn banner, callout and status; this
 // group has the rest. Three columns from lg up; one column on phones.
 
@@ -159,8 +160,31 @@ function MenuDemo() {
           }
         />
       </div>
+
+      <GuideLabel>Custom code notice</GuideLabel>
+      <div className="rounded-panel border border-dashed border-panel-border">
+        <CustomCodeProvider value={SAMPLE_CODE_POLICY}>
+          <CustomCodeNotice files={SAMPLE_CODE_FILES} onRun={noop} onShowSource={noop} />
+        </CustomCodeProvider>
+      </div>
     </>
   )
+}
+
+const noop = () => {}
+
+/** A note in a shared project that imports a component file Ana changed and exports code of its own. */
+const SAMPLE_CODE_FILES: CodeFile[] = [
+  { path: "ui/release-card.mdx", token: "sample-card", own: false },
+  { path: "notes/launch-plan.mdx", token: "sample-note", own: true },
+]
+const SAMPLE_CODE_POLICY: CustomCodePolicy = {
+  key: "style-guide",
+  editors: async () =>
+    new Map([
+      ["ui/release-card.mdx", "Ana"],
+      ["notes/launch-plan.mdx", "you"],
+    ]),
 }
 
 function FeedbackDemo() {

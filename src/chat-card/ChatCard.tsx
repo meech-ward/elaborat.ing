@@ -58,7 +58,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const [previewed, setPreviewed] = useState<{ file: CardFile; outcome: PreviewOutcome } | null>(null)
   // A link clicked in the preview, waiting for the person to open it.
   const [asked, setAsked] = useState<{ file: CardFile; url: string; spot: LinkSpot | null } | null>(null)
-  // The shared note whose custom components the person chose to run; each file shown asks again.
+  // The shared file whose custom component code the person chose to run; each file shown asks again.
   const [ran, setRan] = useState<CardFile | null>(null)
 
   useEffect(
@@ -94,8 +94,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const shown = state.phase === "shown" ? state : null
   const previewFile = shown && shown.mode === "read" && shown.file.components !== null ? shown.file : null
   const outcome = previewFile && previewed?.file === previewFile ? previewed.outcome : null
-  // A note from a project shared with the person runs its custom components only when they say so.
-  const held = previewFile !== null && previewFile.kind === "note" && previewFile.shared && ran !== previewFile
+  // Custom component code from a project shared with the person runs only when they say so.
+  const held = previewFile !== null && previewFile.shared && ran !== previewFile
   const preview: CardPreview | null = previewFile
     ? {
         frame: (
@@ -115,6 +115,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
         ),
         status: outcome?.status ?? "loading",
         message: outcome?.status === "failed" ? outcome.message : null,
+        files: outcome?.status === "asking" ? outcome.files : undefined,
         onRun: () => {
           setRan(previewFile)
           setPreviewed(null)

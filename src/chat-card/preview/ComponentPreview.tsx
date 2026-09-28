@@ -12,9 +12,11 @@
  *
  * `onOutcome` hears when the preview has drawn (with the components that
  * threw doing so) or failed; the card shows what it had until then, and
- * again when the preview fails. With `held`, a note that runs custom code
- * (components from the project's files, or its own exports) is compiled but
- * not run: `onOutcome` hears "asking" until the card lets it go.
+ * again when the preview fails. With `held`, a preview that runs custom code
+ * (component files from the project, or a note's own code) is compiled
+ * but not run: `onOutcome` hears "asking", with those files, until the card
+ * lets it go. A draft the agent sent is not asked about; the saved files it
+ * imports are.
  */
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { CARD_FONTS } from "../fonts"
@@ -35,9 +37,13 @@ const MAX_HEIGHT = 20_000
 
 export type LinkSpot = NonNullable<ReturnType<typeof linkSpot>>
 
-export type PreviewOutcome = { status: "shown"; errors: ComponentError[] } | { status: "failed"; message: string } | { status: "asking" }
+export type PreviewOutcome =
+  | { status: "shown"; errors: ComponentError[] }
+  | { status: "failed"; message: string }
+  | { status: "asking"; files: string[] }
 
-type Prepared = { file: CardFile; run: number; srcdoc: string; plan: PreviewPlan; custom: boolean }
+/** `code`: the files whose custom code the preview runs, by path. */
+type Prepared = { file: CardFile; run: number; srcdoc: string; plan: PreviewPlan; code: string[] }
 
 
 /** The card's colours and fonts now, which the frame follows. */
@@ -68,7 +74,9 @@ async function prepare(file: CardFile): Promise<Prepared> {
       ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs }
       : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [] }
   const srcdoc = frameDocument({ runtime: PREVIEW_RUNTIME, style: PREVIEW_STYLE, program, run, scheme: currentAppearance().scheme })
-  return { file, run, srcdoc, plan, custom: program.custom ?? false }
+  const draft = file.kind === "component" && file.preview?.draft === true
+  const code = [...new Set((program.code ?? []).map((path) => path ?? file.path))].filter((path) => !(draft && path === file.path))
+  return { file, run, srcdoc, plan, code }
 }
 
 export function ComponentPreview({
@@ -78,7 +86,7 @@ export function ComponentPreview({
   onLink,
 }: {
   file: CardFile
-  /** Wait for the person before running a note's custom code (a note from a project shared with them). */
+  /** Wait for the person before running custom code (from a project shared with them). */
   held?: boolean
   onOutcome: (outcome: PreviewOutcome) => void
   /** A link clicked in the preview, and where to ask about it (linkSpot). */
@@ -90,7 +98,7 @@ export function ComponentPreview({
   const shownHeight = useRef(0)
   const outcome = useEffectEvent(onOutcome)
   const link = useEffectEvent(onLink)
-  const waiting = held && prepared?.custom === true
+  const waiting = held && prepared !== null && prepared.code.length > 0
 
   // Compiled once for each file the card shows.
   useEffect(() => {
@@ -111,7 +119,7 @@ export function ComponentPreview({
   // The frame's messages, for as long as its document is the one prepared.
   useEffect(() => {
     if (!prepared) return
-    if (waiting) return outcome({ status: "asking" })
+    if (waiting) return outcome({ status: "asking", files: prepared.code })
     let settled = false
     const settle = (value: PreviewOutcome) => {
       window.clearTimeout(timer)

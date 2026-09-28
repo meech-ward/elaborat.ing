@@ -29,8 +29,9 @@ export interface ComponentEnvironment {
   key: string;
   /**
    * The custom code the note runs, as written: each imported file's imports
-   * and exports, and the note's own when it exports anything (path null).
-   * Empty when the note uses only built-in components.
+   * and exports, and the note's own (path null) when it exports anything or
+   * its text has an expression that does more than state a value. Empty when
+   * the note uses only built-in components and literal values.
    */
   code: Array<{ path: string | null; esm: string }>;
 }
@@ -51,6 +52,18 @@ function walk(value: unknown, visitor: (n: Node) => void): void {
   if (Array.isArray(value)) { for (const child of value) walk(child,visitor); return; }
   if ('type' in value) visitor(value as Node);
   for (const [key, child] of Object.entries(value)) if (!['position','loc','range'].includes(key)) walk(child,visitor);
+}
+const EXPRESSIONS = new Set(['mdxFlowExpression','mdxTextExpression','mdxJsxAttributeValueExpression','mdxJsxExpressionAttribute']);
+/** Whether an expression only states a value: a comment, or literal data such as {2}, {"a"} or {[1, 2]}. */
+function statesValue(expression: Node): boolean {
+  const estree = (expression.data as {estree?: unknown} | undefined)?.estree;
+  if (!estree) return String(expression.value ?? '').trim() === '';
+  const body = node(estree).body as unknown[];
+  if (body.length === 0) return true;
+  if (body.length !== 1 || node(body[0]).type !== 'ExpressionStatement') return false;
+  const value = node(node(body[0]).expression);
+  if (value.type === 'TemplateLiteral') return (value.expressions as unknown[]).length === 0;
+  try { literal(value); return true; } catch { return false; }
 }
 function literal(value: unknown): unknown {
   const n = node(value);
@@ -98,12 +111,13 @@ function definition(name: string, data?: z.infer<typeof metadataSchema>[string])
   return {name,description:data?.description ?? `${name} (custom component)`,props,template,snippet:snippetEscape(template)+'$0',editableProps:props.length > 0};
 }
 
-export async function inspectComponentModule(source: string): Promise<{definitions: ComponentDefinition[]; imports: ImportBinding[]; esm: string; exports: boolean}> {
-  const names = new Set<string>(), imports: ImportBinding[] = [], esm: string[] = [];
+export async function inspectComponentModule(source: string): Promise<{definitions: ComponentDefinition[]; imports: ImportBinding[]; esm: string; exports: boolean; expressions: string[]}> {
+  const names = new Set<string>(), imports: ImportBinding[] = [], esm: string[] = [], expressions: string[] = [];
   let metadata: unknown = {}, exports = false;
   await compile(source, {format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,() => (tree: unknown) => {
     walk(tree,n => {
       if (n.type === 'mdxjsEsm') esm.push(String(n.value));
+      if (EXPRESSIONS.has(n.type) && !statesValue(n)) expressions.push(String(n.value));
       if (n.type === 'ExportNamedDeclaration' || n.type === 'ExportDefaultDeclaration') exports = true;
       if (n.type === 'ImportExpression') throw new Error('Dynamic imports are unavailable in components');
       if (n.type === 'ExportAllDeclaration' || n.type === 'ExportNamedDeclaration' && n.source) throw new Error('Re-exports are unavailable in component modules');
@@ -139,7 +153,7 @@ export async function inspectComponentModule(source: string): Promise<{definitio
     if (reserved.has(name)) throw new Error(`Component name ${name} is reserved`);
     return definition(name,parsed.data[name]);
   });
-  return {definitions,imports,esm:esm.join('\n'),exports};
+  return {definitions,imports,esm:esm.join('\n'),exports,expressions};
 }
 
 /** Replace only parser-proven imports. Source bytes/ranges are never rewritten. */
@@ -170,7 +184,8 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
   const root = await inspectComponentModule(source);
   const modules: ComponentEnvironment['modules'] = [], loaded = new Map<string,ComponentDefinition[]>(), visiting = new Set<string>();
   const versions: string[] = [];
-  const code: ComponentEnvironment['code'] = root.exports ? [{path:null,esm:root.esm}] : [];
+  // The note's own code: its imports and exports, and the expressions in its text that run code.
+  const code: ComponentEnvironment['code'] = root.exports || root.expressions.length > 0 ? [{path:null,esm:[root.esm,...root.expressions].join('\n')}] : [];
   const resolve = async (bindings: ImportBinding[], depth: number): Promise<ComponentDefinition[]> => {
     if (depth > 8) throw new Error('Component dependency depth exceeds 8');
     const definitions: ComponentDefinition[] = [];

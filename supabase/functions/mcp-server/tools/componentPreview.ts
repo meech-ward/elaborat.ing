@@ -1,7 +1,7 @@
 import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import { z } from 'npm:zod@4.4.3'
 
-import { COMPONENTS_META_KEY, componentSources } from './componentSources.ts'
+import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser } from './componentSources.ts'
 import { FILE_VIEW_URI, fileUrl, projectUrl } from './fileView.ts'
 import { path, projectId } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
@@ -13,14 +13,15 @@ import type { ToolContext } from './types.ts'
 // The server only reads files: the view compiles the file and the files it
 // imports with the app's rules and runs them in a sandboxed frame of its own
 // (src/chat-card/preview/), and tells the model on its next turn when the
-// preview failed or a component threw.
+// preview failed or a component threw. In a project shared with the user the
+// view asks before it runs saved files' code, as show_file's does for a note.
 
 /** The longest draft previewed; a component file this big belongs in a save. */
 const MAX_SOURCE = 200_000
 /** The most characters of sample props, as JSON. */
 const MAX_PROPS = 20_000
 
-export function registerComponentPreview(server: McpServer, { supabase }: ToolContext): void {
+export function registerComponentPreview(server: McpServer, { supabase, userClaims }: ToolContext): void {
   server.registerTool(
     'preview_component',
     {
@@ -60,6 +61,8 @@ export function registerComponentPreview(server: McpServer, { supabase }: ToolCo
         const draft = source !== undefined
         const own = source ?? String(data?.content ?? '')
         const modules = await componentSources(supabase, project_id, own, { [path]: own })
+        const shared = await sharedWithUser(supabase, project_id, userClaims?.id)
+        const editors = shared ? await componentEditors(supabase, project_id, Object.keys(modules), userClaims?.id) : null
         const what = component ? `${component} from ${path}` : `the components in ${path}`
         const which = draft ? 'a draft, not saved' : `version ${data?.version}`
         return {
@@ -76,9 +79,10 @@ export function registerComponentPreview(server: McpServer, { supabase }: ToolCo
             draft,
             component: component ?? null,
             props: props ?? null,
+            shared,
           },
           // The sources reach the view, not the model.
-          _meta: { [COMPONENTS_META_KEY]: { modules } },
+          _meta: { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } },
         }
       } catch (error) {
         return runtimeErrorResult(error)

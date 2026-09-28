@@ -25,6 +25,7 @@ const NOTE: CardFile = {
   components: null,
   preview: null,
   shared: false,
+  editors: {},
 }
 
 const DIAGRAM: CardFile = {

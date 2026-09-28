@@ -444,19 +444,58 @@ test("a preview that cannot be made leaves the note as the server rendered it, w
 test("a note from a shared project runs its custom components only when the person says so", async ({ page }) => {
   const shared = (source: string, modules: Record<string, string>) => {
     const result = withComponents(source, modules)
-    return { ...result, structuredContent: { ...result.structuredContent, shared: true } }
+    const components = { modules, editors: { "components/metric.mdx": "Ana" } }
+    return { ...result, structuredContent: { ...result.structuredContent, shared: true }, _meta: { ...result._meta, "elaborat.ing/components": components } }
   }
   const note = "import { Metric } from 'workspace:components/metric.mdx'\n\n# Launch plan\n\n<Metric label=\"Agents\" value={128} />\n"
   const card = await openHost(page, { tools: true, theme: "light", result: shared(note, { "components/metric.mdx": METRIC }) })
-  const asking = card.getByRole("status").filter({ hasText: "This note from a shared project runs custom components." })
+  const asking = card.getByRole("status").filter({ hasText: "This note from a shared project runs custom code." })
   await expect(asking).toBeVisible()
-  await expect(asking).toContainText("They run in an isolated frame, with no network and no access to your account.")
+  // The files the code comes from, and who last changed them.
+  await expect(asking.getByRole("list", { name: "Files with custom code" }).getByRole("listitem")).toHaveText(["components/metric.mdx, last changed by Ana"])
+  await expect(asking).toContainText("It runs in an isolated frame, with no network and no access to your account.")
   // Until then the card shows the server's HTML, and no frame runs the code.
   await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
   await expect(card.locator("iframe")).toHaveCount(0)
-  await card.getByRole("button", { name: "Run components" }).click()
+  await card.getByRole("button", { name: "Run code" }).click()
   await expect(preview(page, PATH).locator("[data-metric]")).toHaveText("Agents 128")
   await expect(asking).toBeHidden()
+})
+
+const sharedComponent = (draft: boolean) => ({
+  content: [{ type: "text", text: "Showing a preview of Metric from components/metric.mdx to the user." }],
+  structuredContent: {
+    project_id: PROJECT,
+    path: "components/metric.mdx",
+    kind: "component",
+    version: draft ? null : 2,
+    updated_at: null,
+    url: `https://elaborat.ing/projects/${PROJECT}/components/metric.mdx`,
+    truncated: false,
+    embeds: [],
+    draft,
+    component: "Metric",
+    props: null,
+    shared: true,
+  },
+  _meta: { "elaborat.ing/components": { modules: { "components/metric.mdx": METRIC }, editors: { "components/metric.mdx": "Ana" } } },
+})
+
+test("a saved component file from a shared project runs only when the person says so", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "dark", result: sharedComponent(false) })
+  const asking = card.getByRole("status").filter({ hasText: "These components are in a shared project and run custom code." })
+  await expect(asking.getByRole("listitem")).toHaveText(["components/metric.mdx, last changed by Ana"])
+  await expect(card.locator("iframe")).toHaveCount(0)
+  await card.getByRole("button", { name: "Run code" }).click()
+  await expect(preview(page, "components/metric.mdx").locator("[data-metric]")).toHaveText("Agents this week 128")
+  await expect(asking).toBeHidden()
+  expect(await violations(page)).toEqual([])
+})
+
+test("an agent's draft component from a shared project that imports nothing runs at once", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: sharedComponent(true) })
+  await expect(preview(page, "components/metric.mdx").locator("[data-metric]")).toHaveText("Agents this week 128")
+  await expect(card.getByRole("button", { name: "Run code" })).toHaveCount(0)
 })
 
 test("a component file whose code does not compile is a problem in the card, and the model hears why", async ({ page }) => {
