@@ -675,6 +675,25 @@ inside its own rectangle. The mitigations are what the frame is given (only
 the document's compiled code and rendered images, never tokens or other files)
 and a notice on shared projects that they run custom code.
 
+**Decision: in a project shared with the person, a note that runs custom
+component code asks first.** A note that imports component files
+(`workspace:` specifiers) or exports code itself shows a notice in place of
+its rendered view (`src/features/custom-code/`): the files the code comes
+from and who last changed each (`project_files.updated_by`, named from the
+member list when the server can say), that the code runs in an isolated frame
+with no network and no access to their account, and Run components or Show
+as text (the Source view). The choice is kept on the device, per person and
+project, as a SHA-256 of each file's path and its imports and exports as
+written, so a new version of a component file asks again and edits to a
+note's prose do not; the person's own unsaved edits to a running note's
+exports keep it running. The rendered view is only given components whose
+code was checked. Owners, the local project and built-in components never
+ask; expressions in a note's text are not custom components and do not ask.
+The chat card asks the same way before its nested frame runs a shared note's
+components (`show_file` sends `shared` with the component files); it does not
+remember the choice, since its storage belongs to the host. The notice is a
+mitigation: the frame is the boundary.
+
 **Open:** the sandbox domain name, and whether to add it to the Public Suffix
 List so each document's subdomain is isolated from every other.
 

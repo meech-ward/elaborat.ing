@@ -129,7 +129,7 @@ const SESSION = 'chat-card'
 export async function startCardEditor(options: CardEditorOptions): Promise<CardEditor> {
   const { mount, format, embed, notice, change } = options
   const original = options.text
-  const environment = { source: original, catalog: COMPONENT_CATALOG, modules: [], key: '' }
+  const environment = { source: original, catalog: COMPONENT_CATALOG, modules: [], key: '', code: [] }
   const project = (text: string) => projectFluidSource(text, format, { ...environment, source: text })
   let projection: FluidProjection = await project(original)
   let epoch = 0

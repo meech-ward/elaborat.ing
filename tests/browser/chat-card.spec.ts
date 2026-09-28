@@ -441,6 +441,24 @@ test("a preview that cannot be made leaves the note as the server rendered it, w
   await expect(card.locator(".ProseMirror")).toBeVisible()
 })
 
+test("a note from a shared project runs its custom components only when the person says so", async ({ page }) => {
+  const shared = (source: string, modules: Record<string, string>) => {
+    const result = withComponents(source, modules)
+    return { ...result, structuredContent: { ...result.structuredContent, shared: true } }
+  }
+  const note = "import { Metric } from 'workspace:components/metric.mdx'\n\n# Launch plan\n\n<Metric label=\"Agents\" value={128} />\n"
+  const card = await openHost(page, { tools: true, theme: "light", result: shared(note, { "components/metric.mdx": METRIC }) })
+  const asking = card.getByRole("status").filter({ hasText: "This note from a shared project runs custom components." })
+  await expect(asking).toBeVisible()
+  await expect(asking).toContainText("They run in an isolated frame, with no network and no access to your account.")
+  // Until then the card shows the server's HTML, and no frame runs the code.
+  await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
+  await expect(card.locator("iframe")).toHaveCount(0)
+  await card.getByRole("button", { name: "Run components" }).click()
+  await expect(preview(page, PATH).locator("[data-metric]")).toHaveText("Agents 128")
+  await expect(asking).toBeHidden()
+})
+
 test("a component file whose code does not compile is a problem in the card, and the model hears why", async ({ page }) => {
   const card = await openHost(page, {
     tools: false,

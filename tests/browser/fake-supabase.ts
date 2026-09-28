@@ -288,6 +288,12 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     // Table reads (everything fits in the first page here)
     if (url.searchParams.has("or") || (path.endsWith("/project_folders") && query("path", "gt") !== undefined)) return json(route, [])
     const projectId = query("project_id", "eq")
+    // Who last changed some files: `path=in.(a,"b,c")`, quoted where a value has a comma or parenthesis.
+    if (projectId && path.endsWith("/project_files") && url.searchParams.get("select")?.includes("updated_by")) {
+      const list = query("path", "in") ?? "()"
+      const paths = [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map((match) => match[1]?.replace(/\\(.)/g, "$1") ?? match[2])
+      return answer(route, () => remote.fileEditors(projectId, paths))
+    }
     if (projectId && path.endsWith("/project_files")) {
       return answer(route, () => remote.changedFiles(projectId, Number(query("version", "gt")), Number(query("version", "lte"))))
     }

@@ -29,9 +29,12 @@ export { CARD_NOTE_CLASS, EmbedFigure } from "./cardNote"
  */
 export type CardPreview = {
   frame: ReactNode
-  status: "loading" | "shown" | "failed"
+  /** "asking": a note from a shared project waits for Run components before its code runs. */
+  status: "loading" | "shown" | "failed" | "asking"
   /** Why the preview failed. */
   message: string | null
+  /** Runs a shared note's custom components. */
+  onRun?: () => void
   /**
    * A link clicked in the preview, which opens only when the person says so
    * here: the preview's code could ask for any link at any time.
@@ -48,6 +51,7 @@ export type CardPreview = {
 export const PREVIEW_TEXT = {
   noteFailed: (message: string | null) => `The components in this note could not be shown here${message ? `: ${message}` : "."}`,
   componentFailed: (message: string | null) => `This component could not be shown${message ? `: ${message}` : "."}`,
+  asking: "This note from a shared project runs custom components. They run in an isolated frame, with no network and no access to your account.",
   openLink: (url: string) => `Open ${url}?`,
 }
 
@@ -202,6 +206,13 @@ function CardBody({ state, editor, preview }: { state: CardState; editor?: React
     // A note with components shows the server's HTML until their preview has drawn, and again if it fails.
     return (
       <>
+        {preview?.status === "asking" && (
+          <div className="px-6 pt-4 max-[500px]:px-4">
+            <Banner tone="info" className="mx-auto max-w-[680px]" action={<BannerAction onClick={preview.onRun}>Run components</BannerAction>}>
+              {PREVIEW_TEXT.asking}
+            </Banner>
+          </div>
+        )}
         {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />}
         {preview && preview.status !== "failed" && <PreviewSlot preview={preview} column />}
         {preview?.status === "failed" && (

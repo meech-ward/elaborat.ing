@@ -45,6 +45,14 @@ describe("show_file's result", () => {
     expect(shown.ok && [shown.file.html, shown.file.source, shown.file.url]).toEqual(["<p>Start</p>", null, URL])
   })
 
+  test("a note from a shared project says so; anything unreadable counts as shared, and a missing flag as the person's own", () => {
+    const shared = (value?: unknown) => {
+      const shown = parseShowResult(result(value === undefined ? {} : { shared: value }))
+      return shown.ok && shown.file.shared
+    }
+    expect([shared(true), shared(false), shared("yes"), shared()]).toEqual([true, false, true, false])
+  })
+
   test("an error or an unreadable result is a problem with the server's words", () => {
     expect(parseShowResult({ isError: true, content: [{ type: "text", text: "No file at x." }], structuredContent: {} })).toEqual({ ok: false, message: "No file at x." })
     expect(parseShowResult({ structuredContent: { path: 3 } })).toEqual({ ok: false, message: "Something went wrong." })

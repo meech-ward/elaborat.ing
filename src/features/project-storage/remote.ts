@@ -140,6 +140,9 @@ const PAGE = 500
 
 export type DeletedFile = { id: string; version: number }
 
+export const FileEditor = z.object({ path: z.string(), updated_by: z.uuid().nullable() })
+export type FileEditor = z.infer<typeof FileEditor>
+
 export interface ProjectRemote {
   listProjects(): Promise<RemoteProject[]>
   /** Creates the project, or returns it if this account already created it with this id. */
@@ -152,6 +155,8 @@ export interface ProjectRemote {
   deletedFiles(projectId: string, since: number, until: number): Promise<DeletedFile[]>
   /** The project's explicit folders. */
   folders(projectId: string): Promise<string[]>
+  /** Who last changed each of these files (null when their account is gone); files not there are left out. */
+  fileEditors(projectId: string, paths: string[]): Promise<FileEditor[]>
   /** Invitations waiting for the caller to accept, newest first. */
   listInvitations(): Promise<RemoteInvitation[]>
   /** Accept an invitation; returns the project as the caller now sees it. */
@@ -320,6 +325,18 @@ export class SupabaseProjectRemote implements ProjectRemote {
         return { id: parsed.file_id, version: parsed.version }
       },
     )
+  }
+
+  async fileEditors(projectId: string, paths: string[]) {
+    if (paths.length === 0) return []
+    let response
+    try {
+      response = await this.supabase.from("project_files").select("path, updated_by").eq("project_id", projectId).in("path", paths)
+    } catch (error) {
+      throw new RemoteError("network", error instanceof Error ? error.message : String(error))
+    }
+    if (response.error) throw classify(response.error)
+    return z.array(FileEditor).parse(response.data ?? [])
   }
 
   folders(projectId: string) {

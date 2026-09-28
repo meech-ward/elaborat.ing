@@ -290,3 +290,30 @@ test("members and sharing need a connection, and a project only on this device i
   await expect(here.members(id)).rejects.toThrow("Seeing who a project is shared with needs a connection. Try again when you are online.")
   await expect(here.share(id, OTHER, "viewer")).rejects.toThrow("Changing who a project is shared with needs a connection. Try again when you are online.")
 })
+
+test("who last changed a project's files, by name, as the server knows it", async () => {
+  const server = new FakeProjectServer()
+  const owner = server.remote(OWNER)
+  const id = crypto.randomUUID()
+  await owner.createProject(id, "Shared")
+  server.names.set(OWNER, "Owner Person")
+  server.emails.set(OTHER, "other@example.com")
+  server.share(id, OTHER, "editor")
+  const first = await owner.saveFiles(id, crypto.randomUUID(), [
+    { op: "put", path: "ui/chart.mdx", content: "export const Chart = () => null" },
+    { op: "put", path: "notes/plan.mdx", content: "# Plan" },
+  ])
+  const version = first.status === "saved" ? first.project.revision : 0
+  await server.remote(OTHER).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "ui/chart.mdx", content: "export const Chart = () => <p />", base_version: version }])
+
+  const here = new ProjectLibrary(new MemoryProjectDatabase(), server.remote(OTHER), partition)
+  expect(await here.fileEditors(id, ["ui/chart.mdx", "notes/plan.mdx", "gone.mdx"])).toEqual(
+    new Map([
+      ["ui/chart.mdx", { userId: OTHER, name: "other@example.com" }],
+      ["notes/plan.mdx", { userId: OWNER, name: "Owner Person" }],
+    ]),
+  )
+  // Someone who left the project is not named.
+  await server.remote(OTHER).leaveProject(id)
+  expect(await library(server).library.fileEditors(id, ["ui/chart.mdx"])).toEqual(new Map())
+})

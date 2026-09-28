@@ -52,6 +52,8 @@ export class FakeProjectServer {
   readonly emails = new Map<string, string>()
   /** Each account's name, set in Settings or given by its sign-in provider; without one it is named by its email. */
   readonly names = new Map<string, string>()
+  /** Who last changed each file, by file id, as `project_files.updated_by` holds it. */
+  readonly editors = new Map<string, string>()
 
   /** An account's name as the database gives it (private.person_name): its name, else its email. */
   nameOf(id: string): string | null {
@@ -93,6 +95,14 @@ export class FakeProjectServer {
             .map((entry): DeletedFile => ({ id: entry.fileId, version: entry.version })),
         ),
       folders: (projectId) => call("folders", [projectId], () => [...this.readable(user, projectId).folders].sort()),
+      fileEditors: (projectId, paths) =>
+        call("fileEditors", [projectId, paths], () => {
+          const files = this.readable(user, projectId).files
+          return paths.flatMap((path) => {
+            const file = files.get(path)
+            return file ? [{ path, updated_by: this.editors.get(file.id) ?? null }] : []
+          })
+        }),
       listInvitations: () => call("listInvitations", [], () => this.pendingFor(user)),
       acceptInvitation: (projectId) => call("acceptInvitation", [projectId], () => this.accept(user, projectId)),
       leaveProject: (projectId) => call("leaveProject", [projectId], () => this.leave(user, projectId)),
@@ -392,6 +402,7 @@ export class FakeProjectServer {
     project.files = files
     project.folders = folders
     project.history.push(...history)
+    for (const change of applied) if (change.id && change.op !== "delete") this.editors.set(change.id, user)
     project.revision = revision
     const result: SaveResult = { status: "saved", project: { id: project.id, revision }, changes: applied }
     project.savedResults.set(mutationId, { user, payload, result })

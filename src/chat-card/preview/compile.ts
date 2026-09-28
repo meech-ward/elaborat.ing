@@ -35,6 +35,8 @@ export type PreviewProgram = {
   /** For a component file: the file and the components to show, with their props. */
   target: string | null
   items: Array<{ name: string; props: Record<string, unknown> }> | null
+  /** A note runs custom code: components from the project's files, or its own exports. */
+  custom?: boolean
 }
 
 /** Reads component files from the sources the server sent. */
@@ -106,7 +108,7 @@ export async function compileNote(source: string, sources: Record<string, string
   } catch (error) {
     throw new Error(`Invalid MDX: ${compileErrorMessage(error)}`)
   }
-  return { modules: environment.modules, note, target: null, items: null }
+  return { modules: environment.modules, note, target: null, items: null, custom: environment.code.length > 0 }
 }
 
 /**

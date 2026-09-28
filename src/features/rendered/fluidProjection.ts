@@ -152,7 +152,7 @@ export async function projectFluidSource(
   format: DocumentFormat,
   environment?: ComponentEnvironment,
 ): Promise<FluidProjection> {
-  const components = environment ?? (format === 'mdx' ? await prepareComponentEnvironment(text) : {source:text,catalog:COMPONENT_CATALOG,modules:[],key:''});
+  const components = environment ?? (format === 'mdx' ? await prepareComponentEnvironment(text) : {source:text,catalog:COMPONENT_CATALOG,modules:[],key:'',code:[]});
   const instrumentation = await (format === "mdx"
     ? instrumentMdxSource(text, components.catalog)
     : instrumentMarkdownSource(text));

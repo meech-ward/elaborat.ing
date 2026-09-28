@@ -41,7 +41,7 @@ function linkUrl(href: string, base: string): string | null {
 /** What the model hears about a component preview that did not go cleanly, for its next turn; nothing when it did. */
 function previewNote(path: string, outcome: PreviewOutcome): string | null {
   if (outcome.status === "failed") return `The preview of ${path} in the elaborat.ing card failed: ${outcome.message}`
-  if (outcome.errors.length === 0) return null
+  if (outcome.status === "asking" || outcome.errors.length === 0) return null
   const errors = outcome.errors.map((error) => `${error.name}: ${error.message}`).join(" ")
   return `The preview of ${path} in the elaborat.ing card showed errors from its components. ${errors}`
 }
@@ -58,6 +58,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const [previewed, setPreviewed] = useState<{ file: CardFile; outcome: PreviewOutcome } | null>(null)
   // A link clicked in the preview, waiting for the person to open it.
   const [asked, setAsked] = useState<{ file: CardFile; url: string; spot: LinkSpot | null } | null>(null)
+  // The shared note whose custom components the person chose to run; each file shown asks again.
+  const [ran, setRan] = useState<CardFile | null>(null)
 
   useEffect(
     () =>
@@ -92,11 +94,14 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const shown = state.phase === "shown" ? state : null
   const previewFile = shown && shown.mode === "read" && shown.file.components !== null ? shown.file : null
   const outcome = previewFile && previewed?.file === previewFile ? previewed.outcome : null
+  // A note from a project shared with the person runs its custom components only when they say so.
+  const held = previewFile !== null && previewFile.kind === "note" && previewFile.shared && ran !== previewFile
   const preview: CardPreview | null = previewFile
     ? {
         frame: (
           <ComponentPreview
             file={previewFile}
+            held={held}
             onOutcome={(next) => {
               setPreviewed({ file: previewFile, outcome: next })
               const note = previewFile.kind === "component" ? previewNote(previewFile.path, next) : null
@@ -110,6 +115,10 @@ export function ChatCard({ host }: { host: HostBridge }) {
         ),
         status: outcome?.status ?? "loading",
         message: outcome?.status === "failed" ? outcome.message : null,
+        onRun: () => {
+          setRan(previewFile)
+          setPreviewed(null)
+        },
         link:
           asked?.file === previewFile
             ? {

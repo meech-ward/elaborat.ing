@@ -12,7 +12,9 @@
  *
  * `onOutcome` hears when the preview has drawn (with the components that
  * threw doing so) or failed; the card shows what it had until then, and
- * again when the preview fails.
+ * again when the preview fails. With `held`, a note that runs custom code
+ * (components from the project's files, or its own exports) is compiled but
+ * not run: `onOutcome` hears "asking" until the card lets it go.
  */
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { CARD_FONTS } from "../fonts"
@@ -33,9 +35,9 @@ const MAX_HEIGHT = 20_000
 
 export type LinkSpot = NonNullable<ReturnType<typeof linkSpot>>
 
-export type PreviewOutcome = { status: "shown"; errors: ComponentError[] } | { status: "failed"; message: string }
+export type PreviewOutcome = { status: "shown"; errors: ComponentError[] } | { status: "failed"; message: string } | { status: "asking" }
 
-type Prepared = { file: CardFile; run: number; srcdoc: string; plan: PreviewPlan }
+type Prepared = { file: CardFile; run: number; srcdoc: string; plan: PreviewPlan; custom: boolean }
 
 
 /** The card's colours and fonts now, which the frame follows. */
@@ -66,15 +68,18 @@ async function prepare(file: CardFile): Promise<Prepared> {
       ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs }
       : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [] }
   const srcdoc = frameDocument({ runtime: PREVIEW_RUNTIME, style: PREVIEW_STYLE, program, run, scheme: currentAppearance().scheme })
-  return { file, run, srcdoc, plan }
+  return { file, run, srcdoc, plan, custom: program.custom ?? false }
 }
 
 export function ComponentPreview({
   file,
+  held = false,
   onOutcome,
   onLink,
 }: {
   file: CardFile
+  /** Wait for the person before running a note's custom code (a note from a project shared with them). */
+  held?: boolean
   onOutcome: (outcome: PreviewOutcome) => void
   /** A link clicked in the preview, and where to ask about it (linkSpot). */
   onLink: (href: string, spot: LinkSpot | null) => void
@@ -85,6 +90,7 @@ export function ComponentPreview({
   const shownHeight = useRef(0)
   const outcome = useEffectEvent(onOutcome)
   const link = useEffectEvent(onLink)
+  const waiting = held && prepared?.custom === true
 
   // Compiled once for each file the card shows.
   useEffect(() => {
@@ -105,6 +111,7 @@ export function ComponentPreview({
   // The frame's messages, for as long as its document is the one prepared.
   useEffect(() => {
     if (!prepared) return
+    if (waiting) return outcome({ status: "asking" })
     let settled = false
     const settle = (value: PreviewOutcome) => {
       window.clearTimeout(timer)
@@ -147,9 +154,9 @@ export function ComponentPreview({
       window.removeEventListener("message", onMessage)
       document.removeEventListener("securitypolicyviolation", onViolation)
     }
-  }, [prepared])
+  }, [prepared, waiting])
 
-  if (!prepared || prepared.file !== file) return null
+  if (!prepared || prepared.file !== file || waiting) return null
   return (
     <iframe
       key={prepared.run}

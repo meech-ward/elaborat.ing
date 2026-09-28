@@ -245,6 +245,22 @@ export class ProjectLibrary {
     }
   }
 
+  /**
+   * Who last changed each of these files, by path, as the server knows it:
+   * their user id and name (or email). Files it does not know, and people no
+   * longer in the project, are left out. Needs a connection.
+   */
+  async fileEditors(projectId: string, paths: readonly string[]): Promise<Map<string, { userId: string; name: string }>> {
+    const [editors, members] = await Promise.all([this.remote.fileEditors(projectId, [...paths]), this.remote.listMembers(projectId)])
+    const names = new Map(members.map((member) => [member.user_id, personName(member.name, member.email)]))
+    const found = new Map<string, { userId: string; name: string }>()
+    for (const { path, updated_by } of editors) {
+      const name = updated_by ? names.get(updated_by) : null
+      if (updated_by && name && paths.includes(path)) found.set(path, { userId: updated_by, name })
+    }
+    return found
+  }
+
   /** Change a member's role, or remove a member or an invitation (role null). Owner only; needs a connection. */
   async share(projectId: string, userId: string, role: MemberRole | null): Promise<void> {
     try {

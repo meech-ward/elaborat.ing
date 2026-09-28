@@ -21,7 +21,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v8.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v9.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -31,6 +31,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v5.html',
   'ui://elaborating/file-view-v6.html',
   'ui://elaborating/file-view-v7.html',
+  'ui://elaborating/file-view-v8.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -169,7 +170,21 @@ function preview(content: string): { source: string; truncated: boolean } {
   return { source: content.slice(0, cut > 0 ? cut : PREVIEW_LIMIT), truncated: true }
 }
 
-export function registerFileView(server: McpServer, { supabase }: ToolContext): void {
+/**
+ * Whether a project is shared with the user rather than their own, so the
+ * view asks before it runs a note's custom components. Unknown counts as
+ * shared.
+ */
+async function sharedWithUser(supabase: SupabaseClient, projectId: string, userId: string | undefined): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.from('projects').select('owner_id').eq('id', projectId).maybeSingle()
+    return Boolean(error) || !data || !userId || data.owner_id !== userId
+  } catch {
+    return true
+  }
+}
+
+export function registerFileView(server: McpServer, { supabase, userClaims }: ToolContext): void {
   for (const [index, uri] of [FILE_VIEW_URI, ...OLD_FILE_VIEW_URIS].entries()) {
     server.registerResource(
       index === 0 ? 'file_view' : `file_view_${index}`,
@@ -229,6 +244,8 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
         // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
         const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
         const modules = previewed ? await componentSources(supabase, project_id, content) : null
+        // Only a previewed note's custom components ask first.
+        const shared = modules ? await sharedWithUser(supabase, project_id, userClaims?.id) : false
         return {
           content: [
             { type: 'text', text: `Showing ${data.path} (version ${data.version}) to the user. Open it in elaborat.ing: ${url}` },
@@ -242,6 +259,7 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
             url,
             truncated: note?.truncated ?? false,
             embeds,
+            ...(modules ? { shared } : {}),
           },
           ...(rendered || Object.keys(svgs).length > 0
             ? {

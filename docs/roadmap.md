@@ -159,7 +159,10 @@ Also done in this phase: the comment anchoring library (see the task below).
   saves, searches and agent tool calls a minute, counted in the database so
   every path gets them; see "Limits" in `architecture.md`).
 - **Component isolation on a sandbox domain**, with a custom-code notice on
-  shared projects.
+  shared projects (the notice is done: a note in a shared project that runs
+  custom components asks before it runs them, in the app and in the chat
+  card; the sandbox domain waits for its name. See "Component isolation" in
+  `architecture.md`).
 - **MCP Apps views:** a read-only document with its drawings, a single drawing,
   and draft component previews inside Claude and ChatGPT (done: `show_file`
   shows notes, drawings and diagrams and previews an MDX note's built-in and

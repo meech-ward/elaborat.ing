@@ -24,6 +24,7 @@ const NOTE: CardFile = {
   source: "# Customer model\n",
   components: null,
   preview: null,
+  shared: false,
 }
 
 const DIAGRAM: CardFile = {

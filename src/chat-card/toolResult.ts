@@ -51,6 +51,8 @@ export type CardFile = {
   components: Record<string, string> | null
   /** For a component file: which component to show (every one when null) and its sample props. */
   preview: ComponentPreviewRequest | null
+  /** The file is in a project shared with the person, not their own: a note's custom components run only when they say so. */
+  shared: boolean
 }
 
 export type ComponentPreviewRequest = {
@@ -83,6 +85,7 @@ const viewSchema = z.object({
   component: z.string().nullable().catch(null).optional(),
   props: z.record(z.string(), z.unknown()).nullable().catch(null).optional(),
   draft: z.boolean().catch(false).optional(),
+  shared: z.boolean().catch(true).optional(),
 })
 
 const componentsSchema = z.object({ modules: z.record(z.string(), z.string()) }).nullable().catch(null)
@@ -137,6 +140,7 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       // A note's components are previewed from its whole source; a component file's from its own.
       components: (noteSource !== null || component) && components ? components.modules : null,
       preview: component ? { component: view.component ?? null, props: view.props ?? null, draft: view.draft ?? false } : null,
+      shared: view.shared ?? false,
     },
   }
 }

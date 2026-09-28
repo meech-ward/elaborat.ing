@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { PanelPage } from "@/components/panel"
 import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { accountName } from "@/features/auth/accountName"
+import { CustomCodeProvider, type CustomCodePolicy } from "@/features/custom-code"
 import { useAuth } from "@/features/auth/useAuth"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
@@ -211,6 +212,24 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         }
       : null
 
+  // A project shared with the person (or one whose role is not known yet) asks
+  // before a note runs custom components; their own never does. Memoized:
+  // the notice fetches names again when the policy changes.
+  const asksFirst = !account.local && role !== "owner"
+  const customCode = useMemo<CustomCodePolicy | null>(
+    () =>
+      asksFirst
+        ? {
+            key: `${account.userId}:${projectId}`,
+            editors: async (paths) => {
+              const editors = await library.fileEditors(projectId, paths)
+              return new Map([...editors].map(([path, editor]) => [path, editor.userId === account.userId ? "you" : editor.name]))
+            },
+          }
+        : null,
+    [account.userId, asksFirst, library, projectId],
+  )
+
   if (opened === "missing") {
     return (
       <PanelPage>
@@ -262,6 +281,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
 
   return (
     <ProjectCommentsProvider value={commentsValue}>
+      <CustomCodeProvider value={customCode}>
       <Suspense
         fallback={
           <PanelPage>
@@ -290,6 +310,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
         ) : null}
       </Suspense>
+      </CustomCodeProvider>
     </ProjectCommentsProvider>
   )
 }

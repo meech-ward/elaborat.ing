@@ -14,6 +14,8 @@ import { renderMarkdown, renderNote } from './markdown.ts'
 // client, with a stand-in Supabase client that answers the one file query.
 
 const PROJECT = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e'
+/** The signed-in user, and the project's owner unless a test says otherwise. */
+const ME = '0b6a4a52-6f3e-4c1a-9d59-3b7f1c2a9e01'
 const UPDATED = '2026-09-26T00:00:00Z'
 
 type Row = { path: string; content: string; version: number; updated_at: string }
@@ -25,7 +27,7 @@ const file = (path: string, content: string): Row => ({ path, content, version: 
  * paths are listed. save_files puts files with the database's version check:
  * a put whose base_version is not the file's version is a conflict.
  */
-async function withClient<T>(files: Row[], use: (client: Client, queries: unknown[][][]) => Promise<T>): Promise<T> {
+async function withClient<T>(files: Row[], use: (client: Client, queries: unknown[][][]) => Promise<T>, owner = ME): Promise<T> {
   const queries: unknown[][][] = []
   let revision = Math.max(0, ...files.map((row) => row.version))
   const supabase = {
@@ -50,7 +52,11 @@ async function withClient<T>(files: Row[], use: (client: Client, queries: unknow
         select: (...args: unknown[]) => (query.push(['select', ...args]), builder),
         eq: (...args: unknown[]) => (query.push(['eq', ...args]), builder),
         in: (...args: unknown[]) => (query.push(['in', ...args]), builder),
-        maybeSingle: () => Promise.resolve({ data: files.find((row) => row.path === arg('eq', 'path')) ?? null, error: null }),
+        maybeSingle: () =>
+          Promise.resolve({
+            data: table === 'projects' ? { owner_id: owner } : (files.find((row) => row.path === arg('eq', 'path')) ?? null),
+            error: null,
+          }),
         then: (resolve: (value: unknown) => void) => {
           const paths = arg('in', 'path') as string[]
           resolve({ data: files.filter((row) => paths.includes(row.path)).map(({ path, content }) => ({ path, content })), error: null })
@@ -60,7 +66,7 @@ async function withClient<T>(files: Row[], use: (client: Client, queries: unknow
     },
   } as unknown as SupabaseClient
   const server = new McpServer({ name: 'test', version: '1.0.0' })
-  registerTools(server, { supabase } as unknown as ToolContext)
+  registerTools(server, { supabase, userClaims: { id: ME } } as unknown as ToolContext)
   const client = new Client({ name: 'test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -73,11 +79,15 @@ async function withClient<T>(files: Row[], use: (client: Client, queries: unknow
   }
 }
 
-function showFile(path: string, files: Row[]) {
-  return withClient(files, async (client, queries) => ({
-    result: (await client.callTool({ name: 'show_file', arguments: { project_id: PROJECT, path } })) as CallToolResult,
-    queries,
-  }))
+function showFile(path: string, files: Row[], owner = ME) {
+  return withClient(
+    files,
+    async (client, queries) => ({
+      result: (await client.callTool({ name: 'show_file', arguments: { project_id: PROJECT, path } })) as CallToolResult,
+      queries,
+    }),
+    owner,
+  )
 }
 
 Deno.test('the file view is listed and read as an MCP App resource', async () => {
@@ -500,7 +510,10 @@ Deno.test('show_file sends an MDX note with components the component files it im
   assertEquals(queries.slice(1).map((query) => query.at(-1)), [
     ['in', 'path', ['components/chart.mdx']],
     ['in', 'path', ['components/axis.mdx']],
+    // Whose project it is: the view asks before running a shared note's components.
+    ['eq', 'id', PROJECT],
   ])
+  assertEquals((result.structuredContent as { shared: boolean }).shared, false)
   const meta = result._meta as Record<string, unknown>
   assertEquals(meta[COMPONENTS_META_KEY], {
     modules: {
@@ -512,6 +525,15 @@ Deno.test('show_file sends an MDX note with components the component files it im
   assertStringIncludes(String(meta[HTML_META_KEY]), '<h1>Plan</h1>')
   assertEquals(meta[SOURCE_META_KEY], COMPONENT_NOTE)
   assertFalse(JSON.stringify(result.structuredContent).includes('export'))
+})
+
+Deno.test("show_file says when a note with components is in a project shared with the user", async () => {
+  const files = [file('notes/plan.mdx', COMPONENT_NOTE), file('components/chart.mdx', 'export const Chart = () => null\n')]
+  const shared = await showFile('notes/plan.mdx', files, 'c9d8e7f6-a5b4-4c3d-8e2f-1a0b9c8d7e6f')
+  assertEquals((shared.result.structuredContent as { shared: boolean }).shared, true)
+  // A note shown without a preview does not look the project up.
+  const markdown = await showFile('notes/plan.md', [file('notes/plan.md', COMPONENT_NOTE)], 'c9d8e7f6-a5b4-4c3d-8e2f-1a0b9c8d7e6f')
+  assertFalse('shared' in (markdown.result.structuredContent as Record<string, unknown>))
 })
 
 Deno.test('show_file sends no component files for a Markdown note, a note without components, or one cut short', async () => {

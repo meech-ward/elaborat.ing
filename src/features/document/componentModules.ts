@@ -27,6 +27,12 @@ export interface ComponentEnvironment {
   /** Topologically ordered; code executes exclusively in the opaque frame. */
   modules: Array<{ path: string; code: string }>;
   key: string;
+  /**
+   * The custom code the note runs, as written: each imported file's imports
+   * and exports, and the note's own when it exports anything (path null).
+   * Empty when the note uses only built-in components.
+   */
+  code: Array<{ path: string | null; esm: string }>;
 }
 export type ComponentSourceLoader = (path: string) => Promise<{text: string; revision: string}>;
 
@@ -92,11 +98,13 @@ function definition(name: string, data?: z.infer<typeof metadataSchema>[string])
   return {name,description:data?.description ?? `${name} (custom component)`,props,template,snippet:snippetEscape(template)+'$0',editableProps:props.length > 0};
 }
 
-export async function inspectComponentModule(source: string): Promise<{definitions: ComponentDefinition[]; imports: ImportBinding[]}> {
-  const names = new Set<string>(), imports: ImportBinding[] = [];
-  let metadata: unknown = {};
+export async function inspectComponentModule(source: string): Promise<{definitions: ComponentDefinition[]; imports: ImportBinding[]; esm: string; exports: boolean}> {
+  const names = new Set<string>(), imports: ImportBinding[] = [], esm: string[] = [];
+  let metadata: unknown = {}, exports = false;
   await compile(source, {format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,() => (tree: unknown) => {
     walk(tree,n => {
+      if (n.type === 'mdxjsEsm') esm.push(String(n.value));
+      if (n.type === 'ExportNamedDeclaration' || n.type === 'ExportDefaultDeclaration') exports = true;
       if (n.type === 'ImportExpression') throw new Error('Dynamic imports are unavailable in components');
       if (n.type === 'ExportAllDeclaration' || n.type === 'ExportNamedDeclaration' && n.source) throw new Error('Re-exports are unavailable in component modules');
       if (n.type === 'ImportDeclaration') {
@@ -131,7 +139,7 @@ export async function inspectComponentModule(source: string): Promise<{definitio
     if (reserved.has(name)) throw new Error(`Component name ${name} is reserved`);
     return definition(name,parsed.data[name]);
   });
-  return {definitions,imports};
+  return {definitions,imports,esm:esm.join('\n'),exports};
 }
 
 /** Replace only parser-proven imports. Source bytes/ranges are never rewritten. */
@@ -162,6 +170,7 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
   const root = await inspectComponentModule(source);
   const modules: ComponentEnvironment['modules'] = [], loaded = new Map<string,ComponentDefinition[]>(), visiting = new Set<string>();
   const versions: string[] = [];
+  const code: ComponentEnvironment['code'] = root.exports ? [{path:null,esm:root.esm}] : [];
   const resolve = async (bindings: ImportBinding[], depth: number): Promise<ComponentDefinition[]> => {
     if (depth > 8) throw new Error('Component dependency depth exceeds 8');
     const definitions: ComponentDefinition[] = [];
@@ -177,10 +186,11 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
         if (bytes > 2 * 1024 * 1024) throw new Error('Component source graph exceeds 2 MiB');
         const info = await inspectComponentModule(file.text);
         await resolve(info.imports,depth+1);
-        const code = String(await compile(file.text,{format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,workspaceImportPlugin]}));
+        const compiled = String(await compile(file.text,{format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,workspaceImportPlugin]}));
         exports = info.definitions;
         loaded.set(binding.path,exports);
-        modules.push({path:binding.path,code});
+        modules.push({path:binding.path,code:compiled});
+        code.push({path:binding.path,esm:info.esm});
         versions.push(binding.path+'\0'+file.revision+'\0'+file.text);
         visiting.delete(binding.path);
       }
@@ -194,5 +204,5 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
   if (custom.length > 64) throw new Error('A note supports at most 64 custom components');
   if (new Set(custom.map(c => c.name)).size !== custom.length) throw new Error('Duplicate component binding');
   // Exact version material is an internal key, never an authorization token.
-  return {source,catalog:[...COMPONENT_CATALOG,...custom],modules,key:versions.join('\0')};
+  return {source,catalog:[...COMPONENT_CATALOG,...custom],modules,key:versions.join('\0'),code};
 }

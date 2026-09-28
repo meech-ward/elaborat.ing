@@ -24,6 +24,7 @@ import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
 import { useNoteComments, type NoteCommentRequest } from "@/features/comments";
 import { savedComponentSource } from '../document/componentModules';
+import { CustomCodeNotice, useCustomCodeGate, useCustomCodePolicy } from "@/features/custom-code";
 import {
   applyReload,
   clearSave,
@@ -123,6 +124,10 @@ export function WorkspaceSession({
   // A module saved in another tab, or brought in by sync, rebuilds the components.
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
   const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore);
+  // In a project shared with the person, custom components run only once they choose to.
+  const customCode = useCustomCodePolicy();
+  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty);
+  const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
   useEffect(() => {
     if (readOnly) return;
     let alive = true;
@@ -326,6 +331,13 @@ export function WorkspaceSession({
     setMode(next);
     if (next !== "source") setRenderedEver(true);
   }, []);
+
+  // A note that asks again (a component file changed) stops its rendered
+  // view, so an edit it had under way is let go.
+  const asking = componentGate.kind === "ask";
+  useEffect(() => {
+    if (asking) handleRenderedPending(false);
+  }, [asking, handleRenderedPending]);
 
   const apple = useMemo(() => isApplePlatform(), []);
 
@@ -774,13 +786,16 @@ export function WorkspaceSession({
           }
           end={isNote && renderedEver && (
             <div hidden={!inRendered} className="wb-rendered-stage">
+              {componentGate.kind === "ask" ? (
+                <CustomCodeNotice files={componentGate.files} onRun={componentGate.run} onShowSource={() => switchMode("source")} />
+              ) : (
               <RenderedEditor
                 document={snapshot}
                 active={active && inRendered}
                 documentId={snapshot.docId}
-                componentEnvironment={componentState.environment}
-                componentError={componentState.error}
-                componentPending={componentState.pending}
+                componentEnvironment={shownComponents?.environment}
+                componentError={shownComponents?.error}
+                componentPending={shownComponents?.pending}
                 onHistory={handleHistory}
                 onPendingChange={handleRenderedPending}
                 onPatch={handlePatch}
@@ -795,6 +810,7 @@ export function WorkspaceSession({
                 comments={commentProps}
                 apiRef={renderedApi}
               />
+              )}
             </div>
           )}
         />
