@@ -186,6 +186,10 @@ test("comments show their authors' names, else their emails, and a person sets t
   await panel(page).getByRole("textbox", { name: "New comment" }).press("ControlOrMeta+Enter")
   const mine = thread(page, "Comments on Whole note").filter({ hasText: "Dates by Friday." })
   await expect(mine.getByText(person.email, { exact: true })).toBeVisible()
+  // The account panel names them the same way, once, with no name made up from the email.
+  const row = page.locator('[data-slot="person-row"]')
+  await expect(row.getByText(person.email, { exact: true })).toHaveCount(1)
+  await expect(row.getByText("Person", { exact: true })).toHaveCount(0)
 
   // Settings > Account: Your name.
   await page.getByRole("button", { name: "Look and theme" }).click()
@@ -200,6 +204,9 @@ test("comments show their authors' names, else their emails, and a person sets t
   const saved = fake.requests.find((request) => request.method() === "PUT" && request.url().endsWith("/auth/v1/user"))
   expect(saved?.postDataJSON()).toMatchObject({ data: { display_name: "Pat Person" } })
   await page.keyboard.press("Escape")
+  // The comments open now name them, as the account panel does.
+  await expect(mine.getByText("Pat Person", { exact: true })).toBeVisible()
+  await expect(row.getByText("Pat Person", { exact: true })).toBeVisible()
 
   // Comments name them from then on, here and on other devices.
   await page.reload()

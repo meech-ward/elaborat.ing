@@ -1262,14 +1262,13 @@ export function WorkspaceWorkbench({
   );
 }
 
-/** The signed-in person as the account panel shows them: a name from their profile, else their email's first part, capitalised as a name. */
+/** The signed-in person as the account panel shows them: the name comments show (see accountName), else their email. */
 function personOf(user: { user_metadata?: Record<string, unknown> }, email: string | null): PanelPerson {
   const meta = user.user_metadata ?? {};
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
   const address = email ?? "";
-  const local = address.split("@")[0] ?? "";
   return {
-    name: accountName(meta) ?? (local ? local.charAt(0).toLocaleUpperCase() + local.slice(1) : "Signed in"),
+    name: accountName(meta) ?? (address || "Signed in"),
     email: address,
     image: text(meta.avatar_url),
   };

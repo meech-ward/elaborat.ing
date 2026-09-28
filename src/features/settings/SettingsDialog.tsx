@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { useAppearance } from "@/features/appearance"
 import { readingPreferencesSchema } from "@/features/appearance/reading"
+import { useAuth } from "@/features/auth/useAuth"
 import { ColorModeToggle, PaletteSelect } from "@/features/design-system"
 import { AccountSection } from "./AccountSection"
 import { PasskeysSection } from "./PasskeysSection"
@@ -35,7 +36,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>Appearance and reading are kept on this device.</DialogDescription>
+            <SettingsDescription />
           </DialogHeader>
           <AppearanceSection />
           <ReadingSection />
@@ -44,6 +45,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
     </SettingsContext.Provider>
+  )
+}
+
+/** Where each setting is kept: appearance and reading on this device; signed in, Account and Passkeys with the account. */
+function SettingsDescription() {
+  const signedIn = useAuth().status === "ready"
+  return (
+    <DialogDescription>
+      Appearance and reading are kept on this device.{signedIn ? " Account settings follow you to every device." : ""}
+    </DialogDescription>
   )
 }
 

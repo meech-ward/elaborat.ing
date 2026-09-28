@@ -71,7 +71,7 @@ function YourName({ user }: { user: User }) {
           </Button>
         </div>
         <p id={hintId} className="text-xs text-muted-foreground">
-          Shown with your comments and to the people you share projects with. Without a name, they see your email.
+          Shown with your comments and to the people you share projects with. Without one, they see the name your sign-in provider gave, else your email.
         </p>
       </form>
       {notice ? <Banner tone={notice.tone}>{notice.text}</Banner> : null}

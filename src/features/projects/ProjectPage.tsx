@@ -1,7 +1,9 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PanelPage } from "@/components/panel"
 import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
+import { accountName } from "@/features/auth/accountName"
+import { useAuth } from "@/features/auth/useAuth"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
@@ -125,6 +127,16 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       void changes.close()
     }
   }, [account.online, comments, opened, projectId, seenRevisions, syncNow])
+
+  // The person's own name, set in Settings, shows with their comments at once.
+  const auth = useAuth()
+  const ownName = auth.status === "ready" ? accountName(auth.user.user_metadata) : null
+  const namedAs = useRef(ownName)
+  useEffect(() => {
+    if (namedAs.current === ownName) return
+    namedAs.current = ownName
+    comments?.store.refresh()
+  }, [comments, ownName])
 
   // Saves sync shortly after they happen, a burst of them together.
   const [delayedSync] = useState(() => new Delayed(SYNC_DELAY_MS))

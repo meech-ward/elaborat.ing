@@ -146,7 +146,8 @@ export function PersonRow({
         ) : (
           <span className={cn("truncate font-semibold text-foreground", s.name)}>{name}</span>
         )}
-        <span className={cn("truncate text-dim", s.email)}>{email}</span>
+        {/* Without a name of their own, the name is the email: it shows once. */}
+        {email !== name && <span className={cn("truncate text-dim", s.email)}>{email}</span>}
       </span>
     </>
   )
