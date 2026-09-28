@@ -522,3 +522,25 @@ test("quote prose stays editable beside a fenced code sibling", async () => {
   expect(next.text).toContain("const x = 1;");
   expect(next.projection.doc.firstChild!.type.name).toBe("blockquote");
 });
+
+for (const format of ["md", "mdx"] as const) {
+  test(`${format}: a file saved with a byte order mark is edited in place and keeps the mark`, async () => {
+    const text = "﻿# Café \u{1F600}\r\n\r\nFirst `code` here \u{1F389} end.\r\n";
+    const projection = await projectFluidSource(text, format);
+    expect(projection.doc.textContent).toBe("Café \u{1F600}First code here \u{1F389} end.");
+    // Every mapped range is exactly the text it shows.
+    for (const leaf of projection.mapping.leaves) expect(text.slice(leaf.from, leaf.to)).toBe(leaf.value);
+    const offset = text.indexOf("here");
+    const position = fluidPositionForSourceOffset(projection, offset)!;
+    const next = await prepareFluidTransaction({ text, revision: 1, format }, projection, [replace(position, position, "right ")]);
+    expect(next.text).toBe("﻿# Café \u{1F600}\r\n\r\nFirst `code` right here \u{1F389} end.\r\n");
+    const heading = await prepareFluidTransaction({ text, revision: 1, format }, projection, [replace(1, 1, "A ")]);
+    expect(heading.text).toBe("﻿# A Café \u{1F600}\r\n\r\nFirst `code` here \u{1F389} end.\r\n");
+  });
+
+  test(`${format}: typing into a file that holds only a byte order mark adds no blank lines`, async () => {
+    const projection = await projectFluidSource("﻿", format);
+    const next = await prepareFluidTransaction({ text: "﻿", revision: 1, format }, projection, [replace(1, 1, "S")]);
+    expect(next.text).toBe("﻿S");
+  });
+}

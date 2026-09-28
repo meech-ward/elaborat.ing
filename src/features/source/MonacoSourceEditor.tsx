@@ -34,6 +34,17 @@ type RailMarker = { line: number; top: number; ids: string[]; active: boolean; l
 
 const LINE_HEIGHT = 22;
 
+// A model keeps a file's byte order mark out of its text and offsets
+// (`getValue()` leaves it off) and gives it back when asked. The app's text
+// and offsets are the file's, mark included, so every exchange converts.
+const bomLength = (model: monaco.editor.ITextModel) => model.getValueLength(undefined, true) - model.getValueLength();
+/** The file's text, byte order mark included. */
+const fileText = (model: monaco.editor.ITextModel) => model.getValue(undefined, true);
+const positionAt = (model: monaco.editor.ITextModel, offset: number) => model.getPositionAt(offset - bomLength(model));
+const offsetAt = (model: monaco.editor.ITextModel, position: monaco.IPosition) => model.getOffsetAt(position) + bomLength(model);
+/** The model as the document sync reads and replaces it: the file's text. */
+const fileModel = (model: monaco.editor.ITextModel) => ({ getValue: () => fileText(model), setValue: (value: string) => model.setValue(value) });
+
 export type MonacoSourceEditorProps = Omit<SourceEditorProps, "apiRef" | "initialText"> & { handoff: SourceHandoff };
 
 export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
@@ -118,8 +129,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     // Replaying the shell's steps: the parent already has their text.
     let replaying = false;
     const selectionAt = (selection: SourceSelection) => {
-      const anchor = model.getPositionAt(selection.anchor);
-      const head = model.getPositionAt(selection.head);
+      const anchor = positionAt(model, selection.anchor);
+      const head = positionAt(model, selection.head);
       return new monaco.Selection(
         anchor.lineNumber,
         anchor.column,
@@ -293,10 +304,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     };
     commentMarksRef.current = (marks, source) => {
       // Marks placed in other text (typing ran ahead) wait for the next set.
-      if (source === model.getValue()) {
+      if (source === fileText(model)) {
         const ids = markDecorations.set(
           marks.map((mark) => ({
-            range: monaco.Range.fromPositions(model.getPositionAt(mark.from), model.getPositionAt(mark.to)),
+            range: monaco.Range.fromPositions(positionAt(model, mark.from), positionAt(model, mark.to)),
             options: {
               inlineClassName: commentHighlightClass({ active: mark.active }),
               stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
@@ -307,7 +318,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       }
       updateComments();
     };
-    const commentOn = (request: NoteCommentRequest) => live.current.comments?.onComment(request, model.getValue());
+    const commentOn = (request: NoteCommentRequest) => live.current.comments?.onComment(request, fileText(model));
     disposables.push(
       // The comment key comments on the selection, or on the heading the
       // cursor is on. Elsewhere it is left to the page (it shows or hides
@@ -322,7 +333,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         run() {
           const selection = editor.getSelection();
           if (!selection || selection.isEmpty()) return;
-          commentOn({ kind: "text", from: model.getOffsetAt(selection.getStartPosition()), to: model.getOffsetAt(selection.getEndPosition()) });
+          commentOn({ kind: "text", from: offsetAt(model, selection.getStartPosition()), to: offsetAt(model, selection.getEndPosition()) });
         },
       }),
       editor.addAction({
@@ -334,7 +345,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         contextMenuOrder: 0,
         run() {
           const position = editor.getPosition();
-          if (position) commentOn({ kind: "section", offset: model.getOffsetAt(position) });
+          if (position) commentOn({ kind: "section", offset: offsetAt(model, position) });
         },
       }),
       editor.onDidScrollChange(updateComments),
@@ -360,7 +371,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       editor.onDidChangeModelContent(() => {
         if (!applyingRendered) renderedGroup = undefined;
         if (replaying) return;
-        const text = model.getValue();
+        const text = fileText(model);
         documentSync.emitted(text);
         live.current.onChange(text);
         updateComments();
@@ -406,8 +417,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         if (patches.length === 0) return;
         const edits = patches.map((patch) => ({
           range: monaco.Range.fromPositions(
-            model.getPositionAt(patch.from),
-            model.getPositionAt(patch.to),
+            positionAt(model, patch.from),
+            positionAt(model, patch.to),
           ),
           text: patch.insert,
           forceMoveMarkers: true,
@@ -442,12 +453,12 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
           void (direction === "undo" ? model.undo() : model.redo());
         const selection = editor.getSelection();
         return {
-          text: model.getValue(),
+          text: fileText(model),
           selection: {
             anchor: selection
-              ? model.getOffsetAt(selection.getSelectionStart())
+              ? offsetAt(model, selection.getSelectionStart())
               : 0,
-            head: selection ? model.getOffsetAt(selection.getPosition()) : 0,
+            head: selection ? offsetAt(model, selection.getPosition()) : 0,
           },
         };
       },
@@ -455,7 +466,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         editor.focus();
       },
       revealRange(from, to, focus) {
-        const range = monaco.Range.fromPositions(model.getPositionAt(from), model.getPositionAt(to));
+        const range = monaco.Range.fromPositions(positionAt(model, from), positionAt(model, to));
         editor.revealRangeInCenterIfOutsideViewport(range, monaco.editor.ScrollType.Smooth);
         flashDecorations.set([
           { range, options: { inlineClassName: commentHighlightClass({ active: true, flash: true }) } },
@@ -475,14 +486,15 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       for (const step of handoff.buffer.steps()) {
         if (step.kind === "patches") api.applyExternalPatches([...step.patches], step.options);
         else if (step.kind === "history") api.history(step.direction);
-        else applyFormatted(step.text);
+        // The step is the whole file; the model keeps its byte order mark apart.
+        else applyFormatted(step.text.slice(bomLength(model)));
       }
     } finally {
       replaying = false;
     }
     // Never show other text than the parent has (Monaco can change line
     // endings); that costs the history, which only mixed line endings meet.
-    if (model.getValue() !== handoff.buffer.getValue()) model.setValue(handoff.buffer.getValue());
+    if (fileText(model) !== handoff.buffer.getValue()) model.setValue(handoff.buffer.getValue());
     handoff.attach(api);
 
     return () => {
@@ -545,7 +557,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       model,
       editorLanguage ?? languageForFormat(docFormat),
     );
-    documentSyncRef.current?.receive(model, { text: documentText, docId: documentId });
+    documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
   }, [documentText, docFormat, documentId, editorLanguage]);
 
   useEffect(() => {
@@ -620,8 +632,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
             const selection = editor?.getSelection();
             if (!editor || !model || !selection || selection.isEmpty()) return;
             comments.onComment(
-              { kind: "text", from: model.getOffsetAt(selection.getStartPosition()), to: model.getOffsetAt(selection.getEndPosition()) },
-              model.getValue(),
+              { kind: "text", from: offsetAt(model, selection.getStartPosition()), to: offsetAt(model, selection.getEndPosition()) },
+              fileText(model),
             );
           }}
         />

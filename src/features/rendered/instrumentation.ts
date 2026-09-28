@@ -334,7 +334,39 @@ function capturePlugin(collected: { tree: unknown | null }) {
   };
 }
 
-const SHARED_REMARK_PLUGINS = [remarkGfm, remarkFrontmatter] as const;
+type PositionedTree = {
+  position?: { start: { offset?: number }; end: { offset?: number } };
+  children?: PositionedTree[];
+  attributes?: PositionedTree[];
+};
+
+/**
+ * The parser skips a byte order mark at the start of a file, so its offsets
+ * count from the character after it. Every range here is an offset into the
+ * source itself, so move them past the mark: a file saved with one is edited
+ * in place and keeps it.
+ */
+function sourceOffsetsPlugin() {
+  return (tree: unknown, file: { value: unknown }) => {
+    if (!String(file.value).startsWith("﻿")) return;
+    const moved = new WeakSet<object>();
+    const move = (point: { offset?: number } | undefined) => {
+      if (!point || typeof point.offset !== "number" || moved.has(point)) return;
+      moved.add(point);
+      point.offset += 1;
+    };
+    const walk = (node: PositionedTree) => {
+      move(node.position?.start);
+      move(node.position?.end);
+      for (const child of node.children ?? []) walk(child);
+      for (const attribute of node.attributes ?? []) walk(attribute);
+    };
+    walk(tree as PositionedTree);
+  };
+}
+
+// The offsets plugin runs first, before any plugin reads a position.
+const SHARED_REMARK_PLUGINS = [sourceOffsetsPlugin, remarkGfm, remarkFrontmatter] as const;
 
 // Only components whose implementations preserve their static children. Chart
 // descriptors, resources and unknown JSX never acquire text-edit authority here.

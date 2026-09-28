@@ -786,10 +786,12 @@ function inlinePatch(
   const emptyRoot = projection.mapping.roots.find(
     (root) => root.pos + 1 === from && root.from === root.to,
   );
+  // A byte order mark alone is not a block to separate from.
+  const before = projection.text.slice(0, start.raw).replace(/^﻿/, "");
   if (
     emptyRoot &&
-    start.raw > 0 &&
-    !/(?:\r?\n){2}[ \t]*$/.test(projection.text.slice(0, start.raw))
+    before !== "" &&
+    !/(?:\r?\n){2}[ \t]*$/.test(before)
   )
     insert = "\n\n" + insert;
   return {
