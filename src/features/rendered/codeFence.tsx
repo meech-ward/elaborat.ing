@@ -1,5 +1,16 @@
 import { isValidElement, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
-import { highlightCode } from './codeHighlight';
+import { useModule } from '../../lib/moduleLoader';
+import { frameModules } from '../../preview/frameModules';
+
+/**
+ * A code block's highlighted HTML (codeHighlight.ts), or null: plain text, or
+ * until the highlighter has loaded. It loads in the preview frame the first
+ * time a code block with a language shows.
+ */
+function useHighlightedCode(code: string, language: string): string | null {
+  const { module } = useModule(frameModules.highlighter, language !== '');
+  return module && language ? module.highlightCode(code, language) : null;
+}
 
 /** Two-space indent/outdent, with selection offsets retained for native input. */
 export function indentCode(value: string, start: number, end: number, outdent: boolean) {
@@ -24,19 +35,18 @@ export function indentCode(value: string, start: number, end: number, outdent: b
 
 /** Fallback for generated/unmapped code. Parser-backed fences use EditableCodeFence. */
 export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'>): ReactNode {
-  if (!isValidElement<{ children?: unknown; className?: string }>(children)
-    || typeof children.props.children !== 'string') {
-    return <pre {...props}>{children}</pre>;
-  }
-  const code = children.props.children;
-  const language = /(?:^|\s)language-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? '';
-  const highlighted = highlightCode(code, language);
+  const fence = isValidElement<{ children?: unknown; className?: string }>(children)
+    && typeof children.props.children === 'string' ? children.props : null;
+  const code = typeof fence?.children === 'string' ? fence.children : '';
+  const language = fence ? /(?:^|\s)language-([^\s]+)/.exec(fence.className ?? '')?.[1] ?? '' : '';
+  const highlighted = useHighlightedCode(code, language);
+  if (!fence) return <pre {...props}>{children}</pre>;
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
       <div className="document-code-label">{language || 'text'} <span>Code · edit in Source</span></div>
       {highlighted === null
         ? <pre {...props} tabIndex={0} aria-label={`${language || 'Plain text'} code`}><code>{code}</code></pre>
-        // Only escaped HTML from the fixed Shiki pipeline above, never raw MDX.
+        // Only escaped HTML from the fixed Shiki pipeline (codeHighlight.ts), never raw MDX.
         : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={{ __html: highlighted }} />}
     </div>
   );
@@ -55,7 +65,7 @@ export function EditableCodeFence({ value, language, onCommit, sourceRegion, dra
   onEditorMount?: (element: HTMLTextAreaElement) => void;
 }): ReactNode {
   const [editing, setEditing] = useState(!!draft);
-  const highlighted = highlightCode(value, language);
+  const highlighted = useHighlightedCode(value, language);
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
       <div className="document-code-label">

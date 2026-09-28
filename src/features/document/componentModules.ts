@@ -4,6 +4,10 @@ import remarkGfm from 'remark-gfm';
 import { z } from 'zod';
 import { COMPONENT_CATALOG, type ComponentDefinition } from './componentCatalog';
 import { isTrustedReactExport } from './trustedReactImports';
+import type { ComponentSourceLoader } from './componentSource';
+
+// Kept apart so the workbench reads component files without loading the MDX compiler.
+export { savedComponentSource, type ComponentSourceLoader } from './componentSource';
 
 const identifier = /^[A-Z][A-Za-z0-9_]*$/;
 const reserved = new Set([...COMPONENT_CATALOG.map(c => c.name), 'SourceText', 'SourceCode', 'SourceBlock', 'FluidIsland', 'CustomControls']);
@@ -34,13 +38,6 @@ export interface ComponentEnvironment {
    * the note uses only built-in components and literal values.
    */
   code: Array<{ path: string | null; esm: string }>;
-}
-export type ComponentSourceLoader = (path: string) => Promise<{text: string; revision: string}>;
-
-/** Module dependencies use saved authority, unlike an editor's draft overlay. */
-export function savedComponentSource(file: {content: string; revision: string; savedContent?: string | null}): {text: string; revision: string} {
-  if (file.savedContent === null) throw new Error('Save the component module before importing it');
-  return {text:file.savedContent === undefined ? file.content : file.savedContent,revision:file.revision};
 }
 
 function node(value: unknown): Node {

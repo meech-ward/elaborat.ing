@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type Dispatch, type RefObject } from "react";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
-import { holdsReferences, planFolderMove, planMove, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSourceFile } from "./movePlan";
+import type { FolderMoveRequest, MovePlan, MoveRequest, MoveSourceFile } from "./movePlan";
+import { holdsReferences } from "./moveRules";
 import { affectedMovePaths, moveSessionProblem } from "./moveSessions";
 import type { OperationSession } from "./operationSession";
 import type { OpenTab, TabAction } from "./tabs";
@@ -71,7 +72,8 @@ export function useFileMoves({ client, tabs, sessions, dispatch, notify, onFolde
   const request = useRef(0);
 
   const planFor = useCallback(async (move: MoveRequest | FolderMoveRequest) => {
-    const { files, folders, explicit } = await projectFiles(client);
+    // The planner, with the MDX parser that finds references, loads with the first move.
+    const [{ files, folders, explicit }, { planMove, planFolderMove }] = await Promise.all([projectFiles(client), import("./movePlan")]);
     return "path" in move ? planMove(files, folders, move) : planFolderMove(files, folders, explicit, move);
   }, [client]);
 

@@ -683,6 +683,17 @@ inline script, `'unsafe-eval'` and `data:` fonts, or the frame goes blank.
 Messages use `postMessage` with target `*` and are checked by `event.source`;
 the sandbox domain replaces this with pinned origins.
 
+**Decision: the frame's heavy parts load the first time a note shows them.**
+Charts (Recharts) and code highlighting (Shiki and its grammars) are most of
+the frame's code, so each is built on its own (`src/preview/modules/`) and
+left out of the `srcdoc`. The frame has no network and cannot `import()` a
+file, so a chart or code block that renders asks the app for its part by name
+(`load-module`); the app imports that file, a chunk precached like any other,
+and posts its code back, and the frame runs it with its own React
+(`src/preview/frameModules.ts`). Until then a chart keeps its place with an
+empty box and code shows as plain text. With the sandbox domain the frame can
+import these files itself.
+
 **Decision:** before components are offered publicly, the frame is served from
 a separate registrable domain (a "sandbox domain", Google's documented pattern
 for untrusted content, like `googleusercontent.com`). Chrome's Site Isolation

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { prepareComponentEnvironment, type ComponentEnvironment, type ComponentSourceLoader } from './componentModules';
+import type { ComponentEnvironment } from './componentModules';
+import type { ComponentSourceLoader } from './componentSource';
 
 /** The saved revision each imported module had when it was read; null when it could not be read. */
 export type ModuleRevisions = ReadonlyMap<string, string | null>;
@@ -62,7 +63,8 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    prepareComponentEnvironment(source,cachedLoader).then(environment => {
+    // The MDX compiler loads with the first note that needs it.
+    import('./componentModules').then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
       if (!cancelled) setState({environment,loader:cachedLoader,settled:true});
     },error => {
       if (!cancelled) setState(previous => ({environment:previous.environment,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true}));

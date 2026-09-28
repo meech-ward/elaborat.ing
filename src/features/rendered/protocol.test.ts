@@ -145,12 +145,35 @@ describe('checkChildMessage', () => {
   });
 });
 
+describe('frame modules', () => {
+  test('the frame asks for a known module of its own code, at any revision of the note', () => {
+    const valid = { data: { kind: 'load-module', session: 'session-1234', name: 'charts' }, source: FRAME, expectedSource: FRAME, session: 'session-1234', revision: 7 };
+    expect(checkChildMessage(valid).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, revision: 8 }).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, data: { ...valid.data, name: 'highlighter' } }).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, source: OTHER }).ok).toBe(false);
+    expect(checkChildMessage({ ...valid, session: 'another-session' }).ok).toBe(false);
+    for (const name of ['maps', '../charts', 'constructor']) expect(checkChildMessage({ ...valid, data: { ...valid.data, name } }).ok).toBe(false);
+    expect(checkChildMessage({ ...valid, data: { ...valid.data, url: 'https://example.com/x.js' } }).ok).toBe(false);
+  });
+
+  test("the parent's answer is the module's code or why it could not load, for the frame's session", () => {
+    const answer = { kind: 'module', session: 'session-1a', name: 'charts', code: 'exports.x = 1' };
+    expect(checkParentMessage({ data: answer, source: {}, activeSession: 'session-1a' }).ok).toBe(true);
+    expect(checkParentMessage({ data: { kind: 'module', session: 'session-1a', name: 'highlighter', error: 'Offline.' }, source: {}, activeSession: 'session-1a' }).ok).toBe(true);
+    expect(checkParentMessage({ data: answer, source: {}, activeSession: null }).ok).toBe(false);
+    expect(checkParentMessage({ data: answer, source: {}, activeSession: 'session-other' }).ok).toBe(false);
+    expect(checkParentMessage({ data: { ...answer, name: 'maps' }, source: {}, activeSession: 'session-1a' }).ok).toBe(false);
+  });
+});
+
 describe('staleChildMessage', () => {
   test('a message about an older revision is status, dropped, a refusal or a lost edit, never a render error', () => {
     const outcomes: Record<ChildMessage['kind'], ReturnType<typeof staleChildMessage>> = {
       'source-draft-pending': 'status',
       'fluid-pending': 'status',
       ready: 'drop',
+      'load-module': 'drop',
       rendered: 'drop',
       'render-error': 'drop',
       'edit-resource': 'drop',

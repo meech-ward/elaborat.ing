@@ -14,6 +14,7 @@
 import { z } from "zod";
 import { PALETTE_IDS } from "../appearance/palettes";
 import { readingPreferencesSchema } from "../appearance/reading";
+import { FRAME_MODULES } from "../../preview/frameModuleList";
 
 /** Sandbox attribute for the preview iframe. allow-scripts ONLY. */
 export const PREVIEW_SANDBOX = "allow-scripts";
@@ -360,6 +361,14 @@ export const parentMessageSchema = z.union([
   resourcesMessageSchema,
   appearanceMessageSchema,
   commentMarksMessageSchema,
+  // A part of the frame's own code that it asked for (src/preview/frameModules.ts): its code, or why it could not load.
+  z.object({
+    kind: z.literal("module"),
+    session: z.string().min(8),
+    name: z.enum(FRAME_MODULES),
+    code: z.string().max(16_000_000).optional(),
+    error: z.string().max(2000).optional(),
+  }).strict(),
   // Show commented text (a document range): scroll to it, flash it, and take the keyboard if asked.
   z.object({
     kind: z.literal("comment-reveal"),
@@ -461,6 +470,13 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     session: z.string().min(1),
     revision: z.number().int().nonnegative(),
   }),
+  // The note needs a part of the frame's own code that loads on first use
+  // (src/preview/frameModules.ts): charts, or code highlighting.
+  z.object({
+    kind: z.literal("load-module"),
+    session: z.string().min(1),
+    name: z.enum(FRAME_MODULES),
+  }).strict(),
   // The selected text (document positions) and the box around it on screen, or none.
   // Positions are proposals: the parent maps them through its own projection.
   z.object({
@@ -589,6 +605,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "fluid-pending":
       return "status";
     case "ready":
+    case "load-module":
     case "rendered":
     case "render-error":
     case "edit-resource":
@@ -639,8 +656,9 @@ export function checkChildMessage(args: {
   if (message.kind !== "ready" && message.session !== args.session) {
     return { ok: false, error: "Rejected frame message for a stale session." };
   }
-  // A shortcut is a key press, not an edit: it has no revision to be stale.
-  if (message.kind !== "ready" && message.kind !== "shortcut" && message.revision !== args.revision) {
+  // A shortcut is a key press, not an edit, and a module request asks for the
+  // frame's own code: neither has a revision to be stale.
+  if (message.kind !== "ready" && message.kind !== "shortcut" && message.kind !== "load-module" && message.revision !== args.revision) {
     return {
       ok: false,
       error: `Rejected stale frame message (revision ${message.revision}, current ${args.revision}).`,

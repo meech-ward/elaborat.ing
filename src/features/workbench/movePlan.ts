@@ -1,7 +1,8 @@
 import type { LocalChange } from "@/features/project-storage/fileStore"
 import { isValidProjectPath, MAX_ENTRIES } from "@/features/project-storage/model"
-import { basenameForPath, diagramPartnerPaths, renameDestinationPath, validateWorkspacePath } from "@/features/workspace"
+import { basenameForPath, diagramPartnerPaths, renameDestinationPath } from "@/features/workspace"
 import { planMoveReferences, type MoveReferenceFile } from "@/features/workspace/moveRefs"
+import { canMove, holdsReferences } from "./moveRules"
 import { ancestorsOf, isCanonicalDirectoryPath, joinFolder, parentDirOf } from "./folderTree"
 
 /** A file in the project, as the move planner sees it. */
@@ -45,21 +46,7 @@ export class MoveRefusedError extends Error {
   }
 }
 
-/** File kinds that can refer to other files, so a move may need to rewrite them. */
-export function holdsReferences(path: string): boolean {
-  return /\.(md|mdx|excalidraw|d2)$/i.test(path)
-}
-
 const isD2 = (path: string) => /\.d2$/i.test(path)
-
-/**
- * Kinds of file the app edits (notes, drawings, diagrams and their JSON), at
- * paths references can name. Other files, such as ones an agent wrote, are
- * listed and open as text but are not renamed or moved here.
- */
-export function canMove(path: string): boolean {
-  return validateWorkspacePath(path.split("/").map(encodeURIComponent).join("/")) === path
-}
 
 /**
  * Plan a rename or move of one file, with its D2 companions, and the

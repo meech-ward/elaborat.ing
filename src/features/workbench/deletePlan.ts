@@ -2,7 +2,8 @@ import type { LocalChange } from "@/features/project-storage/fileStore"
 import { MAX_ENTRIES } from "@/features/project-storage/model"
 import { diagramPartnerPaths } from "@/features/workspace"
 import { findReferences } from "@/features/workspace/moveRefs"
-import { holdsReferences, type MoveSourceFile } from "./movePlan"
+import type { MoveSourceFile } from "./movePlan"
+import { holdsReferences } from "./moveRules"
 
 /** Delete a file (a D2 diagram with its generated files), or a folder with everything in it. */
 export type DeleteRequest = { path: string } | { folder: string }

@@ -105,6 +105,47 @@ test("a local component and an aliased import from an awkwardly named module bot
   expect(fake.server.content(id, "notes/aliases.mdx")).toBe(aliased)
 })
 
+const chartNote = `# Orders
+
+<ChartContainer config={{ apples: { label: "Apples", color: "rgb(200, 60, 40)" }, pears: { label: "Pears", color: "rgb(60, 160, 60)" } }} aria-label="Fruit orders">
+  <PieChart>
+    <Pie data={[{ fruit: "apples", orders: 40 }, { fruit: "pears", orders: 35 }]} dataKey="orders" nameKey="fruit" isAnimationActive={false}>
+      <Cell fill="var(--color-apples)" />
+      <Cell fill="var(--color-pears)" />
+    </Pie>
+  </PieChart>
+</ChartContainer>
+
+\`\`\`js
+const total = 40 + 35
+\`\`\`
+`
+
+test("charts and code highlighting load into the frame the first time a note shows them", async ({ page }) => {
+  const loaded: string[] = []
+  page.on("request", (request) => {
+    const part = /\/assets\/(charts|highlighter)-[^/]+\.js$/.exec(new URL(request.url()).pathname)?.[1]
+    if (part) loaded.push(part)
+  })
+  // A note with neither loads neither.
+  await openProject(page, { "notes/plain.mdx": "# Plain\n\nJust words.\n", "notes/chart.mdx": chartNote }, "notes/plain.mdx")
+  await rendered(page)
+  await expect(frameOf(page).getByText("Just words.")).toBeVisible()
+  // Nor does the note with a chart and a code block while it shows its source.
+  await page.getByRole("button", { name: "notes/chart.mdx", exact: true }).click()
+  await expect(page.locator(".monaco-editor:visible")).toBeVisible()
+  expect(loaded).toEqual([])
+
+  await showView(page, "Rendered")
+  const frame = page.frameLocator(`${PREVIEW}:visible`)
+  // Each slice in its own colour: Recharts still finds the Cells.
+  const slices = frame.getByRole("group", { name: "Fruit orders" }).locator(".recharts-pie-sector path")
+  await expect(slices).toHaveCount(2)
+  expect(await slices.evaluateAll((paths) => paths.map((path) => path.getAttribute("fill")))).toEqual(["var(--color-apples)", "var(--color-pears)"])
+  await expect(frame.locator(".document-code-highlight .shiki")).toContainText("const total = 40 + 35")
+  expect(loaded.sort()).toEqual(["charts", "highlighter"])
+})
+
 test("in the source view, typing <Rel offers the imported component with its default props", async ({ page }) => {
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/source.mdx": importCard }, "notes/source.mdx")
   await endOfSource(page)

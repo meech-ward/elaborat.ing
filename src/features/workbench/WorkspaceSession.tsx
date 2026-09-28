@@ -23,7 +23,7 @@ import { readProjectView, writeProjectView } from "./projectViews";
 import { viewShortcutDigit } from "./viewShortcuts";
 import { useComponentEnvironment } from '../document/useComponentEnvironment';
 import { useNoteComments, type NoteCommentRequest } from "@/features/comments";
-import { savedComponentSource } from '../document/componentModules';
+import { savedComponentSource } from '../document/componentSource';
 import { CustomCodeNotice, useCustomCodeGate, useCustomCodePolicy } from "@/features/custom-code";
 import {
   applyReload,

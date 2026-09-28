@@ -74,8 +74,26 @@ const FEATURES: Feature[] = [
   {
     name: "A note's Rendered view (the frame)",
     start: ["src/features/rendered/RenderedEditor.tsx"],
-    modules: [/virtual:preview-frame/, /src\/features\/rendered\//, /src\/preview\//, /node_modules\/prosemirror-/, /node_modules\/@mdx-js\//, /node_modules\/(shiki|@shikijs)\//],
-    note: "the frame's own code (React, MDX runtime, charts) is one string inside a chunk",
+    modules: [/virtual:preview-frame$/, /src\/features\/rendered\//, /src\/preview\//, /node_modules\/prosemirror-/, /node_modules\/@mdx-js\//],
+    note: "the frame's own code (React, MDX runtime, ProseMirror) is one string inside a chunk; charts and code highlighting load on their own, below",
+  },
+  {
+    name: "A note's compile check (the MDX compiler)",
+    start: ["src/features/rendered/instrumentation.ts"],
+    modules: [/node_modules\/(@mdx-js|micromark[\w-]*|mdast-util-[\w-]+|remark-[\w-]+|unified|acorn[\w-]*)\//, /src\/features\/rendered\/instrumentation\.ts$/, /src\/features\/document\/componentModules\.ts$/],
+    note: "the first note that opens, in Source or Rendered, loads it",
+  },
+  {
+    name: "A chart in a note (the frame's charts)",
+    start: ["virtual:preview-frame/charts"],
+    modules: [/virtual:preview-frame\/charts$/],
+    note: "sent into the note's frame the first time it shows a chart",
+  },
+  {
+    name: "A code block in a note (the frame's highlighter)",
+    start: ["virtual:preview-frame/highlighter"],
+    modules: [/virtual:preview-frame\/highlighter$/],
+    note: "sent into the note's frame the first time it shows a code block with a language",
   },
   {
     name: "A drawing (Excalidraw)",

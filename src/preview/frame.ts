@@ -6,10 +6,13 @@
  * frame (`sandbox="allow-scripts"` only, no `allow-same-origin`) needs no
  * CORS and cannot send data anywhere. The script is
  * `src/preview/preview-entry.tsx`, built by vite-plugins/preview-frame.ts.
+ * Charts and code highlighting are built on their own and sent to the frame
+ * when a note first needs them (`frameModuleCode`).
  */
 import { DEFAULT_APPEARANCE, getAppearanceTokens, tokenProperty } from "../features/appearance/tokens";
 import { PREVIEW_CHILD_CSP } from "../features/rendered/protocol";
 import { bootstrap as bootstrapJs, fontCss } from "virtual:preview-frame";
+import type { FrameModuleName } from "./frameModuleList";
 import previewTailwindCss from "./tailwind.css?inline";
 import readingCss from "./reading.css?raw";
 import fluidCss from "./fluid.css?raw";
@@ -56,4 +59,15 @@ export function buildPreviewSrcdoc(): string {
     "  </body>\n" +
     "</html>\n"
   );
+}
+
+/** Each frame module's code, as a file of its own that loads the first time a frame asks for it. */
+const FRAME_MODULE_CODE: Record<FrameModuleName, () => Promise<{ code: string }>> = {
+  charts: () => import("virtual:preview-frame/charts"),
+  highlighter: () => import("virtual:preview-frame/highlighter"),
+};
+
+/** The code of a frame module (src/preview/frameModules.ts), for the frame to run. */
+export async function frameModuleCode(name: FrameModuleName): Promise<string> {
+  return (await FRAME_MODULE_CODE[name]()).code;
 }

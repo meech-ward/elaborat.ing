@@ -17,7 +17,7 @@ import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
 import { ExplorerFolderRow } from "./ExplorerFolderRow";
 import type { FolderNode, FolderTree, TreeFile } from "./folderTree";
-import { canMove } from "./movePlan";
+import { canMove } from "./moveRules";
 
 export interface ExplorerTreeProps {
   tree: FolderTree;

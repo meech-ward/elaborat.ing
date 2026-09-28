@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type RefObject } from "react";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
-import { planDelete, type DeletePlan, type DeleteRequest } from "./deletePlan";
+import type { DeletePlan, DeleteRequest } from "./deletePlan";
 import { openFilesProblem } from "./moveSessions";
 import type { OperationSession } from "./operationSession";
 import type { OpenTab } from "./tabs";
@@ -56,7 +56,8 @@ export function useFileDeletes({ client, tabs, sessions, notify, onDeleted }: {
   const planFor = useCallback(async (next: DeleteRequest) => {
     // An open editor's last draft write lands first, so the plan sees its unsaved edits.
     await client.flushLocalDrafts();
-    const { files, folders, explicit } = await projectFiles(client);
+    // The planner, with the MDX parser that finds references, loads with the first delete.
+    const [{ files, folders, explicit }, { planDelete }] = await Promise.all([projectFiles(client), import("./deletePlan")]);
     return planDelete(files, folders, explicit, next);
   }, [client]);
   // The plan's own blockers already say what to do; the open tabs are checked when there are none.

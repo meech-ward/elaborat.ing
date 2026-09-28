@@ -40,7 +40,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { buildPreviewSrcdoc } from "../../preview/frame";
+import { buildPreviewSrcdoc, frameModuleCode } from "../../preview/frame";
 import {
   projectFluidSource,
   prepareFluidTransaction,
@@ -210,6 +210,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const [compileError, setCompileError] = useState<string | null>(null);
   const [editNotice, setEditNotice] = useState<string | null>(null);
   const [readyTick, setReadyTick] = useState(0);
+  // Frame modules sent to the frame since it last said ready: it asks for
+  // each once, and again only after a failed load.
+  const sentModules = useRef(new Set<string>());
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
   const [viewer, setViewer] = useState<{ path: string; svg: string } | null>(
@@ -590,7 +593,24 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       // The frame announcing readiness gets the current render reposted so
       // no compiled document is lost to the load race.
       if (message.kind === "ready") {
+        sentModules.current.clear();
         setReadyTick((tick) => tick + 1);
+        return;
+      }
+      // Charts or code highlighting, the first time the note shows them.
+      if (message.kind === "load-module") {
+        const name = message.name;
+        if (sentModules.current.has(name)) return;
+        sentModules.current.add(name);
+        void frameModuleCode(name).then(
+          (code) => ({ code }),
+          (error: unknown) => {
+            sentModules.current.delete(name);
+            return { error: `This part of the preview could not load: ${error instanceof Error ? error.message : String(error)}`.slice(0, 2000) };
+          },
+        ).then((answer) => {
+          if (frameRef.current?.contentWindow === expectedSource) expectedSource.postMessage({ kind: "module", session, name, ...answer }, "*");
+        });
         return;
       }
       if (message.kind === "rendered") return;

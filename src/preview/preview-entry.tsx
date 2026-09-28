@@ -36,7 +36,8 @@ import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, Exa
 import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
-import { DOCUMENT_CHART_COMPONENTS } from '../features/rendered/documentCharts';
+import { LAZY_CHART_COMPONENTS } from './lazyCharts';
+import { receiveFrameModule, setFrameModuleRequest } from './frameModules';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import {
   Alert,
@@ -110,6 +111,14 @@ function subscribeResources(listener: () => void): () => void {
 function postToParent(message: unknown): void {
   window.parent.postMessage(message, "*");
 }
+
+// Charts and code highlighting load the first time a note shows them: the
+// parent sends their code (frameModules.ts).
+setFrameModuleRequest((name) => {
+  if (activeSession == null) return false;
+  postToParent({ kind: "load-module", session: activeSession, name });
+  return true;
+});
 
 // The app's shortcuts (save, commands, go to file, duplicate, focus, and the
 // view switch) work while the keyboard is in the frame: the frame passes them
@@ -589,7 +598,7 @@ function ReadingTable(props: ComponentPropsWithoutRef<"table">) {
  * with matching parent validators expose saved literal controls.
  */
 const appOwnedComponents = {
-  ...DOCUMENT_CHART_COMPONENTS,
+  ...LAZY_CHART_COMPONENTS,
   pre: CodeFence,
   Note: (props: ComponentProps<typeof Note> & { __slot?: number }) => <TitledWithControls {...props} Component={Note} name="Note" />,
   Warning: (props: ComponentProps<typeof Warning> & { __slot?: number }) => <TitledWithControls {...props} Component={Warning} name="Warning" />,
@@ -741,6 +750,10 @@ window.addEventListener("message", (event: MessageEvent) => {
   const message = checked.message;
   if (message.kind === 'source-draft-settled') {
     settleSourceDraft(message.draftId, message.outcome, message.reason);
+    return;
+  }
+  if (message.kind === "module") {
+    receiveFrameModule(message);
     return;
   }
   if (message.kind === "reading-preferences") {
