@@ -4,10 +4,12 @@
  * a font made from bytes the page already holds is not a request, so the
  * card adds Space Grotesk and JetBrains Mono that way, and Excalifont for the
  * text in drawings (Latin only). The host's fonts, where it gives some, still
- * come first for the card's own text (bridge.ts).
+ * come first for the card's own text (bridge.ts). The component preview's
+ * frame gets the same fonts from the card (preview/ComponentPreview.tsx).
  */
 import jetbrainsMono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?inline"
 import spaceGrotesk from "@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2?inline"
+import { addFonts, type FontSource } from "./fontFaces"
 
 /**
  * Excalifont's Latin subset as a base64 data URL. scripts/build-chat-card.ts
@@ -15,27 +17,13 @@ import spaceGrotesk from "@fontsource-variable/space-grotesk/files/space-grotesk
  */
 declare const EXCALIFONT_LATIN: string
 
-/** The bytes of a base64 data URL. */
-function bytesOf(dataUrl: string): ArrayBuffer {
-  const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes.buffer
-}
+/** The fonts under the names the app's tokens use. */
+export const CARD_FONTS: readonly FontSource[] = [
+  ["Space Grotesk Variable", spaceGrotesk, "300 700"],
+  ["JetBrains Mono Variable", jetbrainsMono, "100 800"],
+  ["Excalifont", EXCALIFONT_LATIN, "400"],
+]
 
-/** Adds the fonts under the names the app's tokens use. A font the browser cannot read is left out. */
 export function addCardFonts() {
-  for (const [family, data, weight] of [
-    ["Space Grotesk Variable", spaceGrotesk, "300 700"],
-    ["JetBrains Mono Variable", jetbrainsMono, "100 800"],
-    ["Excalifont", EXCALIFONT_LATIN, "400"],
-  ] as const) {
-    try {
-      const face = new FontFace(family, bytesOf(data), { weight, style: "normal" })
-      document.fonts.add(face)
-      face.load().catch(() => document.fonts.delete(face))
-    } catch {
-      // The system's font stands in.
-    }
-  }
+  addFonts(CARD_FONTS)
 }

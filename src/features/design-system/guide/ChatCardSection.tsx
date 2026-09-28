@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react"
-import { CARD_TEXT, CardView, EditorFrame, EmbedFigure, type CardFile, type CardState } from "@/chat-card"
+import type { CSSProperties, ReactNode } from "react"
+import { CARD_TEXT, CardView, EditorFrame, EmbedFigure, type CardFile, type CardPreview, type CardState } from "@/chat-card"
+import { EmbedBox } from "../ui/EmbedBox"
 import { getPaletteColors, useAppearance } from "@/features/appearance"
 import { beforeDarkFilter } from "@/features/drawings"
 import { SAMPLE_DIAGRAM_SVG, SAMPLE_NOTE_HTML } from "./chatCardSamples"
@@ -21,6 +22,8 @@ const NOTE: CardFile = {
   svgs: { "flows/signup.d2": SAMPLE_DIAGRAM_SVG },
   html: SAMPLE_NOTE_HTML,
   source: "# Customer model\n",
+  components: null,
+  preview: null,
 }
 
 const DIAGRAM: CardFile = {
@@ -32,6 +35,21 @@ const DIAGRAM: CardFile = {
   embeds: [{ kind: "diagram", path: "flows/signup.d2", url: `${PROJECT}/flows/signup.d2`, status: "stale" }],
   html: null,
   source: null,
+}
+
+/** A component file an agent is drafting, shown with sample props by preview_component. */
+const COMPONENT: CardFile = {
+  ...NOTE,
+  path: "components/metric.mdx",
+  kind: "component",
+  version: null,
+  url: PROJECT,
+  embeds: [],
+  svgs: {},
+  html: null,
+  source: null,
+  components: {},
+  preview: { component: "Metric", props: { label: "Agents this week", value: 128 }, draft: true },
 }
 
 const shown = (file: CardFile, rest: Partial<Extract<CardState, { phase: "shown" }>> = {}): CardState => ({
@@ -71,7 +89,24 @@ function EditingSample() {
   )
 }
 
-const SPECIMENS = [
+/**
+ * A picture of what the preview's frame draws for the component: the
+ * component in the embed box on the dotted page, with its name under it.
+ */
+function ComponentSample() {
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <EmbedBox caption={<code>{"<Metric />"}</code>} className="min-h-[120px] items-stretch">
+        <div className="flex flex-col gap-1 text-body">
+          <span className="text-xs font-semibold tracking-wide text-dim uppercase">Agents this week</span>
+          <span className="text-3xl leading-none font-semibold text-foreground">128</span>
+        </div>
+      </EmbedBox>
+    </div>
+  )
+}
+
+const SPECIMENS: Array<{ label: string; state: CardState; editor?: ReactNode; preview?: CardPreview }> = [
   { label: "Reading, saved", state: shown(NOTE, { status: { kind: "saved", version: 5 } }) },
   { label: "Editing, unsaved", state: shown(NOTE, { mode: "edit", dirty: true }), editor: <EditingSample /> },
   {
@@ -80,6 +115,12 @@ const SPECIMENS = [
     editor: <EditingSample />,
   },
   { label: "Diagram, out of date", state: shown(DIAGRAM) },
+  { label: "Draft component preview", state: shown(COMPONENT), preview: { status: "shown", message: null, frame: <ComponentSample /> } },
+  {
+    label: "Components not shown",
+    state: shown({ ...NOTE, components: {} }),
+    preview: { status: "failed", message: "No component file at components/chart.mdx.", frame: null },
+  },
 ]
 
 /**
@@ -98,14 +139,21 @@ export function ChatCardSection() {
   return (
     <>
       <GuideValue className="-mt-3.5">
-        The card Claude and ChatGPT show for show_file, from the same components: the note in the rendered note&apos;s type, embeds in the
-        embed box, banners, buttons and the save status.
+        The card Claude and ChatGPT show for show_file and preview_component, from the same components: the note in the rendered
+        note&apos;s type, embeds in the embed box, components in their preview frame, banners, buttons and the save status.
       </GuideValue>
       <div className="grid gap-6 xl:grid-cols-2" style={fills}>
-        {SPECIMENS.map(({ label, state, editor }) => (
+        {SPECIMENS.map(({ label, state, editor, preview }) => (
           <div key={label} className="flex min-w-0 flex-col gap-2">
             <GuideLabel>{label}</GuideLabel>
-            <CardView aria-label={`Chat card, ${label.toLowerCase()}`} state={state} canEdit editor={editor} className="max-w-[760px]" />
+            <CardView
+              aria-label={`Chat card, ${label.toLowerCase()}`}
+              state={state}
+              canEdit
+              editor={editor}
+              preview={preview}
+              className="max-w-[760px]"
+            />
           </div>
         ))}
       </div>

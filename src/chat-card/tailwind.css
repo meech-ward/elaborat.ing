@@ -10,6 +10,7 @@
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "../features/appearance/radii.css";
 @import "../features/appearance/tailwindTheme.css";
+@import "./base.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -24,30 +25,3 @@
 @source "../features/design-system/ui/NoteProse.tsx";
 @source "../features/design-system/ui/StatusDot.tsx";
 
-/* The app's fonts, which the card adds from its script (fonts.ts), then the
-   system's; the host's fonts replace them when it gives some (bridge.ts). */
-:root {
-  --ui-font: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --heading-font: var(--ui-font);
-  --code-font: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --heading-tracking: -0.5px;
-}
-
-@layer base {
-  html,
-  body {
-    margin: 0;
-    background: transparent;
-  }
-  body {
-    font-family: var(--ui-font);
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-  }
-  ::selection {
-    background: var(--accent-soft);
-    color: var(--text);
-  }
-}

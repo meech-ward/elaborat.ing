@@ -47,7 +47,8 @@ const SERVER_INSTRUCTIONS =
   'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
   "using the file's path in the project; the file must exist, so create it first. " +
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
-  'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file.'
+  'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file; ' +
+  'to show the user a component you are writing, use preview_component.'
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',

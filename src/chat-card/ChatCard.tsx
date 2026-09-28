@@ -5,6 +5,11 @@
  * showed, so a note changed since then is a conflict, never overwritten.
  * After a save the card reloads itself with show_file and tells the model
  * with ui/update-model-context.
+ *
+ * A note with components, and a component file from preview_component, are
+ * previewed in a sandboxed frame of their own (preview/ComponentPreview.tsx)
+ * that cannot reach the bridge; a note shows the server's HTML until its
+ * preview has drawn, and again if the preview fails.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
@@ -12,7 +17,8 @@ import { z } from "zod"
 import type { HostBridge } from "./bridge"
 import { startCardEditor, type CardEditor, type EmbedRef } from "./cardEditor"
 import { cardReducer, INITIAL_CARD_STATE } from "./cardState"
-import { CardView, EditorFrame, EmbedFigure } from "./CardView"
+import { CardView, EditorFrame, EmbedFigure, type CardPreview } from "./CardView"
+import { ComponentPreview, type PreviewOutcome } from "./preview/ComponentPreview"
 import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
 const inputSchema = z.object({ path: z.string() })
@@ -22,6 +28,24 @@ const newId = () => (typeof window.crypto?.randomUUID === "function" ? window.cr
 const modelNote = (path: string, version: number | null) =>
   `The user edited ${path} in the elaborat.ing card and saved it${version ? ` as version ${version}` : ""}. Read it again before changing it.`
 
+/** A link from the preview as the host would open it: http(s) or mailto, made absolute; else null. */
+function linkUrl(href: string, base: string): string | null {
+  try {
+    const url = new URL(href, base)
+    return ["https:", "http:", "mailto:"].includes(url.protocol) ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+/** What the model hears about a component preview that did not go cleanly, for its next turn; nothing when it did. */
+function previewNote(path: string, outcome: PreviewOutcome): string | null {
+  if (outcome.status === "failed") return `The preview of ${path} in the elaborat.ing card failed: ${outcome.message}`
+  if (outcome.errors.length === 0) return null
+  const errors = outcome.errors.map((error) => `${error.name}: ${error.message}`).join(" ")
+  return `The preview of ${path} in the elaborat.ing card showed errors from its components. ${errors}`
+}
+
 export function ChatCard({ host }: { host: HostBridge }) {
   const [state, dispatch] = useReducer(cardReducer, INITIAL_CARD_STATE)
   const [canCallTools, setCanCallTools] = useState(false)
@@ -30,6 +54,10 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const lastResult = useRef<unknown>(null)
   // One id per attempt at saving one text, so a retried save is never applied twice.
   const attempt = useRef<{ content: string; id: string | undefined } | null>(null)
+  // How the components' preview of the file shown went; it starts again for each file, and after an edit.
+  const [previewed, setPreviewed] = useState<{ file: CardFile; outcome: PreviewOutcome } | null>(null)
+  // A link clicked in the preview, waiting for the person to open it.
+  const [asked, setAsked] = useState<{ file: CardFile; url: string } | null>(null)
 
   useEffect(
     () =>
@@ -62,6 +90,39 @@ export function ChatCard({ host }: { host: HostBridge }) {
   )
 
   const shown = state.phase === "shown" ? state : null
+  const previewFile = shown && shown.mode === "read" && shown.file.components !== null ? shown.file : null
+  const outcome = previewFile && previewed?.file === previewFile ? previewed.outcome : null
+  const preview: CardPreview | null = previewFile
+    ? {
+        frame: (
+          <ComponentPreview
+            file={previewFile}
+            onOutcome={(next) => {
+              setPreviewed({ file: previewFile, outcome: next })
+              const note = previewFile.kind === "component" ? previewNote(previewFile.path, next) : null
+              if (note) host.tellModel(note)
+            }}
+            onLink={(href) => {
+              const url = linkUrl(href, previewFile.url ?? APP_ORIGIN)
+              if (url) setAsked({ file: previewFile, url })
+            }}
+          />
+        ),
+        status: outcome?.status ?? "loading",
+        message: outcome?.status === "failed" ? outcome.message : null,
+        link:
+          asked?.file === previewFile
+            ? {
+                url: asked.url,
+                onOpen: () => {
+                  setAsked(null)
+                  host.openLink(asked.url, APP_ORIGIN)
+                },
+                onDismiss: () => setAsked(null),
+              }
+            : null,
+      }
+    : null
 
   /** Shows the note as saved now, from the server. */
   async function reload(file: CardFile, savedVersion: number | null) {
@@ -142,7 +203,11 @@ export function ChatCard({ host }: { host: HostBridge }) {
             />
           ) : undefined
         }
-        onEdit={() => dispatch({ type: "start-edit" })}
+        preview={preview}
+        onEdit={() => {
+          setPreviewed(null)
+          dispatch({ type: "start-edit" })
+        }}
         onSave={() => void save()}
         onCancel={() => dispatch({ type: "cancel" })}
         onReload={() => shown && void reload(shown.file, null)}

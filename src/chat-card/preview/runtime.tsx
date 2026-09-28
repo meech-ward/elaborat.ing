@@ -1,0 +1,265 @@
+/**
+ * The component preview's frame: the page the chat card builds for each
+ * preview (frameDocument.ts) and shows in an iframe with
+ * sandbox="allow-scripts" and nothing else, inside the card's own frame.
+ * That is an opaque origin: code here cannot reach the card's page, its
+ * bridge to the host (tool calls, links, model context), storage or cookies,
+ * and the policy the frame inherits from the card allows no requests.
+ *
+ * `bun run build:chat-card` builds this file into one script (and
+ * runtime.css into one stylesheet) that the card puts in each frame
+ * document. The document's later inline scripts register the compiled
+ * component files and note with `open()`'s registry; when the card sends
+ * setup, the frame runs them in order with the app's JSX runtime, its
+ * trusted React exports and its built-in components (catalog.tsx), and
+ * renders the note, or the components with their sample props. A component
+ * that throws shows an error in its place (the compiler wraps each outermost
+ * element in the guard); anything else that fails is reported to the card,
+ * which falls back to what it showed before.
+ */
+import "./runtime.css"
+import { Component, useEffect, type ReactNode } from "react"
+import { createRoot } from "react-dom/client"
+import * as jsxRuntime from "react/jsx-runtime"
+import { Banner } from "@/features/design-system/ui/Banner"
+import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
+import { NoteProse } from "@/features/design-system/ui/NoteProse"
+import { trustedReact } from "@/preview/trustedReact"
+import { CARD_NOTE_CLASS, EmbedFigure } from "../cardNote"
+import type { CardEmbed } from "../embedText"
+import { addFonts } from "../fontFaces"
+import { PREVIEW_COMPONENTS } from "./catalog"
+import { GUARD_NAME, type CardToFrame, type ComponentError, type FrameToCard, type PreviewAppearance, type PreviewPlan } from "./protocol"
+
+type ModuleScope = Record<string, unknown>
+/** A compiled file's function body, wrapped by frameDocument.ts: it takes the runtime and returns the file's exports. */
+type ModuleBody = (runtime: Record<string, unknown>) => Promise<Record<string, unknown>>
+
+type Registry = { modules: Array<ModuleBody | undefined>; note: ModuleBody | null }
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+let run = 0
+const post = (message: FrameToCard) => window.parent.postMessage(message, "*")
+
+/** Errors the guards caught before the first report to the card. */
+const caught: ComponentError[] = []
+let reported = false
+
+/**
+ * An error boundary around one element of the note (or one previewed
+ * component): an element that throws shows its error instead, and the rest
+ * of the preview carries on.
+ */
+class Guard extends Component<{ name: string; inline?: boolean; children?: ReactNode }, { error: { message: string } | null }> {
+  state: { error: { message: string } | null } = { error: null }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: { message: messageOf(error) } }
+  }
+
+  componentDidCatch(error: unknown) {
+    if (!reported && caught.length < 20) caught.push({ name: this.props.name, message: messageOf(error) })
+  }
+
+  render() {
+    const { error } = this.state
+    if (!error) return this.props.children
+    const text = `${this.props.name} could not be shown: ${error.message}`
+    if (this.props.inline) {
+      return (
+        <span role="alert" data-preview-error="" className="not-prose rounded-sm bg-[color-mix(in_oklab,var(--danger)_10%,var(--panel))] px-1 text-destructive">
+          {text}
+        </span>
+      )
+    }
+    return (
+      <Banner tone="danger" data-preview-error="" className="not-prose">
+        {text}
+      </Banner>
+    )
+  }
+}
+
+/** Whatever the whole preview throws: reported to the card, which shows what it had instead. */
+class Root extends Component<{ children?: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: unknown) {
+    post({ type: "failed", run, message: messageOf(error) })
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children
+  }
+}
+
+/** Tells the card, once, that the preview has drawn, with what the guards caught while it did. */
+function Drawn() {
+  useEffect(() => {
+    if (reported) return
+    reported = true
+    post({ type: "rendered", run, errors: caught.splice(0) })
+  }, [])
+  return null
+}
+
+function applyAppearance({ scheme, variables, hostFonts }: PreviewAppearance) {
+  const root = document.documentElement
+  if (scheme) {
+    root.dataset.scheme = scheme
+    root.classList.toggle("dark", scheme === "dark")
+  }
+  for (const name of ["--ui-font", "--heading-font", "--code-font"]) {
+    const value = variables[name]
+    if (value) root.style.setProperty(name, value)
+    else root.style.removeProperty(name)
+  }
+  let style = document.querySelector<HTMLStyleElement>("style[data-host-fonts]")
+  if (hostFonts) {
+    if (!style) {
+      style = document.createElement("style")
+      style.dataset.hostFonts = ""
+      document.head.append(style)
+    }
+    style.textContent = hostFonts
+  } else {
+    style?.remove()
+  }
+}
+
+/** Reports the preview's height whenever it changes. */
+function watchSize(element: HTMLElement) {
+  let last = -1
+  const send = () => {
+    const height = Math.ceil(element.getBoundingClientRect().height)
+    if (height === last) return
+    last = height
+    post({ type: "size", run, height })
+  }
+  new ResizeObserver(send).observe(element)
+  send()
+}
+
+/** Links open through the card, which asks the host; a link inside the page just scrolls. */
+function watchLinks() {
+  document.addEventListener(
+    "click",
+    (event) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null
+      if (!link) return
+      const href = link.getAttribute("href") ?? ""
+      if (href.startsWith("#")) return
+      event.preventDefault()
+      post({ type: "link", run, href })
+    },
+    true,
+  )
+}
+
+/** A drawing or diagram the note embeds, drawn from the server's picture as the card draws it. */
+function Embed({ kind, src, plan }: { kind: "drawing" | "diagram"; src?: unknown; plan: Extract<PreviewPlan, { kind: "note" }> }) {
+  const path = typeof src === "string" ? src : ""
+  const embed: CardEmbed = plan.embeds.find((entry) => entry.path === path) ?? { kind, path, url: null, status: "not_shown" }
+  return <EmbedFigure embed={embed} svgs={plan.svgs} />
+}
+
+/** Runs the compiled files in order, each with the ones it imports. */
+async function runModules(plan: PreviewPlan, registry: Registry): Promise<ModuleScope> {
+  const workspaceModules: ModuleScope = Object.create(null)
+  for (const [index, path] of plan.modules.entries()) {
+    const body = registry.modules[index]
+    if (!body) throw new Error(`${path} could not be loaded.`)
+    try {
+      workspaceModules[path] = await body({ ...jsxRuntime, workspaceModules, trustedReact })
+    } catch (error) {
+      throw new Error(`${path}: ${messageOf(error)}`)
+    }
+  }
+  return workspaceModules
+}
+
+async function start(plan: PreviewPlan, registry: Registry) {
+  const mount = document.getElementById("root")!
+  watchSize(mount)
+  watchLinks()
+  const root = createRoot(mount)
+  const workspaceModules = await runModules(plan, registry)
+  if (plan.kind === "note") {
+    if (!registry.note) throw new Error("The note could not be loaded.")
+    const exports = await registry.note({ ...jsxRuntime, workspaceModules, trustedReact })
+    const Content = exports.default as (props: { components: Record<string, unknown> }) => ReactNode
+    const components = {
+      ...PREVIEW_COMPONENTS,
+      [GUARD_NAME]: Guard,
+      Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} plan={plan} />,
+      Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} plan={plan} />,
+    }
+    root.render(
+      <Root>
+        <NoteProse className={CARD_NOTE_CLASS}>
+          <Content components={components} />
+        </NoteProse>
+        <Drawn />
+      </Root>,
+    )
+    return
+  }
+  const file = (workspaceModules[plan.target] ?? {}) as Record<string, unknown>
+  root.render(
+    <Root>
+      <div className="flex flex-col gap-4 p-4 max-[500px]:p-3">
+        {plan.items.map(({ name, props }, index) => {
+          const Shown = file[name] as ((props: Record<string, unknown>) => ReactNode) | undefined
+          return (
+            <EmbedBox key={index} data-component-preview={name} caption={<code>{`<${name} />`}</code>} className="min-h-[120px] items-stretch">
+              <div className="min-w-0 text-[15px] leading-[1.55] text-body">
+                <Guard name={name}>{typeof Shown === "function" ? <Shown {...props} /> : <MissingExport name={name} />}</Guard>
+              </div>
+            </EmbedBox>
+          )
+        })}
+      </div>
+      <Drawn />
+    </Root>,
+  )
+}
+
+function MissingExport({ name }: { name: string }): ReactNode {
+  throw new Error(`${name} is not a component.`)
+}
+
+/**
+ * Called by the frame document's second script with this run's number.
+ * Returns the registry the compiled files' scripts register with, and waits
+ * for the card's setup.
+ */
+export function open(runNumber: number) {
+  run = runNumber
+  const registry: Registry = { modules: [], note: null }
+  let started = false
+  window.addEventListener("message", (event: MessageEvent<CardToFrame>) => {
+    if (event.source !== window.parent || typeof event.data !== "object" || event.data === null) return
+    const message = event.data
+    if (message.type === "appearance") return applyAppearance(message.appearance)
+    if (message.type !== "setup" || started) return
+    started = true
+    applyAppearance(message.appearance)
+    addFonts(message.fonts)
+    start(message.plan, registry).catch((error: unknown) => post({ type: "failed", run, message: messageOf(error) }))
+  })
+  // Every script in the document has run by now: the files are registered.
+  document.addEventListener("DOMContentLoaded", () => post({ type: "ready", run }))
+  return {
+    module(index: number, body: ModuleBody) {
+      registry.modules[index] = body
+    },
+    note(body: ModuleBody) {
+      registry.note = body
+    },
+  }
+}

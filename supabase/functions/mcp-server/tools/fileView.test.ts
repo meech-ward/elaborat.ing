@@ -4,6 +4,7 @@ import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcon
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
+import { COMPONENTS_META_KEY, importedPaths } from './componentSources.ts'
 import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
@@ -128,8 +129,9 @@ Deno.test('the card script makes no requests, runs no code from strings, and sta
   for (const pattern of [/\bfetch\(|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon|new Worker/, /\beval\(|new Function\b/, /<\/script|<!--/i]) {
     assertFalse(pattern.test(CARD_SCRIPT), `card script matches ${pattern}`)
   }
-  // What hosts load for the view: the card, its editor, its two fonts and its stylesheet.
-  assert(FILE_VIEW_HTML.length < 1_300_000, `the view is ${FILE_VIEW_HTML.length} characters`)
+  // What hosts load for the view: the card, its editor, its fonts, its stylesheet, and the
+  // component preview's frame (React and the app's components, but not the charts' library).
+  assert(FILE_VIEW_HTML.length < 1_600_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 
 Deno.test('rendered Markdown shows raw HTML as text and drops unsafe links and images', () => {
@@ -449,4 +451,139 @@ Deno.test('show_file marks a diagram drawn before its source changed, and still 
     assertEquals((result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, status)
     assert((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['flows/signup.d2'].startsWith('<svg '))
   }
+})
+
+Deno.test('a note is marked mdx when the HTML shows or drops some of its MDX, and not for embeds and callouts alone', () => {
+  assertFalse(renderNote('# Plan\n\n<Drawing src="a.excalidraw" />\n\n<Callout tone="warn">Careful.</Callout>\n').mdx)
+  assertFalse(renderNote('# Plan\n\n```mdx\n<Chart />\n```\n\nSay `<Chart />` in text.\n').mdx)
+  assert(renderNote('import { Chart } from "workspace:components/chart.mdx"\n\n# Plan\n').mdx)
+  assert(renderNote('# Plan\n\n<Chart data={[1, 2]} />\n').mdx)
+  assert(renderNote('Text with <Badge>new</Badge> inline.\n').mdx)
+  assert(renderNote('Two and two make {2 + 2}.\n').mdx)
+  assert(renderNote('<Callout>\n  <Chart />\n</Callout>\n').mdx)
+})
+
+Deno.test('the component files a source imports are found after from, as the app accepts them', () => {
+  const source = [
+    "import { Chart } from 'workspace:components/chart.mdx'",
+    'import { A, B } from "workspace:components/ab.mdx"',
+    'import {',
+    '  C,',
+    '} from "workspace:shared/c.MDX"',
+    'import { useState } from "react"',
+    'import { D } from "workspace:../outside.mdx"',
+    'import { E } from "workspace:components/e.tsx"',
+    "import { Chart as Again } from 'workspace:components/chart.mdx'",
+  ].join('\n')
+  assertEquals(importedPaths(source), ['components/chart.mdx', 'components/ab.mdx', 'shared/c.MDX'])
+})
+
+const COMPONENT_NOTE = [
+  '---',
+  'title: Plan',
+  '---',
+  "import { Chart } from 'workspace:components/chart.mdx'",
+  '',
+  '# Plan',
+  '',
+  '<Chart title="Q3" />',
+  '',
+].join('\n')
+
+Deno.test('show_file sends an MDX note with components the component files it imports, level by level, as the user', async () => {
+  const { result, queries } = await showFile('notes/plan.mdx', [
+    file('notes/plan.mdx', COMPONENT_NOTE),
+    file('components/chart.mdx', "import { Axis } from 'workspace:components/axis.mdx'\n\nexport const Chart = () => <Axis />\n"),
+    file('components/axis.mdx', 'export function Axis() { return <span>axis</span> }\n'),
+    file('components/unused.mdx', 'export const Unused = () => null\n'),
+  ])
+  assertEquals(queries.slice(1).map((query) => query.at(-1)), [
+    ['in', 'path', ['components/chart.mdx']],
+    ['in', 'path', ['components/axis.mdx']],
+  ])
+  const meta = result._meta as Record<string, unknown>
+  assertEquals(meta[COMPONENTS_META_KEY], {
+    modules: {
+      'components/chart.mdx': "import { Axis } from 'workspace:components/axis.mdx'\n\nexport const Chart = () => <Axis />\n",
+      'components/axis.mdx': 'export function Axis() { return <span>axis</span> }\n',
+    },
+  })
+  // The HTML still shows the note, for the card to show until the preview has drawn.
+  assertStringIncludes(String(meta[HTML_META_KEY]), '<h1>Plan</h1>')
+  assertEquals(meta[SOURCE_META_KEY], COMPONENT_NOTE)
+  assertFalse(JSON.stringify(result.structuredContent).includes('export'))
+})
+
+Deno.test('show_file sends no component files for a Markdown note, a note without components, or one cut short', async () => {
+  const markdown = await showFile('notes/plan.md', [file('notes/plan.md', COMPONENT_NOTE), file('components/chart.mdx', 'export const Chart = () => null\n')])
+  assertEquals(markdown.queries.length, 1)
+  assertFalse(COMPONENTS_META_KEY in (markdown.result._meta ?? {}))
+  const plain = await showFile('notes/plain.mdx', [file('notes/plain.mdx', '# Plain\n\n<Callout>Hi</Callout>\n')])
+  assertFalse(COMPONENTS_META_KEY in (plain.result._meta ?? {}))
+  const long = await showFile('notes/long.mdx', [file('notes/long.mdx', COMPONENT_NOTE + 'words '.repeat(10_000))])
+  assertEquals(long.queries.length, 1)
+  assertFalse(COMPONENTS_META_KEY in (long.result._meta ?? {}))
+})
+
+function previewComponent(args: Record<string, unknown>, files: Row[]) {
+  return withClient(files, async (client, queries) => ({
+    result: (await client.callTool({ name: 'preview_component', arguments: { project_id: PROJECT, ...args } })) as CallToolResult,
+    queries,
+  }))
+}
+
+const CHART = "import { Axis } from 'workspace:components/axis.mdx'\n\nexport const Chart = ({ title }) => <h2>{title}<Axis /></h2>\n"
+
+Deno.test('preview_component shows a saved component file with the files it imports, in the file view', async () => {
+  await withClient([], async (client) => {
+    const { tools } = await client.listTools()
+    const tool = tools.find((entry) => entry.name === 'preview_component')
+    assertEquals(tool?._meta, { ui: { resourceUri: FILE_VIEW_URI } })
+    assertEquals(tool?.annotations?.readOnlyHint, true)
+  })
+  const { result, queries } = await previewComponent({ path: 'components/chart.mdx', component: 'Chart', props: { title: 'Q3' } }, [
+    { ...file('components/chart.mdx', CHART), version: 3 },
+    file('components/axis.mdx', 'export const Axis = () => <hr />\n'),
+  ])
+  assertFalse(result.isError)
+  assertEquals((result.content as { text: string }[])[0].text, 'Showing a preview of Chart from components/chart.mdx (version 3) to the user.')
+  assertEquals(result.structuredContent, {
+    project_id: PROJECT,
+    path: 'components/chart.mdx',
+    kind: 'component',
+    version: 3,
+    updated_at: UPDATED,
+    url: `https://elaborat.ing/projects/${PROJECT}/components/chart.mdx`,
+    truncated: false,
+    embeds: [],
+    draft: false,
+    component: 'Chart',
+    props: { title: 'Q3' },
+  })
+  assertEquals((result._meta as Record<string, unknown>)[COMPONENTS_META_KEY], {
+    modules: { 'components/chart.mdx': CHART, 'components/axis.mdx': 'export const Axis = () => <hr />\n' },
+  })
+  // The file, then its import, both as the user.
+  assertEquals(queries.map((query) => query.find((step) => step[0] === 'eq' && step[1] === 'project_id')), [
+    ['eq', 'project_id', PROJECT],
+    ['eq', 'project_id', PROJECT],
+  ])
+})
+
+Deno.test('preview_component shows a draft that is not saved, and refuses other files', async () => {
+  const draft = await previewComponent({ path: 'components/new.mdx', source: CHART }, [file('components/axis.mdx', 'export const Axis = () => <hr />\n')])
+  const view = draft.result.structuredContent as Record<string, unknown>
+  assertEquals([view.draft, view.version, view.url, view.component, view.props], [true, null, `https://elaborat.ing/projects/${PROJECT}`, null, null])
+  assertEquals((draft.result._meta as Record<string, { modules: Record<string, string> }>)[COMPONENTS_META_KEY].modules['components/new.mdx'], CHART)
+  assertStringIncludes((draft.result.content as { text: string }[])[0].text, 'the components in components/new.mdx (a draft, not saved)')
+  // A draft of a saved file is shown instead of the saved one.
+  const over = await previewComponent({ path: 'components/chart.mdx', source: 'export const Chart = () => null\n' }, [file('components/chart.mdx', CHART)])
+  assertEquals((over.result._meta as Record<string, { modules: Record<string, string> }>)[COMPONENTS_META_KEY].modules, { 'components/chart.mdx': 'export const Chart = () => null\n' })
+
+  const missing = await previewComponent({ path: 'components/gone.mdx' }, [])
+  assert(missing.result.isError)
+  assertStringIncludes((missing.result.content as { text: string }[])[0].text, 'Pass source to preview a draft.')
+  const notes = await previewComponent({ path: 'notes/plan.md', source: '# Plan' }, [])
+  assert(notes.result.isError)
+  assertEquals(notes.queries.length, 0)
 })

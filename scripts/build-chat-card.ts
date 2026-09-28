@@ -1,7 +1,9 @@
 // Builds the chat card (src/chat-card/main.tsx: the MCP Apps view of
 // show_file, a small React app with the rendered note editor) into one script
 // and one stylesheet, and writes them where the MCP server inlines them into
-// the view. The Edge Functions deploy from the repository without building
+// the view. The component preview's frame (src/chat-card/preview/runtime.tsx)
+// is built first, into a script and stylesheet the card carries as text and
+// puts in each preview's frame document. The Edge Functions deploy from the repository without building
 // the app, so the built card is committed. Run it after changing the card or
 // the app modules it uses:
 //
@@ -18,6 +20,7 @@ import { beforeDarkFilter } from "../src/features/drawings/presentation"
 
 const REPO = path.resolve(import.meta.dirname, "..")
 const ENTRY = path.join(REPO, "src/chat-card/main.tsx")
+const PREVIEW_ENTRY = path.join(REPO, "src/chat-card/preview/runtime.tsx")
 const OUT = path.join(REPO, "supabase/functions/mcp-server/tools/cardEditorScript.ts")
 
 // Excalifont's Latin subset (U+20-7E and the Latin-1 letters), the font the
@@ -31,26 +34,30 @@ type Output = {
   output: Array<{ type: "chunk"; code: string } | { type: "asset"; fileName: string; source: string | Uint8Array }>
 }
 
-const result = (await build({
-  configFile: false,
-  root: REPO,
-  mode: "production",
-  logLevel: "warn",
-  define: { "process.env.NODE_ENV": JSON.stringify("production"), EXCALIFONT_LATIN: JSON.stringify(excalifont) },
-  resolve: { alias: { "@": path.join(REPO, "src") } },
-  plugins: [react(), tailwindcss()],
-  build: {
-    write: false,
-    minify: true,
-    cssMinify: true,
-    lib: { entry: ENTRY, formats: ["iife"], name: "elaboratingChatCard", fileName: () => "chat-card.js", cssFileName: "chat-card" },
-  },
-})) as Output | Output[]
-const output = (Array.isArray(result) ? result : [result]).flatMap((entry) => entry.output)
-const chunk = output.find((item) => item.type === "chunk")
-const sheet = output.find((item) => item.type === "asset" && item.fileName.endsWith(".css"))
-if (!chunk || chunk.type !== "chunk") throw new Error("The chat card build produced no script.")
-if (!sheet || sheet.type !== "asset") throw new Error("The chat card build produced no stylesheet.")
+/** One entry built as an IIFE with the app's aliases, React and Tailwind: its script and stylesheet. */
+async function bundle(entry: string, name: string, define: Record<string, string>) {
+  const result = (await build({
+    configFile: false,
+    root: REPO,
+    mode: "production",
+    logLevel: "warn",
+    define: { "process.env.NODE_ENV": JSON.stringify("production"), ...define },
+    resolve: { alias: { "@": path.join(REPO, "src") } },
+    plugins: [react(), tailwindcss()],
+    build: {
+      write: false,
+      minify: true,
+      cssMinify: true,
+      lib: { entry, formats: ["iife"], name, fileName: () => `${name}.js`, cssFileName: name },
+    },
+  })) as Output | Output[]
+  const output = (Array.isArray(result) ? result : [result]).flatMap((entry) => entry.output)
+  const chunk = output.find((item) => item.type === "chunk")
+  const sheet = output.find((item) => item.type === "asset" && item.fileName.endsWith(".css"))
+  if (!chunk || chunk.type !== "chunk") throw new Error(`The ${name} build produced no script.`)
+  if (!sheet || sheet.type !== "asset") throw new Error(`The ${name} build produced no stylesheet.`)
+  return { code: chunk.code, css: (typeof sheet.source === "string" ? sheet.source : new TextDecoder().decode(sheet.source)).trim() }
+}
 
 // The default palette in light and dark: dark when the host says so, and
 // before it does, whatever the device uses. A diagram's fills go in as the
@@ -68,11 +75,23 @@ const scheme = (value: ColorScheme) => {
 const palette =
   `:root{${scheme("light")}}:root[data-scheme="dark"]{${scheme("dark")}}` +
   `@media (prefers-color-scheme:dark){:root:not([data-scheme]){${scheme("dark")}}}`
-const css = palette + (typeof sheet.source === "string" ? sheet.source : new TextDecoder().decode(sheet.source)).trim()
-if (/<\/style/i.test(css)) throw new Error("The chat card stylesheet cannot be inlined.")
+
+// The preview's frame first: the card carries its script and stylesheet as
+// text. Its code runs only in the frame, and makes no requests and evaluates
+// no strings, like the card's.
+const frame = await bundle(PREVIEW_ENTRY, "elaboratingPreview", {})
+const frameCss = palette + frame.css
+if (/\beval\(|new Function\b|\bfetch\(|XMLHttpRequest/.test(frame.code)) throw new Error("The preview frame's script evaluates strings or makes requests.")
+const card = await bundle(ENTRY, "elaboratingChatCard", {
+  EXCALIFONT_LATIN: JSON.stringify(excalifont),
+  PREVIEW_RUNTIME: JSON.stringify(frame.code),
+  PREVIEW_STYLE: JSON.stringify(frameCss),
+})
+const css = palette + card.css
+if (/<\/style/i.test(css) || /<\/style/i.test(frameCss)) throw new Error("The chat card stylesheet cannot be inlined.")
 
 // The script goes inside a <script> element, where these would end it early.
-const code = chunk.code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--")
+const code = card.code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--")
 if (/<\/script|<!--/i.test(code)) throw new Error("The chat card script cannot be inlined.")
 
 writeFileSync(
@@ -82,4 +101,6 @@ writeFileSync(
     `export const CARD_STYLE = ${JSON.stringify(css)}\n` +
     `export const CARD_SCRIPT = ${JSON.stringify(code)}\n`,
 )
-console.log(`Wrote ${path.relative(REPO, OUT)}: ${code.length} characters of script, ${css.length} of style`)
+console.log(
+  `Wrote ${path.relative(REPO, OUT)}: ${code.length} characters of script (${frame.code.length + frameCss.length} of them the preview frame's), ${css.length} of style`,
+)

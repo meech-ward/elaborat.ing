@@ -6,22 +6,44 @@
 // bundle the whole style guide.
 import "./card.css"
 import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert } from "lucide-react"
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps, type ReactNode } from "react"
+import { useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { DottedPage } from "@/components/panel"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Banner, Callout } from "@/features/design-system/ui/Banner"
-import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
-import { KindBadge, type FileKind as BadgeKind } from "@/features/design-system/ui/KindBadge"
+import { Banner, BannerAction, Callout } from "@/features/design-system/ui/Banner"
+import { KindBadge } from "@/features/design-system/ui/KindBadge"
 import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import { StatusDot } from "@/features/design-system/ui/StatusDot"
-import { pictureSize } from "@/features/rendered/resourceViewer.ts"
 import { cn } from "@/lib/utils"
+import { badgeKind, CARD_NOTE_CLASS, EmbedArt, EmbedFigure } from "./cardNote"
 import type { CardState } from "./cardState"
-import { EMBED_NOTES, FILE_NOTES, KIND_NAMES, svgFor, type CardEmbed, type CardFile, type FileKind } from "./toolResult"
+import { EMBED_NOTES, FILE_NOTES, svgFor, type CardEmbed, type CardFile } from "./toolResult"
 
-const badgeKind = (kind: FileKind): BadgeKind => (kind === "file" ? "text" : kind)
+export { CARD_NOTE_CLASS, EmbedFigure } from "./cardNote"
+
+/**
+ * The preview of a note's components, or of a component file, in its own
+ * sandboxed frame (preview/ComponentPreview.tsx). The frame stays mounted
+ * while it loads, so the card can show it once it has drawn.
+ */
+export type CardPreview = {
+  frame: ReactNode
+  status: "loading" | "shown" | "failed"
+  /** Why the preview failed. */
+  message: string | null
+  /**
+   * A link clicked in the preview, which opens only when the person says so
+   * here: the preview's code could ask for any link at any time.
+   */
+  link?: { url: string; onOpen: () => void; onDismiss: () => void } | null
+}
+
+export const PREVIEW_TEXT = {
+  noteFailed: (message: string | null) => `The components in this note could not be shown here${message ? `: ${message}` : "."}`,
+  componentFailed: (message: string | null) => `This component could not be shown${message ? `: ${message}` : "."}`,
+  openLink: (url: string) => `Open ${url}?`,
+}
 
 export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   state: CardState
@@ -29,6 +51,8 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   canEdit: boolean
   /** The note editor, shown while editing and in a conflict. */
   editor?: ReactNode
+  /** The components' preview: a note's in place of its HTML once drawn, or a component file's. */
+  preview?: CardPreview | null
   onEdit?: () => void
   onSave?: () => void
   onCancel?: () => void
@@ -41,7 +65,7 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  * dotted canvas); problems in banners; and Edit, Save, Load latest and
  * Cancel with the save status under it.
  */
-export function CardView({ state, canEdit, editor, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
+export function CardView({ state, canEdit, editor, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
   return (
     <section
@@ -51,7 +75,7 @@ export function CardView({ state, canEdit, editor, onEdit, onSave, onCancel, onR
       {...props}
     >
       <CardHeader state={state} />
-      <CardBody state={state} editor={editor} />
+      <CardBody state={state} editor={editor} preview={preview} />
       {shown?.banner && (
         <div className="px-4 pb-3 max-[500px]:px-3">
           <Banner tone={shown.banner.tone}>{shown.banner.text}</Banner>
@@ -76,7 +100,8 @@ function CardHeader({ state }: { state: CardState }) {
           {path && <p className="truncate font-mono text-xs leading-[18px] text-dim">{path}</p>}
         </div>
       </div>
-      {file && file.version !== null && <span className="font-mono text-xs text-dim">v{file.version}</span>}
+      {file && file.version !== null && !file.preview?.draft && <span className="font-mono text-xs text-dim">v{file.version}</span>}
+      {file?.preview?.draft && <span className="font-mono text-xs text-dim">draft</span>}
       {file?.url && (
         <a href={file.url} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm" })}>
           Open in elaborat.ing
@@ -87,16 +112,50 @@ function CardHeader({ state }: { state: CardState }) {
   )
 }
 
-function CardBody({ state, editor }: { state: CardState; editor?: ReactNode }) {
-  if (state.phase === "loading") {
-    return (
-      <div aria-hidden="true" className="flex flex-col gap-2.5 px-6 py-5 max-[500px]:px-4">
-        <Skeleton className="h-2.5 rounded-pill" />
-        <Skeleton className="h-2.5 w-4/5 rounded-pill" />
-        <Skeleton className="h-2.5 w-[55%] rounded-pill" />
+/** Three lines of text on their way. */
+function LoadingLines() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-2.5 px-6 py-5 max-[500px]:px-4">
+      <Skeleton className="h-2.5 rounded-pill" />
+      <Skeleton className="h-2.5 w-4/5 rounded-pill" />
+      <Skeleton className="h-2.5 w-[55%] rounded-pill" />
+    </div>
+  )
+}
+
+/**
+ * Where the preview's frame lives: in the card's flow once it has drawn,
+ * and until then kept out of sight (laid out at the card's width, so it can
+ * measure itself) and out of the keyboard's way.
+ */
+function PreviewSlot({ preview }: { preview: CardPreview }) {
+  const shown = preview.status === "shown"
+  const link = shown ? preview.link : null
+  return (
+    <>
+      <div data-preview={preview.status} aria-hidden={!shown || undefined} className={cn(!shown && "invisible h-0 overflow-hidden")}>
+        {preview.frame}
       </div>
-    )
-  }
+      {link && (
+        <div className="px-4 pb-3 max-[500px]:px-3">
+          <Banner
+            tone="info"
+            action={
+              <>
+                <BannerAction onClick={link.onOpen}>Open</BannerAction> <BannerAction onClick={link.onDismiss}>Not now</BannerAction>
+              </>
+            }
+          >
+            <span className="break-all">{PREVIEW_TEXT.openLink(link.url)}</span>
+          </Banner>
+        </div>
+      )}
+    </>
+  )
+}
+
+function CardBody({ state, editor, preview }: { state: CardState; editor?: ReactNode; preview: CardPreview | null }) {
+  if (state.phase === "loading") return <LoadingLines />
   if (state.phase === "problem") {
     return (
       <div className="p-4 max-[500px]:p-3">
@@ -114,10 +173,31 @@ function CardBody({ state, editor }: { state: CardState; editor?: ReactNode }) {
         </div>
       )
     }
+    // A note with components shows the server's HTML until their preview has drawn, and again if it fails.
     return (
       <>
-        <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />
+        {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />}
+        {preview && preview.status !== "failed" && <PreviewSlot preview={preview} />}
+        {preview?.status === "failed" && (
+          <div className="px-4 pb-3 max-[500px]:px-3">
+            <Banner tone="warn">{PREVIEW_TEXT.noteFailed(preview.message)}</Banner>
+          </div>
+        )}
         {file.truncated && <p className="px-6 pb-4 text-[13px] leading-snug text-muted-foreground max-[500px]:px-4">Open in elaborat.ing to read the rest.</p>}
+      </>
+    )
+  }
+  if (file.kind === "component") {
+    return (
+      <>
+        {preview?.status !== "shown" && preview?.status !== "failed" && <LoadingLines />}
+        {preview && preview.status !== "failed" && <PreviewSlot preview={preview} />}
+        {preview?.status === "failed" && (
+          <div className="p-4 max-[500px]:p-3">
+            <Banner tone="danger">{PREVIEW_TEXT.componentFailed(preview.message)}</Banner>
+          </div>
+        )}
+        {!preview && <p className="px-4 py-4 text-[13px] leading-snug text-muted-foreground">{FILE_NOTES.component}</p>}
       </>
     )
   }
@@ -125,12 +205,6 @@ function CardBody({ state, editor }: { state: CardState; editor?: ReactNode }) {
   if (drawn) return <DrawingBody embed={drawn} svgs={file.svgs} />
   return <p className="px-4 py-4 text-[13px] leading-snug text-muted-foreground">{file.kind === "note" ? FILE_NOTES.file : FILE_NOTES[file.kind]}</p>
 }
-
-/** The note's type, as the app's rendered note: NoteProse, at the phone's sizes on a phone. */
-export const CARD_NOTE_CLASS = cn(
-  "card-note px-6 py-5 max-[500px]:px-4 max-[500px]:py-4",
-  "max-[500px]:[&_h1]:text-[30px] max-[500px]:[&_li]:text-base max-[500px]:[&_li]:leading-[1.8] max-[500px]:[&_p]:text-base",
-)
 
 /** The note editor's frame: the note's type in an accent border, so editing reads as editing. */
 export function EditorFrame({ children }: { children: ReactNode }) {
@@ -202,80 +276,6 @@ function NoteCallout({ tone, html }: { tone: keyof typeof CALLOUT_TONES; html: s
     <Callout data-tone={tone} className={className} icon={<Icon aria-hidden="true" className="max-[500px]:hidden" />}>
       <div className="card-callout" dangerouslySetInnerHTML={{ __html: html }} />
     </Callout>
-  )
-}
-
-/**
- * The server's SVG of a drawing, which escapes everything it takes from the
- * file. It shows at a readable size (card.css): its own width and width to
- * height ratio set that. In a note, a picture cut off at the bottom is marked
- * so it fades out; on its own (`whole`), one wider than the card scrolls
- * sideways, fading out at the edges that have more, and takes the keyboard.
- */
-function EmbedArt({ svg, embed, whole = false }: { svg: string; embed: CardEmbed; whole?: boolean }) {
-  const size = pictureSize(svg)
-  const sizing = size ? ({ "--picture-width": `${size.width}px`, "--picture-ratio": size.width / size.height } as CSSProperties) : undefined
-  const art = useRef<HTMLDivElement>(null)
-  const [clipped, setClipped] = useState(false)
-  const [more, setMore] = useState({ left: false, right: false })
-  useLayoutEffect(() => {
-    const box = art.current
-    if (!box) return
-    const measure = () => {
-      setClipped(box.scrollHeight > box.clientHeight + 1)
-      const left = box.scrollLeft > 1
-      const right = box.scrollLeft + box.clientWidth < box.scrollWidth - 1
-      setMore((current) => (current.left === left && current.right === right ? current : { left, right }))
-    }
-    // A ResizeObserver reports each box once when it starts watching it.
-    const observer = new ResizeObserver(measure)
-    observer.observe(box)
-    if (box.firstElementChild) observer.observe(box.firstElementChild)
-    box.addEventListener("scroll", measure, { passive: true })
-    return () => {
-      observer.disconnect()
-      box.removeEventListener("scroll", measure)
-    }
-  }, [svg])
-  const scrolls = whole && (more.left || more.right)
-  return (
-    <div
-      ref={art}
-      role="img"
-      aria-label={`${KIND_NAMES[embed.kind]} ${embed.path}`}
-      tabIndex={scrolls ? 0 : undefined}
-      data-clipped={(!whole && clipped) || undefined}
-      data-more-left={(whole && more.left) || undefined}
-      data-more-right={(whole && more.right) || undefined}
-      className={cn("card-art min-w-0", whole && "card-art-whole w-full")}
-      style={sizing}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  )
-}
-
-/** A drawing or diagram a note embeds, in the library's embed box, with its kind and a link to its file. */
-export function EmbedFigure({ embed, svgs }: { embed: CardEmbed; svgs: Record<string, string> }) {
-  const svg = svgFor(embed, svgs)
-  return (
-    <EmbedBox
-      floatingCaption={Boolean(svg)}
-      caption={
-        <>
-          <KindBadge kind={badgeKind(embed.kind)} />
-          <a href={embed.url ?? undefined} className="min-w-0 truncate text-dim underline-offset-2 hover:text-foreground hover:underline">
-            {embed.path}
-          </a>
-        </>
-      }
-    >
-      {svg ? (
-        <EmbedArt svg={svg} embed={embed} />
-      ) : (
-        <div className="text-center text-[13px] leading-snug text-muted-foreground">{EMBED_NOTES[embed.status]}</div>
-      )}
-      {svg && embed.status === "stale" && <Banner tone="warn">{EMBED_NOTES.stale}</Banner>}
-    </EmbedBox>
   )
 }
 

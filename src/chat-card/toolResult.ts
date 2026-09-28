@@ -1,35 +1,28 @@
 /**
  * The tool results the chat card reads, parsed at the bridge: show_file's
- * view of one file (supabase/functions/mcp-server/tools/fileView.ts) and
+ * view of one file (supabase/functions/mcp-server/tools/fileView.ts),
+ * preview_component's view of a component file (componentPreview.ts), and
  * write_file's outcome. The host passes them on from the server, so every
  * field is checked; links count only when they go to elaborat.ing, and a
  * drawing only when it is SVG markup the server drew.
  */
 import { z } from "zod"
+import type { CardEmbed, FileKind } from "./embedText"
 
 /** The app's origin: the only place the card links to. */
 export const APP_ORIGIN = "https://elaborat.ing/"
 
-/** The result `_meta` keys (fileView.ts): the note's HTML, its source, and each drawn file's SVG by path. */
+/**
+ * The result `_meta` keys (fileView.ts): the note's HTML, its source, each
+ * drawn file's SVG by path, and the component files to preview.
+ */
 const HTML_KEY = "elaborat.ing/html"
 const SOURCE_KEY = "elaborat.ing/source"
 const SVG_KEY = "elaborat.ing/svg"
+const COMPONENTS_KEY = "elaborat.ing/components"
 
-export type FileKind = "note" | "drawing" | "diagram" | "file"
-
-/** How a drawing or diagram came out (fileView.ts EmbedStatus); anything else reads as drawn. */
-export type EmbedStatus =
-  | "drawn"
-  | "stale"
-  | "not_drawn"
-  | "missing"
-  | "unreadable"
-  | "empty"
-  | "too_big"
-  | "not_shown"
-  | "unsupported"
-
-export type CardEmbed = { kind: FileKind; path: string; url: string | null; status: EmbedStatus }
+export type { CardEmbed, EmbedStatus, FileKind } from "./embedText"
+export { EMBED_NOTES, FILE_NOTES, KIND_NAMES, svgFor } from "./embedText"
 
 /** One file as the card shows it. */
 export type CardFile = {
@@ -50,13 +43,28 @@ export type CardFile = {
   html: string | null
   /** The whole note's source, when it can be edited here. */
   source: string | null
+  /**
+   * The source of each component file (.mdx) the note or component imports,
+   * by path, when the card previews its components (preview/compile.ts);
+   * null when there is nothing to preview.
+   */
+  components: Record<string, string> | null
+  /** For a component file: which component to show (every one when null) and its sample props. */
+  preview: ComponentPreviewRequest | null
+}
+
+export type ComponentPreviewRequest = {
+  component: string | null
+  props: Record<string, unknown> | null
+  /** The source is a draft the agent sent, not the saved file. */
+  draft: boolean
 }
 
 export type ShowOutcome = { ok: true; file: CardFile } | { ok: false; message: string }
 export type WriteOutcome = { kind: "saved"; version: number | null } | { kind: "conflict" } | { kind: "failed"; message: string }
 
 const STATUSES = ["drawn", "stale", "not_drawn", "missing", "unreadable", "empty", "too_big", "not_shown", "unsupported"] as const
-const kindSchema = z.enum(["note", "drawing", "diagram", "file"]).catch("file")
+const kindSchema = z.enum(["note", "drawing", "diagram", "file", "component"]).catch("file")
 const appUrl = z.string().startsWith(APP_ORIGIN).nullable().catch(null)
 
 const embedSchema = z
@@ -72,7 +80,12 @@ const viewSchema = z.object({
   url: appUrl,
   truncated: z.boolean().catch(false),
   embeds: z.array(embedSchema).catch([]),
+  component: z.string().nullable().catch(null).optional(),
+  props: z.record(z.string(), z.unknown()).nullable().catch(null).optional(),
+  draft: z.boolean().catch(false).optional(),
 })
+
+const componentsSchema = z.object({ modules: z.record(z.string(), z.string()) }).nullable().catch(null)
 
 const metaSchema = z.record(z.string(), z.unknown()).catch({})
 
@@ -103,8 +116,11 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
     ),
   )
   const note = view.kind === "note"
+  const component = view.kind === "component"
   const html = meta[HTML_KEY]
   const source = meta[SOURCE_KEY]
+  const noteSource = note && !view.truncated && typeof source === "string" ? source : null
+  const components = componentsSchema.parse(meta[COMPONENTS_KEY] ?? null)
   return {
     ok: true,
     file: {
@@ -117,7 +133,10 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       embeds: view.embeds,
       svgs,
       html: note && typeof html === "string" ? html : null,
-      source: note && !view.truncated && typeof source === "string" ? source : null,
+      source: noteSource,
+      // A note's components are previewed from its whole source; a component file's from its own.
+      components: (noteSource !== null || component) && components ? components.modules : null,
+      preview: component ? { component: view.component ?? null, props: view.props ?? null, draft: view.draft ?? false } : null,
     },
   }
 }
@@ -140,31 +159,4 @@ export function parseWriteResult(raw: unknown, path: string): WriteOutcome {
   if (status === "conflict") return { kind: "conflict" }
   const change = changes.find((entry) => entry?.path === path)
   return { kind: "saved", version: change?.version ?? null }
-}
-
-/** The drawing to show for an embed: SVG markup when it was drawn (or drawn from older source), else null. */
-export function svgFor(embed: CardEmbed, svgs: Record<string, string>): string | null {
-  return embed.status === "drawn" || embed.status === "stale" ? (svgs[embed.path] ?? null) : null
-}
-
-export const KIND_NAMES: Record<FileKind, string> = { note: "Note", drawing: "Drawing", diagram: "Diagram", file: "File" }
-
-/** What the card says about an embed it cannot draw, or about one drawn from older source. */
-export const EMBED_NOTES: Record<EmbedStatus, string> = {
-  drawn: "Open it in elaborat.ing to see it.",
-  stale: "Its source changed after this was drawn. Open it in elaborat.ing to redraw it.",
-  not_drawn: "Open it in elaborat.ing to draw it.",
-  missing: "No file at this path.",
-  unreadable: "This drawing could not be read.",
-  empty: "This drawing is empty.",
-  too_big: "Too big to show here. Open it in elaborat.ing.",
-  not_shown: "Open the note in elaborat.ing to see it.",
-  unsupported: "Only drawings and diagrams are shown here.",
-}
-
-/** What the card says for a file it does not show. */
-export const FILE_NOTES: Record<Exclude<FileKind, "note">, string> = {
-  drawing: "Drawings open in elaborat.ing.",
-  diagram: "Diagrams open in elaborat.ing.",
-  file: "Open this file in elaborat.ing.",
 }

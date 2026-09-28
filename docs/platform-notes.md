@@ -236,6 +236,14 @@ Re-check it against OpenAI's pages linked below.
   own fonts in `hostContext.styles`: `--font-sans` and `--font-mono` among
   `variables`, and `css.fonts` with `@font-face` or `@import` rules.
   [Spec, stable 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
+- **A view can nest a `srcdoc` frame under the default policy.** The frame's
+  document inherits the view's policy, so inline scripts run in it and `eval`
+  does not, and `frame-src` (which falls back to `default-src 'none'`) does
+  not stop it, since a `srcdoc` document is not fetched. With
+  `sandbox="allow-scripts"` alone it is an opaque origin that cannot reach
+  the view. Checked in Chromium and Firefox in the repository's stand-in host
+  (`tests/browser/chat-card.spec.ts`), 2026-09-28; not yet checked in Claude
+  or ChatGPT themselves.
 - **The official SDK assumes views cannot use `eval`.** Its `App` class says
   views "typically run under a strict CSP without `unsafe-eval`", puts Zod in
   jitless mode by default for that reason, and offers `allowUnsafeEval` only

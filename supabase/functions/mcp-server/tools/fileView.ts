@@ -2,6 +2,7 @@ import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { z } from 'npm:zod@4.4.3'
 
+import { COMPONENTS_META_KEY, componentSources } from './componentSources.ts'
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
@@ -20,7 +21,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v7.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v8.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -29,6 +30,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v4.html',
   'ui://elaborating/file-view-v5.html',
   'ui://elaborating/file-view-v6.html',
+  'ui://elaborating/file-view-v7.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -49,7 +51,7 @@ export const HTML_META_KEY = 'elaborat.ing/html'
 /** The result `_meta` key holding a note's source, which the view edits. */
 export const SOURCE_META_KEY = 'elaborat.ing/source'
 
-export type FileKind = 'note' | 'drawing' | 'diagram' | 'file'
+export type FileKind = 'note' | 'drawing' | 'diagram' | 'file' | 'component'
 
 export function fileKind(path: string): FileKind {
   const lower = path.toLowerCase()
@@ -62,6 +64,11 @@ export function fileKind(path: string): FileKind {
 /** The file's page in the app, with each path segment percent-encoded. */
 export function fileUrl(projectId: string, path: string): string {
   return `${APP_ORIGIN}/projects/${projectId}/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
+/** The project's page in the app. */
+export function projectUrl(projectId: string): string {
+  return `${APP_ORIGIN}/projects/${projectId}`
 }
 
 /** A diagram's generated canvas, drawn by the app next to its `.d2` source. */
@@ -169,7 +176,9 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
       uri,
       {
         title: 'File view',
-        description: 'A view of one file with a link to open it in elaborat.ing; notes can be edited in it. Used by show_file.',
+        description:
+          'A view of one file with a link to open it in elaborat.ing; notes can be edited in it, and components are previewed. ' +
+          'Used by show_file and preview_component.',
         mimeType: MCP_APP_MIME_TYPE,
       },
       () => ({
@@ -193,6 +202,7 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
       description:
         'Show one file to the user in the chat as a card with a link to open it in elaborat.ing. ' +
         'Notes are rendered, and drawings and diagrams are drawn, also where a note embeds them. ' +
+        "An MDX note's components, built in or imported from the project's files, are previewed where the chat allows it. " +
         'Where the chat allows it, the user can edit a note in the card and save it; read the file again after that. ' +
         'Use this when the user wants to see or edit a file. To read a file yourself, use read_file.',
       inputSchema: z.object({ project_id: projectId, path }),
@@ -216,6 +226,9 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
         const rendered = note ? renderNote(note.source) : null
         const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
         const { embeds, svgs } = refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {} }
+        // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
+        const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
+        const modules = previewed ? await componentSources(supabase, project_id, content) : null
         return {
           content: [
             { type: 'text', text: `Showing ${data.path} (version ${data.version}) to the user. Open it in elaborat.ing: ${url}` },
@@ -237,6 +250,7 @@ export function registerFileView(server: McpServer, { supabase }: ToolContext): 
                   ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
                   // The whole note, for editing in the view; a note too long to show whole is not edited there.
                   ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
+                  ...(modules ? { [COMPONENTS_META_KEY]: { modules } } : {}),
                 },
               }
             : {}),

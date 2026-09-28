@@ -22,9 +22,16 @@ import { unified } from 'npm:unified@11.0.5'
 // data-tone="info|warn|error">` around its Markdown up to its closing tag,
 // blank lines included, as the app renders it
 // (src/features/rendered/components.tsx); the view draws it as a callout.
+//
+// A note whose MDX goes further (imports and exports, other components,
+// HTML, or expressions in braces) is marked `mdx`: the view previews it with
+// the app's components (fileView.ts sends it the component files it needs).
 
 /** A drawing or diagram a note embeds, by its project-relative path. */
 export type EmbedRef = { kind: 'drawing' | 'diagram'; path: string }
+
+/** What rendering found: the embeds in order, and whether any MDX showed as text or was left out. */
+type Found = { embeds: EmbedRef[]; mdx: boolean }
 
 /** The parts of an mdast node this module reads. */
 type Node = {
@@ -91,7 +98,7 @@ function dedent(text: string): string {
 }
 
 /** A whole `<Callout ...>...</Callout>` as an aside around its Markdown, or null for anything else. */
-function calloutNode(raw: string, embeds: EmbedRef[]): Node | null {
+function calloutNode(raw: string, found: Found): Node | null {
   const match = CALLOUT.exec(raw.trim())
   if (!match) return null
   const attributes = new Map(
@@ -101,7 +108,7 @@ function calloutNode(raw: string, embeds: EmbedRef[]): Node | null {
   const title = attributes.get('title')
   const body = dedent(match[2])
   const tree = unified().use(remarkParse).use(remarkGfm).parse(body) as Node
-  transform(tree, embeds, false, body)
+  transform(tree, found, false, body)
   const heading: Node[] = title
     ? [{ type: 'paragraph', data: { hProperties: { className: ['callout-title'] } }, children: [{ type: 'text', value: title }] }]
     : []
@@ -124,22 +131,22 @@ function sourceOf(node: Node, source: string): string {
  * from the one that opens it to the first that ends with its closing tag.
  * Returns the callout and how many blocks it took, or null.
  */
-function spannedCallout(children: Node[], at: number, embeds: EmbedRef[], source: string): [Node, number] | null {
+function spannedCallout(children: Node[], at: number, found: Found, source: string): [Node, number] | null {
   const opening = children[at]
   if (opening.type !== 'html' || !OPENS_CALLOUT.test(String(opening.value ?? '')) || String(opening.value).includes('</Callout>')) return null
   const end = children.findIndex((later, index) => index > at && /<\/Callout>\s*$/.test(sourceOf(later, source)))
   const from = opening.position?.start.offset
   const to = children[end]?.position?.end.offset
   if (end < 0 || from === undefined || to === undefined) return null
-  const callout = calloutNode(source.slice(from, to), embeds)
+  const callout = calloutNode(source.slice(from, to), found)
   return callout ? [callout, end - at + 1] : null
 }
 
-function transform(node: Node, embeds: EmbedRef[], root: boolean, source: string): void {
+function transform(node: Node, found: Found, root: boolean, source: string): void {
   const place = (refs: EmbedRef[]) =>
     refs.map((ref) => {
-      embeds.push(ref)
-      return embedNode(embeds.length - 1)
+      found.embeds.push(ref)
+      return embedNode(found.embeds.length - 1)
     })
   let skip = 0
   node.children = node.children?.flatMap((child, index, children): Node[] => {
@@ -147,8 +154,11 @@ function transform(node: Node, embeds: EmbedRef[], root: boolean, source: string
       skip--
       return []
     }
-    if (root && isModuleSyntax(child)) return []
-    const spanned = BLOCKS.has(node.type) ? spannedCallout(children, index, embeds, source) : null
+    if (root && isModuleSyntax(child)) {
+      found.mdx = true
+      return []
+    }
+    const spanned = BLOCKS.has(node.type) ? spannedCallout(children, index, found, source) : null
     if (spanned) {
       skip = spanned[1] - 1
       return [spanned[0]]
@@ -156,7 +166,8 @@ function transform(node: Node, embeds: EmbedRef[], root: boolean, source: string
     if (child.type === 'html') {
       const refs = embedsIn(String(child.value ?? ''))
       if (refs) return place(refs)
-      const callout = calloutNode(String(child.value ?? ''), embeds)
+      const callout = calloutNode(String(child.value ?? ''), found)
+      if (!callout) found.mdx = true
       return [callout ?? { type: 'text', value: String(child.value ?? '') }]
     }
     // A tag written over several lines, or a callout with its words on the
@@ -165,13 +176,15 @@ function transform(node: Node, embeds: EmbedRef[], root: boolean, source: string
       const parts = child.children.filter((part) => !isBlank(part))
       const refs = parts.map((part) => (part.type === 'html' ? parseEmbedTag(String(part.value ?? '')) : null))
       if (refs.every((ref) => ref !== null)) return place(refs as EmbedRef[])
-      const callout = calloutNode(sourceOf(child, source), embeds)
+      const callout = calloutNode(sourceOf(child, source), found)
       if (callout) return [callout]
     }
+    // A tag with a JavaScript prop is not HTML to the parser, and an expression is text: both MDX all the same.
+    if (child.type === 'text' && /<[A-Za-z]|\{/.test(String(child.value ?? ''))) found.mdx = true
     if (child.type === 'image' || child.type === 'imageReference') {
       return [{ type: 'text', value: typeof child.alt === 'string' ? child.alt : '' }]
     }
-    transform(child, embeds, false, source)
+    transform(child, found, false, source)
     return [child]
   })
 }
@@ -188,18 +201,22 @@ const schema: Schema = {
   },
 }
 
-/** A note's sanitized HTML and the drawings and diagrams it embeds, in order. */
-export function renderNote(source: string): { html: string; embeds: EmbedRef[] } {
-  const embeds: EmbedRef[] = []
+/**
+ * A note's sanitized HTML, the drawings and diagrams it embeds, in order,
+ * and whether it has MDX the HTML shows as text or leaves out.
+ */
+export function renderNote(source: string): { html: string; embeds: EmbedRef[]; mdx: boolean } {
+  const found: Found = { embeds: [], mdx: false }
   const processor = unified()
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .use(remarkGfm)
-    .use(() => (tree) => transform(tree as Node, embeds, true, source))
+    .use(() => (tree) => transform(tree as Node, found, true, source))
     .use(remarkRehype)
     .use(rehypeSanitize, schema)
     .use(rehypeStringify)
-  return { html: String(processor.processSync(source)), embeds }
+  const html = String(processor.processSync(source))
+  return { html, embeds: found.embeds, mdx: found.mdx }
 }
 
 /** Markdown source to sanitized HTML. */

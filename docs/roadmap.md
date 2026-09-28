@@ -161,7 +161,12 @@ Also done in this phase: the comment anchoring library (see the task below).
 - **Component isolation on a sandbox domain**, with a custom-code notice on
   shared projects.
 - **MCP Apps views:** a read-only document with its drawings, a single drawing,
-  and draft component previews inside Claude and ChatGPT.
+  and draft component previews inside Claude and ChatGPT (done: `show_file`
+  shows notes, drawings and diagrams and previews an MDX note's built-in and
+  project components, and `preview_component` shows a component file, or an
+  agent's unsaved draft, with sample props. Both run the components in a
+  sandboxed frame inside the card; charts show as a placeholder there. See
+  "Agents (MCP)" in `architecture.md`).
 - **Connected agents page** to see and revoke agent access (done: `/agents`,
   linked from the account header and menu; it lists grants once the OAuth
   server is on).

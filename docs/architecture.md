@@ -533,12 +533,14 @@ secrets.
   a comment, and the database refuses agents' deletes anyway.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
-  into the app. Built so far: the `show_file` tool (`tools/fileView.ts`) with
-  one self-contained `ui://` view. It renders a note's Markdown (raw HTML and
-  other MDX shown as text, except a `<Callout>` written as one block, which
-  becomes a callout; sanitized) and draws drawings and diagrams, shown on
+  into the app. The `show_file` tool (`tools/fileView.ts`) and the
+  `preview_component` tool (`tools/componentPreview.ts`) share one
+  self-contained `ui://` view. `show_file` renders a note's Markdown (raw HTML
+  and other MDX shown as text, except a `<Callout>` written as one block,
+  which becomes a callout; sanitized) and draws drawings and diagrams, shown on
   their own or embedded in a note with `<Drawing>` and `<Diagram>`, each with an
-  "Open in elaborat.ing" link. The server draws them as SVG from the saved
+  "Open in elaborat.ing" link; an MDX note with other components is then
+  previewed with them (below). The server draws them as SVG from the saved
   scene (a diagram from its `.excalidraw` companion) with roughjs, the library
   Excalidraw uses (`tools/drawingSvg.ts`), and sends the SVG in the result's
   `_meta`, which reaches the view but not the model. Limits: 8 different files
@@ -563,8 +565,9 @@ secrets.
   allows where it blocks font files), into `tools/cardEditorScript.ts`. That
   file is committed because the functions deploy without building the app,
   so rebuild it after changing the card or the modules it uses, and give
-  the view a new `ui://` URI. The view is about 1.25 MB and runs under the
-  spec's default policy (Zod runs jitless).
+  the view a new `ui://` URI. The view is about 1.55 MB, 0.3 MB of it the
+  component preview's frame, and runs under the spec's default policy (Zod
+  runs jitless).
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local
@@ -576,14 +579,54 @@ secrets.
   exact redirect URIs (no wildcards), and dynamic client registration enabled,
   as Supabase's BYO-MCP guide requires. Registered clients show in the
   dashboard and can be revoked.
-- **Previews are compiled before they reach the client.** An MCP Apps server
-  can declare origins but not CSP keywords, so it cannot ask for
-  `'unsafe-eval'`. The spec's default policy leaves it out, Claude's
-  documentation never mentions it, and a host may always restrict further. So
-  a view never runs code through `eval` or `new Function`: component code is
-  compiled to JavaScript before the view gets it, and the view runs it as an
-  ordinary script, inline or from an origin it declares in `resourceDomains`.
-  Details in [platform notes](platform-notes.md#mcp-apps-hosts).
+- **No code runs from strings in a view.** An MCP Apps server can declare
+  origins but not CSP keywords, so it cannot ask for `'unsafe-eval'`. The
+  spec's default policy leaves it out, Claude's documentation never mentions
+  it, and a host may always restrict further. So a view never runs code
+  through `eval` or `new Function`: component code is compiled to JavaScript
+  text first and runs as ordinary inline scripts. Details in
+  [platform notes](platform-notes.md#mcp-apps-hosts).
+- **Decision: components are previewed in the card, compiled there and run
+  in a frame nested in it.** For an MDX note shown whole whose MDX the HTML
+  shows as text (imports, other components, HTML, expressions), `show_file`
+  also sends the sources of the component files it imports (`workspace:`
+  specifiers, followed level by level as the user, within the app's limits of
+  8 levels, 32 files and 2 MiB; `tools/componentSources.ts`) in the result's
+  `_meta`. `preview_component` sends a component file's source, or a draft
+  the agent passes that is never saved, with the files it imports, and which
+  component to show with what sample props (by default each exported one,
+  with its `componentMeta` defaults). The card (`src/chat-card/preview/`)
+  compiles them with the app's own pipeline (`componentModules.ts` and MDX's
+  compiler, which the card already carries for its editor), so a preview
+  fails where the app would, with the same message. The server only reads:
+  compiling there would spend the Edge Function's 2 s of CPU and keep a
+  second copy of the module rules.
+  - **The frame:** the card builds a document with the preview runtime
+    (`runtime.tsx`: React, the app's built-in components as the app's
+    preview frame gives them, and the card's note type and embeds) and one
+    inline script per compiled file, and shows it in an iframe with
+    `sandbox="allow-scripts"` and nothing else. That is an opaque origin: it
+    cannot reach the card's page, storage or bridge, so it cannot call tools,
+    and as a `srcdoc` document it inherits the view's policy, so it makes no
+    requests and runs no code from strings. The card sends it only data (what
+    to show, the server's drawings, props, colours, fonts) and reads back
+    only its height, that it drew (with the components that threw), that it
+    failed, and a clicked link, which the card offers to open and opens
+    through the host only when the person presses Open. The note shows in
+    the note's type with its drawings, as the rest of the card; charts show
+    as a box with their description, because their library would add about
+    0.5 MB to the view.
+  - **Failures:** the compiler wraps each outermost element of a note in an
+    error boundary, so a component that throws shows its error in its place
+    and the rest of the note shows. A note whose preview cannot be made (a
+    missing file, invalid MDX, a module that throws when it loads, a frame
+    that does not load within 15 s) keeps the server's HTML, with the reason
+    in a banner; editing is unchanged, since the editor shows MDX as islands.
+    For `preview_component`, the card tells the model with
+    `ui/update-model-context` when the preview failed or a component threw,
+    so an agent drafting a component hears about it on its next turn.
+  - **Limits:** a runaway component can still freeze the card, as in the
+    app, and the view gains the size above.
 
 ## Component isolation
 
@@ -616,6 +659,9 @@ only a separate domain gets the frame its own process. That protects against
 Spectre-style and renderer attacks, and keeps a runaway component from freezing
 the app where the browser isolates cross-site frames (fully on desktop Chrome,
 partly on Android).
+
+The chat card previews components the same way, in a frame nested in the
+card (see "Agents (MCP)").
 
 What the domain does not fix: a component can still navigate its own frame
 (carrying out whatever the frame displays) and can draw a fake login prompt

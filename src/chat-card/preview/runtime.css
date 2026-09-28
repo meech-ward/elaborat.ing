@@ -1,0 +1,29 @@
+/* The component preview frame's stylesheet: Tailwind with the app's theme,
+   compiled for the app's built-in components, the library pieces the frame
+   draws (the note's type, embeds, banners) and the frame itself, as the
+   card's is (../tailwind.css). `source(none)` keeps a note's own classes out:
+   workspace components get the utilities the app's components use, as in
+   the app. The palette's colours come first, from scripts/build-chat-card.ts. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "../../features/appearance/radii.css";
+@import "../../features/appearance/tailwindTheme.css";
+@import "../../features/rendered/documentBlocks.css" layer(components);
+@import "../../features/rendered/documentCharts.css";
+@import "../base.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source "./";
+@source "../cardNote.tsx";
+@source "../../components/ui/alert.tsx";
+@source "../../components/ui/button.tsx";
+@source "../../features/design-system/ui/Banner.tsx";
+@source "../../features/design-system/ui/EmbedBox.tsx";
+@source "../../features/design-system/ui/KindBadge.tsx";
+@source "../../features/design-system/ui/NoteProse.tsx";
+@source "../../features/rendered/components.tsx";
+@source "../../features/rendered/documentBlocks.tsx";
+@source "../../features/rendered/documentCharts.tsx";

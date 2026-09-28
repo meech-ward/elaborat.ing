@@ -85,9 +85,11 @@ async function openHost(page: Page, host: Host) {
       const calls: unknown[] = []
       const contexts: unknown[] = []
       const sizes: unknown[] = []
+      const links: unknown[] = []
       state.calls = calls
       state.contexts = contexts
       state.sizes = sizes
+      state.links = links
       state.answers = {}
       const frame = document.querySelector("iframe")!
       const reply = (id: unknown, result: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", id, result }, "*")
@@ -113,6 +115,9 @@ async function openHost(page: Page, host: Host) {
           sizes.push(message.params)
         } else if (message.method === "ui/update-model-context") {
           contexts.push(message.params)
+          reply(message.id, {})
+        } else if (message.method === "ui/open-link") {
+          links.push(message.params)
           reply(message.id, {})
         } else if (message.id !== undefined) {
           reply(message.id, {})
@@ -261,4 +266,198 @@ test("a diagram shows on the dotted canvas in dark mode, with a banner when its 
   // Nothing runs past the phone's width.
   expect(await page.frames()[1].evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   expect(await violations(page)).toEqual([])
+})
+
+// Component previews: a note's built-in and workspace components, and a
+// component file an agent is drafting, drawn in a frame nested in the card
+// (sandbox="allow-scripts", so it cannot reach the card or the host's bridge)
+// under the same default policy, which runs no code from strings.
+
+const METRIC = [
+  "export const componentMeta = { Metric: { props: { label: { type: 'string', default: 'Agents this week' }, value: { type: 'number', default: 128 } } } }",
+  "",
+  "export const Metric = ({ label, value }) => <div data-metric><span>{label}</span> <strong>{value}</strong></div>",
+  "",
+  "export function Broken() { throw new Error('Broken on purpose') }",
+].join("\n")
+
+// A component that tries to reach past its frame: the card's page, code from a string, a tool
+// call through the card and the host, and a link it opens with no click.
+const SNEAKY = [
+  "export function Sneaky() {",
+  "  let reach = 'blocked'",
+  "  try { reach = window.parent.document.title || 'reached' } catch {}",
+  "  let strings = 'blocked'",
+  "  try { strings = new Function('return \\'ran\\'')() } catch {}",
+  "  const call = { jsonrpc: '2.0', id: 99, method: 'tools/call', params: { name: 'write_file', arguments: { path: 'x' } } }",
+  "  window.parent.postMessage(call, '*')",
+  "  window.top.postMessage(call, '*')",
+  "  const run = Number(/open\\((\\d+)\\)/.exec(document.scripts[1].textContent)[1])",
+  "  window.parent.postMessage({ type: 'link', run, href: 'https://example.com/unasked' }, '*')",
+  "  return <p>Parent page: {reach}. Code from strings: {strings}.</p>",
+  "}",
+].join("\n")
+
+const COMPONENT_NOTE = [
+  "---",
+  "title: Launch plan",
+  "---",
+  "import { Metric, Broken } from 'workspace:components/metric.mdx'",
+  "import { Sneaky } from 'workspace:components/sneaky.mdx'",
+  "",
+  "# Launch plan",
+  "",
+  "A new <Badge>beta</Badge> and [the docs](https://example.com/docs).",
+  "",
+  '<Callout tone="warn" title="Heads up">Built in, from the app.</Callout>',
+  "",
+  '<Metric label="Agents" value={128} />',
+  "",
+  "<Broken />",
+  "",
+  "<Sneaky />",
+  "",
+  "After the broken one.",
+  "",
+].join("\n")
+
+/** show_file's result for a note with components, with the component files it imports. */
+function withComponents(source: string, modules: Record<string, string>) {
+  const result = shown(4, source)
+  return { ...result, _meta: { ...result._meta, "elaborat.ing/components": { modules } } }
+}
+
+const preview = (page: Page, title: string) => page.frameLocator("iframe").frameLocator(`iframe[title="Preview of ${title}"]`)
+const cardFrame = (page: Page) => page.frames()[1]
+const previewFrame = (page: Page) => page.frames().find((frame) => frame.parentFrame() === cardFrame(page))!
+const contexts = (page: Page) => page.evaluate(() => (window as unknown as { contexts: { content: { text: string }[] }[] }).contexts.map((context) => context.content[0].text))
+
+for (const theme of ["light", "dark"] as const) {
+  test(`a note's built-in and workspace components show in a sandboxed frame, and one that throws shows its error (${theme})`, async ({ page }) => {
+    const card = await openHost(page, {
+      tools: true,
+      theme,
+      result: withComponents(COMPONENT_NOTE, { "components/metric.mdx": METRIC, "components/sneaky.mdx": SNEAKY }),
+    })
+    const note = preview(page, PATH)
+    await expect(note.getByRole("heading", { name: "Launch plan" })).toBeVisible()
+    // Built in: the app's Badge and Callout. From the project: Metric, with the note's props.
+    await expect(note.locator('[data-component="Badge"]', { hasText: "beta" })).toBeVisible()
+    await expect(note.locator('aside[data-component="Callout"]')).toContainText("Built in, from the app.")
+    await expect(note.locator("[data-metric]")).toHaveText("Agents 128")
+    // The one that throws shows its error in its place, and the rest of the note carries on.
+    await expect(note.getByRole("alert")).toHaveText("Broken could not be shown: Broken on purpose")
+    await expect(note.getByText("After the broken one.")).toBeVisible()
+    // The preview replaced the server's HTML, and the card is whole around it.
+    await expect(card.getByText("Version 4 as rendered by the server.")).toBeHidden()
+    await expect(card.getByText("v4", { exact: true })).toBeVisible()
+    await expect(card.getByRole("button", { name: "Edit" })).toBeVisible()
+
+    // The frame is an opaque origin with nothing but scripts, under the same policy: no code from
+    // strings. The component could not reach the card's page, call a tool, or open a link on its own.
+    await expect(card.locator(`iframe[title="Preview of ${PATH}"]`)).toHaveAttribute("sandbox", "allow-scripts")
+    await expect(note.getByText("Parent page: blocked. Code from strings: blocked.")).toBeVisible()
+    expect(await calls(page)).toEqual([])
+    // A link the preview asks for opens only when the person says so in the card.
+    const links = () => page.evaluate(() => (window as unknown as { links: unknown[] }).links)
+    await expect(card.getByRole("status").filter({ hasText: "Open https://example.com/unasked?" })).toBeVisible()
+    expect(await links()).toEqual([])
+    await card.getByRole("button", { name: "Not now" }).click()
+    await expect(card.getByText("Open https://example.com/unasked?")).toBeHidden()
+    await note.getByRole("link", { name: "the docs" }).click()
+    await card.getByRole("button", { name: "Open", exact: true }).click()
+    await expect.poll(links).toEqual([{ url: "https://example.com/docs" }])
+
+    // In the host's scheme: the frame's words take the card's colour, and the app's fonts load there too.
+    const cardText = await card.locator("header p").first().evaluate((element) => getComputedStyle(element).color)
+    await expect(note.getByRole("heading", { name: "Launch plan" })).toHaveCSS("color", cardText)
+    expect(await previewFrame(page).evaluate(() => document.documentElement.dataset.scheme)).toBe(theme)
+    const fonts = () => previewFrame(page).evaluate(() => [...document.fonts].map((font) => [font.family.replaceAll('"', ""), font.status]))
+    await expect.poll(fonts).toContainEqual(["Space Grotesk Variable", "loaded"])
+    expect(await violations(page)).toEqual([])
+    // Nothing but a draft's preview tells the model about errors.
+    expect(await contexts(page)).toEqual([])
+  })
+
+  test(`a draft component file shows each component with its sample props, and the model hears about the one that throws (${theme})`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 })
+    const card = await openHost(page, {
+      tools: true,
+      theme,
+      result: {
+        content: [{ type: "text", text: "Showing a preview of the components in components/metric.mdx (a draft, not saved) to the user." }],
+        structuredContent: {
+          project_id: PROJECT,
+          path: "components/metric.mdx",
+          kind: "component",
+          version: null,
+          updated_at: null,
+          url: `https://elaborat.ing/projects/${PROJECT}`,
+          truncated: false,
+          embeds: [],
+          draft: true,
+          component: null,
+          props: null,
+        },
+        _meta: { "elaborat.ing/components": { modules: { "components/metric.mdx": METRIC } } },
+      },
+    })
+    await expect(card.getByText("metric.mdx", { exact: true })).toBeVisible()
+    await expect(card.getByText("draft", { exact: true })).toBeVisible()
+    const shownPreview = preview(page, "components/metric.mdx")
+    // The componentMeta defaults, as the app's block picker inserts them.
+    await expect(shownPreview.locator("[data-metric]")).toHaveText("Agents this week 128")
+    await expect(shownPreview.getByText("<Metric />")).toBeVisible()
+    await expect(shownPreview.getByText("<Broken />")).toBeVisible()
+    await expect(shownPreview.getByRole("alert")).toHaveText("Broken could not be shown: Broken on purpose")
+    await expect(card.getByRole("button", { name: "Edit" })).toBeHidden()
+    await expect.poll(() => contexts(page)).toEqual([
+      "The preview of components/metric.mdx in the elaborat.ing card showed errors from its components. Broken: Broken on purpose",
+    ])
+    expect(await previewFrame(page).evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expect(await cardFrame(page).evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expect(await violations(page)).toEqual([])
+  })
+}
+
+test("a preview that cannot be made leaves the note as the server rendered it, with the reason", async ({ page }) => {
+  const card = await openHost(page, {
+    tools: true,
+    theme: "light",
+    result: withComponents("import { Gone } from 'workspace:components/gone.mdx'\n\n# Launch plan\n\n<Gone />\n", {}),
+  })
+  await expect(card.getByRole("status").filter({ hasText: "The components in this note could not be shown here: No component file at components/gone.mdx." })).toBeVisible()
+  await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
+  await expect(card.locator("iframe")).toHaveCount(0)
+  // Editing still works from there.
+  await card.getByRole("button", { name: "Edit" }).click()
+  await expect(card.locator(".ProseMirror")).toBeVisible()
+})
+
+test("a component file whose code does not compile is a problem in the card, and the model hears why", async ({ page }) => {
+  const card = await openHost(page, {
+    tools: false,
+    theme: "dark",
+    result: {
+      content: [{ type: "text", text: "Showing a preview of Metric from components/metric.mdx (version 2) to the user." }],
+      structuredContent: {
+        project_id: PROJECT,
+        path: "components/metric.mdx",
+        kind: "component",
+        version: 2,
+        updated_at: null,
+        url: `https://elaborat.ing/projects/${PROJECT}/components/metric.mdx`,
+        truncated: false,
+        embeds: [],
+        draft: false,
+        component: "Metric",
+        props: { label: "Q3" },
+      },
+      _meta: { "elaborat.ing/components": { modules: { "components/metric.mdx": "export const Metric = ( => <div />\n" } } },
+    },
+  })
+  await expect(card.getByRole("alert").filter({ hasText: "This component could not be shown:" })).toBeVisible()
+  await expect(card.getByText("v2", { exact: true })).toBeVisible()
+  await expect.poll(() => contexts(page)).toHaveLength(1)
+  expect((await contexts(page))[0]).toMatch(/^The preview of components\/metric\.mdx in the elaborat\.ing card failed: /)
 })
