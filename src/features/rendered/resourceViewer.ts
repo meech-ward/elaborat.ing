@@ -76,3 +76,23 @@ export function scaleViewAt(
     y: to.y - (from.y - view.y) * ratio,
   };
 }
+
+/**
+ * A drawing's or diagram's own size in CSS pixels (as its canvas shows it at
+ * 100%), from its SVG's root width and height, or its viewBox. Null when the
+ * SVG gives neither.
+ */
+export function pictureSize(svg: string): { width: number; height: number } | null {
+  const root = /<svg\b[^>]*>/i.exec(svg)?.[0];
+  if (!root) return null;
+  const attribute = (name: string) => new RegExp(`\\s${name}\\s*=\\s*["']([^"']*)["']`, "i").exec(root)?.[1];
+  const size = (value: string | undefined) => (value && /^\s*[\d.]+(px)?\s*$/.test(value) ? Number.parseFloat(value) : Number.NaN);
+  let width = size(attribute("width"));
+  let height = size(attribute("height"));
+  if (!(width > 0 && height > 0)) {
+    const box = attribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
+    if (box?.length !== 4) return null;
+    [width, height] = [box[2], box[3]];
+  }
+  return width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null;
+}

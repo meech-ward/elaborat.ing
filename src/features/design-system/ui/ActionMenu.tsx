@@ -12,7 +12,11 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -21,6 +25,18 @@ import { cn } from "@/lib/utils"
 import { menuRows, type MenuEntry } from "./menuRows"
 
 export type { MenuEntry } from "./menuRows"
+
+/**
+ * One choice among a few, at the top of an ActionMenu: its label, then its
+ * options as radio items (the chosen one checked), then the entries. A phone
+ * file's "..." menu picks the file's view this way.
+ */
+export interface MenuChoice {
+  label: string
+  value: string
+  options: readonly { value: string; label: string; keyShortcuts?: string }[]
+  onValueChange: (value: string) => void
+}
 
 /** What a component that opens an ActionMenu passes on to it: when it has closed, and where focus goes. */
 export type ActionMenuProps = Pick<ComponentProps<typeof ActionMenu>, "onOpenChangeComplete" | "contentProps">
@@ -36,17 +52,21 @@ type DropdownContentProps = Omit<ComponentProps<typeof DropdownMenuContent>, "ch
 
 /**
  * A menu that opens from its trigger (a Button, usually), with the entries as
- * items. An entry that moves focus elsewhere (a dialog, a name field) can run
- * from `onOpenChangeComplete` once the menu has closed, with `finalFocus`
- * (in `contentProps`) keeping the menu from taking focus back.
+ * items, after `choice` when there is one. An entry that moves focus
+ * elsewhere (a dialog, a name field) can run from `onOpenChangeComplete`
+ * once the menu has closed, with `finalFocus` (in `contentProps`) keeping
+ * the menu from taking focus back.
  */
 export function ActionMenu({
   entries,
+  choice,
   trigger,
   contentProps,
   ...root
 }: DropdownRootProps & {
   entries: readonly MenuEntry[]
+  /** A choice shown first, as radio items under its label; choosing closes the menu. */
+  choice?: MenuChoice
   /** The element that opens the menu; Base UI renders it as the trigger. */
   trigger: ReactElement
   /** Placement and extra props for the popup (align, side, className, aria-label, finalFocus ...). */
@@ -56,6 +76,19 @@ export function ActionMenu({
     <DropdownMenu {...root}>
       <DropdownMenuTrigger render={trigger} />
       <DropdownMenuContent {...contentProps}>
+        {choice && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>{choice.label}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={choice.value} onValueChange={(value: string) => choice.onValueChange(value)}>
+              {choice.options.map((option) => (
+                <DropdownMenuRadioItem key={option.value} value={option.value} closeOnClick aria-keyshortcuts={option.keyShortcuts}>
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+        )}
+        {choice && entries.length > 0 && <DropdownMenuSeparator />}
         {menuRows(entries).map((row) =>
           row.kind === "separator" ? (
             <DropdownMenuSeparator key={row.key} />

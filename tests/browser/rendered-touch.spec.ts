@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
+import { showView } from "./views.ts"
 
 // On a touch screen, starting to scroll over a rendered note must not focus
 // the prose (that would open the keyboard and jump the page), while a
@@ -30,7 +31,7 @@ async function openNote(page: Page) {
   await signedIn(page)
   await page.goto(projectUrl(id, PATH))
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-  await page.getByRole("button", { name: "Rendered" }).click()
+  await showView(page, "Rendered")
   await expect(frameOf(page).locator("p").filter({ hasText: line(60) })).toBeAttached()
   return { fake, id }
 }

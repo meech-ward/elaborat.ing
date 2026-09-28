@@ -15,6 +15,7 @@ import {
   stepViewScale,
   clampViewScale,
   scaleViewAt,
+  pictureSize,
 } from './resourceViewer.ts';
 
 test('reading-width opening enlarges tall drawings and starts at their top', () => {
@@ -73,4 +74,12 @@ describe('resourceViewer point stability', () => {
     const small = scaleViewAt({ scale: 1, x: 20, y: 40 }, 0.01, { x: 60, y: 80 });
     expect(small).toEqual({ scale: MIN_VIEW_SCALE, x: 50, y: 70 });
   });
+});
+
+test('a picture\'s own size comes from its SVG\'s width and height, or its viewBox', () => {
+  expect(pictureSize('<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 185 564" width="185" height="564"><rect/></svg>')).toEqual({ width: 185, height: 564 });
+  expect(pictureSize('<svg viewBox="0 0 400.5 120"><rect width="10" height="10"/></svg>')).toEqual({ width: 400.5, height: 120 });
+  expect(pictureSize('<svg width="100%" height="auto" viewBox="0 0 30 20"></svg>')).toEqual({ width: 30, height: 20 });
+  expect(pictureSize('<svg><rect width="10" height="10"/></svg>')).toBeNull();
+  expect(pictureSize('not a picture')).toBeNull();
 });

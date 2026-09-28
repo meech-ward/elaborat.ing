@@ -20,8 +20,11 @@ import {
   StrictMode,
   createContext,
   useContext,
+  useLayoutEffect,
+  useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type ReactNode,
   type MouseEvent,
 } from "react";
@@ -34,6 +37,7 @@ import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { DOCUMENT_CHART_COMPONENTS } from '../features/rendered/documentCharts';
+import { pictureSize } from '../features/rendered/resourceViewer';
 import {
   Alert,
   AlertDescription,
@@ -401,6 +405,23 @@ function ResourceEmbed(props: {
     });
   };
   const label = props.kind === "drawing" ? "drawing" : "diagram";
+  // reading.css sizes the picture from its own size (a readable size, at
+  // most 480px high) and fades out what it cuts off; View shows all of it.
+  const size = svg ? pictureSize(svg) : null;
+  const sizing = size
+    ? ({ "--picture-width": `${size.width}px`, "--picture-ratio": size.width / size.height } as CSSProperties)
+    : undefined;
+  const pixels = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const box = pixels.current;
+    if (!box) return;
+    // A ResizeObserver reports each box once when it starts watching it.
+    const observer = new ResizeObserver(() => setClipped(box.scrollHeight > box.clientHeight + 1));
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => observer.disconnect();
+  }, [svg]);
   // reading.css draws the box, and shows the caption over its top on hover and focus.
   return (
     <figure
@@ -428,9 +449,11 @@ function ResourceEmbed(props: {
           }}
         >
           <span
+            ref={pixels}
             data-resource-pixels={src}
+            data-clipped={clipped || undefined}
             dangerouslySetInnerHTML={{ __html: svg }}
-            style={{ display: "block", pointerEvents: "none" }}
+            style={{ display: "block", pointerEvents: "none", ...sizing }}
           />
         </button>
       ) : (

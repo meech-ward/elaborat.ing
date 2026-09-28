@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
+import { showView } from "./views.ts"
 
 // Switching a note to Source and back to Rendered, without editing, leaves the
 // rendered view as it was: the reading position stays, nothing takes focus,
@@ -30,7 +31,7 @@ async function openNote(page: Page) {
   await signedIn(page)
   await page.goto(projectUrl(id, PATH))
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-  await page.getByRole("button", { name: "Rendered" }).click()
+  await showView(page, "Rendered")
   await expect(frameOf(page).locator("p").filter({ hasText: line(60) })).toBeAttached()
   return { fake, id }
 }
@@ -58,9 +59,9 @@ function journeys() {
     const before = await scrollTop(page)
     const saved = saves(fake)
 
-    await page.getByRole("button", { name: "Source" }).click()
+    await showView(page, "Source")
     await expect(page.locator(".monaco-editor:visible")).toBeVisible()
-    await page.getByRole("button", { name: "Rendered" }).click()
+    await showView(page, "Rendered")
     await expect(page.locator(FRAME)).toBeVisible()
     await expect.poll(async () => Math.abs((await scrollTop(page)) - before)).toBeLessThanOrEqual(2)
     // It stays there, and nothing in the frame takes focus.

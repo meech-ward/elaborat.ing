@@ -108,3 +108,18 @@ test("an edit the frame made against an older revision is lost with a plain noti
   expect(await renderErrors(page)).toEqual([])
   await expect(page.frameLocator(FRAME).locator("p").filter({ hasText: "First paragraph here." })).toBeVisible()
 })
+
+test.describe("with service workers allowed", () => {
+  // Playwright's service worker blocking (playwright.config.ts) runs a script
+  // in every frame, which throws inside the sandboxed frame.
+  test.use({ serviceWorkers: "allow" })
+
+  test("opening a note in Rendered throws nothing, in the page or in its frame", async ({ page }) => {
+    const errors: string[] = []
+    page.on("pageerror", (error) => errors.push(error.message))
+    await openNote(page)
+    await page.getByRole("button", { name: "Rendered" }).click()
+    await expect(page.frameLocator(FRAME).locator("p").filter({ hasText: "First paragraph here." })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+})

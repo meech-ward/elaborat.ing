@@ -78,6 +78,173 @@ body {
   max-width: var(--reading-width);
   margin-inline: auto;
 }
+/* Insert block and its dialog are native controls (the sandboxed frame loads
+   none of the app's components), drawn as the component library draws an
+   outline and a primary button, a dialog, a select field and a menu, from
+   the same tokens and sizes. The browser keeps their keyboard use: the
+   dialog is modal and closes on Escape, a list opens and moves with the
+   arrow keys. Where the browser lets a select's list be styled
+   (appearance: base-select), the list is the library's menu. */
+.authoring-insert {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--panel-border);
+}
+.authoring-insert button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-height: 0;
+  padding: 0 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.authoring-insert button:hover {
+  background: color-mix(in oklab, var(--seg) 50%, transparent);
+  color: var(--text);
+}
+.authoring-insert button:active {
+  background: var(--seg);
+}
+.authoring-insert :is(button, select):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.authoring-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.authoring-actions button:last-child {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.authoring-actions button:last-child:hover {
+  background: color-mix(in oklab, var(--accent) 94%, var(--text));
+  color: var(--accent-text);
+}
+.authoring-actions button:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.authoring-insert dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-menu);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 16px 40px var(--shadow);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.authoring-insert dialog::backdrop {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.authoring-insert dialog > div {
+  display: grid;
+  gap: 16px;
+}
+.authoring-insert dialog h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+.authoring-insert dialog p {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.authoring-insert label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+.authoring-insert select {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 32px 0 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-button);
+  /* The library's chevron, drawn with gradients: the frame loads no images. */
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.8px), var(--dim) calc(50% - 0.8px), var(--dim) calc(50% + 0.8px), transparent calc(50% + 0.8px)) right 16px center / 5px 5px no-repeat,
+    linear-gradient(-45deg, transparent calc(50% - 0.8px), var(--dim) calc(50% - 0.8px), var(--dim) calc(50% + 0.8px), transparent calc(50% + 0.8px)) right 11px center / 5px 5px no-repeat,
+    var(--field);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+}
+.authoring-insert select:focus-visible {
+  outline-offset: -1px;
+}
+@supports (appearance: base-select) {
+  .authoring-insert select,
+  .authoring-insert ::picker(select) {
+    appearance: base-select;
+  }
+  .authoring-insert select {
+    display: flex;
+    align-items: center;
+  }
+  .authoring-insert select::picker-icon {
+    display: none;
+  }
+  .authoring-insert ::picker(select) {
+    margin-block: 4px;
+    padding: 6px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-menu);
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: 0 10px 30px var(--shadow);
+  }
+  .authoring-insert option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-row);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .authoring-insert option:is(:hover, :focus) {
+    background: var(--accent-soft);
+    color: var(--accent-soft-text);
+    outline: none;
+  }
+  .authoring-insert option::checkmark {
+    order: 1;
+    margin-left: auto;
+  }
+}
+@media (pointer: coarse), (max-width: 500px) {
+  .authoring-insert :is(button, select) {
+    height: 40px;
+  }
+  .authoring-insert option {
+    min-height: 40px;
+  }
+}
 /* Insert block waits at the end of the note, out of sight until the note is
    pointed at or it has focus (C5 draws a note without it). Touch screens,
    which cannot point, show it while the note is being edited. */
@@ -183,10 +350,25 @@ figure[data-resource] {
 :where(figure[data-resource], figure[data-resource] p) {
   margin: 0;
 }
-/* A tall picture shows at most 320px high here; View opens it full size. */
+/* A picture shows at a readable size: its own size (as its canvas shows it
+   at 100%), narrowed to the box's width. A tall one shrinks to fit 480px
+   high, but not below 75% of its size, so its words stay readable: past
+   that its bottom is cut off, fading out (data-clipped), and View shows all
+   of it. ResourceEmbed sets its own width and its width to height ratio. */
+[data-resource-pixels] {
+  max-height: 480px;
+  overflow: hidden;
+}
+[data-resource-pixels][data-clipped] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
 [data-resource-pixels] > svg {
-  width: auto;
-  max-height: 320px;
+  width: clamp(
+    min(calc(var(--picture-width, 100%) * 0.75), 100%),
+    calc(480px * var(--picture-ratio, 1)),
+    min(var(--picture-width, 100%), 100%)
+  );
+  height: auto;
   margin-inline: auto;
 }
 [data-resource-pixels] > svg > rect:first-of-type {

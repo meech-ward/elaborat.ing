@@ -237,8 +237,10 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
 
 /** Start the page already signed in as `person`. */
 export async function signedIn(page: Page) {
+  // Init scripts run in every frame; the rendered note's sandboxed frame has
+  // no storage, and reading it there throws.
   await page.addInitScript((stored) => {
-    localStorage.setItem("sb-127-auth-token", stored)
+    if (window === window.top) localStorage.setItem("sb-127-auth-token", stored)
   }, JSON.stringify(session()))
 }
 

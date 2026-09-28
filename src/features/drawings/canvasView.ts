@@ -33,16 +33,45 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 const centre = (area: CanvasArea) => ({ x: area.left + area.width / 2, y: area.top + area.height / 2 });
 
+/** The smallest zoom a scene opens at, so its shapes and words stay readable. */
+export const READABLE_ZOOM = 0.6;
+
 /**
- * The zoom and scroll a scene opens at: 100%, with the middle of the scene
- * in the middle of the area. A scene larger than the area shows its middle,
- * readable, as Excalidraw opens one. Null when the area has no room.
+ * Room a scene keeps from the area's edges when it opens, clear of the canvas
+ * islands: on a desktop the tool island at the top and the zoom island at the
+ * bottom; on a phone the round buttons at the top and the tool island at the
+ * bottom. The same at both ends, so a scene that fits has its middle in the
+ * middle of the area.
  */
-export function openingViewport(bounds: SceneBounds, area: CanvasArea): CanvasViewport | null {
+export const OPENING_MARGIN = {
+  default: { x: 32, y: 72 },
+  touch: { x: 16, y: 84 },
+} as const;
+
+export type OpeningMargin = (typeof OPENING_MARGIN)[keyof typeof OPENING_MARGIN];
+
+/**
+ * The zoom and scroll a scene opens at: fitted inside the area, less the
+ * margin, never above 100%, with its middle in the middle of the area. A
+ * scene that would fit only below READABLE_ZOOM opens at that zoom instead,
+ * with its top left corner (in each direction it does not fit) at the
+ * margin, so its shapes stay readable. Null when the area has no room.
+ */
+export function openingViewport(bounds: SceneBounds, area: CanvasArea, margin: OpeningMargin = OPENING_MARGIN.default): CanvasViewport | null {
   if (area.width <= 0 || area.height <= 0) return null;
   const [minX, minY, maxX, maxY] = bounds;
+  const room = { width: Math.max(1, area.width - 2 * margin.x), height: Math.max(1, area.height - 2 * margin.y) };
+  const fit = Math.min(1, room.width / Math.max(1, maxX - minX), room.height / Math.max(1, maxY - minY));
+  const zoom = Math.max(fit, READABLE_ZOOM);
   const { x, y } = centre(area);
-  return { zoom: 1, scrollX: x - (minX + maxX) / 2, scrollY: y - (minY + maxY) / 2 };
+  // Excalidraw draws scene point p at (p + scroll) * zoom.
+  const scroll = (start: number, middle: number, min: number, max: number, size: number) =>
+    (max - min) * zoom <= size ? middle / zoom - (min + max) / 2 : start / zoom - min;
+  return {
+    zoom,
+    scrollX: scroll(area.left + margin.x, x, minX, maxX, room.width),
+    scrollY: scroll(area.top + margin.y, y, minY, maxY, room.height),
+  };
 }
 
 /**

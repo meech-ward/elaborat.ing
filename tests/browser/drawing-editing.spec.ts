@@ -252,7 +252,7 @@ test.describe("on a phone", () => {
     await signedIn(page)
     await page.goto(projectUrl(id, "sketch.excalidraw"))
     await expect(canvas(page)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Canvas", exact: true })).toBeVisible()
+    await expect(page.locator('[data-slot="phone-header"]').getByRole("button", { name: "File actions" })).toBeVisible()
     const results = await new AxeBuilder({ page }).include('[data-slot="phone-header"]').analyze()
     expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)

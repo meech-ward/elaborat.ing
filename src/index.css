@@ -56,14 +56,56 @@ kbd:not([data-slot]) {
 .monaco-editor {
   max-width: 100%;
 }
-/* Monaco's suggestions list as the library's menus (ActionMenu): radius 12
-   on the panel shadow, rows at radius 7 inset from the edge. Its colours
-   come from the editor theme (monacoTheme.ts). */
-.monaco-editor .suggest-widget {
+/* Monaco's suggestions list as the library's menus (ActionMenu): the panel
+   with its border, radius 12 and the panel shadow; rows 30 high in the UI
+   font at 13px (SourceEditor.tsx), their highlight inset 6 from the sides at
+   radius 7, the chosen row in accentSoft with accentSoftText (the theme,
+   monacoTheme.ts, colours the text), the one under the pointer in seg; a
+   slim scroll bar. (The doubled class outranks Monaco's own rules, which
+   load after these.) */
+.monaco-editor .suggest-widget.suggest-widget {
+  border-color: var(--panel-border);
   border-radius: var(--radius-menu);
   overflow: hidden;
+  background-color: var(--panel);
   box-shadow: 0 10px 30px var(--shadow);
 }
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  isolation: isolate;
+  padding-inline: 16px;
+  background-color: transparent !important;
+  outline: none !important;
+}
+/* Monaco puts the code font on each row's text itself. */
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row > .contents > .main {
+  font-family: var(--ui-font) !important;
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 6px;
+  z-index: -1;
   border-radius: var(--radius-row);
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover::before {
+  background-color: var(--seg);
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused::before {
+  background-color: var(--accent-soft);
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .details-label {
+  color: var(--dim);
+}
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused .details-label {
+  color: var(--accent-soft-text);
+  opacity: 0.85;
+}
+.monaco-editor .suggest-widget .monaco-scrollable-element > .scrollbar.vertical {
+  width: 8px !important;
+}
+.monaco-editor .suggest-widget .monaco-scrollable-element > .scrollbar > .slider {
+  left: 1px !important;
+  width: 5px !important;
+  border-radius: var(--radius-pill);
+  background: var(--panel-border) !important;
 }

@@ -5,8 +5,9 @@
 // freehand, undo/redo and zoom all come from the real component, driven
 // from the design system's tool and zoom islands (CanvasControls.tsx) in
 // place of its own toolbar and footer, which stay hidden. The scene opens
-// at 100% in the middle of the visible part of the canvas, again whenever it
-// is shown again, and keeps its middle there while that part moves. Otherwise this wrapper adds only controlled-state semantics with
+// fitted into the visible part of the canvas (at most 100%, at least a
+// readable zoom), again whenever it is shown again, and keeps its middle
+// there while that part moves. Otherwise this wrapper adds only controlled-state semantics with
 // the raw authored scene as the authority:
 //
 // - initialData loads the scene once; later scene identities (e.g. an
@@ -46,7 +47,7 @@ import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
-import { canvasUiFrom, createCanvasUiStore, followArea, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
+import { OPENING_MARGIN, canvasUiFrom, createCanvasUiStore, followArea, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from './canvasView.ts';
 import './drawingCanvas.css';
 
 type NativeExcalidraw = typeof import('@excalidraw/excalidraw')['Excalidraw'];
@@ -293,15 +294,20 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
   };
 
-  // The scene opens at 100% in the middle of the visible area when it first
-  // loads and whenever the canvas is shown again (another tab or the source
-  // was in front), once it can be measured. While it shows, the scene point
-  // in the middle of the area stays there when the area moves or changes
-  // size: focus mode, Split, the side panel, the window.
+  // The scene opens fitted into the visible area, clear of the islands, when
+  // it first loads and whenever the canvas is shown again (another tab or the
+  // source was in front), once it can be measured. While it shows, it fits
+  // the area again when the area moves or changes size (focus mode, Split,
+  // the side panel, the window) until someone pans or zooms it; after that
+  // the scene point in the middle of the area stays there.
   const loadedRef = useRef(false);
   const openWantedRef = useRef(true);
   // The area the view was last placed for; null while it cannot be measured.
   const placedRef = useRef<CanvasArea | null>(null);
+  // The fitted views set since the scene last opened, while nobody has
+  // panned or zoomed it (Excalidraw reports each one back as a scroll change,
+  // perhaps after the next was set); empty once someone has.
+  const fittedRef = useRef<CanvasViewport[]>([]);
   const placeScene = () => {
     const api = apiRef.current;
     if (!api || !loadedRef.current || !boundsNative) return;
@@ -309,16 +315,21 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     const placed = placedRef.current;
     placedRef.current = area;
     if (!area) return;
-    if (openWantedRef.current) {
+    if (openWantedRef.current || fittedRef.current.length > 0) {
       openWantedRef.current = false;
       const elements = api.getSceneElements();
-      const view = elements.length > 0 ? openingViewport(boundsNative(elements), area) : null;
+      const view = elements.length > 0 ? openingViewport(boundsNative(elements), area, OPENING_MARGIN[compact ? 'touch' : 'default']) : null;
+      fittedRef.current = view ? [...fittedRef.current.slice(-3), view] : [];
       if (view) setViewport(api, view);
       return;
     }
     if (!placed || (placed.left === area.left && placed.top === area.top && placed.width === area.width && placed.height === area.height)) return;
     const state = api.getAppState();
     setViewport(api, followArea({ zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }, placed, area));
+  };
+  const scrolled = (scrollX: number, scrollY: number, zoom: number) => {
+    const fitted = fittedRef.current;
+    if (fitted.length > 0 && !fitted.some((view) => view.scrollX === scrollX && view.scrollY === scrollY && view.zoom === zoom)) fittedRef.current = [];
   };
   const shownRef = useRef(props.active !== false);
   useEffect(() => {
@@ -446,7 +457,10 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               }
             }}
             onChange={handleLibraryChange}
-            onScrollChange={(scrollX, scrollY, zoom) => onScrollRef.current?.(scrollX, scrollY, zoom.value)}
+            onScrollChange={(scrollX, scrollY, zoom) => {
+              scrolled(scrollX, scrollY, zoom.value);
+              onScrollRef.current?.(scrollX, scrollY, zoom.value);
+            }}
           />
           <CanvasControls store={ui} commands={commands} areaRef={areaRef} size={compact ? 'touch' : 'default'} viewOnly={viewOnly ?? false} />
         </Suspense>

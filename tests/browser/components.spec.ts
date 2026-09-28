@@ -2,6 +2,7 @@ import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
+import { showView } from "./views.ts"
 
 /** Wait for the explorer (a desktop opens with it shown). */
 async function showExplorer(page: Page) {
@@ -54,7 +55,7 @@ async function openProject(page: Page, files: Record<string, string>, path: stri
 }
 
 async function rendered(page: Page) {
-  await page.getByRole("button", { name: "Rendered" }).click()
+  await showView(page, "Rendered")
   await expect(page.locator(PREVIEW)).toBeVisible()
 }
 
@@ -361,7 +362,7 @@ for (const [width, scheme] of [
 
     test("components and their prop controls fit, with no accessibility problems", async ({ page }) => {
       await page.addInitScript((scheme) => {
-        localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "supabase-green", scheme }))
+        if (window === window.top) localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "supabase-green", scheme }))
       }, scheme)
       await openProject(page, { [MODULE]: releaseCard(), "notes/aliases.mdx": aliased }, "notes/aliases.mdx", phone)
       await rendered(page)

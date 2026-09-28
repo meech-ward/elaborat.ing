@@ -113,7 +113,9 @@ test("Compare shows a note's two versions as a diff, and Keep mine from there re
 })
 
 test("in Cherry Paper light, the conflict banner has the palette's warning background", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "cherry-paper", mode: "light" })))
+  await page.addInitScript(() => {
+    if (window === window.top) localStorage.setItem("elaborating.appearance.v1", JSON.stringify({ theme: "cherry-paper", mode: "light" }))
+  })
   const { fake, id } = await openProject(page, { "a.md": NOTE }, "a.md")
   await saveMyLine(page, fake)
   await changeOnServer(fake, id, "a.md", `${NOTE}Their line\n`)

@@ -2,6 +2,7 @@ import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
+import { showView } from "./views.ts"
 
 // Editing notes in a project: the source and rendered views, saves on this
 // device that sync to the stand-in server, drafts that survive reloads and
@@ -427,9 +428,12 @@ test.describe("on a phone", () => {
     await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\nTyped on a phone.")
     await expect(save).toHaveCount(0)
 
-    await page.getByRole("button", { name: "Rendered" }).click()
-    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true")
-    await page.getByRole("button", { name: "Source" }).click()
+    // The views are a choice at the top of "...", beside Save.
+    await showView(page, "Rendered")
+    await page.getByRole("button", { name: "File actions" }).click()
+    await expect(page.getByRole("menuitemradio", { name: "Rendered" })).toHaveAttribute("aria-checked", "true")
+    await page.keyboard.press("Escape")
+    await showView(page, "Source")
     await expect(editorText(page)).toContainText("Typed on a phone.")
 
     await page.getByRole("button", { name: "Back to files and projects" }).click()

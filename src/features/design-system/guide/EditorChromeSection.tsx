@@ -20,6 +20,7 @@ import { SourceLines, type SourcePart } from "../ui/SourceLines"
 import { SplitPanes } from "../ui/SplitPanes"
 import { TabLine, type TabLineItem } from "../ui/TabLine"
 import { ViewSwitch, type EditorView } from "../ui/ViewSwitch"
+import { viewLabel } from "../ui/views"
 import { C5FocusHeader, DiagramInNote, phoneBleed } from "./c5Samples"
 import { GuideGroup, GuideLabel, GuideValue } from "./parts"
 
@@ -364,10 +365,10 @@ function FocusHeader() {
 }
 
 /**
- * The phone note's header: Back at the top left; the view switch, the file's
- * actions and, while there are unsaved edits, Save with its dot at the top
- * right. (C5 draws Back and Save; the switch and the actions keep the
- * desktop's controls in reach.)
+ * The phone note's header, as C5 draws it: Back at the top left; the file's
+ * "..." menu and, while there are unsaved edits, Save with its dot at the
+ * top right. The views (Source and Rendered) are a choice at the top of the
+ * "..." menu, above the file's actions.
  */
 function PhoneHeaderDemo() {
   const [dirty, setDirty] = useState(true)
@@ -383,9 +384,14 @@ function PhoneHeaderDemo() {
             </RoundIconButton>
           }
         >
-          <ViewSwitch aria-label="View, phone header" floating views={["source", "rendered"]} value={view} onValueChange={setView} />
           <ActionMenu
             entries={tabActions(dirty, () => setDirty(false))}
+            choice={{
+              label: "View",
+              value: view,
+              options: (["source", "rendered"] as const).map((value) => ({ value, label: viewLabel(value) })),
+              onValueChange: (next) => setView(next as EditorView),
+            }}
             contentProps={{ align: "end", "aria-label": "File actions" }}
             trigger={
               <RoundIconButton label="File actions">
@@ -402,7 +408,7 @@ function PhoneHeaderDemo() {
         <p className="absolute top-16 left-[22px] text-[30px] leading-[1.15] font-bold">Customer model</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <GuideValue>40 round, 14 from the edges, 8 apart; Save and its dot show until saved</GuideValue>
+        <GuideValue>40 round, 14 from the edges, 8 apart; Save and its dot show until saved; "..." holds the view ({viewLabel(view)} now) and the file actions</GuideValue>
         {!dirty && (
           <Button variant="link" size="xs" className="px-0" onClick={() => setDirty(true)}>
             Make a change

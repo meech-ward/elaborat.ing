@@ -157,9 +157,11 @@ export function SourceEditor(props: SourceEditorProps) {
       wordBasedSuggestions: "currentDocument",
       quickSuggestions: { other: true, comments: false, strings: true },
       // The suggestions list reads as the library's menus: rows of names
-      // (no kind icons) at a menu row's height (index.css rounds the list).
+      // (no kind icons) at a menu row's height and size (index.css draws
+      // the rest).
       suggest: { showIcons: false },
-      suggestLineHeight: 28,
+      suggestLineHeight: 30,
+      suggestFontSize: 13,
       // Explicit formatting only: never format on type, paste, or save.
       formatOnType: false,
       formatOnPaste: false,

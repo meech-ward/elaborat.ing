@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canvasUiFrom, createCanvasUiStore, followArea, islandTool, nativeTool, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from "./canvasView";
+import { OPENING_MARGIN, READABLE_ZOOM, canvasUiFrom, createCanvasUiStore, followArea, islandTool, nativeTool, openingViewport, zoomViewport, type CanvasArea, type CanvasViewport } from "./canvasView";
 
 /** Where a scene point lands on the canvas. */
 const onScreen = (view: CanvasViewport, x: number, y: number) => ({ x: (x + view.scrollX) * view.zoom, y: (y + view.scrollY) * view.zoom });
@@ -14,10 +14,26 @@ describe("openingViewport", () => {
     expect(onScreen(view, 200, 150)).toEqual({ x: 280 + 580, y: 60 + 420 });
   });
 
-  test("opens a scene larger than the area at 100% too, its middle in the middle", () => {
-    const view = openingViewport([0, 0, 2000, 1500], area)!;
-    expect(view.zoom).toBe(1);
-    expect(onScreen(view, 1000, 750)).toEqual({ x: 280 + 580, y: 60 + 420 });
+  test("fits a scene wider than the area inside it, clear of the islands, its middle in the middle", () => {
+    // C5's drawing: 1300 wide, beside the side panel.
+    const view = openingViewport([120, 170, 1420, 740], area)!;
+    expect(view.zoom).toBeCloseTo((1160 - 2 * OPENING_MARGIN.default.x) / 1300);
+    expect(onScreen(view, 770, 455).x).toBeCloseTo(280 + 580);
+    expect(onScreen(view, 770, 455).y).toBeCloseTo(60 + 420);
+    expect(onScreen(view, 120, 170).x).toBeCloseTo(280 + OPENING_MARGIN.default.x);
+    expect(onScreen(view, 1420, 740).x).toBeCloseTo(1440 - OPENING_MARGIN.default.x);
+    // The whole window (focus mode) has room for it at 100%.
+    expect(openingViewport([120, 170, 1420, 740], { left: 0, top: 0, width: 1440, height: 900 })!.zoom).toBe(1);
+  });
+
+  test("opens a scene too big to read when fitted at the readable zoom, its top left corner at the margin", () => {
+    // The same drawing on a phone.
+    const phone: CanvasArea = { left: 0, top: 0, width: 390, height: 844 };
+    const view = openingViewport([120, 170, 1420, 740], phone, OPENING_MARGIN.touch)!;
+    expect(view.zoom).toBe(READABLE_ZOOM);
+    expect(onScreen(view, 120, 170).x).toBeCloseTo(OPENING_MARGIN.touch.x);
+    // 570 high at 60% fits the height, so it stays in the middle that way.
+    expect(onScreen(view, 770, 455).y).toBeCloseTo(422);
   });
 
   test("has nothing to open into when the canvas is hidden", () => {
