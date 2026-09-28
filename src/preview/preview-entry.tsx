@@ -37,7 +37,7 @@ import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { DOCUMENT_CHART_COMPONENTS } from '../features/rendered/documentCharts';
-import { pictureSize } from '../features/rendered/resourceViewer';
+import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import {
   Alert,
   AlertDescription,

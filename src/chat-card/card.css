@@ -120,19 +120,33 @@
   font-weight: 600;
 }
 
-/* The server's drawings: black lines on a transparent background, shown at
-   most 320px high in a note (420 on their own), and turned by Excalidraw's
-   own dark filter in dark mode. A text label's backing takes the canvas
-   colour, before the filter where it applies. */
+/* The server's drawings: black lines on a transparent background, turned by
+   Excalidraw's own dark filter in dark mode. A text label's backing takes
+   the canvas colour, before the filter where it applies. In a note a picture
+   shows at a readable size, as the rendered note shows it (reading.css): its
+   own size narrowed to the box, a tall one shrunk to fit 480px high but not
+   below 75%, and past that cut off at the bottom, fading out. On its own it
+   fits 420px high. */
+.card-art:not(.card-art-whole) {
+  max-height: 480px;
+  overflow: hidden;
+}
+.card-art[data-clipped]:not(.card-art-whole) {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
 .card-art svg {
   display: block;
-  width: auto;
+  width: clamp(
+    min(calc(var(--picture-width, 100%) * 0.75), 100%),
+    calc(480px * var(--picture-ratio, 1)),
+    min(var(--picture-width, 100%), 100%)
+  );
   height: auto;
   max-width: 100%;
-  max-height: 320px;
   margin-inline: auto;
 }
 .card-art-whole svg {
+  width: auto;
   max-height: 420px;
 }
 .card-art .label-bg {

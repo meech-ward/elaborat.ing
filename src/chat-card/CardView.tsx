@@ -6,7 +6,7 @@
 // bundle the whole style guide.
 import "./card.css"
 import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert } from "lucide-react"
-import { useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { DottedPage } from "@/components/panel"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { KindBadge, type FileKind as BadgeKind } from "@/features/design-system/ui/KindBadge"
 import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import { StatusDot } from "@/features/design-system/ui/StatusDot"
+import { pictureSize } from "@/features/rendered/resourceViewer.ts"
 import { cn } from "@/lib/utils"
 import type { CardState } from "./cardState"
 import { EMBED_NOTES, FILE_NOTES, KIND_NAMES, svgFor, type CardEmbed, type CardFile, type FileKind } from "./toolResult"
@@ -204,13 +205,34 @@ function NoteCallout({ tone, html }: { tone: keyof typeof CALLOUT_TONES; html: s
   )
 }
 
-/** The server's SVG of a drawing, which escapes everything it takes from the file. */
+/**
+ * The server's SVG of a drawing, which escapes everything it takes from the
+ * file. In a note it shows at a readable size, as the rendered note shows
+ * it (card.css): its own width and width to height ratio set that, and a
+ * picture cut off at the bottom is marked so it fades out.
+ */
 function EmbedArt({ svg, embed, className }: { svg: string; embed: CardEmbed; className?: string }) {
+  const size = pictureSize(svg)
+  const sizing = size ? ({ "--picture-width": `${size.width}px`, "--picture-ratio": size.width / size.height } as CSSProperties) : undefined
+  const art = useRef<HTMLDivElement>(null)
+  const [clipped, setClipped] = useState(false)
+  useLayoutEffect(() => {
+    const box = art.current
+    if (!box) return
+    // A ResizeObserver reports each box once when it starts watching it.
+    const observer = new ResizeObserver(() => setClipped(box.scrollHeight > box.clientHeight + 1))
+    observer.observe(box)
+    if (box.firstElementChild) observer.observe(box.firstElementChild)
+    return () => observer.disconnect()
+  }, [svg])
   return (
     <div
+      ref={art}
       role="img"
       aria-label={`${KIND_NAMES[embed.kind]} ${embed.path}`}
+      data-clipped={clipped || undefined}
       className={cn("card-art min-w-0", className)}
+      style={sizing}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   )
