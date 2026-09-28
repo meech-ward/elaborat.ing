@@ -13,8 +13,8 @@
 -- under the file's last path.
 --
 -- Viewers read comments; commenters, editors and the owner write them. Agents
--- read, add, reply, resolve and reopen, and never delete a comment: deleting
--- removes someone's words for good, and only a person permanently deletes.
+-- read, add, reply, resolve and reopen, and never edit or delete a comment:
+-- both remove someone's words for good, and only a person does that.
 --
 -- Clients select through RLS; every write is a security definer function in
 -- `private` behind a thin security invoker wrapper in `public`. Every write
@@ -158,7 +158,9 @@ create policy "People can read comment threads in their projects"
 -- The opening comment of a thread and every reply. A deleted comment keeps
 -- its row, without its body, while its thread has live comments, so replies
 -- keep their context. `agent_client_id` is the OAuth client that wrote it,
--- taken from the caller's token, never from an argument.
+-- taken from the caller's token, never from an argument. Readers see only
+-- whether an agent wrote it (`via_agent` in list_comments), so it is the one
+-- column they cannot select.
 create table public.comments (
   id uuid primary key default gen_random_uuid(),
   thread_id uuid not null references public.comment_threads (id) on delete cascade,
@@ -186,13 +188,28 @@ create index comments_author_id_idx on public.comments (author_id);
 alter table public.comments enable row level security;
 
 revoke all on table public.comments from anon, authenticated;
-grant select on table public.comments to authenticated;
+grant select (id, thread_id, project_id, author_id, body, created_at, edited_at, deleted_at)
+  on table public.comments to authenticated;
 
 create policy "People can read comments in their projects"
   on public.comments
   for select
   to authenticated
   using (project_id in (select private.readable_project_ids()));
+
+-- The ids of a project's deleted threads, so an add repeated after its thread
+-- was deleted says so instead of starting the thread again. Only the
+-- functions below read or write it.
+create table private.deleted_comment_threads (
+  project_id uuid not null references public.projects (id) on delete cascade,
+  id uuid not null,
+  deleted_at timestamptz not null default now(),
+  primary key (project_id, id)
+);
+
+alter table private.deleted_comment_threads enable row level security;
+
+revoke all on table private.deleted_comment_threads from anon, authenticated;
 
 -- Lock a project for a comment write by a commenter, editor or owner, or
 -- raise. Viewers read comments but cannot write them.
@@ -384,8 +401,9 @@ grant execute on function public.list_comments(uuid, uuid) to authenticated;
 
 -- Start a thread on a file, with its opening comment. The client chooses the
 -- thread id: repeating the call with the same id returns the thread as it is
--- now, even if the project was archived in between; reusing the id for
--- anything else is an error. The file must be a current file of the project.
+-- now, even if the project was archived in between, or says it was deleted;
+-- reusing the id for anything else is an error. The file must be a current
+-- file of the project.
 create function private.add_comment(
   project_id uuid, thread_id uuid, file_id uuid, file_version bigint, anchor jsonb, body text
 )
@@ -418,6 +436,11 @@ begin
       return jsonb_build_object('revision', p.revision, 'thread', private.thread_json(t));
     end if;
     raise exception 'This comment id was already used' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from private.deleted_comment_threads d where d.project_id = p.id and d.id = add_comment.thread_id
+  ) then
+    raise exception 'This comment was deleted' using errcode = '22023';
   end if;
 
   if p.archived_at is not null then
@@ -539,8 +562,9 @@ $$;
 revoke all on function public.reply_comment(uuid, uuid, text) from public, anon;
 grant execute on function public.reply_comment(uuid, uuid, text) to authenticated;
 
--- Change a comment's words. Only its author, in a person session or through
--- their agent. No history is kept; `edited_at` shows it was edited.
+-- Change a comment's words. Only its author, and only in a normal session:
+-- no history is kept, so an agent would erase its person's words and show its
+-- own as theirs. `edited_at` shows it was edited.
 create function private.edit_comment(comment_id uuid, body text)
 returns jsonb
 language plpgsql
@@ -554,6 +578,9 @@ declare
   new_revision bigint;
 begin
   perform private.check_limit('comment_writes_per_minute');
+  if private.is_oauth_client() then
+    raise exception 'Only a signed-in person can edit comments; agents can reply' using errcode = '42501';
+  end if;
   if edit_comment.comment_id is null then
     raise exception 'Comment id required' using errcode = '22023';
   end if;
@@ -714,6 +741,8 @@ begin
     select 1 from public.comments cm where cm.thread_id = c.thread_id and cm.deleted_at is null
   ) then
     delete from public.comment_threads ct where ct.id = c.thread_id;
+    insert into private.deleted_comment_threads (project_id, id) values (p.id, c.thread_id)
+      on conflict do nothing;
     thread_deleted := true;
   end if;
 
@@ -779,6 +808,8 @@ begin
   end if;
 
   delete from public.comment_threads ct where ct.id = t.id;
+  insert into private.deleted_comment_threads (project_id, id) values (p.id, t.id)
+    on conflict do nothing;
   update public.projects set revision = revision + 1, updated_at = now()
   where id = p.id
   returning revision into new_revision;

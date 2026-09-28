@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(162);
+select plan(176);
 
 -- People, by name. Alice owns the project; Bob is an editor, Carol a
 -- commenter, Dave a viewer and Gina a commenter, all accepted. Erin has a
@@ -163,7 +163,24 @@ $$;
 -- Grants and RLS.
 
 select table_privs_are('public', 'comment_threads', 'authenticated', array['SELECT'], 'Signed-in users can only select comment threads');
-select table_privs_are('public', 'comments', 'authenticated', array['SELECT'], 'Signed-in users can only select comments');
+select table_privs_are('public', 'comments', 'authenticated', array[]::text[], 'Signed-in users get no table-wide privileges on comments');
+select is(
+  (select array_agg(a.attname::text order by a.attnum) from pg_attribute a
+   where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and not a.attisdropped
+     and has_column_privilege('authenticated', 'public.comments', a.attname, 'select')),
+  array['id', 'thread_id', 'project_id', 'author_id', 'body', 'created_at', 'edited_at', 'deleted_at'],
+  'Signed-in users select every comment column except the agent''s OAuth client'
+);
+select is(
+  (select count(*)::int from pg_attribute a
+   where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and not a.attisdropped
+     and (has_column_privilege('authenticated', 'public.comments', a.attname, 'insert, update, references')
+          or has_column_privilege('anon', 'public.comments', a.attname, 'select, insert, update, references'))),
+  0,
+  'and nothing else on any column'
+);
+select table_privs_are('private', 'deleted_comment_threads', 'authenticated', array[]::text[], 'Signed-in users get nothing on deleted thread ids');
+select table_privs_are('private', 'deleted_comment_threads', 'anon', array[]::text[], 'Anonymous users get nothing on deleted thread ids');
 select table_privs_are('public', 'comment_threads', 'anon', array[]::text[], 'Anonymous users get nothing on comment threads');
 select table_privs_are('public', 'comments', 'anon', array[]::text[], 'Anonymous users get nothing on comments');
 select ok(
@@ -338,6 +355,18 @@ select pg_temp.act('carol');
 select is(array[(select count(*) from public.comment_threads), (select count(*) from public.comments)]::int[], array[3, 3], 'A commenter reads them');
 select pg_temp.act('dave');
 select is(array[(select count(*) from public.comment_threads), (select count(*) from public.comments)]::int[], array[3, 3], 'A viewer reads them');
+select throws_ok(
+  $$ select agent_client_id from public.comments $$,
+  '42501', 'permission denied for table comments',
+  'but not which OAuth client wrote a comment'
+);
+select is(
+  (select count(*)::int from (
+     select id, thread_id, project_id, author_id, body, created_at, edited_at, deleted_at from public.comments
+   ) c where c.body is not null),
+  3,
+  'and reads every other column'
+);
 select pg_temp.act('erin');
 select is(array[(select count(*) from public.comment_threads), (select count(*) from public.comments)]::int[], array[0, 0], 'Someone with a pending invitation reads none');
 select throws_ok(
@@ -434,10 +463,15 @@ select is(
 );
 select ok(public.resolve_comment(pg_temp.t(4)) #>> '{thread,resolved_at}' is not null, 'Her agent resolves a thread');
 select ok(public.reopen_comment(pg_temp.t(4)) #>> '{thread,resolved_at}' is null, 'and reopens it');
-select is(
-  public.edit_comment(pg_temp.r(2), 'Agreed, from my agent.') #>> '{comment,body}',
-  'Agreed, from my agent.',
-  'Her agent edits her own comment'
+select throws_ok(
+  $$ select public.edit_comment(pg_temp.r(2), 'I approve, says my agent.') $$,
+  '42501', 'Only a signed-in person can edit comments; agents can reply',
+  'Her agent cannot change her words'
+);
+select throws_ok(
+  $$ select public.edit_comment(pg_temp.r(3), 'Agent reply, edited') $$,
+  '42501', 'Only a signed-in person can edit comments; agents can reply',
+  'nor a comment it wrote itself'
 );
 select throws_ok(
   $$ select public.delete_comment(pg_temp.r(2)) $$,
@@ -477,9 +511,10 @@ select is(
   'The agent''s comments record its OAuth client, from its token'
 );
 select is(
-  (select agent_client_id from public.comments where id = pg_temp.r(2)),
-  null,
-  'Editing a comment through an agent keeps who wrote it'
+  (select jsonb_build_object('body', body, 'edited_at', edited_at, 'agent_client_id', agent_client_id)
+   from public.comments where id = pg_temp.r(2)),
+  '{"body": "Agreed.", "edited_at": null, "agent_client_id": null}',
+  'Her comment keeps her words, unedited'
 );
 
 ------------------------------------------------------------------------------
@@ -566,6 +601,17 @@ select is(
   array[0, 0],
   'with its placeholders'
 );
+select pg_temp.act('alice');
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(1), pg_temp.file('a'), 1, pg_temp.anchor('text'), 'Is this still true?') $$,
+  '22023', 'This comment was deleted', 'Repeating the add of a deleted thread says it was deleted'
+);
+select is((select count(*)::int from public.comment_threads where id = pg_temp.t(1)), 0, 'and does not start it again');
+select pg_temp.act('bob');
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(1), pg_temp.file('b'), 1, pg_temp.anchor('document'), 'Mine now') $$,
+  '22023', 'This comment was deleted', 'nor can anyone else in the project reuse its id'
+);
 
 -- Alice can delete Carol's comment; Bob can't.
 select is(public.reply_comment(pg_temp.t(3), pg_temp.r(4), 'Bob on the box') #>> '{comment,body}', 'Bob on the box', 'Bob replies on Carol''s drawing thread');
@@ -591,6 +637,10 @@ select is(
   public.delete_comment_thread(pg_temp.t(5)) - 'revision',
   jsonb_build_object('thread_id', pg_temp.t(5), 'deleted', true),
   'She deletes her own thread when every comment in it is hers'
+);
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(5), pg_temp.file('a'), 1, pg_temp.anchor('section'), 'On this section') $$,
+  '22023', 'This comment was deleted', 'Repeating the add of a thread deleted whole says it was deleted too'
 );
 select lives_ok(
   $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(6), pg_temp.file('a'), 1, pg_temp.anchor('document'), 'Carol asks') $$,
@@ -966,6 +1016,25 @@ select throws_ok(
 select throws_ok(
   $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(90), pg_temp.file('b'), 1, pg_temp.anchor('document'), 'Hi') $$,
   '54000', 'A project can hold at most 10000 comments', 'placeholders included, for new threads too'
+);
+
+------------------------------------------------------------------------------
+-- Deleting a project takes the ids of its deleted threads with it.
+
+reset role;
+select is(
+  (select count(*)::int from private.deleted_comment_threads where project_id = pg_temp.project('S')),
+  1,
+  'Project S remembers its one deleted thread'
+);
+set local role authenticated;
+select pg_temp.act('alice');
+select lives_ok($$ select public.delete_project(pg_temp.project('S')) $$, 'Alice deletes project S');
+reset role;
+select is(
+  (select count(*)::int from private.deleted_comment_threads where project_id = pg_temp.project('S')),
+  0,
+  'and its deleted thread ids go with it'
 );
 
 select * from finish();

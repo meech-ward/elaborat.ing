@@ -102,11 +102,11 @@ export type NewThread = {
 export interface CommentsRemote {
   /** A project's threads, or one file's. Anyone who can read the project, viewers included. */
   list(projectId: string, fileId?: string): Promise<CommentList>
-  /** Start a thread. Commenters, editors and the owner, agents included. */
+  /** Start a thread. Commenters, editors and the owner, agents included. Sent again after the thread was deleted, it fails as invalid. */
   add(input: NewThread): Promise<{ revision: number; thread: RemoteThread }>
   /** Reply with a caller-chosen id, so sending it again never posts twice. */
   reply(threadId: string, commentId: string, body: string): Promise<{ revision: number; comment: RemoteComment }>
-  /** Change a comment's words. Its author only. */
+  /** Change a comment's words. Its author only, never an agent. */
   edit(commentId: string, body: string): Promise<{ revision: number; comment: RemoteComment }>
   resolve(threadId: string): Promise<{ revision: number; thread: RemoteThread }>
   reopen(threadId: string): Promise<{ revision: number; thread: RemoteThread }>

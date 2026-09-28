@@ -21,7 +21,7 @@ import type { ToolContext } from './types.ts'
 // tool turns it into the selectors the app stores, with the app's own code
 // (../../_shared/comments/). Listing finds each thread again in the saved
 // file. There are no tools to edit or delete a comment: agents resolve, and
-// the database refuses their deletes anyway.
+// the database refuses their edits and deletes anyway.
 
 type Person = { user_id: string; email: string | null } | null
 

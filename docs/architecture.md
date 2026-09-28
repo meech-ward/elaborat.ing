@@ -338,7 +338,8 @@ editor is not built yet.
 - **Two tables.** `comment_threads` holds a thread's anchor, its file and
   whether it is resolved; `comments` holds the opening comment and every
   reply. The client chooses thread and reply ids, so sending one again returns
-  what the first send made instead of posting twice.
+  what the first send made instead of posting twice. A thread sent again after
+  it was deleted answers that it was deleted, and does not come back.
 - **Anchors** are stored once, in the app's shape (`placement.ts`), and never
   rewritten; "detached" is worked out by each reader, never stored.
   - `{ kind: "document" }`: the whole file. Any file.
@@ -369,11 +370,13 @@ editor is not built yet.
   them all (55000) while still listing. Reads are `list_comments`, which
   returns each author's email the way `list_members` does, and RLS on
   `readable_project_ids()`.
-- **Agents read, add, reply, resolve and reopen, and never delete a comment**,
-  their user's own included: deleting removes someone's words for good, and
-  only a person permanently deletes. The database refuses both deletes from an
-  OAuth-client session. A comment an agent wrote records its OAuth client id
-  from the token, and reads show it as `via_agent`.
+- **Agents read, add, reply, resolve and reopen, and never edit or delete a
+  comment**, their user's own included: both remove someone's words for good
+  (an edit keeps no history, and would show the agent's words as the
+  person's), and only a person does that. The database refuses edits and both
+  deletes from an OAuth-client session. A comment an agent wrote records its
+  OAuth client id from the token; reads show only `via_agent`, and readers
+  cannot select the client id column.
 - **Deleting leaves a placeholder.** A deleted comment keeps its row, author
   and time, without its body, while its thread has live comments, so replies
   keep their context. When the last live comment goes, the thread goes too.
