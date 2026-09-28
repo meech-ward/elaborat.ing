@@ -25,6 +25,9 @@ export type ProjectCommentsValue = {
   online: boolean
 }
 
+/** Why writing is off while the device is offline (ProjectCommentsValue's `writeBlocked`). */
+export const NEEDS_CONNECTION = "Comments need a connection."
+
 const ProjectCommentsContext = createContext<ProjectCommentsValue | null>(null)
 
 export function ProjectCommentsProvider({ value, children }: { value: ProjectCommentsValue | null; children: ReactNode }) {

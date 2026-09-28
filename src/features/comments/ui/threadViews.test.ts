@@ -70,18 +70,18 @@ describe("threadViews", () => {
     ])
   })
 
-  test("threads whose text is gone are detached and go last", () => {
+  test("threads whose text is gone are detached and keep their place, where their text was", () => {
     const places = new Map<string, ThreadPlace>([
       [ship.id, { attached: false }],
-      [steps.id, { attached: true, range: { start: at("## Steps"), end: at("## Steps") + 8 } }],
+      [steps.id, { attached: true, range: { start: at("## Steps") - SHIP.length, end: at("## Steps") - SHIP.length + 8 } }],
     ])
     const { open } = threadViews(threads, places, me, "note")
     expect(open.map((view) => [view.id, view.detached])).toEqual([
       [whole.id, false],
-      [steps.id, false],
       [ship.id, true],
+      [steps.id, false],
     ])
-    expect(open[2].anchor).toEqual({ kind: "text", quote: SHIP, detached: true })
+    expect(open[1].anchor).toEqual({ kind: "text", quote: SHIP, detached: true })
   })
 
   test("people edit their own comments; they and the owner delete them", () => {

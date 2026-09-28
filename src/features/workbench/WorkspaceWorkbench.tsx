@@ -29,7 +29,7 @@ import {
 import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
 import { DottedPage } from "@/components/panel";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import { companionPaths, isValidProjectPath } from "@/features/project-storage/model";
@@ -41,7 +41,7 @@ import { WorkspaceSession } from "./WorkspaceSession";
 import { TablineProvider } from "./tabline";
 import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, commentsShortcut, isApplePlatform } from "@/features/design-system";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
@@ -976,7 +976,21 @@ export function WorkspaceWorkbench({
   const focusKey = commandShortcut(".", isApplePlatform());
   const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
-    <CommentsGuestProvider value={local ? { open: guestComments, onOpenChange: setGuestComments, signUp: <SignUpTo>Sign up to comment</SignUpTo> } : null}>
+    <CommentsGuestProvider
+      value={
+        local
+          ? {
+              open: guestComments,
+              onOpenChange: setGuestComments,
+              signUp: (
+                <Link to="/sign-up" className={buttonVariants({ variant: "secondary", size: narrow ? "touch" : "default" })}>
+                  Sign up to comment
+                </Link>
+              ),
+            }
+          : null
+      }
+    >
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
     <div className="wb-app" data-compact={narrow} data-focus={focus && !narrow} ref={shell}>
       <div className="wb-body" inert={filesScreen}>

@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore, type RefObject } from "react";
-import { CommentMarker } from "@/features/design-system";
+import { CommentActionButton, CommentMarker, type CommentsSize, type Shortcut } from "@/features/design-system";
 import type { CanvasPin } from "@/features/comments";
-import { pinScenePoint, sceneToCanvas, type CanvasUiStore, type CanvasViewport, type ElementGeometry } from "./canvasView";
+import { elementBox, pinScenePoint, sceneToCanvas, type CanvasArea, type CanvasUiStore, type CanvasViewport, type ElementGeometry } from "./canvasView";
 
 // Comments on a drawing's elements, over the canvas: the library's pins,
 // each at its element's spot, and Comment in Excalidraw's own menu for an
@@ -53,7 +53,9 @@ export function createPinPlacesStore() {
 export type PinPlacesStore = ReturnType<typeof createPinPlacesStore>;
 
 /**
- * The pins, over the canvas and under its islands. A pin's bottom-left
+ * The pins, over the canvas and under its islands, shown only in the part
+ * of the canvas a person can see (the canvas area, see workbench.css), so a
+ * pin on an element under a panel stays under it. A pin's bottom-left
  * corner is its point: its element's top-right corner, or the spot the
  * comment marks. Pins whose element is gone are not drawn.
  */
@@ -61,7 +63,10 @@ export function CanvasPins({ pins, places, onOpen }: { pins: readonly CanvasPin[
   const at = useSyncExternalStore(places.subscribe, places.get, places.get);
   if (pins.length === 0) return null;
   return (
-    <div data-slot="canvas-comments" className="pointer-events-none absolute inset-0 z-[2] overflow-hidden">
+    <div
+      data-slot="canvas-comments"
+      className="pointer-events-none absolute inset-0 z-[2] overflow-hidden [clip-path:inset(var(--canvas-area-top,0px)_var(--canvas-area-right,0px)_0px_var(--canvas-area-left,0px))]"
+    >
       {pins.map((pin) => {
         const place = at.get(pin.id);
         if (!place) return null;
@@ -80,6 +85,96 @@ export function CanvasPins({ pins, places, onOpen }: { pins: readonly CanvasPin[
         );
       })}
     </div>
+  );
+}
+
+/** Where the Comment button over a selected element goes: its middle's left, and its top, relative to the canvas. */
+export type CommentButtonPlace = { left: number; top: number };
+
+/**
+ * The Comment button's place for a selected element: centred 16 above the
+ * element's box as it shows on screen, or 16 below it when there is no room
+ * above, and kept inside the visible part of the canvas (`area`). `height`
+ * is the button's; `half` is half its width, give or take.
+ */
+export function commentButtonPlace(
+  element: ElementGeometry,
+  view: CanvasViewport,
+  area: CanvasArea,
+  { height, half }: { height: number; half: number },
+): CommentButtonPlace {
+  const box = elementBox(element);
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const corners = [
+    [box.x, box.y],
+    [box.x + box.width, box.y],
+    [box.x, box.y + box.height],
+    [box.x + box.width, box.y + box.height],
+  ].map(([x, y]) => {
+    const dx = x - centre.x;
+    const dy = y - centre.y;
+    const turned = { x: centre.x + dx * Math.cos(box.angle) - dy * Math.sin(box.angle), y: centre.y + dx * Math.sin(box.angle) + dy * Math.cos(box.angle) };
+    return sceneToCanvas(turned, view);
+  });
+  const top = Math.min(...corners.map((corner) => corner.y));
+  const bottom = Math.max(...corners.map((corner) => corner.y));
+  const middle = (Math.min(...corners.map((corner) => corner.x)) + Math.max(...corners.map((corner) => corner.x))) / 2;
+  const first = area.top + 8;
+  const last = area.top + area.height - height - 8;
+  let y = top - 16 - height;
+  if (y < first) y = bottom + 16;
+  y = Math.max(first, Math.min(y, last));
+  const x = Math.max(area.left + half + 8, Math.min(middle, area.left + area.width - half - 8));
+  return { left: Math.round(x), top: Math.round(y) };
+}
+
+/** The Comment button's place, read by the button with useSyncExternalStore; null hides it. */
+export function createCommentButtonStore() {
+  let current: CommentButtonPlace | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => current,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    set(next: CommentButtonPlace | null) {
+      if (next?.left === current?.left && next?.top === current?.top) return;
+      current = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+export type CommentButtonStore = ReturnType<typeof createCommentButtonStore>;
+
+/**
+ * The library's Comment button over the one selected element, for people
+ * who comment on a drawing they cannot change: its canvas has no tools, so
+ * a click on an element selects it and this starts the comment.
+ */
+export function SelectedElementComment({
+  place,
+  size,
+  shortcut,
+  onComment,
+}: {
+  place: CommentButtonStore;
+  size: CommentsSize;
+  shortcut: Shortcut;
+  onComment: () => void;
+}) {
+  const at = useSyncExternalStore(place.subscribe, place.get, place.get);
+  if (!at) return null;
+  return (
+    <CommentActionButton
+      data-slot="selected-element-comment"
+      size={size}
+      shortcut={size === "touch" ? undefined : shortcut}
+      className="absolute z-[3] -translate-x-1/2"
+      style={{ left: at.left, top: at.top }}
+      onClick={onComment}
+    />
   );
 }
 
@@ -104,7 +199,7 @@ export function ElementMenuComment({
 }) {
   const ui = useSyncExternalStore(store.subscribe, store.get, store.get);
   const menu = ui.elementMenu;
-  const elementId = ui.single;
+  const elementId = menu?.elementId ?? null;
   const left = menu?.left ?? null;
   const top = menu?.top ?? null;
   useEffect(() => {

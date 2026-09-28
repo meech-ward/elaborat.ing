@@ -377,7 +377,9 @@ export type CommentsSheetProps = Omit<CommentsBodyProps, "size"> & {
 
 /**
  * The phone's comments: shadcn's Sheet from the bottom, 75% of the screen
- * high, radius 14 at the top with a grab bar, the panel shadow. The page
+ * high (half while a new comment is written, so the text or element it is
+ * on can show above it), radius 14 at the top with a grab bar, the panel
+ * shadow. The page
  * behind is dimmed but not blurred, so the commented text above it reads. The same body as the panel
  * at the touch size: 15px text, 40px targets, a 56 high header with a 40px
  * Close, which takes focus when it opens. A thread's Go to should close
@@ -416,7 +418,11 @@ export function CommentsSheet({
         aria-hidden={inert || undefined}
         // No blur: the commented text above the sheet stays readable.
         overlayClassName={cn("supports-backdrop-filter:backdrop-blur-none", overlayClassName)}
-        className={cn("gap-0 overflow-hidden rounded-t-panel border-x border-border p-0 shadow-panel data-[side=bottom]:h-[75svh]", className)}
+        className={cn(
+          "gap-0 overflow-hidden rounded-t-panel border-x border-border p-0 shadow-panel",
+          draft ? "data-[side=bottom]:h-[50svh]" : "data-[side=bottom]:h-[75svh]",
+          className,
+        )}
       >
         <div aria-hidden="true" className="flex shrink-0 justify-center pt-2">
           <span className="h-1 w-9 rounded-pill bg-border" />

@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { PanelPage } from "@/components/panel"
-import { CommentsController, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
+import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
@@ -193,7 +193,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
             : archived
               ? "This project is archived, so its comments can't change."
               : commentsOffline
-                ? "Comments need a connection."
+                ? NEEDS_CONNECTION
                 : null,
           online: !commentsOffline,
         }

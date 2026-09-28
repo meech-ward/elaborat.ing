@@ -6,6 +6,7 @@ import {
   canvasUiFrom,
   centreOn,
   createCanvasUiStore,
+  elementAt,
   elementPoint,
   followArea,
   islandTool,
@@ -125,9 +126,41 @@ describe("comments on elements", () => {
   test("Excalidraw's menu for an element is told apart from the canvas's", () => {
     const element = { left: 40, top: 60, items: ["separator", { name: "cut" }, { name: "copy" }] };
     const canvas = { left: 40, top: 60, items: [{ name: "paste" }, { name: "copyAsPng" }] };
-    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true }, contextMenu: element }).elementMenu).toEqual({ left: 40, top: 60 });
+    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true }, contextMenu: element }).elementMenu).toEqual({ left: 40, top: 60, elementId: "a" });
     expect(canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: canvas }).elementMenu).toBeNull();
     expect(canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: null }).elementMenu).toBeNull();
+  });
+
+  test("the menu stays for the element it opened on when the selection goes (view mode), and a new menu takes the selection again", () => {
+    const menu = { left: 40, top: 60, items: [{ name: "copy" }, { name: "copyAsPng" }] };
+    const opened = canvasUiFrom({ ...base, selectedElementIds: { a: true }, contextMenu: menu });
+    const released = canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: menu }, opened);
+    expect(released.single).toBeNull();
+    expect(released.elementMenu).toEqual({ left: 40, top: 60, elementId: "a" });
+    expect(canvasUiFrom({ ...base, selectedElementIds: {}, contextMenu: { ...menu, left: 90 } }, released).elementMenu).toEqual({ left: 90, top: 60, elementId: null });
+    // Several selected: the menu is for none of them.
+    expect(canvasUiFrom({ ...base, selectedElementIds: { a: true, b: true }, contextMenu: { ...menu, top: 10 } }, released).elementMenu?.elementId).toBeNull();
+  });
+
+  test("a click in view mode picks the top element under it, a label's shape, and a frame only around empty space", () => {
+    const elements = [
+      { id: "frame", type: "frame", x: 0, y: 0, width: 1000, height: 1000 },
+      { id: "box", type: "rectangle", x: 100, y: 100, width: 200, height: 100 },
+      { id: "label", type: "text", x: 150, y: 140, width: 100, height: 20, containerId: "box" },
+      { id: "over", type: "ellipse", x: 250, y: 150, width: 100, height: 100 },
+      { id: "gone", type: "rectangle", x: 600, y: 600, width: 50, height: 50, isDeleted: true },
+      { id: "line", type: "line", x: 400, y: 400, width: 100, height: 0, points: [[0, 0], [100, 0]] as [number, number][] },
+    ];
+    expect(elementAt(elements, { x: 120, y: 120 })).toBe("box");
+    expect(elementAt(elements, { x: 200, y: 150 })).toBe("box");
+    expect(elementAt(elements, { x: 280, y: 180 })).toBe("over");
+    expect(elementAt(elements, { x: 620, y: 620 })).toBe("frame");
+    expect(elementAt(elements, { x: 450, y: 404 })).toBe("frame");
+    expect(elementAt(elements, { x: 450, y: 404 }, 6)).toBe("line");
+    expect(elementAt(elements, { x: 2000, y: 2000 })).toBeNull();
+    // A shape turned a quarter about its middle (200, 150) covers 150..250 across and 50..250 down.
+    expect(elementAt([{ id: "turned", x: 100, y: 100, width: 200, height: 100, angle: Math.PI / 2 }], { x: 200, y: 60 })).toBe("turned");
+    expect(elementAt([{ id: "turned", x: 100, y: 100, width: 200, height: 100, angle: Math.PI / 2 }], { x: 110, y: 150 })).toBeNull();
   });
 
   const box = { x: 100, y: 50, width: 200, height: 100 };

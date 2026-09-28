@@ -894,7 +894,42 @@ if (typeof IntersectionObserver !== "undefined" && document.documentElement) {
 function applyCommentMarks(): void {
   if (!fluidEditor || !commentMarks || fluidEditor.shownRevision !== commentMarks.revision) return;
   fluidEditor.setCommentMarks(commentMarks.marks);
+  scheduleMarkerReport();
 }
+
+// Where the commented text is, for the parent's marker column: the middle of
+// the line where each thread's marked text starts, one marker per line.
+let reportedMarkers = "";
+function reportMarkers(): void {
+  if (!activeSession || !fluidEditor || !commentMarks || fluidEditor.shownRevision !== commentMarks.revision) return;
+  const lines: { ids: string[]; middle: number; active: boolean }[] = [];
+  for (const mark of commentMarks.marks) {
+    if (mark.id === "draft") continue;
+    const box = fluidEditor.view.dom.querySelector(`[data-comment-thread="${CSS.escape(mark.id)}"]`)?.getClientRects()[0];
+    if (!box) continue;
+    const middle = (box.top + box.bottom) / 2;
+    const line = lines.find((entry) => Math.abs(entry.middle - middle) < 6);
+    if (line) {
+      line.ids.push(mark.id);
+      line.active ||= mark.active;
+    } else lines.push({ ids: [mark.id], middle, active: mark.active });
+  }
+  const markers = lines.map((line) => ({ ids: line.ids, top: Math.round(line.middle), active: line.active }));
+  const key = JSON.stringify([activeRevision, markers]);
+  if (key === reportedMarkers) return;
+  reportedMarkers = key;
+  postToParent({ kind: "comment-markers", session: activeSession, revision: activeRevision, markers });
+}
+let markerFrame = 0;
+function scheduleMarkerReport(): void {
+  cancelAnimationFrame(markerFrame);
+  markerFrame = requestAnimationFrame(reportMarkers);
+}
+// Lines move when the frame changes size and when the document changes (a
+// mutation observer: a resize observer here would trip over the frame's own).
+window.addEventListener("resize", scheduleMarkerReport, { passive: true });
+new MutationObserver(scheduleMarkerReport).observe(document.body, { childList: true, subtree: true, characterData: true });
+void document.fonts.ready.then(scheduleMarkerReport);
 
 const canComment = () => Boolean(activeSession && fluidEditor && commentMarks?.canComment);
 
@@ -909,7 +944,7 @@ function frameRect(rect: DOMRect): FrameRect {
   return { top: Math.round(rect.top), left: Math.round(rect.left), bottom: Math.round(rect.bottom), right: Math.round(rect.right) };
 }
 
-/** The selected text as document positions and where its end is, or null when nothing is selected there. */
+/** The selected text as document positions and where it is on screen, or null when nothing is selected there. */
 function selectedText(): { range: { from: number; to: number }; rect: FrameRect } | null {
   const selection = document.getSelection();
   const view = fluidEditor?.view;
@@ -919,10 +954,9 @@ function selectedText(): { range: { from: number; to: number }; rect: FrameRect 
     const anchor = view.posAtDOM(selection.anchorNode!, selection.anchorOffset);
     const head = view.posAtDOM(selection.focusNode!, selection.focusOffset);
     if (anchor === head) return null;
+    // The box around all its lines: the parent offers Comment over its first line, or under its last.
     const range = selection.getRangeAt(0);
-    const rects = range.getClientRects();
-    const end = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
-    return { range: { from: Math.min(anchor, head), to: Math.max(anchor, head) }, rect: frameRect(end) };
+    return { range: { from: Math.min(anchor, head), to: Math.max(anchor, head) }, rect: frameRect(range.getBoundingClientRect()) };
   } catch {
     return null;
   }
@@ -1009,6 +1043,7 @@ window.addEventListener(
       reportedSelection = "";
       reportSelection();
       if (hoveredHeading) reportHeading(hoveredHeading);
+      reportMarkers();
     });
   },
   { passive: true },

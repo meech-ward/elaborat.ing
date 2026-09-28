@@ -48,9 +48,8 @@ function entry(comment: RemoteComment, viewer: Viewer): CommentEntry {
   }
 }
 
-/** Where a thread sorts: the whole file first, then text and sections, then elements, then detached. */
-function group(thread: RemoteThread, place: ThreadPlace | undefined): number {
-  if (place?.attached === false) return 3
+/** Where a thread sorts: the whole file first, then text and sections, then elements. */
+function group(thread: RemoteThread): number {
   if (thread.anchor.kind === "document") return 0
   return thread.anchor.kind === "element" ? 2 : 1
 }
@@ -59,8 +58,10 @@ function group(thread: RemoteThread, place: ThreadPlace | undefined): number {
  * A file's open and resolved threads, as the panel lists them. `places` is
  * where the file on screen found each thread (CommentsController.placesFor);
  * a thread it has not placed shows its stored quote. Open threads go the
- * whole file first, then text and sections in file order, then elements,
- * then detached ones; resolved threads keep the order they were made in.
+ * whole file first, then text and sections in file order, then elements. A
+ * detached thread keeps its place, where its text was when it was made, so
+ * it does not jump when its text goes. Resolved threads keep the order they
+ * were made in.
  */
 export function threadViews(
   threads: readonly RemoteThread[],
@@ -83,8 +84,7 @@ export function threadViews(
     .map((thread, index) => ({ thread, index }))
     .filter(({ thread }) => !thread.resolved_at)
     .sort(
-      (a, b) =>
-        group(a.thread, places.get(a.thread.id)) - group(b.thread, places.get(b.thread.id)) || start(a.thread) - start(b.thread) || a.index - b.index,
+      (a, b) => group(a.thread) - group(b.thread) || start(a.thread) - start(b.thread) || a.index - b.index,
     )
     .map(({ thread }) => view(thread))
   return { open, resolved: threads.filter((thread) => thread.resolved_at).map(view) }

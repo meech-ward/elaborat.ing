@@ -544,13 +544,32 @@ export function DiagramView({
   // node keeps its comments through Regenerate): pins, and Comment on the
   // selected element. The panel's Go to shows an element on the canvas.
   const canvasApi = useRef<DrawingCanvasApi | null>(null);
+  // From Code, Go to shows the canvas first, then the element on it.
+  const revealAfterShow = useRef<string | null>(null);
   const canvasComments = useCanvasComments({
     path,
     elements: scene?.elements ?? null,
     onReveal: (elementId) => {
-      canvasApi.current?.revealElement(elementId);
+      if (view !== "source") {
+        canvasApi.current?.revealElement(elementId);
+        return;
+      }
+      revealAfterShow.current = elementId;
+      setMode("canvas");
     },
   });
+  useEffect(() => {
+    if (view === "source" || revealAfterShow.current === null) return;
+    // After the canvas has placed its scene in the area it now shows in.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const elementId = revealAfterShow.current;
+        revealAfterShow.current = null;
+        if (elementId !== null) canvasApi.current?.revealElement(elementId);
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [view]);
 
   if (!booted) {
     return (

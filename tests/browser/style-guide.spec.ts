@@ -136,8 +136,10 @@ test("the comment samples answer: a reply sends with the keyboard, and Resolve f
   await expect(field).toBeFocused()
   await field.fill("Linked it from step 3.")
   await field.press("ControlOrMeta+Enter")
-  await expect(thread.getByText("Linked it from step 3.")).toBeVisible()
-  await expect(field).toHaveValue("")
+  // Sent, the reply shows and its field closes, giving the keyboard back to Reply.
+  await expect(field).toHaveCount(0)
+  await expect(thread.getByRole("paragraph").filter({ hasText: "Linked it from step 3." })).toBeVisible()
+  await expect(thread.getByRole("button", { name: "Reply" })).toBeFocused()
   await thread.getByRole("button", { name: "Resolve" }).click()
   await expect(thread).toBeHidden()
   // Focus goes on to the next thread rather than falling to the page.

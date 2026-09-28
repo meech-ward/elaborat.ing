@@ -39,7 +39,7 @@
 // tests) and the vendor unions.
 
 import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import type { ComponentProps, ComponentType, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { ComponentProps, ComponentType, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Banner, BannerAction, isApplePlatform } from '@/features/design-system';
 import type { CanvasPin } from '@/features/comments';
 import { mergeLibraryUpdate, snapshotLibraryState } from './merge.ts';
@@ -48,13 +48,23 @@ import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
-import { CanvasPins, ElementMenuComment, createPinPlacesStore, pinPlaces, type PinElement } from './CanvasComments.tsx';
+import {
+  CanvasPins,
+  ElementMenuComment,
+  SelectedElementComment,
+  commentButtonPlace,
+  createCommentButtonStore,
+  createPinPlacesStore,
+  pinPlaces,
+  type PinElement,
+} from './CanvasComments.tsx';
 import {
   OPENING_MARGIN,
   canvasToScene,
   canvasUiFrom,
   centreOn,
   createCanvasUiStore,
+  elementAt,
   elementBox,
   elementPoint,
   followArea,
@@ -62,6 +72,7 @@ import {
   zoomViewport,
   type CanvasArea,
   type CanvasViewport,
+  type HitElement,
   type ScenePoint,
 } from './canvasView.ts';
 import './drawingCanvas.css';
@@ -255,6 +266,11 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const onErrorRef = useRef(onError);
   const onScrollRef = useRef(onScrollChange);
   const commentsRef = useRef(comments);
+  // Someone who may comment but not change the drawing: a click selects an
+  // element (Excalidraw selects none in view mode), and the Comment button
+  // over it starts the comment.
+  const pickToComment = Boolean(viewOnly && comments?.canComment);
+  const pickRef = useRef(pickToComment);
   // Latest callbacks without re-subscribing the native component: effects
   // only, never ref writes during render.
   useEffect(() => {
@@ -262,13 +278,32 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     onErrorRef.current = onError;
     onScrollRef.current = onScrollChange;
     commentsRef.current = comments;
+    pickRef.current = pickToComment;
   });
 
+  /** The visible part of the canvas, relative to the canvas; null while it is hidden. */
+  const visibleArea = (): CanvasArea | null => {
+    const wrapper = wrapperRef.current;
+    const area = areaRef.current;
+    if (!wrapper || !area) return null;
+    const box = wrapper.getBoundingClientRect();
+    const view = area.getBoundingClientRect();
+    if (view.width === 0 || view.height === 0) return null;
+    return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
+  };
+
   // Comment pins follow their elements and the view: placed again on every
-  // change the canvas reports, and when the pins change.
+  // change the canvas reports, and when the pins change. So does the
+  // Comment button over the selected element, when there is one.
   const [pinStore] = useState(createPinPlacesStore);
-  const layoutPins = (elements: readonly unknown[], state: { zoom: { value: number }; scrollX: number; scrollY: number }) => {
-    pinStore.set(pinPlaces(commentsRef.current?.pins ?? [], pinElements(elements), { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }));
+  const [commentButton] = useState(createCommentButtonStore);
+  const layoutPins = (elements: readonly unknown[], state: { zoom: { value: number }; scrollX: number; scrollY: number; selectedElementIds: Readonly<Record<string, unknown>> }) => {
+    const view = { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY };
+    pinStore.set(pinPlaces(commentsRef.current?.pins ?? [], pinElements(elements), view));
+    const selected = Object.keys(state.selectedElementIds).filter((id) => state.selectedElementIds[id]);
+    const element = pickRef.current && selected.length === 1 ? pinElements(elements).find((candidate) => candidate.id === selected[0] && !candidate.isDeleted) : undefined;
+    const area = element ? visibleArea() : null;
+    commentButton.set(element && area ? commentButtonPlace(element, view, area, compact ? { height: 40, half: 70 } : { height: 32, half: 90 }) : null);
   };
   const pins = comments?.pins;
   useEffect(() => {
@@ -328,6 +363,30 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     commentOnSelected();
   };
   const openPin = useCallback((pin: CanvasPin) => commentsRef.current?.onOpen(pin), []);
+  // In view mode a click (not a drag, which pans) on an element selects it, at the spot clicked.
+  const downRef = useRef<{ x: number; y: number } | null>(null);
+  const onPickDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    downRef.current = event.button === 0 && event.target instanceof HTMLCanvasElement ? { x: event.clientX, y: event.clientY } : null;
+  };
+  const onPickUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const down = downRef.current;
+    downRef.current = null;
+    const api = apiRef.current;
+    const wrapper = wrapperRef.current;
+    if (!down || !api || !wrapper || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
+    const box = wrapper.getBoundingClientRect();
+    const state = api.getAppState();
+    const at = canvasToScene({ x: event.clientX - box.left, y: event.clientY - box.top }, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY });
+    const elements = api.getSceneElements() as unknown as readonly HitElement[];
+    const elementId = elementAt(elements, at, 6 / state.zoom.value);
+    const element = elementId ? elements.find((candidate) => candidate.id === elementId) : undefined;
+    lastSpotRef.current = element ? { elementId: element.id, point: elementPoint(element, at) } : null;
+    // After Excalidraw's own pointer up, which lets go of the selection in view mode.
+    (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+      appState: { selectedElementIds: (element ? { [element.id]: true } : {}) as NativeAppState['selectedElementIds'] },
+      captureUpdate: 'NEVER',
+    });
+  };
 
   // Read by the native canvas on mount only; later scenes arrive through
   // updateScene, so this stays stable across re-renders and StrictMode.
@@ -370,17 +429,6 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       }
     }
   }, [scene, present]);
-
-  /** The visible part of the canvas, relative to the canvas; null while it is hidden. */
-  const visibleArea = (): CanvasArea | null => {
-    const wrapper = wrapperRef.current;
-    const area = areaRef.current;
-    if (!wrapper || !area) return null;
-    const box = wrapper.getBoundingClientRect();
-    const view = area.getBoundingClientRect();
-    if (view.width === 0 || view.height === 0) return null;
-    return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
-  };
 
   // The scene opens fitted into the visible area, clear of the islands, when
   // it first loads and whenever the canvas is shown again (another tab or the
@@ -451,7 +499,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   }, []);
 
   const handleLibraryChange: NativeOnChange = (elements, appState, files) => {
-    ui.set(canvasUiFrom(appState));
+    ui.set(canvasUiFrom(appState, ui.get()));
     layoutPins(elements, appState);
     let current: LibrarySnapshot;
     try {
@@ -553,6 +601,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       className="relative"
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
       onKeyDown={comments ? onCommentKey : undefined}
+      onPointerDownCapture={pickToComment ? onPickDown : undefined}
+      onPointerUp={pickToComment ? onPickUp : undefined}
     >
       <CanvasErrorBoundary onError={onError}>
         <Suspense fallback={<div aria-label="Loading drawing canvas" className="p-3 text-[13px] text-muted-foreground">Loading drawing canvas…</div>}>
@@ -585,6 +635,9 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
           />
           {pins && pins.length > 0 && <CanvasPins pins={pins} places={pinStore} onOpen={openPin} />}
           {canComment && comments && <ElementMenuComment store={ui} wrapperRef={wrapperRef} shortcut={comments.shortcut} onComment={commentFromMenu} />}
+          {pickToComment && comments && (
+            <SelectedElementComment place={commentButton} size={compact ? 'touch' : 'default'} shortcut={comments.shortcut} onComment={commentOnSelected} />
+          )}
           <CanvasControls
             store={ui}
             commands={commands}

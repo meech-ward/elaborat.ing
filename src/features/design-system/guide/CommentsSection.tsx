@@ -108,11 +108,11 @@ function ThreadStates() {
         <GuideLabel>Thread</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.quote} />
         <GuideValue>
-          Radius 12, padding 12, the panel border. Avatar 24, name 13/600, via agent on seg, when in 12 dim, edited. Your own comment's ... has Edit and Delete; the owner's has Delete on anyone's. Try Reply, Resolve and the menus.
+          Radius 12, padding 12, the panel border. Avatar 24, name 13/600, via agent on seg, when in 12 dim, edited. Your own comment's ... has Edit and Delete; the owner's has Delete on anyone's. Delete asks first, in an alert dialog with Cancel focused. Try Reply, Resolve and the menus.
         </GuideValue>
         <GuideLabel>Open in the file, replying</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.steps} active defaultReplying />
-        <GuideValue>The thread shown in the file takes a 1px accent-line border. Reply opens the composer; Cancel or Escape closes it and gives focus back to Reply.</GuideValue>
+        <GuideValue>The thread shown in the file takes a 1px accent-line border. Reply opens the composer; sending, Cancel or Escape closes it and gives focus back to Reply.</GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Context lines</GuideLabel>
@@ -133,7 +133,7 @@ function ThreadStates() {
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Resolved</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.created} />
-        <GuideValue>On the field fill, with who resolved it and when; Reopen brings it back.</GuideValue>
+        <GuideValue>On the field fill, with who resolved it and when (when goes under who on a narrow panel); Reopen brings it back.</GuideValue>
         <GuideLabel>Deleted comment, deleted account</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.deleted} />
         <GuideValue>A deleted comment keeps its place while replies remain. A deleted account shows as such, with an empty figure.</GuideValue>
@@ -694,7 +694,7 @@ function PhoneSheet() {
         )}
       </div>
       <GuideValue>
-        shadcn&apos;s Sheet from the bottom, 75% of the screen, radius 14 at the top with a grab bar. 15px text; Resolve, the menus, Reply and Close are 40. Close takes focus when it opens; a thread&apos;s Go to closes the sheet so the text shows.
+        shadcn&apos;s Sheet from the bottom, 75% of the screen (half while a new comment is written, so what it is on shows above it), radius 14 at the top with a grab bar. 15px text; Go to, Resolve, the menus, Reply and Close are 40. Close takes focus when it opens; a thread&apos;s Go to closes the sheet so the text shows.
       </GuideValue>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="outline" className="pointer-coarse:h-10" onClick={() => setOpen(true)}>

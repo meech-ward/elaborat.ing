@@ -461,7 +461,7 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     session: z.string().min(1),
     revision: z.number().int().nonnegative(),
   }),
-  // The selected text (document positions) and where its end is, or none.
+  // The selected text (document positions) and the box around it on screen, or none.
   // Positions are proposals: the parent maps them through its own projection.
   z.object({
     kind: z.literal("comment-selection"),
@@ -477,6 +477,19 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     revision: z.number().int().nonnegative(),
     pos: z.number().int().nonnegative().nullable(),
     rect: frameRectSchema.nullable(),
+  }).strict(),
+  // Where the commented text is: for each line where marked threads start,
+  // their ids (ones the parent sent) and the line's middle in the frame's
+  // viewport, for the parent's marker column.
+  z.object({
+    kind: z.literal("comment-markers"),
+    session: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    markers: z.array(z.object({
+      ids: z.array(z.string().min(1).max(64)).min(1).max(1000),
+      top: z.number().finite(),
+      active: z.boolean(),
+    }).strict()).max(1000),
   }).strict(),
   // Commented text was clicked: open its thread (an id the parent sent).
   z.object({
@@ -585,6 +598,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "comment-heading":
     case "comment-open":
     case "comment-shortcut":
+    case "comment-markers":
       return "drop";
     case "edit-rejected":
       return "refusal";

@@ -326,15 +326,17 @@ above the choices. */
   width: auto;
   margin: 8px 16px 0 calc(50% + 16px);
 }
-/* The canvas area: right of the side panels and below the top line (the
-   tool island's top is 76), or in Split right of the source. The canvas
-   controls float over it (CanvasControls.tsx) and Excalidraw's selection
-   properties keep to it. In focus mode it is the whole window, except in
-   Split, where the uncovered half is too narrow to share its top with the
-   focus panel. */
+/* The canvas area: right of the side panels, left of the comments panel
+   and below the top line (the tool island's top is 76), or in Split right
+   of the source. The canvas controls float over it (CanvasControls.tsx),
+   comment pins show only in it, and Excalidraw's selection properties and
+   library keep to it. In focus mode it is the whole window left of the
+   comments, except in Split, where the uncovered half is too narrow to
+   share its top with the focus panel. */
 .wb-native-view[data-canvas-bleed] > [data-canvas-stage] {
   --canvas-area-top: 60px;
   --canvas-area-left: var(--canvas-left, 0px);
+  --canvas-area-right: var(--canvas-right, 0px);
 }
 .wb-native-view[data-canvas-bleed][data-view="split"] > [data-canvas-stage] {
   --canvas-area-left: var(--canvas-split, 50%);
@@ -345,7 +347,7 @@ above the choices. */
 .wb-native-view[data-canvas-bleed] .excalidraw .layer-ui__wrapper {
   top: var(--canvas-area-top);
   left: var(--canvas-area-left);
-  width: calc(100% - var(--canvas-area-left));
+  width: calc(100% - var(--canvas-area-left) - var(--canvas-area-right));
   height: calc(100% - var(--canvas-area-top));
 }
 /* In Split the selection properties start below the tool island, which
@@ -355,7 +357,7 @@ above the choices. */
 }
 .wb-native-view[data-canvas-bleed] .excalidraw .sidebar {
   top: 76px;
-  right: 16px;
+  right: calc(var(--canvas-area-right) + 16px);
   bottom: 16px;
   border-radius: var(--radius-menu);
 }

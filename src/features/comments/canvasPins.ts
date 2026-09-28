@@ -1,5 +1,6 @@
 import type { ThreadPlace } from "./controller"
 import { DRAFT_MARK } from "./noteMarks"
+import { elementName } from "./anchorView"
 import { elementLabel, type CommentAnchor, type LabelElement } from "./placement"
 import type { RemoteThread } from "./remote"
 
@@ -87,12 +88,12 @@ export function canvasPins(
   const result: CanvasPin[] = [...pins].map(([key, pin]) => ({
     id: key,
     ...pin,
-    label: `${pin.threadIds.length} ${pin.threadIds.length === 1 ? "thread" : "threads"} on ${pin.label}`,
+    label: `${pin.threadIds.length} ${pin.threadIds.length === 1 ? "thread" : "threads"} on ${elementName(pin.label)}`,
     active: activeThreadId !== null && pin.threadIds.includes(activeThreadId),
   }))
   if (draft?.anchor.kind === "element") {
     const { element_id, point } = draft.anchor
-    result.push({ id: DRAFT_MARK, elementId: element_id, ...(point ? { point } : {}), threadIds: [], label: `New comment on ${draft.label}`, active: true })
+    result.push({ id: DRAFT_MARK, elementId: element_id, ...(point ? { point } : {}), threadIds: [], label: `New comment on ${elementName(draft.label)}`, active: true })
   }
   return result
 }

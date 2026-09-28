@@ -118,6 +118,70 @@ test("commented text is marked in both views and follows edits elsewhere in the 
   await expect.poll(() => sourceMarked(page)).toBe("where agents help## Steps")
 })
 
+test("Rendered has a marker beside each commented line, which opens its thread with the keyboard on it", async ({ page }) => {
+  await seeded(page, { view: "Rendered" })
+  const markers = page.getByRole("button", { name: "1 thread on this line", exact: true })
+  await expect(markers).toHaveCount(2)
+  // Each marker sits beside its line: its middle is the marked words' middle.
+  const frame = (await page.locator(FRAME).boundingBox())!
+  const words = await frameOf(page).locator(".comment-highlight").evaluateAll((spans) => spans.map((span) => span.getClientRects()[0].toJSON() as DOMRect))
+  for (const [index, box] of words.entries()) {
+    const marker = (await markers.nth(index).boundingBox())!
+    expect(Math.abs(marker.y + marker.height / 2 - (frame.y + box.y + box.height / 2))).toBeLessThan(3)
+    expect(marker.x).toBeGreaterThanOrEqual(frame.x + frame.width)
+  }
+  await markers.nth(1).click()
+  await expect(thread(page, "section Steps")).toBeFocused()
+  await expect(markers.nth(1)).toHaveAttribute("data-active", "true")
+})
+
+test("offline, Comment over a selection shows off and says why, in Source and in Rendered", async ({ page }) => {
+  const { fake } = await seeded(page, { threads: false, view: "Split" })
+  await page.getByRole("button", { name: /^Comments/ }).first().click()
+  fake.offline = true
+  // The app notices the connection is gone on its next refresh.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(panel(page).getByText("Comments need a connection")).toBeVisible()
+  const off = page.getByRole("button", { name: "Comments need a connection" })
+  await sourceLines(page).getByText("Create a project.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Shift+Home")
+  await expect(off).toBeVisible()
+  await expect(off).toBeDisabled()
+  await expect(commentButton(page)).toHaveCount(0)
+  await frameOf(page).getByText("Sign up with an email link.").click({ position: { x: 1, y: 6 } })
+  await page.keyboard.press("Shift+End")
+  await expect(off).toBeVisible()
+  await expect(off).toBeDisabled()
+})
+
+test("the Comment button sits beside the selection, on its line, clear of the other lines' words", async ({ page }) => {
+  await seeded(page, { threads: false, view: "Rendered" })
+  const frame = frameOf(page)
+  const words = frame.getByText("Create a project.")
+  await words.click({ position: { x: 1, y: 6 } })
+  await page.keyboard.press("Shift+End")
+  const button = (await commentButton(page).boundingBox())!
+  const frameBox = (await page.locator(FRAME).boundingBox())!
+  const text = await words.evaluate((element) => {
+    const range = document.createRange()
+    range.selectNodeContents(element)
+    return range.getBoundingClientRect().toJSON() as DOMRect
+  })
+  expect(button.x).toBeGreaterThanOrEqual(frameBox.x + text.right)
+  expect(Math.abs(button.y + button.height / 2 - (frameBox.y + (text.top + text.bottom) / 2))).toBeLessThan(6)
+
+  // In Source too: beside the selected line's end.
+  await page.getByRole("button", { name: "Source", exact: true }).click()
+  await sourceLines(page).getByText("Create a project.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Shift+Home")
+  const line = (await sourceLines(page).getByText("Create a project.").boundingBox())!
+  const source = (await commentButton(page).boundingBox())!
+  expect(source.x).toBeGreaterThanOrEqual(line.x + line.width)
+  expect(Math.abs(source.y + source.height / 2 - (line.y + line.height / 2))).toBeLessThan(6)
+})
+
 test("a thread whose text is deleted is no longer marked", async ({ page }) => {
   await seeded(page)
   await expect(frameOf(page).locator(".comment-highlight")).toHaveCount(2)

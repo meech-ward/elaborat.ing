@@ -1,8 +1,9 @@
 import { Bot, Check, CircleCheck, Ellipsis, FileText, Heading, Reply, RotateCcw, Shapes, UserRound } from "lucide-react"
-import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { AlertDialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { initialFor } from "./AccountRows"
 import { ActionMenu, type MenuEntry } from "./ActionMenu"
@@ -140,12 +141,14 @@ export function CommentAnchorLine({
     </>
   )
   if (onSelect && !detached) {
+    // A 40px target on touch screens, its words in the middle.
     return (
       <Button
         variant="ghost"
         onClick={onSelect}
         className={cn(
-          "-mx-1.5 -my-1 block h-auto min-w-0 rounded-row px-1.5 py-1 text-left leading-snug font-normal whitespace-normal pointer-coarse:h-auto",
+          "-mx-1.5 block h-auto min-w-0 content-center rounded-row px-1.5 text-left leading-snug font-normal whitespace-normal pointer-coarse:h-auto",
+          size === "touch" ? "-my-2 min-h-10 py-1.5" : "-my-1 py-1 pointer-coarse:-my-2 pointer-coarse:min-h-10",
           text,
           className,
         )}
@@ -180,12 +183,54 @@ function CommentTime({ when, now }: { when: string | Date; now?: Date }) {
 }
 
 /**
+ * Asks before a comment is deleted, since its words go for good: shadcn's
+ * alert dialog, with Cancel focused. `onDelete` runs on Delete.
+ */
+export function DeleteCommentDialog({
+  open,
+  onOpenChange,
+  onDelete,
+  size = "default",
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDelete: () => void
+  size?: CommentsSize
+}) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  const button = size === "touch" ? "touch" : "default"
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => onOpenChange(next)}>
+      <DialogContent showCloseButton={false} initialFocus={cancel}>
+        <DialogTitle>Delete this comment?</DialogTitle>
+        <DialogDescription>Its words are removed for everyone, and it cannot be undone.</DialogDescription>
+        <DialogFooter>
+          <Button ref={cancel} variant="outline" size={button} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            size={button}
+            onClick={() => {
+              onOpenChange(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </AlertDialog>
+  )
+}
+
+/**
  * One comment: the Avatar (the picture, or the initial in accentSoft; an
  * empty figure for a deleted account), the author's name at 600, "via
  * agent" when their agent wrote it, when (and "edited"), then the words.
  * A deleted comment keeps its author and time, and says "Comment deleted".
  * Its menu (Edit for its author, Delete for its author and the owner) shows
- * on hover and focus, and always on touch screens.
+ * on hover and focus, and always on touch screens. Delete asks first.
  */
 export function CommentItem({
   comment,
@@ -210,11 +255,12 @@ export function CommentItem({
 }) {
   const size = useCommentsSize(sizeProp)
   const touch = size === "touch"
+  const [confirming, setConfirming] = useState(false)
   const name = comment.author?.name ?? DELETED_ACCOUNT
   const deleted = comment.body === null
   const entries: MenuEntry[] = []
   if (!deleted && comment.canEdit && onStartEdit) entries.push({ label: "Edit", onSelect: onStartEdit })
-  if (!deleted && comment.canDelete && onDelete) entries.push({ label: "Delete", destructive: true, onSelect: onDelete })
+  if (!deleted && comment.canDelete && onDelete) entries.push({ label: "Delete", destructive: true, onSelect: () => setConfirming(true) })
   const menuLabel = `Actions for the comment by ${name}`
   return (
     <div
@@ -298,6 +344,7 @@ export function CommentItem({
           }
         />
       )}
+      {onDelete && <DeleteCommentDialog open={confirming} onOpenChange={setConfirming} onDelete={onDelete} size={size} />}
     </div>
   )
 }
@@ -333,10 +380,10 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
  * accent line when `active`, the field fill once resolved), padding 12. The
  * context line with Resolve (or Reopen) at its end; "Resolved by ..." when
  * resolved; the comments, 10 apart; then Reply, which opens a
- * CommentComposer. Viewers and offline readers (`canWrite` false) see the
- * words only.
+ * CommentComposer until the reply is sent or cancelled. Viewers and offline
+ * readers (`canWrite` false) see the words only.
  *
- * Focus never falls to the page: closing Reply goes back to Reply, an edit
+ * Focus never falls to the page: closing or sending Reply goes back to Reply, an edit
  * back to its comment's actions, Resolve and Reopen to the next thread (or
  * Resolved), and Delete to Reply or the thread. The card itself takes focus
  * (tabIndex -1) when a marker in the file opens it.
@@ -368,10 +415,17 @@ export function CommentThread({
   const replyButton = useRef<HTMLButtonElement>(null)
   const toggle = resolved ? onReopen : onResolve
 
+  // Closing Reply (sent or cancelled) gives the keyboard back to Reply once it shows again.
+  const replyFocus = useRef(false)
   const closeReply = () => {
+    replyFocus.current = true
     setReplying(false)
-    afterRender(() => replyButton.current?.focus())
   }
+  useEffect(() => {
+    if (replying || !replyFocus.current) return
+    replyFocus.current = false
+    replyButton.current?.focus()
+  }, [replying])
   const endEdit = (commentId: string) => {
     setEditing(null)
     afterRender(() => card.current?.querySelector<HTMLElement>(`[data-comment-id="${commentId}"] [data-comment-menu=""]`)?.focus())
@@ -437,8 +491,10 @@ export function CommentThread({
       {resolved && (
         <p id={resolvedId} className={cn("-mt-0.5 flex items-center gap-1.5 text-dim", touch ? "text-[13px]" : "text-xs")}>
           <CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-ok" />
-          <span className="min-w-0">
-            Resolved by {resolved.by?.name ?? DELETED_ACCOUNT} · <CommentTime when={resolved.at} now={now} />
+          {/* Who, then when, as a comment's own line shows them: on a narrow panel when goes under who. */}
+          <span className="flex min-w-0 flex-wrap gap-x-1.5">
+            <span className="min-w-0 [overflow-wrap:anywhere]">Resolved by {resolved.by?.name ?? DELETED_ACCOUNT}</span>
+            <CommentTime when={resolved.at} now={now} />
           </span>
         </p>
       )}
@@ -471,7 +527,10 @@ export function CommentThread({
             label="Reply"
             placeholder="Reply"
             submitLabel="Reply"
-            onSubmit={onReply}
+            onSubmit={async (body) => {
+              await onReply(body)
+              closeReply()
+            }}
             onCancel={closeReply}
             autoFocus={!defaultReplying}
             size={size}

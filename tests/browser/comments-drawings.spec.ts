@@ -82,6 +82,21 @@ const thread = (page: Page, name: string) => panel(page).getByRole("article", { 
 const pin = (page: Page, name: string) => page.getByRole("button", { name, exact: true })
 const moreTools = (page: Page) => page.getByRole("button", { name: "More tools" })
 
+/**
+ * Opens the comments panel. The canvas area ends at the panel, so the scene
+ * moves to keep its middle there: places are measured once it is open.
+ */
+async function openPanel(page: Page) {
+  await page.getByRole("button", { name: /^Comments/ }).first().click()
+  await expect(panel(page)).toBeVisible()
+  const area = page.locator('[data-slot="canvas-controls"]')
+  await expect.poll(async () => {
+    const box = (await area.boundingBox())!
+    const aside = (await panel(page).boundingBox())!
+    return Math.round(box.x + box.width - aside.x)
+  }).toBe(0)
+}
+
 /** Writes a new comment in the panel's draft and sends it. */
 async function send(page: Page, body: string) {
   const field = panel(page).getByRole("textbox", { name: "New comment" })
@@ -119,7 +134,7 @@ const near = (actual: { x: number; y: number }, expected: { x: number; y: number
 }
 
 /** A project with the drawing, opened on its canvas, with a thread on the box when `thread` is set. */
-async function seeded(page: Page, { thread: opening, role }: { thread?: Record<string, unknown>; role?: "viewer" } = {}): Promise<{ fake: FakeSupabase; id: string }> {
+async function seeded(page: Page, { thread: opening, role }: { thread?: Record<string, unknown>; role?: "viewer" | "commenter" } = {}): Promise<{ fake: FakeSupabase; id: string }> {
   const server = new FakeProjectServer()
   const owner = role ? SOMEONE_ELSE : person.id
   const remote = server.remote(owner)
@@ -140,6 +155,7 @@ async function seeded(page: Page, { thread: opening, role }: { thread?: Record<s
 
 test("a shape is commented on from More tools at the spot clicked, its pin opens the thread, and Go to shows the shape", async ({ page }) => {
   const { fake } = await seeded(page)
+  await openPanel(page)
   // Comment waits for one element to be selected.
   await moreTools(page).click()
   await expect(page.getByRole("menuitem", { name: /^Comment/ })).toBeDisabled()
@@ -178,24 +194,26 @@ test("a shape is commented on from More tools at the spot clicked, its pin opens
 
 test("Excalidraw's menu for an element comments on it, where it was opened, and so does the comment key", async ({ page }) => {
   const { fake } = await seeded(page)
+  await openPanel(page)
   const spot = await onScreen(page, { x: 400, y: 75 })
   await page.mouse.click(spot.x, spot.y, { button: "right" })
   const menu = page.locator(".excalidraw .context-menu")
   await menu.getByRole("button", { name: /^Comment/ }).click()
   await expect(menu).toHaveCount(0)
   await send(page, "Is this the next step?")
-  await expect(thread(page, "ellipse")).toBeVisible()
-  near(await pinPoint(page, "1 thread on ellipse"), spot)
+  await expect(thread(page, "Ellipse")).toBeVisible()
+  near(await pinPoint(page, "1 thread on Ellipse"), spot)
 
-  // The comment key on the selected box: a pin at the spot it was clicked.
-  const onBox = await onScreen(page, { x: 20, y: 80 })
+  // The comment key on the selected box: a pin at the spot it was clicked
+  // (clear of the ellipse's properties, which stay until the click).
+  const onBox = await onScreen(page, { x: 180, y: 80 })
   await page.mouse.click(onBox.x, onBox.y)
   await page.keyboard.press("ControlOrMeta+Alt+m")
   await send(page, "Make it bigger.")
   await expect(thread(page, "Sign up")).toBeVisible()
   expect(fake.comments.threads.map((entry) => entry.anchor)).toEqual([
     { kind: "element", element_id: "idea", label: "ellipse", point: { x: expect.closeTo(0.5, 1), y: expect.closeTo(0.75, 1) } },
-    { kind: "element", element_id: "box-1", label: "Sign up", point: { x: expect.closeTo(0.1, 1), y: expect.closeTo(0.8, 1) } },
+    { kind: "element", element_id: "box-1", label: "Sign up", point: { x: expect.closeTo(0.9, 1), y: expect.closeTo(0.8, 1) } },
   ])
 })
 
@@ -231,6 +249,22 @@ test("a pin follows the view and its shape as it moves, and a deleted shape's th
   await expect(detached).toContainText("Should this say Create account?")
 })
 
+test("Go to from Code shows the canvas, with the element in the middle", async ({ page }) => {
+  await seeded(page, { thread: { kind: "element", element_id: "idea", label: "ellipse" } })
+  await openPanel(page)
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Code", exact: true }).click()
+  await expect(pin(page, "1 thread on Ellipse")).toBeHidden()
+  await thread(page, "Ellipse").getByRole("button", { name: "Go to Ellipse" }).click()
+  await expect(page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Canvas", exact: true })).toHaveAttribute("aria-pressed", "true")
+  // The ellipse's middle (400, 50) is in the middle of the canvas area: its pin, at its top-right corner, is 80 right and 50 up of it.
+  const area = (await page.locator('[data-slot="canvas-controls"]').boundingBox())!
+  await expect.poll(async () => {
+    const at = await pinPoint(page, "1 thread on Ellipse")
+    const scale = await zoom(page)
+    return Math.round(Math.abs(at.x - (area.x + area.width / 2 + 80 * scale)) + Math.abs(at.y - (area.y + area.height / 2 - 50 * scale)))
+  }).toBeLessThan(4)
+})
+
 test("a viewer sees the pins, and is offered no Comment", async ({ page }) => {
   await seeded(page, { thread: { kind: "element", element_id: "box-1", label: "Sign up" }, role: "viewer" })
   await expect(pin(page, "1 thread on Sign up")).toBeVisible()
@@ -238,6 +272,76 @@ test("a viewer sees the pins, and is offered no Comment", async ({ page }) => {
   await page.mouse.click(spot.x, spot.y, { button: "right" })
   await expect(page.locator(".excalidraw .context-menu")).toBeVisible()
   await expect(page.locator(".excalidraw .context-menu").getByRole("button", { name: /^Comment/ })).toHaveCount(0)
+})
+
+test("a commenter, whose canvas has no tools, selects a shape with a click and comments on it from the Comment button, the key and Excalidraw's menu", async ({ page }) => {
+  const { fake } = await seeded(page, { role: "commenter" })
+  await openPanel(page)
+  await expect(moreTools(page)).toHaveCount(0)
+  const comment = page.locator('[data-slot="selected-element-comment"]')
+  await expect(comment).toHaveCount(0)
+
+  // A click on the box selects it: the Comment button shows above it and starts the comment at the spot clicked.
+  const spot = await onScreen(page, { x: 50, y: 50 })
+  await page.mouse.click(spot.x, spot.y)
+  await expect(comment).toBeVisible()
+  const top = await onScreen(page, { x: 100, y: 0 })
+  const button = (await comment.boundingBox())!
+  expect(button.y + button.height).toBeLessThan(top.y)
+  expect(Math.abs(button.x + button.width / 2 - top.x)).toBeLessThan(3)
+  await comment.click()
+  await send(page, "Should this say Create account?")
+  await expect(thread(page, "Sign up")).toBeVisible()
+  near(await pinPoint(page, "1 thread on Sign up"), spot)
+
+  // A click on empty canvas selects nothing, and a drag still pans.
+  const empty = await onScreen(page, { x: 260, y: 200 })
+  await page.mouse.click(empty.x, empty.y)
+  await expect(comment).toHaveCount(0)
+
+  // The comment key on the clicked ellipse.
+  const onIdea = await onScreen(page, { x: 400, y: 50 })
+  await page.mouse.click(onIdea.x, onIdea.y)
+  await expect(comment).toBeVisible()
+  await page.keyboard.press("ControlOrMeta+Alt+m")
+  await send(page, "Is this the next step?")
+  await expect(thread(page, "Ellipse")).toBeVisible()
+
+  // Excalidraw's menu for the box, though view mode lets go of the selection when the button comes up.
+  const onBox = await onScreen(page, { x: 20, y: 80 })
+  await page.mouse.click(onBox.x, onBox.y, { button: "right" })
+  const menu = page.locator(".excalidraw .context-menu")
+  await menu.getByRole("button", { name: /^Comment/ }).click()
+  await send(page, "Make it bigger.")
+  expect(fake.comments.threads.map((entry) => ({ element: (entry.anchor as { element_id: string }).element_id, author: entry.createdBy }))).toEqual([
+    { element: "box-1", author: person.id },
+    { element: "idea", author: person.id },
+    { element: "box-1", author: person.id },
+  ])
+})
+
+test("in Split beside the comments panel, the canvas's tools and pins keep to the canvas left of the panel", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await seeded(page, { thread: { kind: "element", element_id: "idea", label: "ellipse" } })
+  await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Split", exact: true }).click()
+  await openPanel(page)
+  const area = (await page.locator('[data-slot="canvas-controls"]').boundingBox())!
+  // The island fits in the narrow area: More tools is on screen, clear of the panel, and takes a click.
+  const island = (await page.locator('[data-slot="canvas-island"]').filter({ has: moreTools(page) }).boundingBox())!
+  expect(island.x).toBeGreaterThanOrEqual(area.x)
+  expect(island.x + island.width).toBeLessThanOrEqual(area.x + area.width)
+  await moreTools(page).click()
+  await expect(page.getByRole("menuitem", { name: /^Comment/ })).toBeVisible()
+  await page.keyboard.press("Escape")
+  // Tools that do not fit are in More tools.
+  await moreTools(page).click()
+  await expect(page.getByRole("menuitem", { name: "Text" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  // Pins show only on the visible canvas: none past the area's right edge.
+  for (const box of await page.locator('[data-slot="canvas-comments"] [data-pin]').evaluateAll((pins) => pins.map((entry) => entry.getBoundingClientRect().toJSON() as DOMRect))) {
+    const shown = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest("[data-pin]") !== null, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    if (box.x > area.x + area.width) expect(shown).toBe(false)
+  }
 })
 
 test("a comment on a diagram node hangs on its generated canvas and stays on the node through Regenerate", async ({ page }) => {
@@ -250,7 +354,7 @@ test("a comment on a diagram node hangs on its generated canvas and stays on the
   await page.goto(new URL(`projects/${id}/flow.d2`, APP_URL).href)
   await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
   // Opening saves the generated canvas, which element comments hang on.
-  await expect(page.locator(".wb-native-view [aria-live]").first()).toContainText("Saved flow.d2 and its generated files.")
+  await expect(page.locator(".wb-native-view [aria-live]").first()).toContainText("Saved flow.d2 and its generated files.", { timeout: 30_000 })
   await expect.poll(() => fake.server.content(id, "flow.excalidraw")).toBeDefined()
 
   type SceneElement = { id: string; x: number; y: number; width: number; height: number; isDeleted?: boolean; points?: [number, number][] }

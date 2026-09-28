@@ -85,7 +85,9 @@ test("a whole note comment is added, replied to, resolved, reopened, edited and 
   await whole.getByRole("textbox", { name: "Reply" }).fill("Yes, until Friday.")
   await whole.getByRole("textbox", { name: "Reply" }).press("ControlOrMeta+Enter")
   await expect(whole.getByRole("paragraph").filter({ hasText: "Yes, until Friday." })).toBeVisible()
-  await expect(whole.getByRole("textbox", { name: "Reply" })).toHaveValue("")
+  // Sent, the reply field closes and Reply has the keyboard again.
+  await expect(whole.getByRole("textbox", { name: "Reply" })).toHaveCount(0)
+  await expect(whole.getByRole("button", { name: "Reply" })).toBeFocused()
   await expect(announced(page)).toHaveText("Reply sent")
 
   // Edit the reply: Save waits for a change, then the words change.
@@ -107,15 +109,28 @@ test("a whole note comment is added, replied to, resolved, reopened, edited and 
   await expect(whole.getByText(`Resolved by ${person.email}`)).toBeVisible()
   await whole.getByRole("button", { name: "Reopen" }).click()
   await expect(toggle(page)).toHaveAccessibleName("Comments, 1 open")
+  // The keyboard follows the thread back to Open.
+  await expect(whole).toBeFocused()
   expect(fake.comments.threads.length).toBe(1)
+
+  // Delete asks first: Cancel keeps the comment.
+  await whole.getByRole("button", { name: `Actions for the comment by ${person.email}` }).last().click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  const confirm = page.getByRole("alertdialog", { name: "Delete this comment?" })
+  await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
+  await confirm.getByRole("button", { name: "Cancel" }).click()
+  await expect(confirm).toBeHidden()
+  await expect(whole.getByText("Yes, until Monday.")).toBeVisible()
 
   // Deleting the reply leaves the thread; deleting the last comment takes it.
   await whole.getByRole("button", { name: `Actions for the comment by ${person.email}` }).last().click()
   await page.getByRole("menuitem", { name: "Delete" }).click()
+  await confirm.getByRole("button", { name: "Delete" }).click()
   await expect(whole.getByText("Yes, until Monday.")).toBeHidden()
   await expect(whole.getByText("Comment deleted")).toBeVisible()
   await whole.getByRole("button", { name: `Actions for the comment by ${person.email}` }).click()
   await page.getByRole("menuitem", { name: "Delete" }).click()
+  await confirm.getByRole("button", { name: "Delete" }).click()
   await expect(whole).toBeHidden()
   await expect(panel(page).getByText("No comments yet")).toBeVisible()
   expect(fake.comments.threads.length).toBe(0)
@@ -133,6 +148,12 @@ test("the shortcut shows the panel and focus goes back to the toggle when it clo
   await expect(panel(page)).toBeVisible()
   await page.keyboard.press("ControlOrMeta+Alt+m")
   await expect(panel(page)).toBeHidden()
+  // Escape in the panel closes it too, as it closes the phone's sheet.
+  await page.keyboard.press("ControlOrMeta+Alt+m")
+  await expect(panel(page)).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(panel(page)).toBeHidden()
+  await expect(toggle(page)).toBeFocused()
 })
 
 test("a marker in the note opens the panel at its thread, with the keyboard on it", async ({ page }) => {
@@ -173,6 +194,7 @@ test("the owner deletes someone else's comment but cannot edit it; a comment fro
   await menu.click()
   await expect(page.getByRole("menuitem", { name: "Edit" })).toHaveCount(0)
   await page.getByRole("menuitem", { name: "Delete" }).click()
+  await page.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete" }).click()
   await expect(whole).toBeHidden()
   await expect(panel(page).getByText("Please add dates.")).toBeHidden()
 })
@@ -214,6 +236,16 @@ test.describe("on a phone", () => {
     await expect(sheet.getByText("Looks good.")).toBeVisible()
     const reply = await sheet.getByRole("button", { name: "Reply" }).boundingBox()
     expect(reply?.height).toBeGreaterThanOrEqual(40)
+    const goTo = await sheet.getByRole("button", { name: "Go to Whole note" }).boundingBox()
+    expect(goTo?.height).toBeGreaterThanOrEqual(40)
+    const tall = (await sheet.boundingBox())!.height
+    expect(tall).toBeCloseTo(844 * 0.75, -1)
+    // While a new comment is written the sheet is half the screen, so the note shows above it.
+    await sheet.getByRole("button", { name: "Comment on the whole note" }).first().click()
+    await expect(sheet.getByRole("textbox", { name: "New comment" })).toBeFocused()
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(422)
+    await sheet.getByRole("button", { name: "Cancel" }).click()
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.height)).toBe(633)
     await page.keyboard.press("Escape")
     await expect(sheet).toBeHidden()
   })

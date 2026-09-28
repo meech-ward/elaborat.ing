@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
 import {
   CanvasIsland,
   MoreTools,
@@ -29,6 +29,18 @@ export interface CanvasCommands {
   zoomTo: (zoom: number) => void;
   /** Excalidraw's own element, which takes the keyboard for its shortcuts. */
   canvas: () => HTMLElement | null;
+}
+
+/**
+ * How many of the desktop island's tools fit in a canvas area `width` wide,
+ * beside More tools and 16 clear of each side: all of them when there is
+ * room, and never fewer than Hand and Select. A tool is 34 wide, 2 apart;
+ * the island has 4 of padding.
+ */
+export function islandToolsFitting(width: number): number {
+  const all = islandTools.default.length;
+  const room = width - 32 - 8 - 34;
+  return Math.max(2, Math.min(all, Math.floor(room / 36)));
 }
 
 // Excalidraw's tools that have no island button: the extra tools.
@@ -69,7 +81,18 @@ export function CanvasControls({
   // Read when More tools opens: undo and redo are Excalidraw's own state.
   const [history, setHistory] = useState({ undo: false, redo: false });
   const apple = isApplePlatform();
-  const shown = islandTools[size];
+  // A narrow canvas area (Split beside the comments) shows as many of the
+  // island's tools as fit; the rest join More tools.
+  const [fit, setFit] = useState<number | null>(null);
+  useEffect(() => {
+    const area = areaRef.current;
+    if (!area || size !== "default" || viewOnly) return;
+    // It reports the area's size once it starts watching, and on every change.
+    const observer = new ResizeObserver(() => setFit(islandToolsFitting(area.clientWidth)));
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [areaRef, size, viewOnly]);
+  const shown = size === "default" && fit !== null ? islandTools.default.slice(0, fit) : islandTools[size];
   // Read here, not when this module loads: the design system's style guide
   // imports this feature, so its exports can still be loading then.
   const more = (Object.values(canvasTools) as CanvasTool[]).filter((tool) => !shown.includes(tool));
@@ -137,6 +160,8 @@ export function CanvasControls({
     { label: "Undo", shortcut: undoKey.label, keyShortcuts: undoKey.aria, group: "history", disabled: !history.undo, onSelect: commands.undo },
     { label: "Redo", shortcut: redoKey.label, keyShortcuts: redoKey.aria, group: "history", disabled: !history.redo, onSelect: commands.redo },
   ];
+  // Phones have no keys to show.
+  const menu = size === "touch" ? entries.map((entry) => ({ ...entry, shortcut: undefined })) : entries;
   const finalFocus = () => (after === "canvas" ? (commands.canvas() ?? true) : after !== "stay");
   const inMore = more.some((tool) => tool.id === current) || extraTools.some((tool) => tool.id === current);
   return (
@@ -144,7 +169,7 @@ export function CanvasControls({
       ref={areaRef}
       data-slot="canvas-controls"
       data-selection={ui.selected || undefined}
-      className="pointer-events-none absolute top-[var(--canvas-area-top,0px)] right-0 bottom-0 left-[var(--canvas-area-left,0px)] z-[3]"
+      className="pointer-events-none absolute top-[var(--canvas-area-top,0px)] right-[var(--canvas-area-right,0px)] bottom-0 left-[var(--canvas-area-left,0px)] z-[3]"
     >
       {!viewOnly && (
         <CanvasIsland
@@ -161,7 +186,7 @@ export function CanvasControls({
             ))}
           </ToolGroup>
           <MoreTools
-            entries={entries}
+            entries={menu}
             active={inMore}
             onOpenChange={(open) => {
               if (!open) return;

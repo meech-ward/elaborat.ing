@@ -105,7 +105,8 @@ export function zoomViewport(current: CanvasViewport, area: CanvasArea, zoom: nu
  * What the canvas controls show: the current tool (Excalidraw's name), tool
  * lock, zoom, whether anything is selected, the one element selected (for
  * Comment), and where Excalidraw's menu for an element is open, relative to
- * the canvas (null when it is closed or is the canvas's own menu).
+ * the canvas, with the one element it is for (null when it is closed or is
+ * the canvas's own menu).
  */
 export interface CanvasUi {
   tool: string;
@@ -113,7 +114,7 @@ export interface CanvasUi {
   zoom: number;
   selected: boolean;
   single: string | null;
-  elementMenu: { left: number; top: number } | null;
+  elementMenu: { left: number; top: number; elementId: string | null } | null;
 }
 
 /** The parts of Excalidraw's app state the controls read. */
@@ -129,16 +130,29 @@ export interface CanvasUiSource {
 const isElementMenu = (items: readonly unknown[]) =>
   items.some((item) => typeof item === "object" && item !== null && (item as { name?: unknown }).name === "copy");
 
-export function canvasUiFrom(state: CanvasUiSource): CanvasUi {
+/**
+ * The controls' state from Excalidraw's. `previous` is the last one: while
+ * the same menu stays open it stays for the element it opened on, since in
+ * view mode Excalidraw selects the element for its menu and lets go of it
+ * when the button comes up.
+ */
+export function canvasUiFrom(state: CanvasUiSource, previous?: CanvasUi): CanvasUi {
   const selectedIds = Object.keys(state.selectedElementIds).filter((id) => state.selectedElementIds[id]);
   const menu = state.contextMenu;
+  const single = selectedIds.length === 1 && !state.multiElement ? selectedIds[0] : null;
+  let elementMenu: CanvasUi["elementMenu"] = null;
+  if (menu && isElementMenu(menu.items)) {
+    const before = previous?.elementMenu;
+    const same = before && before.left === menu.left && before.top === menu.top;
+    elementMenu = { left: menu.left, top: menu.top, elementId: same ? before.elementId : single };
+  }
   return {
     tool: state.activeTool.type,
     locked: state.activeTool.locked,
     zoom: state.zoom.value,
     selected: Object.keys(state.selectedElementIds).length > 0 || Boolean(state.multiElement),
-    single: selectedIds.length === 1 && !state.multiElement ? selectedIds[0] : null,
-    elementMenu: menu && isElementMenu(menu.items) ? { left: menu.left, top: menu.top } : null,
+    single,
+    elementMenu,
   };
 }
 
@@ -210,6 +224,36 @@ export function elementPoint(element: ElementGeometry, scene: ScenePoint): Scene
   return { x: round(x), y: round(y) };
 }
 
+/** An element as a click finds it: its box, and what it is. */
+export type HitElement = ElementGeometry & { id: string; type?: string; containerId?: string | null; isDeleted?: boolean };
+
+/**
+ * The element at a scene point, as a click picks it in view mode (where
+ * Excalidraw picks none): the top one whose box, `slop` wider on every side,
+ * holds the point. Text inside a shape picks the shape; a frame is picked
+ * only when nothing in it is. Null when there is none.
+ */
+export function elementAt(elements: readonly HitElement[], point: ScenePoint, slop = 0): string | null {
+  let frame: string | null = null;
+  for (let index = elements.length - 1; index >= 0; index--) {
+    const element = elements[index];
+    if (element.isDeleted) continue;
+    const box = elementBox(element);
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const local = rotate(point, centre, -box.angle);
+    const inside =
+      local.x >= box.x - slop && local.x <= box.x + box.width + slop && local.y >= box.y - slop && local.y <= box.y + box.height + slop;
+    if (!inside) continue;
+    if (element.type === "frame" || element.type === "magicframe") {
+      frame ??= element.id;
+      continue;
+    }
+    const container = element.type === "text" && element.containerId ? elements.find((candidate) => candidate.id === element.containerId && !candidate.isDeleted) : undefined;
+    return container ? container.id : element.id;
+  }
+  return frame;
+}
+
 /** A scene point on screen, relative to the canvas's top left corner. */
 export function sceneToCanvas(point: ScenePoint, view: CanvasViewport): ScenePoint {
   return { x: (point.x + view.scrollX) * view.zoom, y: (point.y + view.scrollY) * view.zoom };
@@ -256,7 +300,8 @@ export function createCanvasUiStore() {
         next.selected === current.selected &&
         next.single === current.single &&
         next.elementMenu?.left === current.elementMenu?.left &&
-        next.elementMenu?.top === current.elementMenu?.top
+        next.elementMenu?.top === current.elementMenu?.top &&
+        next.elementMenu?.elementId === current.elementMenu?.elementId
       )
         return;
       current = next;

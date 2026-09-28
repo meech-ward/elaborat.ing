@@ -54,7 +54,7 @@ import type {
 } from "../source/renderedHistory";
 import { acceptSourceTransaction } from "./sourceTransaction";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Banner, CommentActionButton, LoadingLine, type Shortcut } from "@/features/design-system";
+import { Banner, CommentActionButton, CommentMarker, LoadingLine, isApplePlatform, type Shortcut } from "@/features/design-system";
 import type { CommentMark, NoteCommentRequest } from "@/features/comments";
 import { fluidRangeForSource, sourceRangeForFluid } from "./commentMarks";
 import {
@@ -128,6 +128,8 @@ export type RenderedComments = {
   source: string;
   /** Offer Comment on a selection and Comment on section on a heading. */
   canComment: boolean;
+  /** Only the connection keeps the person from commenting: Comment shows by a selection or heading, off, saying so. */
+  offline?: boolean;
   /** The key that comments, shown on the Comment button. */
   shortcut?: Shortcut;
   /** Commented text was clicked (`focus` false: the keyboard stays in the note). */
@@ -219,6 +221,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [selectionAction, setSelectionAction] = useState<CommentAction | null>(null);
   const [headingAction, setHeadingAction] = useState<CommentAction | null>(null);
+  // The marker column: one marker per line where commented text starts, at the line's middle in the frame.
+  const [commentMarkers, setCommentMarkers] = useState<readonly { ids: string[]; top: number; active: boolean }[]>([]);
   const headingHold = useRef({ hovered: false, timer: 0 });
   const commentsRef = useRef(comments);
   useLayoutEffect(() => {
@@ -479,16 +483,17 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // other text wait for the next; meanwhile the frame's marks move with edits.
   const commentMarks = comments?.marks;
   const commentSource = comments?.source;
-  const canComment = comments?.canComment ?? false;
+  // The frame reports selections and headings while Comment shows, on or off.
+  const commentReports = Boolean(comments?.canComment || comments?.offline);
   useEffect(() => {
     if (!exposed || commentMarks === undefined || commentSource !== exposed.text) return;
     const marks = commentMarks.flatMap((mark) => {
       const range = fluidRangeForSource(exposed, mark.from, mark.to);
       return range ? [{ id: mark.id, from: range.from, to: range.to, active: mark.active }] : [];
     });
-    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment, marks: marks.slice(0, 1000) };
+    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks: marks.slice(0, 1000) };
     frameRef.current?.contentWindow?.postMessage(message, "*");
-  }, [canComment, commentMarks, commentSource, exposed, readyTick, session]);
+  }, [commentReports, commentMarks, commentSource, exposed, readyTick, session]);
 
   useEffect(() => {
     if (!apiRef) return;
@@ -609,6 +614,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         message.kind === "comment-selection" ||
         message.kind === "comment-heading" ||
         message.kind === "comment-open" ||
+        message.kind === "comment-markers" ||
         message.kind === "comment-shortcut"
       ) {
         // Positions come from the frame: they are mapped through this
@@ -620,8 +626,26 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (commenting?.marks.some((mark) => mark.id === message.id)) commenting.onOpen(message.id, false);
           return;
         }
+        if (message.kind === "comment-markers") {
+          const known = new Set(commenting?.marks.map((mark) => mark.id));
+          setCommentMarkers(
+            message.markers.flatMap((marker) => {
+              const ids = marker.ids.filter((id) => known.has(id));
+              return ids.length > 0 ? [{ ...marker, ids }] : [];
+            }),
+          );
+          return;
+        }
         if (message.kind === "comment-shortcut") {
-          const range = current && commenting?.canComment ? sourceRangeForFluid(current, message.from, message.to) : null;
+          if (!commenting?.canComment) {
+            // Offline the key does what it does outside the note: it shows or hides the comments.
+            const apple = isApplePlatform();
+            frameRef.current?.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "m", code: "KeyM", metaKey: apple, ctrlKey: !apple, altKey: true, bubbles: true, cancelable: true }),
+            );
+            return;
+          }
+          const range = current ? sourceRangeForFluid(current, message.from, message.to) : null;
           if (!current || !commenting || !range) return;
           commenting.onComment(
             message.from === message.to ? { kind: "section", offset: range.from } : { kind: "text", from: range.from, to: range.to },
@@ -630,13 +654,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           return;
         }
         if (message.kind === "comment-selection") {
-          const range = current && commenting?.canComment && message.range ? sourceRangeForFluid(current, message.range.from, message.range.to) : null;
+          const range = current && (commenting?.canComment || commenting?.offline) && message.range ? sourceRangeForFluid(current, message.range.from, message.range.to) : null;
           const place = range && range.from < range.to && frame && message.rect ? actionPlace(frame, message.rect, "selection") : null;
           setSelectionAction(current && range && place ? { ...place, request: { kind: "text", from: range.from, to: range.to }, source: current.text } : null);
           return;
         }
         window.clearTimeout(headingHold.current.timer);
-        const caret = current && commenting?.canComment && message.pos !== null ? sourceRangeForFluid(current, message.pos, message.pos) : null;
+        const caret = current && (commenting?.canComment || commenting?.offline) && message.pos !== null ? sourceRangeForFluid(current, message.pos, message.pos) : null;
         const place = caret && frame && message.rect ? actionPlace(frame, message.rect, "heading") : null;
         if (current && caret && place) {
           setHeadingAction({ ...place, request: { kind: "section", offset: caret.from }, source: current.text });
@@ -992,6 +1016,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   ]);
 
   const displayedError = componentError ?? compileError;
+  // Offline, Comment by a selection or heading shows off, and says why.
+  const offlineAction = comments?.offline && !comments.canComment ? (selectionAction ?? headingAction) : null;
+  // The marker column shows while the note has commented text ("draft" is a new comment's, unmarked).
+  const railShown = Boolean(comments?.marks.some((mark) => mark.id !== "draft"));
   return (
     <div ref={rootRef} data-rendered-editor={document.format} style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
@@ -1001,23 +1029,57 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           {displayedError} Source is unchanged and remains editable.
         </Banner>
       ) : null}
-      <iframe
-        ref={frameRef}
-        title="Isolated document preview"
-        sandbox={PREVIEW_SANDBOX}
-        srcDoc={srcdoc}
-        aria-describedby={displayedError ? errorId : undefined}
-        // The frame fills the space its container gives the editor; the
-        // document scrolls inside it. The sandbox stays allow-scripts only,
-        // so the frame cannot be styled from here.
-        style={{
-          width: "100%",
-          flex: "1 1 auto",
-          minHeight: 320,
-          border: 0,
-          display: componentPending || displayedError ? 'none' : "block",
-        }}
-      />
+      <div style={{ display: componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
+        <iframe
+          ref={frameRef}
+          title="Isolated document preview"
+          sandbox={PREVIEW_SANDBOX}
+          srcDoc={srcdoc}
+          aria-describedby={displayedError ? errorId : undefined}
+          // The frame fills the space its container gives the editor; the
+          // document scrolls inside it. The sandbox stays allow-scripts only,
+          // so the frame cannot be styled from here.
+          style={{
+            minWidth: 0,
+            flex: "1 1 auto",
+            minHeight: 320,
+            border: 0,
+            display: "block",
+          }}
+        />
+        {railShown && (
+          // A column at the right of the note, beside the lines it marks (as the source's).
+          <div className="relative w-12 shrink-0 overflow-hidden">
+            {commentMarkers.map((marker) => {
+              const count = marker.ids.length;
+              return (
+                <CommentMarker
+                  key={marker.ids[0]}
+                  count={count}
+                  label={`${count} ${count === 1 ? "thread" : "threads"} on this line`}
+                  active={marker.active}
+                  className="absolute left-1"
+                  style={{ top: marker.top - 9 }}
+                  onClick={() => {
+                    // A line with more than one thread opens the next each time.
+                    const current = marker.ids.findIndex((id) => comments?.marks.some((mark) => mark.id === id && mark.active));
+                    comments?.onOpen(marker.ids[(current + 1) % count], true);
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {active && offlineAction && (
+        <CommentActionButton
+          disabled
+          className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5 disabled:text-dim disabled:opacity-100"
+          style={{ top: offlineAction.top, left: offlineAction.left }}
+        >
+          Comments need a connection
+        </CommentActionButton>
+      )}
       {active && comments?.canComment && selectionAction && (
         <CommentActionButton
           shortcut={comments.shortcut}
@@ -1079,10 +1141,16 @@ function actionPlace(frame: HTMLIFrameElement, rect: FrameRect, by: "selection" 
   if (rect.bottom < 0 || rect.top > height) return null;
   const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(value, Math.max(low, high)));
   if (by === "selection") {
-    return {
-      top: frame.offsetTop + clamp(rect.bottom + 6, 0, height - 40),
-      left: frame.offsetLeft + clamp(rect.right - 48, 8, width - 200),
-    };
+    // Beside the selection (the box around its lines), on its last line,
+    // where that covers no words; else over it, so the lines after it stay
+    // in view; else under it, when it starts at the top of the note.
+    if (rect.right + 12 + 180 <= width) {
+      return { top: frame.offsetTop + clamp(rect.bottom - 12 - 16, 0, height - 40), left: frame.offsetLeft + rect.right + 12 };
+    }
+    const above = rect.top - 46;
+    return above >= 0
+      ? { top: frame.offsetTop + above, left: frame.offsetLeft + clamp(rect.left, 8, width - 200) }
+      : { top: frame.offsetTop + clamp(rect.bottom + 6, 0, height - 40), left: frame.offsetLeft + clamp(rect.right - 48, 8, width - 200) };
   }
   return {
     top: frame.offsetTop + clamp((rect.top + rect.bottom) / 2 - 16, 0, height - 40),

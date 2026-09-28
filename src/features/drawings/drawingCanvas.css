@@ -26,3 +26,8 @@
 [data-slot="drawing-canvas"] .excalidraw .App-bottom-bar {
   bottom: 72px;
 }
+/* In view mode the bar has nothing to hold, though an element can be
+   selected there to comment on it. */
+[data-slot="drawing-canvas"] .excalidraw.excalidraw--view-mode .App-bottom-bar {
+  display: none;
+}

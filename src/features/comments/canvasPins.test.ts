@@ -54,6 +54,16 @@ describe("canvas pins", () => {
     ])
   })
 
+  test("an element with no text is called by its type's name", () => {
+    const threads = [thread("t-plain", on("plain", "ellipse")), thread("t-gone", on("gone", "rectangle"))]
+    const scene: CanvasElement[] = [{ id: "plain", type: "ellipse" }]
+    const places = canvasPlaces(threads, scene)
+    expect(anchorView(threads[0].anchor, places.get("t-plain"))).toEqual({ kind: "element", label: "Ellipse" })
+    expect(anchorView(threads[1].anchor, places.get("t-gone"))).toEqual({ kind: "element", label: "Rectangle", detached: true })
+    expect(canvasPins(threads, places, null, null).map((pin) => pin.label)).toEqual(["1 thread on Ellipse"])
+    expect(canvasPins([], new Map(), null, { anchor: on("plain", "ellipse"), label: "ellipse" })[0].label).toBe("New comment on Ellipse")
+  })
+
   test("a new comment on an element has its own pin; one on the whole file has none", () => {
     const draft = canvasPins([], new Map(), null, { anchor: on("note", "Later", { x: 0.5, y: 0.5 }), label: "Later" })
     expect(draft).toEqual([{ id: DRAFT_MARK, elementId: "note", point: { x: 0.5, y: 0.5 }, threadIds: [], label: "New comment on Later", active: true }])

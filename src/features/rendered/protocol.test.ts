@@ -159,6 +159,7 @@ describe('staleChildMessage', () => {
       'comment-selection': 'drop',
       'comment-heading': 'drop',
       'comment-open': 'drop',
+      'comment-markers': 'drop',
       'comment-shortcut': 'drop',
       'edit-rejected': 'refusal',
       'fluid-transaction': 'lost-edit',

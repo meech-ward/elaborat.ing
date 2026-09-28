@@ -1,4 +1,4 @@
-import { CloudUpload } from "lucide-react"
+import { CloudUpload, LogIn } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from "react"
 import {
   CommentDraft,
@@ -14,7 +14,7 @@ import {
 } from "@/features/design-system"
 import { cn } from "@/lib/utils"
 import { anchorView } from "../anchorView"
-import { useCommentsUi, useFileThreads, useProjectComments, type ProjectCommentsValue } from "../context"
+import { NEEDS_CONNECTION, useCommentsUi, useFileThreads, useProjectComments, type ProjectCommentsValue } from "../context"
 import type { CommentRequest, CommentsUiState, ThreadPlace } from "../controller"
 import { fileNoun, newComments, threadViews, type ThreadView } from "./threadViews"
 
@@ -24,7 +24,6 @@ import { fileNoun, newComments, threadViews, type ThreadView } from "./threadVie
 // (context.tsx): the store for the threads, the controller for the file on
 // screen, the open thread and a new comment.
 
-const NEEDS_CONNECTION = "Comments need a connection."
 const NO_PLACES: ReadonlyMap<string, ThreadPlace> = new Map()
 const noSubscription = () => () => {}
 
@@ -223,6 +222,8 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
         try {
           await store?.reopen(thread.id)
           say("Thread reopened")
+          // It moves back to Open: the keyboard goes with it.
+          focusThread(thread.id)
         } catch (error) {
           problem("Not reopened", error)
         }
@@ -277,7 +278,7 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   else if (status === "error") panelStatus = "error"
 
   const placeholder = guest ? (
-    <EmptyState title="Comments need an account" description="Sign up to comment and to read what others say." actions={guest.signUp} className="py-10" />
+    <EmptyState icon={<LogIn />} title="Comments need an account" description="Sign up to comment and to read what others say." actions={guest.signUp} className="py-10" />
   ) : ui.target && !file ? (
     <EmptyState icon={<CloudUpload />} title="Not synced yet" description={`Comments start once this ${noun} is on the server.`} className="py-10" />
   ) : undefined
@@ -299,6 +300,10 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
 
   if (compact) return <CommentsSheet open={open} onOpenChange={(next) => setOpen(next)} {...body} />
   if (!open) return null
+  const close = () => {
+    setOpen(false)
+    document.querySelector<HTMLElement>(TOGGLE)?.focus()
+  }
   return (
     <CommentsPanel
       render={<aside aria-label="Comments" tabIndex={-1} data-comments-surface="" />}
@@ -306,11 +311,15 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
         "h-full shrink-0 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
         className,
       )}
-      {...body}
-      onClose={() => {
-        setOpen(false)
-        document.querySelector<HTMLElement>(TOGGLE)?.focus()
+      // Escape closes the panel, as it closes the sheet; a field or a menu in it takes Escape first.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
+        if (event.target instanceof HTMLElement && event.target.closest("textarea, input")) return
+        event.preventDefault()
+        close()
       }}
+      {...body}
+      onClose={close}
     />
   )
 }

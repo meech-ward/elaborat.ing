@@ -98,7 +98,7 @@ export {
 } from "./ui/CommentsPanel"
 export { commentHighlightClass } from "./ui/commentHighlightClass"
 export { COMMENT_MAX_LENGTH, absoluteTime, commentLength, relativeTime, type CommentLength } from "./ui/commentText"
-export { CommentAnchorLine, CommentDraft, CommentItem, CommentThread, anchorSummary, type CommentThreadProps } from "./ui/CommentThread"
+export { CommentAnchorLine, CommentDraft, CommentItem, CommentThread, DeleteCommentDialog, anchorSummary, type CommentThreadProps } from "./ui/CommentThread"
 export {
   CommentsSizeContext,
   type CommentAnchorView,

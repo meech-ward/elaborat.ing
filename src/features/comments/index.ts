@@ -8,6 +8,7 @@ export { anchorRange, describeRange, type TextPositionSelector, type TextQuoteSe
 export { anchorView, headingWords } from "./anchorView"
 export { canvasPins, canvasPlaces, nextPinThread, type CanvasElement, type CanvasPin } from "./canvasPins"
 export {
+  NEEDS_CONNECTION,
   ProjectCommentsProvider,
   useCommentsUi,
   useFileThreads,

@@ -52,6 +52,8 @@ export type SourceComments = {
   source: string;
   /** Offer Comment on a selection (and Comment on section on a heading, with `sections`). */
   canComment: boolean;
+  /** Only the connection keeps the person from commenting: Comment shows over a selection, off, saying so. */
+  offline?: boolean;
   /** Headings take section comments (notes). */
   sections: boolean;
   /** The key that comments, shown on the Comment button. */
@@ -355,13 +357,20 @@ export function SourceEditor(props: SourceEditorProps) {
       );
       const selection = editor.getSelection();
       let button: { top: number; left: number } | null = null;
-      if (comments?.canComment && selection && !selection.isEmpty() && editor.hasTextFocus()) {
+      if ((comments?.canComment || comments?.offline) && selection && !selection.isEmpty() && editor.hasTextFocus()) {
+        // Beside the selection's end, on its line, where there is room for
+        // it; else over the selection, at its start, so the lines after it
+        // stay in view; else under it, when it starts at the top.
+        const start = editor.getScrolledVisiblePosition(selection.getStartPosition());
         const end = editor.getScrolledVisiblePosition(selection.getEndPosition());
-        if (end && end.top >= 0 && end.top <= layout.height - end.height) {
-          button = {
-            top: Math.min(end.top + end.height + 4, layout.height - 40),
-            left: Math.max(layout.contentLeft, Math.min(end.left - 48, layout.width - 200)),
-          };
+        const left = (at: { left: number }) => Math.max(layout.contentLeft, Math.min(at.left, layout.width - 200));
+        const shown = (at: { top: number; height: number } | null) => at !== null && at.top >= 0 && at.top <= layout.height - at.height;
+        if (end && shown(end) && end.left + 12 + 180 <= layout.width - layout.verticalScrollbarWidth) {
+          button = { top: Math.max(0, Math.min(end.top + end.height / 2 - 16, layout.height - 40)), left: end.left + 12 };
+        } else if (start && shown(start) && start.top - 44 >= 0) {
+          button = { top: start.top - 44, left: left(start) };
+        } else if (end && shown(end)) {
+          button = { top: Math.min(end.top + end.height + 4, layout.height - 40), left: left({ left: end.left - 48 }) };
         }
       }
       setCommentButton((current) => (current?.top === button?.top && current?.left === button?.left ? current : button));
@@ -626,9 +635,10 @@ export function SourceEditor(props: SourceEditorProps) {
   const commentMarks = props.comments?.marks;
   const commentSource = props.comments?.source;
   const canComment = props.comments?.canComment ?? false;
+  const commentsOffline = props.comments?.offline ?? false;
   useEffect(() => {
     commentMarksRef.current?.(commentMarks ?? [], commentSource ?? "");
-  }, [canComment, commentMarks, commentSource]);
+  }, [canComment, commentsOffline, commentMarks, commentSource]);
 
   // The component stays mounted in rendered mode (history preserved);
   // relayout when it becomes visible again.
@@ -663,6 +673,15 @@ export function SourceEditor(props: SourceEditorProps) {
             />
           ))}
         </div>
+      )}
+      {comments?.offline && !comments.canComment && commentButton && (
+        <CommentActionButton
+          disabled
+          className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5 disabled:text-dim disabled:opacity-100"
+          style={{ top: commentButton.top, left: commentButton.left }}
+        >
+          Comments need a connection
+        </CommentActionButton>
       )}
       {comments?.canComment && commentButton && (
         <CommentActionButton

@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { useCommentsUi, useFileThreads, useProjectComments } from "./context"
+import { NEEDS_CONNECTION, useCommentsUi, useFileThreads, useProjectComments } from "./context"
 import type { CommentFile, ThreadPlace } from "./controller"
 import { DRAFT_MARK, noteMarks, notePlaces, type CommentMark } from "./noteMarks"
 import { MAX_QUOTE_LENGTH, sectionAnchor, textAnchor } from "./placement"
@@ -10,6 +10,8 @@ export type NoteCommentRequest = { kind: "text"; from: number; to: number } | { 
 export type NoteComments = {
   /** Comment actions are offered: a file on the server, and the person may write comments now. */
   canComment: boolean
+  /** Only the connection keeps this person from commenting: the Comment actions show, off, and say so. */
+  offline: boolean
   /** The commented text to mark, placed in `marksSource`. */
   marks: readonly CommentMark[]
   /** The text the marks were placed in. A view showing other text waits for the next marks. */
@@ -103,6 +105,7 @@ export function useNoteComments({
   const canComment = Boolean(comments?.canWrite && file)
   return {
     canComment,
+    offline: Boolean(file && comments?.writeBlocked === NEEDS_CONNECTION),
     marks,
     marksSource: source,
     open(threadId, focus = true) {
