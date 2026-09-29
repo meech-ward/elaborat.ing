@@ -73,7 +73,7 @@ test("a person sees what deleting does, confirms with their email, and the accou
   const owned = dialog.getByRole("list", { name: "Projects you own" }).getByRole("listitem")
   await expect(owned).toHaveText(["SoloOnly you", "Team notesShared with 1 personTransfer first"])
   await expect(dialog).toContainText(
-    "The 2 projects you own are deleted, for everyone they are shared with. To keep a shared project going, transfer it to someone it is shared with first. To keep a copy, choose Download project in its menu first.",
+    "The 2 projects you own are deleted, the shared one for everyone it is shared with. To keep a shared project going, transfer it to someone it is shared with first. To keep a copy, choose Download project in its menu first.",
   )
   await expect(dialog).toContainText("You leave the project shared with you.")
   await expect(dialog).toContainText("Your comments stay where you wrote them, shown as from a deleted account.")

@@ -15,6 +15,7 @@ import { Banner, BannerAction } from "@/features/design-system"
 import { libraryFor } from "@/features/projects/account"
 import { LazyTransferOwnershipDialog } from "@/features/projects/LazyTransferOwnershipDialog"
 import { deleteSignedInAccount, loadDeletionSummary, type DeletionSummary } from "./accountDeletion"
+import { ownedProjectsDeleted } from "./deletionWording"
 
 type Summary = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; summary: DeletionSummary }
 type Problem = { kind: "kept"; reason: string } | { kind: "failed"; message: string } | null
@@ -181,8 +182,8 @@ function DeleteAccount({ userId, email, onDeleted }: { userId: string; email: st
 /** What deleting does, in the order it happens. */
 function Consequences({ summary, onTransfer }: { summary: DeletionSummary; onTransfer?: (project: Owned) => void }) {
   const { owned, shared } = summary
-  const transferable = owned.some((project) => project.members > 0)
-  const forEveryone = transferable ? (owned.length === 1 ? ", for everyone it is shared with" : ", for everyone they are shared with") : ""
+  const sharedOwned = owned.filter((project) => project.members > 0).length
+  const transferable = sharedOwned > 0
   return (
     <ul className="grid list-disc gap-2 pl-5 text-[13px] leading-normal">
       <li>
@@ -191,7 +192,7 @@ function Consequences({ summary, onTransfer }: { summary: DeletionSummary; onTra
         ) : (
           <div className="grid gap-2">
             <span>
-              {owned.length === 1 ? `The project you own is deleted${forEveryone}.` : `The ${owned.length} projects you own are deleted${forEveryone}.`}{" "}
+              {ownedProjectsDeleted(owned.length, sharedOwned)}{" "}
               {transferable ? "To keep a shared project going, transfer it to someone it is shared with first. " : ""}To keep a copy, choose Download
               project in its menu first.
             </span>
