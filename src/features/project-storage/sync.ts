@@ -216,7 +216,11 @@ export class ProjectSync {
           await this.updateDetails(outcome.projectId, entry)
           await this.pull(outcome.projectId, entry.revision)
         } else {
-          return (await this.deletedOutcome(outcome.projectId)) ?? outcome
+          // No longer listed: its owner deleted it, or, as `refresh()` finds, the person's access ended.
+          const deleted = await this.deletedOutcome(outcome.projectId)
+          if (deleted) return deleted
+          await this.updateDetails(outcome.projectId, null)
+          return { status: "stopped", projectId: outcome.projectId, reason: "access-lost", message: stopMessage("access-lost") }
         }
       } catch (error) {
         if (error instanceof RemoteError && error.kind === "network") return { status: "offline", projectId: outcome.projectId, message: error.message }

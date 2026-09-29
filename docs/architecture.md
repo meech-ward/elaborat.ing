@@ -285,11 +285,17 @@ authorized by RLS on `realtime.messages`, which is Supabase's recommended
 approach. Postgres Changes is not used: it delivers DELETE events to every
 subscriber regardless of RLS. When a project's revision goes up, a trigger
 sends `{ "revision": n }` as the event `changed` on `project:<id>`. Anyone who
-can read the project may receive it, and no client may send. The signal
-carries nothing else because Realtime checks access only when a client joins
-or sends a new token, so someone removed from a project keeps receiving until
-their token expires. Devices then fetch the changes through reads that check
-access every time.
+can read the project may receive it, and no client may send. Devices then
+fetch the changes through reads that check access every time.
+
+The signal carries nothing else because a channel's access is checked when a
+client joins it and again when the client sends a refreshed token, not for
+each message. The app keeps that window short itself: removing a member raises
+the revision, so the signal makes their open page sync, and when the server no
+longer lists the project for them, the sync stops and the page leaves the
+channel (`src/features/projects/ProjectPage.tsx`). A client that stays joined
+anyway receives only revision numbers, and only until its session's token is
+refreshed or expires, within `jwt_expiry` (one hour).
 
 ## Search
 

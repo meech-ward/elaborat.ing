@@ -78,6 +78,8 @@ export type FakeSupabase = {
   accountDeleted: boolean
   /** Push a change signal for a project over Realtime. */
   signal(projectId: string, revision: number): void
+  /** The Realtime topics the page has left, such as `realtime:project:<id>`. */
+  left: string[]
 }
 
 const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "account-limit": 429, "path-taken": 409, invalid: 400, unavailable: 403 }
@@ -100,6 +102,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     passkeys: [],
     offline: false,
     accountDeleted: false,
+    left: [],
     signal(projectId, revision) {
       for (const socket of sockets) {
         socket.send(JSON.stringify([null, null, `realtime:project:${projectId}`, "broadcast", { type: "broadcast", event: "changed", payload: { revision } }]))
@@ -351,7 +354,8 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     socket.onMessage((message) => {
       if (typeof message !== "string") return
       const [joinRef, ref, topic, event] = JSON.parse(message) as [string | null, string | null, string, string, unknown]
-      if (event === "phx_join" || event === "heartbeat" || event === "access_token") {
+      if (event === "phx_leave") fake.left.push(topic)
+      if (event === "phx_join" || event === "heartbeat" || event === "access_token" || event === "phx_leave") {
         socket.send(JSON.stringify([joinRef, ref, topic, "phx_reply", { status: "ok", response: {} }]))
       }
     })

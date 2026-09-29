@@ -472,6 +472,20 @@ test("losing access keeps the local work readable", async () => {
   expect((await editor.files(project.id).read("mine.md")).content).toBe("local work")
 })
 
+test("a sync that no longer finds the project listed stops it, as a refresh does", async () => {
+  const server = new FakeProjectServer()
+  const owner = device(server, OWNER)
+  const viewer = device(server, OTHER)
+  const project = await owner.sync.createProject("Shared")
+  await owner.sync.sync(project.id)
+  server.share(project.id, OTHER, "viewer")
+  await viewer.sync.download((await viewer.sync.refresh())[0])
+
+  await server.remote(OWNER).shareProject(project.id, OTHER, null)
+  expect(await viewer.sync.sync(project.id)).toMatchObject({ status: "stopped", reason: "access-lost" })
+  expect(await viewer.project(project.id)).toMatchObject({ syncError: "access-lost" })
+})
+
 test("an interrupted download finishes on the next refresh", async () => {
   const server = new FakeProjectServer()
   const [a, b] = [device(server), device(server)]

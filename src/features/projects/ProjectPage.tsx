@@ -120,9 +120,13 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   )
 
   // Hear about changes made elsewhere while the project is open: files sync,
-  // and the comments listed so far reload.
+  // and the comments listed so far reload. Once this project's sync stops
+  // because the server no longer lists it for this person (their access
+  // ended, or its owner deleted it), the page leaves the channel at once
+  // (docs/architecture.md, the decision on change signals).
+  const listening = account.online && opened === "open" && !deleted && entry?.stopped !== "access-lost"
   useEffect(() => {
-    if (!account.online || opened !== "open") return
+    if (!listening) return
     const changes = new ProjectChanges(
       createClient(),
       projectId,
@@ -141,7 +145,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       seenRevisions.listen(null)
       void changes.close()
     }
-  }, [account.online, comments, opened, projectId, seenRevisions, syncNow])
+  }, [comments, listening, projectId, seenRevisions, syncNow])
 
   // The person's own name, set in Settings, shows with their comments at once.
   const auth = useAuth()

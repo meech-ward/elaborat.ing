@@ -263,6 +263,26 @@ test("the members of a project need a connection", async ({ page }) => {
   await expect(dialog.getByRole("list")).toHaveCount(0)
 })
 
+test("someone removed from a project they have open is told, and the page stops listening for its changes", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = crypto.randomUUID()
+  await server.remote(OWNER).createProject(id, "Their notes")
+  await server.remote(OWNER).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/a.md", content: "# A\n" }])
+  server.share(id, person.id, "viewer")
+  const fake = await fakeSupabase(page, { server })
+  await signedIn(page)
+  await page.goto(new URL(`projects/${id}/notes/a.md`, APP_URL).href)
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  const topic = `realtime:project:${id}`
+  expect(fake.left).not.toContain(topic)
+
+  // Removing someone raises the revision, so their open page hears it and syncs.
+  await server.remote(OWNER).shareProject(id, person.id, null)
+  fake.signal(id, server.projects.get(id)!.revision)
+  await expect(page.getByText("You can no longer change this project. Your work stays on this device.").first()).toBeVisible()
+  await expect.poll(() => fake.left).toContain(topic)
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
