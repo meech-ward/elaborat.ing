@@ -97,6 +97,15 @@ test("the first local project opens a welcome note, rendered, with a drawing and
   await expect(frame.getByRole("heading", { level: 1, name: "Welcome to elaborat.ing" })).toBeVisible({ timeout: 30_000 })
   await expect(frame.locator('[data-resource-pixels="sketch.excalidraw"] svg')).toBeVisible({ timeout: 30_000 })
   await expect(frame.locator('[data-resource-pixels="flow.d2"] svg')).toBeVisible({ timeout: 30_000 })
+  // Inline code reads as code: the library's mono type at regular weight, with no backticks around it.
+  const code = frame.locator("p code").first()
+  await expect(code).toHaveText("sketch.excalidraw")
+  expect(
+    await code.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { font: style.fontFamily.split(",")[0], weight: style.fontWeight, before: getComputedStyle(element, "::before").content, after: getComputedStyle(element, "::after").content }
+    }),
+  ).toEqual({ font: '"JetBrains Mono Variable"', weight: "400", before: "none", after: "none" })
   // The diagram's generated files stay out of the list, as for any diagram.
   const files = page.getByRole("navigation", { name: "Workspace files" })
   for (const name of ["welcome.mdx", "sketch.excalidraw", "flow.d2"]) await expect(files.getByRole("button", { name, exact: true })).toBeVisible()

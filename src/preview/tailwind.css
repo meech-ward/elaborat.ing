@@ -90,6 +90,8 @@
   background: var(--seg);
   border-radius: 0.3rem;
   padding: 0.1em 0.35em;
+  /* The library's code type is regular weight, as in the chat card; Typography's is 600. */
+  font-weight: inherit;
 }
 /* The chip marks inline code, so Typography's literal backticks go. */
 .preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
