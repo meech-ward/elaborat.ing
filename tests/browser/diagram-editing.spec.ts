@@ -253,14 +253,42 @@ test("a note shows pictures of the drawing and diagram it embeds, made from thei
       fillStyle: "solid", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100, groupIds: [], frameId: null, index: "a0",
       roundness: null, seed: 1, version: 1, versionNonce: 1, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false },
   ], appState: {}, files: {} })
-  const note = '# Page\n\n<Drawing src="art/sketch.excalidraw" />\n\n<Diagram src="flow.d2" />\n'
-  const { fake } = await openProject(page, { "art/sketch.excalidraw": scene, "flow.d2": "a -> b\n", "page.mdx": note }, "page.mdx")
+  const note = '# Page\n\n<Drawing src="art/sketch.excalidraw" />\n\n<Diagram src="flow.d2" />\n\n<Diagram src="other.d2" />\n'
+  const labels = { "flow.d2": "sends", "other.d2": "gets back" }
+  const { fake } = await openProject(
+    page,
+    { "art/sketch.excalidraw": scene, "flow.d2": "a -> b: sends\n", "other.d2": "direction: right\na -> b: gets back\n", "page.mdx": note },
+    "page.mdx",
+  )
   const before = saves(fake).length
   await page.getByRole("button", { name: "Rendered" }).click()
   const frame = page.frameLocator('iframe[title="Isolated document preview"]')
   await expect(frame.locator('[data-resource-pixels="art/sketch.excalidraw"] svg')).toBeVisible({ timeout: 30_000 })
   await expect(frame.locator('[data-resource-pixels="flow.d2"] svg')).toBeVisible({ timeout: 45_000 })
+  await expect(frame.locator('[data-resource-pixels="other.d2"] svg')).toBeVisible({ timeout: 45_000 })
   await expect(frame.getByText(/Preview unavailable/)).toHaveCount(0)
+
+  // Both diagrams have an arrow from a to b. Each is masked by its own
+  // picture's mask, which hides the line under its label with the canvas's
+  // 5px gap around the label's box.
+  const cutouts = await frame.locator("body").evaluate((body, labels) =>
+    [...body.querySelectorAll("[data-resource-pixels] svg [mask]")].map((arrow) => {
+      const picture = arrow.closest("[data-resource-pixels]")!.getAttribute("data-resource-pixels")!
+      const id = /^url\("#(.+)"\)$/.exec(arrow.getAttribute("mask") ?? "")?.[1]
+      const masks = [...body.querySelectorAll("mask")].filter((mask) => mask.id === id)
+      const cut = masks[0]?.querySelector('rect[fill="#000"]')
+      const label = [...arrow.closest("svg")!.querySelectorAll("g > text")].find((text) => text.textContent === labels[picture as keyof typeof labels])
+      // The label's group is at translate(x y), turning about its centre: rotate(0 width/2 height/2).
+      const [x, y, cx, cy] = /translate\(([-\d.]+) ([-\d.]+)\) rotate\(0 ([-\d.]+) ([-\d.]+)\)/.exec(label?.parentElement?.getAttribute("transform") ?? "")!.slice(1).map(Number)
+      const [cutX, cutY, cutWidth, cutHeight] = ["x", "y", "width", "height"].map((name) => Number(cut?.getAttribute(name)))
+      return {
+        picture,
+        masks: masks.length,
+        own: masks[0]?.closest("[data-resource-pixels]")?.getAttribute("data-resource-pixels") === picture,
+        gap: [x - cutX, y - cutY, cutWidth - 2 * cx, cutHeight - 2 * cy].map((value) => Math.round(value * 100) / 100),
+      }
+    }), labels)
+  expect(cutouts).toEqual(["flow.d2", "other.d2"].map((picture) => ({ picture, masks: 1, own: true, gap: [5, 5, 10, 10] })))
 
   // Each picture opens in a reading viewer that zooms without changing anything.
   await frame.getByRole("button", { name: "View drawing art/sketch.excalidraw", exact: true }).click()

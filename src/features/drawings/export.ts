@@ -8,7 +8,6 @@
 // never references a CDN.
 
 import type { DrawingScene, ExportDrawingOptions } from './types.ts';
-import { repairNativeSvgMasks } from './svgMask.ts';
 
 // Pinned native package this feature was built and tested against
 // (the same version is pinned in package.json).
@@ -84,7 +83,8 @@ export async function exportDrawingSvg(
   options?: ExportDrawingOptions,
 ): Promise<string> {
   assertExportable(scene);
-  const { exportToSvg } = await loadExporters();
+  // The mask repair loads with the exporter, off the project page's first paint.
+  const [{ exportToSvg }, { repairNativeSvgMasks }] = await Promise.all([loadExporters(), import('./svgMask.ts')]);
   const svg = await exportToSvg({
     elements: scene.elements,
     appState: exportAppState(scene, options),
