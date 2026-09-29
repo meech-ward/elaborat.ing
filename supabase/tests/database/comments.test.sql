@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(184);
+select plan(196);
 
 -- People, by name. Alice owns the project; Bob is an editor, Carol a
 -- commenter, Dave a viewer and Gina a commenter, all accepted. Erin has a
@@ -800,6 +800,58 @@ select pg_temp.act('bob');
 select throws_ok(
   $$ select public.reply_comment(pg_temp.t(7), pg_temp.r(7), 'A reply') $$,
   '22023', 'This comment id was already used', 'Someone else cannot reuse a reply id'
+);
+
+-- Ids taken in a project the caller cannot read. In his own project, Frank
+-- tries the thread and reply ids from P. Each goes through the checks an
+-- unused id goes through, gets the answer a missing comment gets, and
+-- writes nothing.
+select pg_temp.act('frank');
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(7), pg_temp.file('other'), 1, pg_temp.anchor('document'), 'Hi') $$,
+  '42501', 'Comment unavailable', 'A thread id from a project Frank cannot read gets the answer a missing comment gets'
+);
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(7), pg_temp.file('a'), 1, pg_temp.anchor('document'), 'Hi') $$,
+  '22023', 'No such file in this project', 'after the checks an unused id goes through'
+);
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(96), pg_temp.file('a'), 1, pg_temp.anchor('document'), 'Hi') $$,
+  '22023', 'No such file in this project', 'which answer an unused id the same way'
+);
+select lives_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(95), pg_temp.file('other'), 1, pg_temp.anchor('document'), 'Mine') $$,
+  'Frank starts a thread in his own project'
+);
+select throws_ok(
+  $$ select public.reply_comment(pg_temp.t(95), pg_temp.r(7), 'Hi') $$,
+  '42501', 'Comment unavailable', 'A reply id from a project Frank cannot read gets the same answer'
+);
+select lives_ok($$ select public.archive_project(pg_temp.project('O')) $$, 'Frank archives his project');
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(7), pg_temp.file('other'), 1, pg_temp.anchor('document'), 'Hi') $$,
+  '55000', 'Project is archived', 'Archived, the thread id from P'
+);
+select throws_ok(
+  $$ select public.add_comment(pg_temp.project('O'), pg_temp.t(96), pg_temp.file('other'), 1, pg_temp.anchor('document'), 'Hi') $$,
+  '55000', 'Project is archived', 'and an unused one get the same answer'
+);
+select throws_ok(
+  $$ select public.reply_comment(pg_temp.t(95), pg_temp.r(7), 'Hi') $$,
+  '55000', 'Project is archived', 'and so do the reply id from P'
+);
+select throws_ok(
+  $$ select public.reply_comment(pg_temp.t(95), pg_temp.r(96), 'Hi') $$,
+  '55000', 'Project is archived', 'and an unused one'
+);
+select lives_ok($$ select public.unarchive_project(pg_temp.project('O')) $$, 'Frank unarchives it');
+select is(
+  array[
+    (select count(*)::int from public.comment_threads where project_id = pg_temp.project('O')),
+    (select count(*)::int from public.comments where project_id = pg_temp.project('O'))
+  ],
+  array[1, 1],
+  'Nothing but his own thread was written'
 );
 
 ------------------------------------------------------------------------------

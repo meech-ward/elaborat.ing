@@ -432,7 +432,9 @@ grant execute on function public.list_comments(uuid, uuid) to authenticated;
 -- thread id: repeating the call with the same id returns the thread as it is
 -- now, even if the project was archived in between, or says it was deleted;
 -- reusing the id for anything else is an error. The file must be a current
--- file of the project.
+-- file of the project. An id taken in a project the caller cannot read goes
+-- through every check a new id does and is refused only where a new id is
+-- written, with "Comment unavailable", so such ids cannot be probed.
 create function private.add_comment(
   project_id uuid, thread_id uuid, file_id uuid, file_version bigint, anchor jsonb, body text
 )
@@ -459,7 +461,8 @@ begin
 
   p := private.lock_project_for_comment(add_comment.project_id, true);
 
-  select * into t from public.comment_threads ct where ct.id = add_comment.thread_id;
+  select * into t from public.comment_threads ct
+  where ct.id = add_comment.thread_id and ct.project_id in (select private.readable_project_ids());
   if t.id is not null then
     if t.project_id = p.id and t.file_id = add_comment.file_id and t.created_by = uid then
       return jsonb_build_object('revision', p.revision, 'thread', private.thread_json(t));
@@ -490,7 +493,11 @@ begin
 
   insert into public.comment_threads (id, project_id, file_id, file_version, anchor, created_by)
   values (add_comment.thread_id, p.id, add_comment.file_id, add_comment.file_version, add_comment.anchor, uid)
+  on conflict (id) do nothing
   returning * into t;
+  if t.id is null then
+    raise exception 'Comment unavailable' using errcode = '42501';
+  end if;
   insert into public.comments (thread_id, project_id, author_id, agent_client_id, body)
   values (t.id, p.id, uid, nullif((select auth.jwt()) ->> 'client_id', ''), add_comment.body);
 
@@ -520,7 +527,8 @@ grant execute on function public.add_comment(uuid, uuid, uuid, bigint, jsonb, te
 
 -- Reply to a thread. The client chooses the comment id: repeating the call
 -- with the same id returns that comment as it is now, even if it was edited
--- or deleted since.
+-- or deleted since. A comment id taken in a project the caller cannot read is
+-- refused as add_comment refuses such a thread id.
 create function private.reply_comment(thread_id uuid, comment_id uuid, body text)
 returns jsonb
 language plpgsql
@@ -550,7 +558,8 @@ begin
     raise exception 'Comment unavailable' using errcode = '42501';
   end if;
 
-  select * into c from public.comments cm where cm.id = reply_comment.comment_id;
+  select * into c from public.comments cm
+  where cm.id = reply_comment.comment_id and cm.project_id in (select private.readable_project_ids());
   if c.id is not null then
     if c.thread_id = t.id and c.author_id = uid then
       return jsonb_build_object('revision', p.revision, 'comment', private.comment_json(c));
@@ -567,7 +576,11 @@ begin
 
   insert into public.comments (id, thread_id, project_id, author_id, agent_client_id, body)
   values (reply_comment.comment_id, t.id, p.id, uid, nullif((select auth.jwt()) ->> 'client_id', ''), reply_comment.body)
+  on conflict (id) do nothing
   returning * into c;
+  if c.id is null then
+    raise exception 'Comment unavailable' using errcode = '42501';
+  end if;
 
   update public.projects set revision = revision + 1, updated_at = now()
   where id = p.id
