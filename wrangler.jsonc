@@ -11,11 +11,16 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp"]
+    // /mcp-probe and /embed-probe: temporary host capability probe, remove after testing.
+    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]
   },
   // The hosted instance's MCP server. Self-hosters: your project's
   // https://<ref>.supabase.co/functions/v1/mcp-server, or remove it.
-  "vars": { "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server" },
+  // MCP_PROBE_UPSTREAM: temporary host capability probe, remove after testing.
+  "vars": {
+    "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server",
+    "MCP_PROBE_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-probe"
+  },
   // The hosted instance's domain. Self-hosters: change or remove this route.
   "routes": [{ "pattern": "elaborat.ing", "custom_domain": true }]
 }

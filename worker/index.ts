@@ -6,11 +6,18 @@
  * challenge) so MCP clients see this site's `/mcp` URL throughout, as RFC 9728
  * requires. Everything else is the app. Without `MCP_UPSTREAM` (a self-host
  * that doesn't set it) there is no `/mcp` and the Worker only serves the app.
+ *
+ * Temporary host capability probe, remove after testing: `/mcp-probe` passes
+ * to the probe function in `MCP_PROBE_UPSTREAM`, and `/embed-probe` is the one
+ * page other sites may frame (only ChatGPT's, see EMBED_PROBE_FRAME_ANCESTORS).
+ * Every other page keeps `X-Frame-Options: DENY` from public/_headers.
  */
 
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   MCP_UPSTREAM?: string;
+  /** Temporary host capability probe, remove after testing. */
+  MCP_PROBE_UPSTREAM?: string;
 }
 
 const PREFIX = "/mcp";
@@ -24,8 +31,29 @@ export function mcpPath(pathname: string): string | null {
   return null;
 }
 
+// Temporary host capability probe, remove after testing.
+const PROBE_PREFIX = "/mcp-probe";
+const EMBED_PROBE = "/embed-probe";
+/** Who may frame /embed-probe: ChatGPT, and the origins it serves plugin views from. */
+export const EMBED_PROBE_FRAME_ANCESTORS = "https://chatgpt.com https://*.chatgpt.com https://*.oaiusercontent.com";
+
+/** The app's /embed-probe page, with a frame-ancestors policy in place of X-Frame-Options. */
+async function embedProbe(request: Request, env: Env): Promise<Response> {
+  const response = await env.ASSETS.fetch(request);
+  const headers = new Headers(response.headers);
+  headers.delete("X-Frame-Options");
+  headers.set("Content-Security-Policy", `frame-ancestors ${EMBED_PROBE_FRAME_ANCESTORS}`);
+  headers.set("X-Robots-Tag", "noindex");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === EMBED_PROBE || url.pathname === `${EMBED_PROBE}/`) return embedProbe(request, env);
+  const probeUpstream = env.MCP_PROBE_UPSTREAM?.replace(/\/+$/, "");
+  if (probeUpstream && (url.pathname === PROBE_PREFIX || url.pathname.startsWith(`${PROBE_PREFIX}/`))) {
+    return fetcher(new Request(`${probeUpstream}${url.pathname.slice(PROBE_PREFIX.length)}${url.search}`, request));
+  }
   const upstream = env.MCP_UPSTREAM?.replace(/\/+$/, "");
   const path = upstream ? mcpPath(url.pathname) : null;
   if (!upstream || path === null) return env.ASSETS.fetch(request);

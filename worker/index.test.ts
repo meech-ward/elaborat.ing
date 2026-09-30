@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { handle, mcpPath } from "./index";
+import { EMBED_PROBE_FRAME_ANCESTORS, handle, mcpPath } from "./index";
 
 const UPSTREAM = "https://ref.supabase.co/functions/v1/mcp-server";
 const assets = { fetch: async () => new Response("app") };
@@ -49,5 +49,48 @@ describe("handle", () => {
     );
     expect(challenge.status).toBe(401);
     expect(challenge.headers.get("WWW-Authenticate")).toBe('Bearer resource_metadata="https://site.test/mcp/oauth-protected-resource"');
+  });
+});
+
+// Temporary host capability probe, remove after testing.
+describe("the probe routes", () => {
+  const DENY = { "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff" };
+  const framedAssets = { fetch: async () => new Response("<!doctype html>", { headers: DENY }) };
+  const env = { ASSETS: framedAssets, MCP_UPSTREAM: UPSTREAM, MCP_PROBE_UPSTREAM: "https://ref.supabase.co/functions/v1/mcp-probe" };
+
+  test("/embed-probe alone may be framed, and only by ChatGPT", async () => {
+    for (const path of ["/embed-probe", "/embed-probe/", "/embed-probe?from=widget"]) {
+      const response = await handle(new Request(`https://site.test${path}`), env);
+      expect(response.headers.get("X-Frame-Options")).toBeNull();
+      expect(response.headers.get("Content-Security-Policy")).toBe(`frame-ancestors ${EMBED_PROBE_FRAME_ANCESTORS}`);
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    }
+    for (const path of ["/", "/sign-in", "/projects/1", "/embed-probex", "/embed-probe/child", "/style-guide"]) {
+      const response = await handle(new Request(`https://site.test${path}`), env);
+      expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+      expect(response.headers.get("Content-Security-Policy")).toBeNull();
+    }
+  });
+
+  test("every other path is served straight from the static files, which send X-Frame-Options DENY", async () => {
+    const headers = await Bun.file(new URL("../public/_headers", import.meta.url)).text();
+    const all = headers.split(/\n(?=\/)/).find((block) => block.startsWith("/*\n"));
+    expect(all).toContain("X-Frame-Options: DENY");
+    expect(headers).not.toMatch(/!\s*X-Frame-Options|frame-ancestors/i);
+    const wrangler = await Bun.file(new URL("../wrangler.jsonc", import.meta.url)).text();
+    const first = JSON.parse(wrangler.match(/"run_worker_first":\s*(\[[^\]]*\])/)![1]) as string[];
+    expect(first).toEqual(["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]);
+  });
+
+  test("/mcp-probe passes to the probe function, and /mcp still to the MCP server", async () => {
+    const seen: string[] = [];
+    const fetcher = (async (input: Request) => {
+      seen.push(input.url);
+      return new Response("ok");
+    }) as unknown as typeof fetch;
+    await handle(new Request("https://site.test/mcp-probe", { method: "POST", body: "{}" }), env, fetcher);
+    await handle(new Request("https://site.test/mcp", { method: "POST", body: "{}" }), env, fetcher);
+    expect(seen).toEqual(["https://ref.supabase.co/functions/v1/mcp-probe", UPSTREAM]);
+    expect(mcpPath("/mcp-probe")).toBeNull();
   });
 });

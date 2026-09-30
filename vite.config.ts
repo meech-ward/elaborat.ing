@@ -164,6 +164,9 @@ export default defineConfig({
         // are bigger. tests/browser/offline.spec.ts checks nothing is skipped.
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
         navigateFallback: "index.html",
+        // Temporary host capability probe, remove after testing: /embed-probe
+        // always comes from the network, whose headers let ChatGPT frame it.
+        navigateFallbackDenylist: [/^\/embed-probe\/?$/],
         // The first version takes over the page that installed it, so lazy
         // chunks load from the cache if the connection drops. Later versions
         // wait: skipWaiting stays off until the person chooses the update.

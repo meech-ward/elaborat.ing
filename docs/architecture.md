@@ -591,6 +591,18 @@ uses. Tools live in `tools/projects.ts`; the server's name and description
 come from the `MCP_SERVER_NAME` and `MCP_SERVER_DESCRIPTION` function
 secrets.
 
+**Temporary: a host capability probe, removed after testing.** A separate
+MCP server (`supabase/functions/mcp-probe/`, at `/mcp-probe` through the
+Worker) with no sign-in and no data: one tool, `probe_host`, with global and
+thread entrypoints, whose view reports what a chat host allows, and one MCP
+Events event, `comment.created`, whose subscribe verifies the callback with
+the signed challenge and sends one sample event. Each step writes one JSON log
+line. `/embed-probe` is the only page other sites may frame: the Worker sends
+it with a `frame-ancestors` policy for ChatGPT instead of `X-Frame-Options:
+DENY`, and it reports its ancestors, storage, service worker and session, and
+offers sign-in with an emailed code. The production server's tools are
+unchanged.
+
 - **Tools mirror the app's operations:** list projects and invitations, list
   and read files, write one file or a batch with the expected versions, move,
   delete (history keeps the content), create projects and folders, rename,

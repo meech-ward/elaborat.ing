@@ -436,6 +436,11 @@ allow_dynamic_registration = true
 [functions.mcp-server]
 verify_jwt = false
 
+# Temporary host capability probe, remove after testing: a separate MCP server
+# with no sign-in and no data, served at /mcp-probe by the Worker.
+[functions.mcp-probe]
+verify_jwt = false
+
 # Called by pg_cron (private.process_file_passages) with a secret key on
 # `apikey`, which the function checks itself.
 [functions.embed]
