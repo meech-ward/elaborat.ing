@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/mini"
 
 /**
  * The on-device model for projects: what the browser keeps in IndexedDB so
@@ -49,7 +49,7 @@ export function projectPathProblem(path: string): string | null {
   return null
 }
 
-export const ProjectPath = z.string().refine(isValidProjectPath, "Invalid project path")
+export const ProjectPath = z.string().check(z.refine(isValidProjectPath, "Invalid project path"))
 
 export const Role = z.enum(["owner", "editor", "commenter", "viewer"])
 export type Role = z.infer<typeof Role>
@@ -57,54 +57,59 @@ export type Role = z.infer<typeof Role>
 /** Roles that can change a project's files. */
 export const canEdit = (role: Role | null): boolean => role === "owner" || role === "editor"
 
+/** A file version: a positive integer. */
+const Version = z.int().check(z.positive())
+
 /** One change in a `save_files` batch, exactly as the database accepts it. */
 export const SaveChange = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("put"), path: ProjectPath, content: z.string(), base_version: z.number().int().positive().optional() }).strict(),
-  z.object({ op: z.literal("delete"), path: ProjectPath, base_version: z.number().int().positive() }).strict(),
-  z.object({ op: z.literal("move"), path: ProjectPath, to: ProjectPath, base_version: z.number().int().positive(), content: z.string().optional() }).strict(),
-  z.object({ op: z.literal("mkdir"), path: ProjectPath }).strict(),
-  z.object({ op: z.literal("rmdir"), path: ProjectPath }).strict(),
+  z.strictObject({ op: z.literal("put"), path: ProjectPath, content: z.string(), base_version: z.optional(Version) }),
+  z.strictObject({ op: z.literal("delete"), path: ProjectPath, base_version: Version }),
+  z.strictObject({ op: z.literal("move"), path: ProjectPath, to: ProjectPath, base_version: Version, content: z.optional(z.string()) }),
+  z.strictObject({ op: z.literal("mkdir"), path: ProjectPath }),
+  z.strictObject({ op: z.literal("rmdir"), path: ProjectPath }),
 ])
 export type SaveChange = z.infer<typeof SaveChange>
 
 /** The server's copy of a file, as this device last saw it. */
-export const FileBase = z.object({
+export const FileBase = z.strictObject({
   id: z.uuid(),
   path: ProjectPath,
-  version: z.number().int().positive(),
+  version: Version,
   content: z.string(),
-}).strict()
+})
 export type FileBase = z.infer<typeof FileBase>
 
 /** What the server had when a save of this file conflicted. */
-export const FileConflict = z.object({
+export const FileConflict = z.strictObject({
   /** The server's current copy, or null when the server no longer has the file. */
-  current: z.object({ id: z.uuid(), version: z.number().int().positive(), content: z.string() }).strict().nullable(),
+  current: z.nullable(z.strictObject({ id: z.uuid(), version: Version, content: z.string() })),
   /** Set instead when the save failed because the path is used by another file or folder. */
   pathTaken: z.boolean(),
-}).strict()
+})
 export type FileConflict = z.infer<typeof FileConflict>
 
-export const LocalFile = z.object({
-  partition: z.string().min(1),
+const NonEmpty = z.string().check(z.minLength(1))
+
+export const LocalFile = z.strictObject({
+  partition: NonEmpty,
   projectId: z.uuid(),
   /** Stable on this device across moves, so an acknowledgement finds the file after it moved again. */
   localId: z.uuid(),
   /** The file's path on this device (its key). */
   path: ProjectPath,
-  base: FileBase.nullable(),
+  base: z.nullable(FileBase),
   /** The locally saved copy. null means deleted locally. */
-  content: z.string().nullable(),
+  content: z.nullable(z.string()),
   /** Files saved together share a batch id and are synced as one atomic change. */
-  batch: z.string().nullable(),
+  batch: z.nullable(z.string()),
   /** Unsaved edits, kept for recovery. `token` is the saved copy's revision the draft was based on. */
-  draft: z.object({ content: z.string(), token: z.string().nullable() }).strict().nullable(),
-  conflict: FileConflict.nullable(),
-}).strict()
+  draft: z.nullable(z.strictObject({ content: z.string(), token: z.nullable(z.string()) })),
+  conflict: z.nullable(FileConflict),
+})
 export type LocalFile = z.infer<typeof LocalFile>
 
-export const LocalFolder = z.object({
-  partition: z.string().min(1),
+export const LocalFolder = z.strictObject({
+  partition: NonEmpty,
   projectId: z.uuid(),
   path: ProjectPath,
   /** The server has this explicit folder. */
@@ -116,40 +121,40 @@ export const LocalFolder = z.object({
    * batch id, so sync sends it in the same change. Absent in folders stored
    * before batches existed.
    */
-  batch: z.string().nullable().default(null),
-}).strict()
+  batch: z._default(z.nullable(z.string()), null),
+})
 export type LocalFolder = z.infer<typeof LocalFolder>
 
 /** A batch that has been sent, or is about to be; kept until it is acknowledged. */
-export const PendingSave = z.object({
+export const PendingSave = z.strictObject({
   mutationId: z.uuid(),
-  changes: z.array(SaveChange).min(1).max(MAX_ENTRIES),
+  changes: z.array(SaveChange).check(z.minLength(1), z.maxLength(MAX_ENTRIES)),
   /**
    * The local files in the batch, in the same order as the first `files.length`
    * changes, with exactly what was sent for each: the server path the file
    * ends up at (null for a delete) and its content (null for a delete).
    */
-  files: z.array(z.object({ localId: z.uuid(), sentPath: ProjectPath.nullable(), sentContent: z.string().nullable() }).strict()),
-  folders: z.array(z.object({ path: ProjectPath, local: z.boolean() }).strict()),
-}).strict()
+  files: z.array(z.strictObject({ localId: z.uuid(), sentPath: z.nullable(ProjectPath), sentContent: z.nullable(z.string()) })),
+  folders: z.array(z.strictObject({ path: ProjectPath, local: z.boolean() })),
+})
 export type PendingSave = z.infer<typeof PendingSave>
 
-export const LocalProject = z.object({
-  partition: z.string().min(1),
+export const LocalProject = z.strictObject({
+  partition: NonEmpty,
   id: z.uuid(),
   title: z.string(),
   /** A title change made on this device and not yet sent. */
-  pendingTitle: z.string().nullable(),
-  role: Role.nullable(),
+  pendingTitle: z.nullable(z.string()),
+  role: z.nullable(Role),
   /** The server revision this device has fully pulled. 0 before the first pull. */
-  revision: z.number().int().nonnegative(),
+  revision: z.int().check(z.nonnegative()),
   /** True once the server has the project (create_project acknowledged or it came from the server). */
   created: z.boolean(),
-  archivedAt: z.string().nullable(),
+  archivedAt: z.nullable(z.string()),
   /** Why sync stopped for this project, if it did; local work is always kept. `deleted`: its owner deleted it. */
-  syncError: z.enum(["access-lost", "deleted", "archived", "limit", "invalid"]).nullable(),
-  pending: PendingSave.nullable(),
-}).strict()
+  syncError: z.nullable(z.enum(["access-lost", "deleted", "archived", "limit", "invalid"])),
+  pending: z.nullable(PendingSave),
+})
 export type LocalProject = z.infer<typeof LocalProject>
 
 export type FileState = "clean" | "created" | "changed" | "moved" | "deleted"

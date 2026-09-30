@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 import { isValidProjectPath } from "@/features/project-storage/model";
 import { MissingFileError } from "./workspaceStore";
 
@@ -17,8 +17,8 @@ export const MAX_PERSISTED_TABS = 32;
 
 const persistedTabsSchema = z.object({
   version: z.literal(TAB_PERSISTENCE_VERSION),
-  openPaths: z.array(z.string().min(1).max(512)),
-  activePath: z.string().min(1).max(512).nullable(),
+  openPaths: z.array(z.string().check(z.minLength(1), z.maxLength(512))),
+  activePath: z.nullable(z.string().check(z.minLength(1), z.maxLength(512))),
 });
 
 export interface PersistedTabs {

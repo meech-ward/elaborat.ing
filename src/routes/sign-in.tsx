@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect } from "react"
-import { z } from "zod"
+import { z } from "zod/mini"
 import { LoginForm } from "@/components/login-form"
 import { AuthPage, useAuth } from "@/features/auth"
 import { safeNextPath } from "@/lib/safe-next-path"
 
 export const Route = createFileRoute("/sign-in")({
-  validateSearch: z.object({ next: z.string().optional() }),
+  validateSearch: z.object({ next: z.optional(z.string()) }),
   component: SignIn,
 })
 

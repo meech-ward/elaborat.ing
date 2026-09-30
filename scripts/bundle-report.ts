@@ -142,6 +142,8 @@ const HEAVY: Array<{ name: string; modules: RegExp }> = [
   { name: "the MDX compiler", modules: /node_modules\/(@mdx-js\/mdx|micromark|micromark-core-commonmark|micromark-extension-[\w-]+|mdast-util-[\w-]+|remark-[\w-]+|unified)\// },
   { name: "prettier", modules: /node_modules\/prettier\// },
   { name: "the preview frame", modules: /^virtual:preview-frame/ },
+  // Full Zod: code in a first paint imports zod/mini, which keeps only what it uses.
+  { name: "full Zod (import zod/mini instead)", modules: /node_modules\/zod\/(v4\/)?(index\.js$|classic\/)/ },
 ]
 const BUDGET_FILE = path.join(import.meta.dirname, "bundle-budget.json")
 /** The chat card's view: the script and stylesheet the MCP server inlines (scripts/build-chat-card.ts). */

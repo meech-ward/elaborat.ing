@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/mini"
 
 /** The sign-in providers the sign-in page can offer, in order. */
 export const PROVIDERS = [
@@ -11,8 +11,8 @@ export type ProviderId = (typeof PROVIDERS)[number]["id"]
 // Auth's public settings list every external provider with whether it is on,
 // and whether passkey sign-in is on.
 const AuthSettings = z.object({
-  external: z.object({ github: z.boolean().optional(), google: z.boolean().optional() }),
-  passkeys_enabled: z.boolean().optional(),
+  external: z.object({ github: z.optional(z.boolean()), google: z.optional(z.boolean()) }),
+  passkeys_enabled: z.optional(z.boolean()),
 })
 
 /** The sign-in methods Auth has on besides email: providers, and passkeys. */

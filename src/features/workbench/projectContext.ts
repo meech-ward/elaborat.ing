@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 import { isValidProjectPath } from "@/features/project-storage/model";
 
 /**
@@ -33,14 +33,16 @@ const projectViewSchema = z.enum(["source", "split", "rendered", "code", "canvas
 const projectContextSchema = z.object({
   version: z.literal(PROJECT_CONTEXT_VERSION),
   openPaths: z
-    .array(z.string().min(1).max(512))
-    .max(MAX_PROJECT_CONTEXT_INPUT_ENTRIES),
-  activePath: z.string().min(1).max(512).nullable(),
+    .array(z.string().check(z.minLength(1), z.maxLength(512)))
+    .check(z.maxLength(MAX_PROJECT_CONTEXT_INPUT_ENTRIES)),
+  activePath: z.nullable(z.string().check(z.minLength(1), z.maxLength(512))),
   views: z
-    .record(z.string().min(1).max(512), projectViewSchema)
-    .refine(
-      (views) =>
-        Object.keys(views).length <= MAX_PROJECT_CONTEXT_INPUT_ENTRIES,
+    .record(z.string().check(z.minLength(1), z.maxLength(512)), projectViewSchema)
+    .check(
+      z.refine(
+        (views) =>
+          Object.keys(views).length <= MAX_PROJECT_CONTEXT_INPUT_ENTRIES,
+      ),
     ),
 });
 

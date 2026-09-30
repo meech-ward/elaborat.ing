@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { PALETTE_IDS, palettes, type PaletteColors, type PaletteId } from './palettes';
 
 /** A theme is one of the colour palettes. */
@@ -63,7 +63,7 @@ const themeSchema = z.enum(PALETTE_IDS);
  * default palette; anything unreadable falls back to the default setting.
  */
 export function parseAppearanceSetting(value: unknown): AppearanceSetting {
-  const record = z.object({ theme: z.unknown(), mode: z.unknown(), scheme: z.unknown() }).partial().safeParse(value);
+  const record = z.partial(z.object({ theme: z.unknown(), mode: z.unknown(), scheme: z.unknown() })).safeParse(value);
   if (!record.success) return { ...DEFAULT_SETTING };
   const mode = modeSchema.safeParse(record.data.mode ?? record.data.scheme);
   if (!mode.success) return { ...DEFAULT_SETTING };

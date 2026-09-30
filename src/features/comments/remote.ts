@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { z } from "zod"
+import { z } from "zod/mini"
 import { ProjectPath } from "../project-storage/model"
 import { classify, RemoteError } from "../project-storage/remote"
 import type { CommentAnchor } from "./placement"
@@ -20,19 +20,19 @@ const TextQuoteSelector = z.object({
 
 const TextPositionSelector = z.object({
   type: z.literal("TextPositionSelector"),
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
+  start: z.int().check(z.nonnegative()),
+  end: z.int().check(z.nonnegative()),
 })
 
 /** An anchor as stored: exactly the shape of `CommentAnchor` in placement.ts. */
-export const RemoteAnchor: z.ZodType<CommentAnchor> = z.union([
+export const RemoteAnchor: z.ZodMiniType<CommentAnchor> = z.union([
   z.object({ kind: z.literal("document") }),
   z.object({ kind: z.enum(["text", "section"]), quote: TextQuoteSelector, position: TextPositionSelector }),
   z.object({
     kind: z.literal("element"),
     element_id: z.string(),
     label: z.string(),
-    point: z.object({ x: z.number(), y: z.number() }).optional(),
+    point: z.optional(z.object({ x: z.number(), y: z.number() })),
   }),
 ])
 
@@ -41,7 +41,9 @@ export const RemoteAnchor: z.ZodType<CommentAnchor> = z.union([
  * `name` is the name they set or their sign-in provider gave, else their
  * email (older servers leave it out).
  */
-const Person = z.object({ user_id: z.uuid(), email: z.string().nullable(), name: z.string().nullish() }).nullable()
+const Person = z.nullable(z.object({ user_id: z.uuid(), email: z.nullable(z.string()), name: z.nullish(z.string()) }))
+const Version = z.int().check(z.positive())
+const Revision = z.int().check(z.nonnegative())
 
 /** A comment, or the placeholder a deleted one leaves (no body, `deleted_at` set). */
 export const RemoteComment = z.object({
@@ -50,13 +52,13 @@ export const RemoteComment = z.object({
   /** Written by the author's agent rather than by them in the app. */
   via_agent: z.boolean(),
   /** That agent's name, when it has one (older servers leave it out). */
-  agent: z.string().nullish(),
-  body: z.string().nullable(),
+  agent: z.nullish(z.string()),
+  body: z.nullable(z.string()),
   created_at: z.string(),
-  edited_at: z.string().nullable(),
-  deleted_at: z.string().nullable(),
+  edited_at: z.nullable(z.string()),
+  deleted_at: z.nullable(z.string()),
   /** The version of the thread's file the comment links to, such as one an agent saved in answer. */
-  file_version: z.number().int().positive().nullish(),
+  file_version: z.nullish(Version),
 })
 export type RemoteComment = z.infer<typeof RemoteComment>
 
@@ -69,13 +71,13 @@ export const RemoteThread = z.object({
   file_id: z.uuid(),
   path: ProjectPath,
   file_deleted: z.boolean(),
-  file_version: z.number().int().positive(),
+  file_version: Version,
   anchor: RemoteAnchor,
   created_at: z.string(),
-  resolved_at: z.string().nullable(),
+  resolved_at: z.nullable(z.string()),
   resolved_by: Person,
   /** Its creator asked their agents to deal with it (older servers leave it out). */
-  ask_agent: z.boolean().optional(),
+  ask_agent: z.optional(z.boolean()),
   comments: z.array(RemoteComment),
 })
 export type RemoteThread = z.infer<typeof RemoteThread>
@@ -83,12 +85,11 @@ export type RemoteThread = z.infer<typeof RemoteThread>
 /** A project's threads, or one file's, with the project revision they were read at. */
 export const CommentList = z.object({
   project_id: z.uuid(),
-  revision: z.number().int().nonnegative(),
+  revision: Revision,
   threads: z.array(RemoteThread),
 })
 export type CommentList = z.infer<typeof CommentList>
 
-const Revision = z.number().int().nonnegative()
 const ThreadResult = z.object({ revision: Revision, thread: RemoteThread })
 const CommentResult = z.object({ revision: Revision, comment: RemoteComment })
 const DeletedComment = z.object({ revision: Revision, comment_id: z.uuid(), thread_deleted: z.boolean() })

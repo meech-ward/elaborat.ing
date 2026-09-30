@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/mini"
 import { isValidProjectPath } from "@/features/project-storage/model"
 
 /**
@@ -8,7 +8,7 @@ import { isValidProjectPath } from "@/features/project-storage/model"
  */
 export type ProjectLocation = { kind: "project"; projectId: string; path: string | null } | { kind: "invalid"; message: string }
 
-const Href = z.string().max(2048)
+const Href = z.string().check(z.maxLength(2048))
 
 /** Parse the router's encoded href (not its decoded pathname, which could merge an encoded "/" into a separator). */
 export function parseProjectLocation(href: unknown): ProjectLocation {

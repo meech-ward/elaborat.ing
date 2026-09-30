@@ -1,6 +1,6 @@
 import { useRouter } from "@tanstack/react-router"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { z } from "zod"
+import { z } from "zod/mini"
 import { registerBeforeSignOut } from "@/features/auth"
 import { parseProjectLocation } from "@/features/navigation"
 import { DepartureBarrier } from "@/features/project-storage/departureBarrier"
@@ -54,7 +54,7 @@ export function useDepartureGuard(projectId: string, opened: boolean) {
           const next = parseProjectLocation(nextLocation.href)
           if (next.kind === "project" && next.projectId === projectId) return false
           const currentLocation = router.history.location
-          const browserEntry = z.object({ __TSR_index: z.number().int() }).safeParse(window.history.state)
+          const browserEntry = z.object({ __TSR_index: z.int() }).safeParse(window.history.state)
           const unindexedTraversal = action === "GO" && (!browserEntry.success || browserEntry.data.__TSR_index === currentLocation.state.__TSR_index)
           const refuse = () => {
             if (!unindexedTraversal) return true

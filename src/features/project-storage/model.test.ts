@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { companionPaths, fileState, isValidProjectPath, partitionKey, type LocalFile } from "./model"
+import { companionPaths, fileState, isValidProjectPath, LocalFile, LocalFolder, LocalProject, partitionKey } from "./model"
 
 test("paths follow the database rule", () => {
   for (const path of ["a.md", "notes/a.md", "Ünïcode/名前.md", "a b/c-d_e.md", "x".repeat(2 ** 10)]) expect(isValidProjectPath(path)).toBe(true)
@@ -42,4 +42,40 @@ test("the partition key names the backend origin and the account", () => {
   const user = "5f0c6f9e-2d7b-4a57-9d63-1d3f6f0b9c11"
   expect(partitionKey("https://abc.supabase.co/rest/v1", user)).toBe(JSON.stringify(["https://abc.supabase.co", user]))
   expect(() => partitionKey("https://abc.supabase.co", "not-a-uuid")).toThrow()
+})
+
+test("stored rows are checked as they are read: a folder from before batches gets none, and bad rows are refused", () => {
+  const projectId = crypto.randomUUID()
+  const folder = { partition: "p", projectId, path: "notes", base: true, local: true }
+  expect(LocalFolder.parse(folder)).toEqual({ ...folder, batch: null })
+  expect(LocalFolder.safeParse({ ...folder, path: "a//b" }).success).toBe(false)
+  expect(LocalFolder.safeParse({ ...folder, batch: null, extra: 1 }).success).toBe(false)
+
+  const file = { partition: "p", projectId, localId: crypto.randomUUID(), path: "a.md", base: null, content: "x", batch: null, draft: null, conflict: null }
+  expect(LocalFile.parse(file)).toEqual(file)
+  expect(LocalFile.safeParse({ ...file, localId: "not-a-uuid" }).success).toBe(false)
+  expect(LocalFile.safeParse({ ...file, base: { id: crypto.randomUUID(), path: "a.md", version: 0, content: "x" } }).success).toBe(false)
+
+  const project: LocalProject = {
+    partition: "p",
+    id: projectId,
+    title: "Notes",
+    pendingTitle: null,
+    role: "owner",
+    revision: 0,
+    created: true,
+    archivedAt: null,
+    syncError: null,
+    pending: {
+      mutationId: crypto.randomUUID(),
+      changes: [{ op: "put", path: "a.md", content: "x" }],
+      files: [{ localId: file.localId, sentPath: "a.md", sentContent: "x" }],
+      folders: [],
+    },
+  }
+  expect(LocalProject.parse(project)).toEqual(project)
+  expect(LocalProject.safeParse({ ...project, revision: -1 }).success).toBe(false)
+  expect(LocalProject.safeParse({ ...project, role: "admin" }).success).toBe(false)
+  expect(LocalProject.safeParse({ ...project, pending: { ...project.pending, changes: [] } }).success).toBe(false)
+  expect(LocalProject.safeParse({ ...project, pending: { ...project.pending, changes: [{ op: "delete", path: "a.md" }] } }).success).toBe(false)
 })

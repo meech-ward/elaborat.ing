@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/mini"
 import type { ComponentEnvironment } from "@/features/document/componentModules"
 
 /**
@@ -16,7 +16,7 @@ const PREFIX = "elaborating.run-components.v1:"
 /** The most tokens kept for one project; the oldest go first. */
 const LIMIT = 500
 const HASH = /^[0-9a-f]{64}$/
-const Stored = z.array(z.string().regex(HASH)).max(LIMIT)
+const Stored = z.array(z.string().check(z.regex(HASH))).check(z.maxLength(LIMIT))
 
 async function sha256(text: string): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle

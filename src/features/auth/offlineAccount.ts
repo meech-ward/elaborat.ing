@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/mini"
 
 /**
  * Which account's projects this device may open without signing in: the last
@@ -6,7 +6,7 @@ import { z } from "zod"
  * never a credential. Signing out forgets it.
  */
 const KEY = "elaborating.offline-account.v1"
-const OfflineAccount = z.object({ version: z.literal(1), userId: z.uuid(), email: z.string().nullable(), supabaseUrl: z.url() })
+const OfflineAccount = z.object({ version: z.literal(1), userId: z.uuid(), email: z.nullable(z.string()), supabaseUrl: z.url() })
 export type OfflineAccount = z.infer<typeof OfflineAccount>
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">

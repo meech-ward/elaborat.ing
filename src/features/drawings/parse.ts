@@ -11,7 +11,8 @@
 // loose arrows, overlapping strokes, groups and customData survive.
 // Failures throw plain Errors with actionable messages.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
+import { en } from 'zod/locales';
 import LZString from 'lz-string';
 import type {
   BinaryFileData,
@@ -21,25 +22,24 @@ import type {
   ParsedDrawing,
 } from './types.ts';
 
-const elementSchema = z
-  .object({
-    id: z.string().min(1),
-    type: z.string().min(1),
-    x: z.number(),
-    y: z.number(),
-  })
-  .catchall(z.unknown());
+const elementSchema = z.looseObject({
+  id: z.string().check(z.minLength(1)),
+  type: z.string().check(z.minLength(1)),
+  x: z.number(),
+  y: z.number(),
+});
 
-const sceneSchema = z
-  .object({
-    type: z.literal('excalidraw').optional(),
-    version: z.number().optional(),
-    elements: z.array(z.unknown()),
-    appState: z.record(z.string(), z.unknown()).optional(),
-    files: z.record(z.string(), z.unknown()).optional(),
-    source: z.string().optional(),
-  })
-  .catchall(z.unknown());
+const sceneSchema = z.looseObject({
+  type: z.optional(z.literal('excalidraw')),
+  version: z.optional(z.number()),
+  elements: z.array(z.unknown()),
+  appState: z.optional(z.record(z.string(), z.unknown())),
+  files: z.optional(z.record(z.string(), z.unknown())),
+  source: z.optional(z.string()),
+});
+
+/** Zod's English messages, which the errors below quote (zod/mini has none of its own). */
+const english = { error: en().localeError };
 
 const KNOWN_TOP_LEVEL_KEYS = new Set([
   'type',
@@ -112,7 +112,7 @@ function toScene(
   originalSource: string,
   filename?: string,
 ): ParsedDrawing {
-  const parsed = sceneSchema.safeParse(raw);
+  const parsed = sceneSchema.safeParse(raw, english);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     fail(
@@ -124,7 +124,7 @@ function toScene(
 
   const rawElements = data['elements'] as unknown[];
   const elements: DrawingElement[] = rawElements.map((entry, index) => {
-    const checked = elementSchema.safeParse(entry);
+    const checked = elementSchema.safeParse(entry, english);
     if (!checked.success) {
       const first = checked.error.issues[0];
       const field = String(first.path[0] ?? '');

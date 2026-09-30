@@ -1,5 +1,5 @@
 import type { RealtimeChannel, REALTIME_SUBSCRIBE_STATES, SupabaseClient } from "@supabase/supabase-js"
-import { z } from "zod"
+import { z } from "zod/mini"
 
 /**
  * Hears when an open project changes somewhere else.
@@ -16,7 +16,7 @@ import { z } from "zod"
  */
 
 /** A signal's payload. Realtime adds a message `id`, which is not needed here. */
-const ChangeSignal = z.object({ revision: z.number().int().positive() })
+const ChangeSignal = z.object({ revision: z.int().check(z.positive()) })
 
 export function projectChangesTopic(projectId: string): string {
   return `project:${projectId}`

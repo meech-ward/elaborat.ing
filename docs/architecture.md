@@ -1035,7 +1035,11 @@ runs only once someone is signed in uses `loadedClient`. Settings' sections,
 the command palette's list, the comments panel, the members and move dialogs,
 the zip code, the home page's picture of the app and the style guide's
 component sections each load in chunks of their own, behind a loading line or
-a placeholder of their size.
+a placeholder of their size. Code that runs before the first paint validates
+with `zod/mini`, which bundles only the parts of Zod it uses; full Zod loads
+later, with the features that still use it (the Rendered view and its
+frame's messages, component metadata, the prototype import, account
+deletion), and `bun run check:bundle` fails if it reaches a first paint.
 
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,

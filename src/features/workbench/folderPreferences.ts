@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 import { isCanonicalDirectoryPath } from "./folderTree";
 
 /**
@@ -17,8 +17,8 @@ export const MAX_EXPANDED_FOLDERS = 64;
 
 const folderPrefsSchema = z.object({
   version: z.literal(FOLDER_PREFS_VERSION),
-  expanded: z.array(z.string().min(1).max(512)),
-  selectedFolder: z.string().max(512).nullable(),
+  expanded: z.array(z.string().check(z.minLength(1), z.maxLength(512))),
+  selectedFolder: z.nullable(z.string().check(z.maxLength(512))),
 });
 
 export interface FolderPreferences {

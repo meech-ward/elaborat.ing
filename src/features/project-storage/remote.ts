@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { z } from "zod"
+import { z } from "zod/mini"
 import { ProjectPath, Role, SaveChange } from "./model"
 
 /**
@@ -8,13 +8,16 @@ import { ProjectPath, Role, SaveChange } from "./model"
  * validated before it is used.
  */
 
+const Revision = z.int().check(z.nonnegative())
+const Version = z.int().check(z.positive())
+
 export const RemoteProject = z.object({
   id: z.uuid(),
   title: z.string(),
-  revision: z.number().int().nonnegative(),
-  archived_at: z.string().nullable(),
+  revision: Revision,
+  archived_at: z.nullable(z.string()),
   updated_at: z.string(),
-  role: Role.nullable(),
+  role: z.nullable(Role),
 })
 export type RemoteProject = z.infer<typeof RemoteProject>
 
@@ -37,12 +40,12 @@ export type MemberRole = RemoteInvitation["role"]
  */
 export const RemoteMember = z.object({
   user_id: z.uuid(),
-  email: z.string().nullable(),
+  email: z.nullable(z.string()),
   /** The name they set or their sign-in provider gave, else their email (older servers leave it out). */
-  name: z.string().nullish(),
+  name: z.nullish(z.string()),
   role: Role,
-  invited_at: z.string().nullable(),
-  accepted_at: z.string().nullable(),
+  invited_at: z.nullable(z.string()),
+  accepted_at: z.nullable(z.string()),
 })
 export type RemoteMember = z.infer<typeof RemoteMember>
 
@@ -50,31 +53,31 @@ export const RemoteFile = z.object({
   id: z.uuid(),
   path: ProjectPath,
   content: z.string(),
-  version: z.number().int().positive(),
+  version: Version,
 })
 export type RemoteFile = z.infer<typeof RemoteFile>
 
 const SavedChange = z.object({
   op: z.enum(["put", "delete", "move", "mkdir", "rmdir"]),
   path: ProjectPath,
-  to: ProjectPath.optional(),
-  id: z.uuid().optional(),
-  version: z.number().int().positive().optional(),
+  to: z.optional(ProjectPath),
+  id: z.optional(z.uuid()),
+  version: z.optional(Version),
 })
 
 export const SaveResult = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("saved"),
-    project: z.object({ id: z.uuid(), revision: z.number().int().positive() }),
+    project: z.object({ id: z.uuid(), revision: Version }),
     changes: z.array(SavedChange),
   }),
   z.object({
     status: z.literal("conflict"),
-    project: z.object({ id: z.uuid(), revision: z.number().int().nonnegative() }),
+    project: z.object({ id: z.uuid(), revision: Revision }),
     conflicts: z.array(z.object({
       path: ProjectPath,
-      base_version: z.number().int().positive().nullable(),
-      current: z.object({ id: z.uuid(), version: z.number().int().positive(), content: z.string() }).nullable(),
+      base_version: z.nullable(Version),
+      current: z.nullable(z.object({ id: z.uuid(), version: Version, content: z.string() })),
     })),
   }),
 ])
@@ -143,7 +146,7 @@ const PAGE = 500
 
 export type DeletedFile = { id: string; version: number }
 
-export const FileEditor = z.object({ path: z.string(), updated_by: z.uuid().nullable() })
+export const FileEditor = z.object({ path: z.string(), updated_by: z.nullable(z.uuid()) })
 export type FileEditor = z.infer<typeof FileEditor>
 
 export interface ProjectRemote {
@@ -336,7 +339,7 @@ export class SupabaseProjectRemote implements ProjectRemote {
         return query.order("version").order("file_id").limit(PAGE)
       },
       (row) => {
-        const parsed = z.object({ file_id: z.uuid(), version: z.number().int().positive() }).parse(row)
+        const parsed = z.object({ file_id: z.uuid(), version: Version }).parse(row)
         return { id: parsed.file_id, version: parsed.version }
       },
     )

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { z } from "zod"
+import { z } from "zod/mini"
 import { OAuthConsent } from "@/components/oauth-consent"
 import { AuthPage } from "@/features/auth"
 
@@ -7,7 +7,7 @@ import { AuthPage } from "@/features/auth"
 // (`authorization_url_path` in supabase/config.toml). A signed-out visitor is
 // sent to /sign-in and brought back.
 export const Route = createFileRoute("/oauth/consent")({
-  validateSearch: z.object({ authorization_id: z.string().optional() }),
+  validateSearch: z.object({ authorization_id: z.optional(z.string()) }),
   component: Consent,
 })
 
