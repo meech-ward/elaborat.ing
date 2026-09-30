@@ -1,0 +1,20 @@
+{
+  "name": "elaborating",
+  "interface": {
+    "displayName": "elaborat.ing"
+  },
+  "plugins": [
+    {
+      "name": "elaborating",
+      "source": {
+        "source": "local",
+        "path": "./plugins/elaborating"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

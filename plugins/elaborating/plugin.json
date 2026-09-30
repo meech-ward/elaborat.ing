@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "elaborating",
+  "version": "0.1.0",
+  "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
+  "author": {
+    "name": "elaborat.ing",
+    "url": "https://elaborat.ing"
+  },
+  "homepage": "https://elaborat.ing",
+  "repository": "https://github.com/meech-ward/elaborat.ing",
+  "license": "MIT",
+  "keywords": ["mdx", "markdown", "notes", "diagrams", "d2", "excalidraw", "comments"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "elaborat.ing",
+        "shortDescription": "Notes and diagrams in MDX",
+        "longDescription": "elaborat.ing is an open source workspace for notes and diagrams. Notes are MDX (Markdown plus components), drawings are Excalidraw canvases, and diagrams are D2 code. With this plugin you can read, write and search the projects you can open in your elaborat.ing account, show a note or drawing in the chat, and work through the comments people leave on your files: make the change, then reply in the thread. The plugin works as your account, with your access. It can archive a project but never delete one: only you can, in the app.",
+        "developerName": "elaborat.ing",
+        "category": "Productivity",
+        "capabilities": ["Read and search notes", "Write notes, drawings and diagrams", "Show files in the chat", "Reply to comments"],
+        "websiteURL": "https://elaborat.ing",
+        "privacyPolicyURL": "https://elaborat.ing/privacy",
+        "termsOfServiceURL": "https://elaborat.ing/terms",
+        "defaultPrompt": [
+          "Work through the open comments in my elaborat.ing project.",
+          "Write a note with a D2 diagram of how our sign-in flow works.",
+          "Sketch this idea as a drawing and show it to me."
+        ]
+      },
+      "onboardingSkill": "./skills/get-started/SKILL.md"
+    }
+  }
+}

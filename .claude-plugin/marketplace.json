@@ -1,0 +1,16 @@
+{
+  "name": "elaborating",
+  "description": "The elaborat.ing plugin: its MCP server, and skills for notes, diagrams, drawings and comments.",
+  "owner": {
+    "name": "elaborat.ing",
+    "url": "https://elaborat.ing"
+  },
+  "plugins": [
+    {
+      "name": "elaborating",
+      "source": "./plugins/elaborating",
+      "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
+      "category": "productivity"
+    }
+  ]
+}

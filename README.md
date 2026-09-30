@@ -28,6 +28,26 @@ https://elaborat.ing/mcp
 Sign in when asked and allow access. The agent can then list, read, write and
 organize your projects' files, search them, and show a file in the chat.
 
+## Install as a plugin
+
+The [plugin](plugins/elaborating/) adds the same server, plus short skills for
+writing MDX notes, D2 diagrams and drawings, and for working through the
+comments people leave on your files.
+
+In Codex:
+
+```
+codex plugin marketplace add meech-ward/elaborat.ing
+codex plugin add elaborating@elaborating
+```
+
+In Claude Code:
+
+```
+/plugin marketplace add meech-ward/elaborat.ing
+/plugin install elaborating@elaborating
+```
+
 ## Docs
 
 - [Product](docs/product.md): what it does and who it is for

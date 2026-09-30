@@ -1,0 +1,14 @@
+{
+  "name": "elaborating",
+  "displayName": "elaborat.ing",
+  "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
+  "author": {
+    "name": "elaborat.ing",
+    "url": "https://elaborat.ing"
+  },
+  "homepage": "https://elaborat.ing",
+  "repository": "https://github.com/meech-ward/elaborat.ing",
+  "license": "MIT",
+  "keywords": ["mdx", "markdown", "notes", "diagrams", "d2", "excalidraw", "comments"],
+  "mcpServers": "./mcp.json"
+}
