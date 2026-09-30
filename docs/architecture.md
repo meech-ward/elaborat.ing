@@ -13,7 +13,8 @@ browser: static Vite + React SPA on Cloudflare Workers (static assets)
   ├─ Postgres + RLS ....... projects, files, versions, members, comments, search
   ├─ Realtime ............. "something changed" signals, then authoritative re-reads
   └─ Edge Functions ....... mcp (agents), embed (search indexing), search (query embedding),
-                            share (invite by email), delete-account
+                            share (invite by email), delete-account,
+                            send-events (MCP Events delivery to agents)
 
 MCP clients (Claude, ChatGPT, ...) ── OAuth ──> mcp Edge Function ──> same database functions, as the user
 
@@ -578,6 +579,7 @@ files panel's search shows it; the MCP server returns it to the agent as is.
 | Invitations by email | 50 a day | `prepare_email_invitation`, which the `share` function calls for every invitation, for the owner |
 | Comment changes | 120 a minute | every comment write: new threads, replies, edits, resolves, reopens and deletes (retries included) |
 | Account deletion attempts | 5 a day | `begin_account_deletion`, which the `delete-account` function calls once the typed email matches |
+| Event subscriptions | 20 live a person | `save_event_subscription`; each `events/subscribe` also counts as an agent tool call |
 
 Limits that were there already, kept as they are:
 
@@ -651,6 +653,79 @@ unchanged.
   whole file; the tool turns that into the app's anchor), `reply_comment` and
   `resolve_comment` (which also reopens). There are no tools to edit or delete
   a comment, and the database refuses agents' deletes anyway.
+- **Decision: MCP Events, so an agent can watch instead of polling**
+  (`mcp-server/events.ts`, `supabase/schemas/events.sql`,
+  `supabase/functions/send-events/`). The server declares `events` in its
+  capabilities and answers `events/list`, `events/subscribe` and
+  `events/unsubscribe` on the same signed-in endpoint as the tools, as
+  custom handlers on the SDK's `Server`; the tool list is unchanged. One
+  event, `comment.created`, takes a `project_id` and an optional `path` and
+  sends the thread's ids, its file's path and link, a quote of what it is on
+  (200 characters) and the start of the comment (500), well under the 256 KiB
+  limit; the agent reads the rest with its tools.
+  - **Who gets what.** A subscription belongs to the person and the agent
+    (OAuth client) that made it; a person's own session cannot subscribe. A
+    comment wakes only its author's own agents, and only when the author
+    asked: their new thread with Ask an agent on, or their own reply, as a
+    person, on their own open thread that has it on (the rule of
+    `list_comments` with `ask_agent`). Another person's comment never
+    matches, and a comment an agent wrote never does, so an agent's reply
+    cannot wake anything. Turning Ask an agent on for an existing thread
+    writes no comment and sends nothing; `list_comments` finds it.
+  - **Subscribing.** The server checks the event, its arguments and the
+    `whsec_` secret (24 to 64 bytes), checks the callback URL, then asks the
+    database whether the person can read the project, the file exists and
+    they have room (20 live subscriptions a person). It sends the signed
+    verification challenge and needs the challenge echoed in a 2xx answer
+    (else JSON-RPC `-32015` with a reason), unless this agent verified the
+    same callback in the last 10 minutes; at most two challenges run at once
+    per function instance, and each subscribe counts as an agent tool call.
+    Only then is it saved, by service-only functions that check it all again
+    (a local change to the block's server: it calls them with the
+    service role client). The id is a hash of the person, the agent, the
+    callback, the event and its arguments (canonical JSON), so subscribing
+    again refreshes the same one. It lives what the agent asked (`ttlMs`),
+    at least 10 minutes and at most 7 days, and 7 days when it asked for no
+    expiry; `refreshBefore` is that time. A new secret on refresh replaces the
+    old one, which is still signed with for 15 minutes. Events have no
+    replay: `cursor` is always null.
+  - **Storage.** `event_subscriptions` under RLS: people and their agents
+    select their own, without the callback or secrets; nobody writes it
+    through the API. Signing secrets are in Vault and leave it with their
+    subscription. Expired subscriptions are removed by the sweep below.
+  - **Delivery.** A trigger on `comments` queues one message per matching
+    live subscription in the `comment_events` pgmq queue and, only when it
+    queued one, wakes `send-events` with pg_net (with the database's secret
+    key from Vault, as `embed` is called). The function checks each event
+    again (`private.comment_event_delivery`: the subscription is live, the
+    agent is still connected, the person can still read the project, the
+    comment still matches) and drops it otherwise, removing a subscription
+    whose person lost the project or disconnected the agent. It signs the
+    body once with Standard Webhooks (`webhook-id` is the event id) and
+    posts it with `X-MCP-Subscription-Id`. A failure is tried again with the
+    same event id and a fresh signature after 1, 5, 30 and 120 minutes; after
+    the fifth attempt the event is dropped and the subscription gets nothing
+    more until its agent subscribes again. 410 ends the subscription and 413
+    drops the event, neither retried. A pg_cron job once a minute wakes the
+    function only when a retry is due, so on the Free plan the function runs
+    only when there is something to send.
+  - **The sender** (`_shared/callbacks.ts`) posts only to `https` on port
+    443, to a host name (never an IP address, a local name, elaborat.ing or
+    this Supabase project). On every delivery and challenge it resolves the
+    name and refuses it if any address is not public (IPv4 outside the
+    special-purpose ranges; IPv6 only in global unicast), then connects to
+    the checked address itself with `Deno.connect` and `Deno.startTls` for
+    the host name, since `fetch` cannot pin an address. One HTTP/1.1 POST,
+    no redirects (a 3xx is a failure), one 10 second deadline for the whole
+    exchange, at most 64 KiB of the answer read, and only a failed connection
+    moves on to the next address.
+  - **Kill switch.** The `MCP_EVENTS_CALLBACK_HOSTS` function secret, when
+    set, is the list of callback hosts allowed (comma-separated; `*.` covers
+    subdomains); `none` stops every challenge and delivery.
+  - **Tests.** pgTAP for who sees and changes subscriptions, the matching
+    rule and what delivery checks again (`events.test.sql`); Deno tests for
+    the sender, the events methods and delivery with a fake receiver that
+    checks signatures with the Standard Webhooks library.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. The `show_file` tool (`tools/fileView.ts`) and the
@@ -1022,8 +1097,8 @@ secrets supplied through `env()` from GitHub secrets.)
   this project only. Scoped tokens expire after at most a year, so recreate
   them before then.
 - **Secret API key for the database:** create one (the hosted project names it
-  `embed_worker`) for the embed pipeline. The platform creates keys; the CLI
-  can only list them.
+  `embed_worker`) for the embed pipeline; event delivery (`send-events`)
+  uses the same one. The platform creates keys; the CLI can only list them.
 - **Email provider:** an account with a verified sending domain and SMTP
   credentials. The hosted instance uses AWS SES, which sends only to verified
   addresses until AWS grants production access.

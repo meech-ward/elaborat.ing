@@ -7,7 +7,10 @@ import {
   withSupabase,
   type SupabaseContext,
 } from 'npm:@supabase/server@1.6.0'
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
+import { postToCallback } from '../_shared/callbacks.ts'
+import { EVENT_CAPABILITIES, type EventsContext, registerEvents } from './events.ts'
 import { registerTools, type ToolContext } from './tools/index.ts'
 import { limitToolCalls } from './tools/limits.ts'
 
@@ -21,7 +24,8 @@ import { limitToolCalls } from './tools/limits.ts'
 //                               RLS-scoped client, so both embedded product
 //                               agents and external OAuth clients act as the
 //                               signed-in user.
-//   handleMcp                   MCP transport and tools (./tools/index.ts).
+//   handleMcp                   MCP transport and tools (./tools/index.ts),
+//                               and MCP Events (./events.ts).
 //
 // On Supabase Edge Functions the public URLs in the OAuth metadata are derived
 // automatically, locally and hosted. Off Edge Functions, pass `resourceServer`
@@ -60,15 +64,16 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Expose-Headers': 'WWW-Authenticate, Mcp-Session-Id',
 }
 
-function createServer(context: ToolContext): McpServer {
+function createServer(context: ToolContext, events: EventsContext): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: '1.0.0' },
-    { instructions: SERVER_INSTRUCTIONS }
+    { instructions: SERVER_INSTRUCTIONS, capabilities: EVENT_CAPABILITIES }
   )
 
   // Counts each tool call against the user's limit before the tool runs.
   limitToolCalls(server, context)
   registerTools(server, context)
+  registerEvents(server, events)
   return server
 }
 
@@ -83,15 +88,29 @@ const embed = async (text: string) => (await model.run(text, { mean_pool: true, 
 
 async function handleMcp(request: Request, ctx: SupabaseContext): Promise<Response> {
   // The server and its tools are bound to this caller for exactly one request.
+  const clientId = ctx.jwtClaims?.client_id
+  const admin: SupabaseClient = ctx.supabaseAdmin
   const handler = createMcpHandler(
     () =>
-      createServer({
-        supabase: ctx.supabase,
-        // auth: 'user' guarantees both claim shapes before this handler runs.
-        userClaims: ctx.userClaims!,
-        jwtClaims: ctx.jwtClaims!,
-        embed,
-      }),
+      createServer(
+        {
+          supabase: ctx.supabase,
+          // auth: 'user' guarantees both claim shapes before this handler runs.
+          userClaims: ctx.userClaims!,
+          jwtClaims: ctx.jwtClaims!,
+          embed,
+        },
+        {
+          userId: ctx.userClaims!.id,
+          clientId: typeof clientId === 'string' && clientId !== '' ? clientId : null,
+          countCall: () => ctx.supabase.rpc('count_tool_call'),
+          // A local change to the block: only the service role writes
+          // subscriptions (events.sql), so one is saved only after this server
+          // has checked the caller and heard its callback answer the challenge.
+          rpc: (fn, args) => admin.rpc(fn, args),
+          post: postToCallback,
+        }
+      ),
     { onerror: (error) => console.error('MCP request failed', error) }
   )
 

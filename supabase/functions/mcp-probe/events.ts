@@ -9,12 +9,21 @@
 // https://developers.openai.com/plugins/build/mcp-events
 
 import { ProtocolError } from 'npm:@modelcontextprotocol/server@2.0.0'
-import { Webhook } from 'npm:standardwebhooks@1.1.1'
 import { z } from 'npm:zod@4.4.3'
 
-/** JSON-RPC error for a callback that could not be verified (events spec). */
-export const CALLBACK_ENDPOINT_ERROR = -32015
-const INVALID_PARAMS = -32602
+import { CallbackError, callbackProblem, type Post } from '../_shared/callbacks.ts'
+import {
+  CALLBACK_ENDPOINT_ERROR,
+  canonicalJson,
+  INVALID_PARAMS,
+  randomId,
+  secretBytes,
+  signedHeaders,
+  subscriptionId as sharedSubscriptionId,
+  verifyCallback as verifyWith,
+} from '../_shared/events.ts'
+
+export { CALLBACK_ENDPOINT_ERROR, callbackProblem, canonicalJson }
 
 /** How long a callback may take to answer, in milliseconds. */
 export const CALLBACK_TIMEOUT_MS = 5_000
@@ -89,68 +98,9 @@ export function callbackHost(raw: string): string | null {
   }
 }
 
-/** Why a callback address is refused, or null when it may be called. */
-export function callbackProblem(raw: string): string | null {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return 'not_a_url'
-  }
-  if (url.protocol !== 'https:') return 'not_https'
-  if (url.username || url.password) return 'has_credentials'
-  if (url.port && url.port !== '443') return 'port_not_allowed'
-  const host = url.hostname.toLowerCase()
-  if (host.startsWith('[') || /^[\d.]+$/.test(host)) return 'ip_address'
-  if (!host.includes('.') || /(^|\.)(localhost|local|internal|home|lan)$/.test(host)) return 'local_host'
-  return null
-}
-
-/** The signing key's length in bytes, or null when the secret is not a `whsec_` base64 key. */
-export function secretBytes(secret: string): number | null {
-  if (!secret.startsWith('whsec_')) return null
-  try {
-    return atob(secret.slice('whsec_'.length)).length
-  } catch {
-    return null
-  }
-}
-
-/** JSON with object keys sorted, so equal arguments give equal text. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined)
-    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`
-  }
-  return JSON.stringify(value) ?? 'null'
-}
-
-function base64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
-}
-
-/** The same subscriber, callback, event and arguments always give the same id. */
-export async function subscriptionId(url: string, name: string, args: unknown): Promise<string> {
-  const text = canonicalJson([PRINCIPAL, url, name, args ?? {}])
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
-  return `sub_${base64url(digest.slice(0, 18))}`
-}
-
-function randomId(): string {
-  return base64url(crypto.getRandomValues(new Uint8Array(18)))
-}
-
-/** Standard Webhooks headers for one signed POST. */
-export function signedHeaders(secret: string, messageId: string, subscription: string, body: string, now = new Date()): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'webhook-id': messageId,
-    'webhook-timestamp': String(Math.floor(now.getTime() / 1000)),
-    'webhook-signature': new Webhook(secret).sign(messageId, now, body),
-    'X-MCP-Subscription-Id': subscription,
-  }
+/** The same callback, event and arguments always give the same id. */
+export function subscriptionId(url: string, name: string, args: unknown): Promise<string> {
+  return sharedSubscriptionId(PRINCIPAL, url, name, args)
 }
 
 type Fetch = typeof fetch
@@ -181,48 +131,38 @@ async function readSome(response: Response): Promise<string> {
   return new TextDecoder().decode(bytes.slice(0, MAX_ANSWER_BYTES))
 }
 
-function sameText(a: string, b: string): boolean {
-  const left = new TextEncoder().encode(a)
-  const right = new TextEncoder().encode(b)
-  let difference = left.length ^ right.length
-  for (let i = 0; i < Math.max(left.length, right.length); i++) difference |= (left[i] ?? 0) ^ (right[i] ?? 0)
-  return difference === 0
-}
-
-function failureReason(error: unknown): string {
+function failureReason(error: unknown): 'timeout' | 'unreachable' {
   const name = error instanceof Error ? error.name : ''
   return name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'unreachable'
+}
+
+/** The probe's callbacks go through `fetch`, as they always have; the production server pins addresses. */
+function fetchPost(fetcher: Fetch): Post {
+  return async (url, headers, body) => {
+    let response: Response
+    try {
+      response = await post(fetcher, url, headers, body)
+    } catch (error) {
+      throw new CallbackError(failureReason(error))
+    }
+    if (response.status < 200 || response.status >= 300) {
+      await response.body?.cancel().catch(() => {})
+      return { status: response.status, body: '' }
+    }
+    try {
+      return { status: response.status, body: await readSome(response) }
+    } catch (error) {
+      throw new CallbackError(failureReason(error))
+    }
+  }
 }
 
 /**
  * Sends the signed verification challenge and checks the echo. Resolves to
  * null when the callback echoed it, or the reason it failed.
  */
-export async function verifyCallback(fetcher: Fetch, url: string, secret: string, subscription: string): Promise<{ reason: string; status?: number } | null> {
-  const challenge = randomId()
-  const body = JSON.stringify({ type: 'verification', challenge })
-  let response: Response
-  try {
-    response = await post(fetcher, url, signedHeaders(secret, `msg_verification_${randomId()}`, subscription, body), body)
-  } catch (error) {
-    return { reason: failureReason(error) }
-  }
-  if (response.status >= 300 && response.status < 400) {
-    await response.body?.cancel().catch(() => {})
-    return { reason: 'redirect_refused', status: response.status }
-  }
-  if (response.status < 200 || response.status >= 300) {
-    await response.body?.cancel().catch(() => {})
-    return { reason: 'challenge_failed', status: response.status }
-  }
-  let echoed: unknown
-  try {
-    echoed = JSON.parse(await readSome(response))
-  } catch (error) {
-    return failureReason(error) === 'timeout' ? { reason: 'timeout' } : { reason: 'challenge_failed', status: response.status }
-  }
-  const value = echoed && typeof echoed === 'object' ? (echoed as { challenge?: unknown }).challenge : undefined
-  return typeof value === 'string' && sameText(value, challenge) ? null : { reason: 'challenge_failed', status: response.status }
+export function verifyCallback(fetcher: Fetch, url: string, secret: string, subscription: string): ReturnType<typeof verifyWith> {
+  return verifyWith(fetchPost(fetcher), url, secret, subscription)
 }
 
 /** What the events handlers need from outside: the network, and a way to finish work after answering. */

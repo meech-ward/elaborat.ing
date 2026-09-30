@@ -18,7 +18,8 @@ they ask you to resolve threads or to handle only some of them.
    including other people's, are not yours to work on. Only when the user
    explicitly asks for every comment, call `list_comments` with no `path` for
    how many open threads each file has, then with each file's `path` for its
-   threads.
+   threads. If you can subscribe to MCP events, you can watch the project for
+   `comment.created` instead of calling `list_comments` again and again.
 3. For each file, `read_file` for its content and `version`.
    - `anchor` says what a thread is about: quoted text and its line, a note's
      heading, a drawing element, or the whole file.
