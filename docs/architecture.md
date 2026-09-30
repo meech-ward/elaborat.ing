@@ -606,10 +606,22 @@ unchanged.
 - **Tools mirror the app's operations:** list projects and invitations, list
   and read files, write one file or a batch with the expected versions, move,
   delete (history keeps the content), create projects and folders, rename,
-  archive and unarchive, share, and leave. Share, archive, leave, delete and
-  batch saves carry the MCP destructive annotation. There is no tool to
+  archive and unarchive, share, and leave. There is no tool to
   permanently delete a project or accept an invitation; the database refuses
   both for agents anyway. Search is added with hybrid search.
+- **Every tool states its three hints** (`readOnlyHint`, `destructiveHint`,
+  `openWorldHint`), as a plugin directory requires. A tool that changes or
+  removes anything (a file, a title, a thread's state, who has access) is
+  destructive, even when history or another tool can undo it; only tools that
+  just add (a project, a folder, a comment, a reply) are not. No tool reaches
+  past the person's own account, so `openWorldHint` is always false.
+  `tools/annotations.test.ts` holds the list and fails for a tool without
+  all three.
+- **`whoami` is the account's profile** (`_meta["openai/profile"]`), which
+  ChatGPT reads to tell connected accounts apart: exactly `id` (the account's
+  id), and `name` and `email` where the account has them, as structured
+  content and JSON text. A local change to the block's tool, which returned
+  the role and the OAuth client id too.
 - **Comment tools** (`tools/comments.ts`): `list_comments` (counts per file,
   or one file's threads found again in the saved file), `add_comment` (on a
   quote copied from the source, a note's heading, a drawing element, or the
@@ -640,10 +652,16 @@ unchanged.
   result's `_meta`. Save calls `write_file` through the bridge with the
   version the card showed, so a note changed since is a conflict, never
   overwritten; the card then reloads with `show_file` and tells the model
-  with `ui/update-model-context`.
+  with `ui/update-model-context`. Edit asks the host to show the card full
+  screen where it offers that (`ui/request-display-mode`, or ChatGPT's
+  `window.openai.requestDisplayMode`); the card offers inline and full
+  screen, and asks to go back inline when editing ends.
 - **The card is built from the component library.** `src/chat-card` is a
   small React app on the library's components and the Supabase Green
   palette, light or dark as the host says; its states are on `/style-guide`.
+  Its text is in the app's fonts, except in ChatGPT, whose guidelines ask
+  plugins for the system's fonts: there it uses the host's font variables,
+  or the system's, and loads only Excalifont, which drawings are written in.
   `bun run build:chat-card` builds it into `tools/cardEditorScript.ts`, a
   script and stylesheet the view inlines, committed because the functions
   deploy without building the app. Rebuild it after changing the card or the
@@ -660,10 +678,15 @@ unchanged.
   components or a component file; and the charts' library, which the frame
   imports only for a note with a chart. The view declares that origin in
   `_meta.ui.csp.resourceDomains` (and ChatGPT's `openai/widgetCSP`), which
-  adds it to `script-src`, `style-src` and `font-src`. A host that does not
+  adds it to `script-src`, `style-src` and `font-src`. It also names
+  `openai/widgetDomain`, the dedicated origin ChatGPT serves the view from,
+  which a listed plugin needs. That is ChatGPT's name for the spec's
+  `ui.domain`, used instead of it because each host has its own format for
+  that field and Claude refuses to show a view whose `ui.domain` is not the
+  one it derives from the server's URL. A host that does not
   allow it blocks them (or says so in `hostCapabilities.sandbox.csp`, and the
   card does not try): the card then shows the server's HTML, read-only, in
-  the host's or the system's fonts, with a line that says the editor or the
+  the system's fonts, with a line that says the editor or the
   preview could not load. The files have content-hashed names and are
   committed too, since the functions and the app deploy separately;
   `builds.json` keeps the committed build's files next to a new one's, for
@@ -849,7 +872,10 @@ such embed. All of it stays precached for offline use.
 **Decision:** Cloudflare Workers with static assets, which Cloudflare now
 recommends over Pages for new projects. `wrangler.jsonc` is the config file:
 SPA fallback (`not_found_handling = "single-page-application"`), the
-`elaborat.ing` custom domain, and headers in `public/_headers`. The hosted
+`elaborat.ing` custom domain, and headers in `public/_headers`. The Worker
+also answers `/.well-known/openai-apps-challenge` with the token in
+`OPENAI_APPS_CHALLENGE` (a public value, set in `vars` once OpenAI gives one
+for a plugin listing), and with not found while it is unset. The hosted
 instance deploys with `wrangler deploy`, using a Cloudflare API token from the
 "Edit Cloudflare Workers" template, restricted to one account and the
 `elaborat.ing` zone. Static asset requests are free and unlimited.

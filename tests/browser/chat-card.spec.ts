@@ -82,7 +82,11 @@ const DECLARED_CSP = `default-src 'none'; script-src 'self' 'unsafe-inline' ${AP
  * `hostCapabilities.sandbox.csp` that it allows no resource origins.
  */
 type Policy = "declared" | "default" | "default-said"
-type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy }
+/**
+ * `chatgpt`: the host puts window.openai in the frame, as ChatGPT does.
+ * `modes`: the display modes the host offers (`availableDisplayModes`).
+ */
+type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy; chatgpt?: boolean; modes?: string[] }
 
 const MODULES = path.join(import.meta.dirname, "..", "..", "public", "chat-card")
 
@@ -114,7 +118,7 @@ async function openHost(page: Page, host: Host) {
   const sandbox = policy === "declared" ? { csp: { resourceDomains: [APP] } } : policy === "default-said" ? { csp: {} } : undefined
   const view = FILE_VIEW_HTML.replace(
     "<head>",
-    `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><script>window.violations=[];document.addEventListener('securitypolicyviolation',(e)=>window.violations.push(e.violatedDirective+' '+e.blockedURI))</script>`,
+    `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><script>${host.chatgpt ? "window.openai={};" : ""}window.violations=[];document.addEventListener('securitypolicyviolation',(e)=>window.violations.push(e.violatedDirective+' '+e.blockedURI))</script>`,
   )
   await serveModules(page)
   await page.route("https://host.test/", (route) =>
@@ -128,6 +132,8 @@ async function openHost(page: Page, host: Host) {
       const contexts: unknown[] = []
       const sizes: unknown[] = []
       const links: unknown[] = []
+      const displayModes: unknown[] = []
+      state.displayModes = displayModes
       state.calls = calls
       state.contexts = contexts
       state.sizes = sizes
@@ -140,12 +146,18 @@ async function openHost(page: Page, host: Host) {
         if (event.source !== frame.contentWindow) return
         const message = event.data as { id?: unknown; method?: string; params?: { name: string; arguments: unknown } }
         if (message.method === "ui/initialize") {
+          state.initialize = message.params
           reply(message.id, {
             protocolVersion: "2026-01-26",
             hostInfo: { name: "stand-in", version: "1.0.0" },
             hostCapabilities: { ...(host.tools ? { serverTools: {}, openLinks: {} } : { openLinks: {} }), ...(host.sandbox ? { sandbox: host.sandbox } : {}) },
-            hostContext: { theme: host.theme, styles: host.styles },
+            hostContext: { theme: host.theme, styles: host.styles, displayMode: "inline", ...(host.modes ? { availableDisplayModes: host.modes } : {}) },
           })
+        } else if (message.method === "ui/request-display-mode") {
+          const { mode } = message.params as unknown as { mode: string }
+          displayModes.push(mode)
+          reply(message.id, { mode })
+          send("ui/notifications/host-context-changed", { displayMode: mode })
         } else if (message.method === "ui/notifications/initialized") {
           send("ui/notifications/tool-input", { arguments: { project_id: "p", path: "notes/plan.mdx" } })
           send("ui/notifications/tool-result", host.result)
@@ -177,6 +189,8 @@ const answer = (page: Page, name: string, result: unknown) =>
     const answers = (window as unknown as { answers: Record<string, unknown[]> }).answers
     ;(answers[name] ??= []).push(result)
   }, { name, result })
+
+const displayModes = (page: Page) => page.evaluate(() => (window as unknown as { displayModes: string[] }).displayModes)
 
 const calls = (page: Page) => page.evaluate(() => (window as unknown as { calls: { name: string; arguments: Record<string, unknown> }[] }).calls)
 const violations = (page: Page) => page.frames()[1].evaluate(() => (window as unknown as { violations: string[] }).violations)
@@ -240,6 +254,8 @@ test("a note is edited in the chat card and saved with write_file, byte for byte
   ])
   // Runs under the default policy: no eval, no requests.
   expect(await violations(page)).toEqual([])
+  // A host that offers no full screen is not asked for it.
+  expect(await displayModes(page)).toEqual([])
 })
 
 test("a note changed since the card loaded is not overwritten, and the latest can be loaded", async ({ page }) => {
@@ -264,7 +280,7 @@ test("a note changed since the card loaded is not overwritten, and the latest ca
   expect(contexts).toEqual([])
 })
 
-test("where the host cannot call tools, the card stays read-only, in the host's fonts, and reports its size", async ({ page }) => {
+test("where the host cannot call tools, the card stays read-only, keeps the app's fonts, and reports its size", async ({ page }) => {
   const card = await openHost(page, {
     tools: false,
     theme: "light",
@@ -274,13 +290,39 @@ test("where the host cannot call tools, the card stays read-only, in the host's 
   await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
   await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toBeVisible()
   await expect(card.getByRole("button", { name: "Edit" })).toBeHidden()
-  await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /Georgia/)
+  // Outside ChatGPT, the host's fonts do not replace the app's.
+  await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /^"Space Grotesk Variable"/)
   // The palette's light panel, as the host asked.
   await expect(card.locator('[data-slot="chat-card"]')).toHaveCSS("background-color", "rgb(255, 255, 255)")
   const sizes = () => page.evaluate(() => (window as unknown as { sizes: { width: number; height: number }[] }).sizes)
   const width = await page.frames()[1].evaluate(() => window.innerWidth)
   await expect.poll(async () => (await sizes()).at(-1)?.width).toBe(width)
   expect((await sizes()).at(-1)!.height).toBeGreaterThan(200)
+})
+
+test("in ChatGPT the card is in the host's fonts, and loads only the drawings' font", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE), chatgpt: true, styles: { variables: { "--font-sans": "Georgia, serif" } } })
+  await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /^Georgia/)
+  await expect(card.getByText("v4", { exact: true })).toHaveCSS("font-family", /^ui-monospace/)
+  const fonts = () => page.frames()[1].evaluate(() => [...document.fonts].map((font) => [font.family.replaceAll('"', ""), font.status]))
+  await expect.poll(fonts).toEqual([["Excalifont", "loaded"]])
+  expect(asked(page)).toEqual(["excalifont-latin"])
+})
+
+test("Edit asks the host for full screen where it offers it, and the card goes back inline when editing ends", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE), modes: ["inline", "fullscreen"] })
+  await card.getByRole("button", { name: "Edit" }).click()
+  const offered = await page.evaluate(() => (window as unknown as { initialize: { appCapabilities: unknown } }).initialize.appCapabilities)
+  expect(offered).toEqual({ availableDisplayModes: ["inline", "fullscreen"] })
+  await expect(card.locator(".ProseMirror")).toBeVisible()
+  expect(await displayModes(page)).toEqual(["fullscreen"])
+  await expect(card.locator("html")).toHaveAttribute("data-display-mode", "fullscreen")
+  // The card fills the view, with its buttons at the foot.
+  const box = await card.locator('[data-slot="chat-card"]').boundingBox()
+  expect(box!.height).toBeGreaterThan(890)
+  await card.getByRole("button", { name: "Cancel" }).click()
+  await expect.poll(() => displayModes(page)).toEqual(["fullscreen", "inline"])
+  await expect(card.locator("html")).toHaveAttribute("data-display-mode", "inline")
 })
 
 /** A show_file result for a diagram whose canvas was drawn from older source. */

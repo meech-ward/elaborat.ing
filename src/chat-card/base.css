@@ -3,7 +3,7 @@
    page, and the body's type and selection. */
 
 /* The app's fonts, which the card adds from its script (fonts.ts), then the
-   system's; the host's fonts replace them when it gives some (bridge.ts). */
+   system's; in ChatGPT the host's or the system's replace them (bridge.ts). */
 :root {
   --ui-font: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --heading-font: var(--ui-font);

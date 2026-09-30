@@ -164,7 +164,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         path: path.optional().describe('A file to read the threads of, such as notes/plan.md. Leave it out for counts per file.'),
         include_resolved: z.boolean().optional().describe('Include resolved threads. Defaults to false.'),
       }),
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, include_resolved }) => {
       try {
@@ -315,7 +315,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         thread_id: threadId,
         resolved: z.boolean().optional().describe('false reopens the thread. Defaults to true.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ thread_id, resolved }) => {
       try {

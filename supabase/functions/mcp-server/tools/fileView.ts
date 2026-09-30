@@ -21,7 +21,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v11.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v12.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -34,6 +34,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v8.html',
   'ui://elaborating/file-view-v9.html',
   'ui://elaborating/file-view-v10.html',
+  'ui://elaborating/file-view-v11.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -45,10 +46,17 @@ const APP_ORIGIN = 'https://elaborat.ing'
  * they are first needed (public/chat-card, served with CORS). ChatGPT also
  * reads its older `openai/widgetCSP`. A host that does not allow the origin
  * still shows the card, read-only.
+ *
+ * `openai/widgetDomain` gives the view a dedicated origin of its own in
+ * ChatGPT, which a listed plugin needs. It is ChatGPT's name for the spec's
+ * `ui.domain`, used instead of it because each host has its own format for
+ * that field and Claude refuses to show a view whose `ui.domain` is not the
+ * one it derives from the server's URL.
  */
 export const FILE_VIEW_META = {
   ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [APP_ORIGIN] } },
   'openai/widgetCSP': { connect_domains: [], resource_domains: [APP_ORIGIN] },
+  'openai/widgetDomain': APP_ORIGIN,
 }
 
 /** Characters of a note rendered in the view; the rest is a click away. */
@@ -221,7 +229,7 @@ export function registerFileView(server: McpServer, { supabase, userClaims }: To
         'Where the chat allows it, the user can edit a note in the card and save it; read the file again after that. ' +
         'Use this when the user wants to see or edit a file. To read a file yourself, use read_file.',
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ...VIEW_CALLABLE, ui: { ...VIEW_CALLABLE.ui, resourceUri: FILE_VIEW_URI } },
     },
     async ({ project_id, path }) => {

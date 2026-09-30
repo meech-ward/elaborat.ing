@@ -11,13 +11,13 @@ import { LegalLinks } from "./LegalLinks"
 
 /**
  * The public repository of this copy's code: the terms link its license, and
- * both pages send questions to its issues. A copy run by someone else points
+ * the pages send questions to its issues. A copy run by someone else points
  * this at its own repository (see docs/self-host.md).
  */
 export const SOURCE_REPOSITORY = "https://github.com/meech-ward/elaborat.ing"
 
-/** The date both pages show as "Last updated", in the reader's words. */
-export const LAST_UPDATED = { iso: "2026-09-28", text: "September 28, 2026" }
+/** A date a page shows as "Last updated": for the page's code, and in the reader's words. */
+export type UpdatedDate = { iso: string; text: string }
 
 /** A link out of the page, in the note's link colour. */
 export function OutLink({ href, children }: { href: string; children: ReactNode }) {
@@ -29,11 +29,11 @@ export function OutLink({ href, children }: { href: string; children: ReactNode 
 }
 
 /**
- * The frame of the privacy and terms pages: the top bar, then the text in
- * one panel on the dotted page, set like a rendered note, and the links to
- * both pages under it.
+ * The frame of the privacy, terms and support pages: the top bar, then the
+ * text in one panel on the dotted page, set like a rendered note, with the
+ * date it last changed where it says, and the links to the pages under it.
  */
-export function LegalPage({ title, children }: { title: string; children: ReactNode }) {
+export function LegalPage({ title, updated, children }: { title: string; updated?: UpdatedDate; children: ReactNode }) {
   useEffect(() => {
     const before = document.title
     document.title = `${title} · elaborat.ing`
@@ -52,9 +52,11 @@ export function LegalPage({ title, children }: { title: string; children: ReactN
               Home
             </Link>
             <h1>{title}</h1>
-            <p className="text-[13px]! text-muted-foreground!">
-              Last updated <time dateTime={LAST_UPDATED.iso}>{LAST_UPDATED.text}</time>
-            </p>
+            {updated && (
+              <p className="text-[13px]! text-muted-foreground!">
+                Last updated <time dateTime={updated.iso}>{updated.text}</time>
+              </p>
+            )}
             {children}
           </NoteProse>
         </FloatingPanel>

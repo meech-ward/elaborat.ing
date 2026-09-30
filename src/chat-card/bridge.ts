@@ -2,10 +2,11 @@
  * The chat card's side of the MCP Apps bridge: JSON-RPC 2.0 over postMessage
  * with the host (Claude, ChatGPT) that frames the card. It sends
  * ui/initialize, answers the host's pings, passes the tool's input and result
- * on to the card, follows the host's theme, safe area and fonts, reports the
- * card's size, and proxies tool calls, links and model context through the
- * host. ChatGPT also offers window.openai.callTool and hands the result's
- * `_meta` to window.openai.
+ * on to the card, follows the host's theme, safe area and display mode (and
+ * its fonts, in ChatGPT), reports the card's size, and proxies tool calls,
+ * links, display mode requests and model context through the host. ChatGPT
+ * also offers window.openai.callTool and requestDisplayMode, and hands the
+ * result's `_meta` to window.openai.
  * https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
  */
 import { z } from "zod/mini"
@@ -19,11 +20,13 @@ export type HostEvent =
   | { type: "tool-result"; result: unknown }
   | { type: "tool-cancelled" }
   /**
-   * Initialized: whether the host lets the card call this server's tools, and
-   * the origins it approved for scripts and other resources, or null when it
-   * did not say (`hostCapabilities.sandbox.csp.resourceDomains`).
+   * Initialized: whether the host lets the card call this server's tools, the
+   * origins it approved for scripts and other resources, or null when it did
+   * not say (`hostCapabilities.sandbox.csp.resourceDomains`), and whether the
+   * card uses the host's fonts instead of the app's (ChatGPT, whose
+   * guidelines ask for the system's fonts).
    */
-  | { type: "ready"; canCallTools: boolean; resourceDomains: string[] | null }
+  | { type: "ready"; canCallTools: boolean; resourceDomains: string[] | null; hostFonts: boolean }
   /** ChatGPT set its globals, which may hold a result's `_meta` that came late. */
   | { type: "globals" }
 
@@ -36,12 +39,22 @@ export type HostBridge = {
   openLink(href: string, base: string): void
   /** Gives the model context for its next turn, without starting one. */
   tellModel(text: string): void
+  /** Whether the host can show the card full screen. */
+  canFullscreen(): boolean
+  /** Asks the host to show the card inline or full screen; the host may say no. */
+  requestDisplayMode(mode: DisplayMode): void
   /** The result `_meta` ChatGPT hands the card on window.openai, or undefined. */
   openaiMeta(): unknown
 }
 
+export type DisplayMode = "inline" | "fullscreen"
+
+/** The display modes the card offers the host (`appCapabilities.availableDisplayModes`). */
+export const DISPLAY_MODES: readonly DisplayMode[] = ["inline", "fullscreen"]
+
 type OpenAiGlobals = {
   callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>
+  requestDisplayMode?: (args: { mode: DisplayMode }) => Promise<unknown>
   toolResponseMetadata?: unknown
 }
 
@@ -66,6 +79,8 @@ const insetsSchema = z.partial(z.object({ top: z.number(), right: z.number(), bo
 const contextSchema = z.catch(
   z.object({
     theme: z.catch(z.optional(z.enum(["light", "dark"])), undefined),
+    displayMode: z.catch(z.optional(z.string()), undefined),
+    availableDisplayModes: z.catch(z.optional(z.array(z.string())), undefined),
     safeAreaInsets: z.catch(z.optional(insetsSchema), undefined),
     styles: z.catch(
       z.optional(
@@ -93,28 +108,24 @@ const messageSchema = z.object({
 
 const argumentsSchema = z.catch(z.object({ arguments: z.unknown() }), { arguments: undefined })
 
-/**
- * Follows the host's theme, safe area and fonts. The colours stay the app's
- * own palette in the host's light or dark; the host's fonts, where it gives
- * them, replace the card's.
- */
-function applyContext(raw: unknown) {
-  const context: HostContext = contextSchema.parse(raw)
+/** The system's fonts, which stand in for the app's where the card uses the host's fonts and the host names none. */
+const SYSTEM_SANS = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+const SYSTEM_MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+
+/** ChatGPT, which puts window.openai in the frames it shows or names itself so. */
+function isChatGpt(hostName: unknown): boolean {
+  return typeof window.openai === "object" || (typeof hostName === "string" && /chatgpt|openai/i.test(hostName))
+}
+
+/** The fonts the card uses in place of the app's: the host's where it names them, else the system's. */
+function applyHostFonts(context: HostContext) {
   const root = document.documentElement
-  if (context.theme) {
-    root.dataset.scheme = context.theme
-    root.classList.toggle("dark", context.theme === "dark")
-  }
-  const insets = context.safeAreaInsets
-  if (insets) {
-    document.body.style.padding = [insets.top, insets.right, insets.bottom, insets.left].map((value) => `${value ?? 0}px`).join(" ")
-  }
   const variables = context.styles?.variables
-  if (variables?.["--font-sans"]) {
-    root.style.setProperty("--ui-font", variables["--font-sans"])
-    root.style.setProperty("--heading-font", variables["--font-sans"])
-  }
-  if (variables?.["--font-mono"]) root.style.setProperty("--code-font", variables["--font-mono"])
+  const sans = variables?.["--font-sans"] || SYSTEM_SANS
+  root.style.setProperty("--ui-font", sans)
+  root.style.setProperty("--heading-font", sans)
+  root.style.setProperty("--heading-tracking", "normal")
+  root.style.setProperty("--code-font", variables?.["--font-mono"] || SYSTEM_MONO)
   const fonts = context.styles?.css?.fonts
   if (fonts) {
     let style = document.querySelector<HTMLStyleElement>("style[data-host-fonts]")
@@ -125,6 +136,25 @@ function applyContext(raw: unknown) {
     }
     style.textContent = fonts
   }
+}
+
+/**
+ * Follows the host's theme, safe area and display mode. The colours stay the
+ * app's own palette in the host's light or dark. The fonts stay the app's,
+ * except with `hostFonts` (ChatGPT).
+ */
+function applyContext(context: HostContext, hostFonts: boolean) {
+  const root = document.documentElement
+  if (context.theme) {
+    root.dataset.scheme = context.theme
+    root.classList.toggle("dark", context.theme === "dark")
+  }
+  if (context.displayMode) root.dataset.displayMode = context.displayMode
+  const insets = context.safeAreaInsets
+  if (insets) {
+    document.body.style.padding = [insets.top, insets.right, insets.bottom, insets.left].map((value) => `${value ?? 0}px`).join(" ")
+  }
+  if (hostFonts) applyHostFonts(context)
 }
 
 /** Tells the host the card's size whenever it changes. */
@@ -160,6 +190,13 @@ export function connectHost(appVersion: string): HostBridge {
   const listeners = new Set<(event: HostEvent) => void>()
   let nextId = 1
   let capabilities: z.infer<typeof capabilitiesSchema> = {}
+  let hostFonts = isChatGpt(undefined)
+  let hostModes: string[] = []
+  const follow = (raw: unknown) => {
+    const context = contextSchema.parse(raw)
+    if (context.availableDisplayModes) hostModes = context.availableDisplayModes
+    applyContext(context, hostFonts)
+  }
 
   const post = (message: Record<string, unknown>) => window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*")
   const notify = (method: string, params: Record<string, unknown> = {}) => post({ method, params })
@@ -194,7 +231,7 @@ export function connectHost(appVersion: string): HostBridge {
       case "ui/notifications/tool-cancelled":
         return emit({ type: "tool-cancelled" })
       case "ui/notifications/host-context-changed":
-        return applyContext(message.params)
+        return follow(message.params)
     }
     if (message.id === undefined) return
     if (message.method === "ping" || message.method === "ui/resource-teardown") post({ id: message.id, result: {} })
@@ -209,17 +246,20 @@ export function connectHost(appVersion: string): HostBridge {
 
   request("ui/initialize", {
     appInfo: { name: "elaborat.ing file view", version: appVersion },
-    appCapabilities: { availableDisplayModes: ["inline"] },
+    appCapabilities: { availableDisplayModes: DISPLAY_MODES },
     protocolVersion: PROTOCOL_VERSION,
   }).then(
     (raw) => {
-      const result = z.catch(z.partial(z.object({ hostCapabilities: z.unknown(), hostContext: z.unknown() })), {}).parse(raw ?? {})
+      const result = z
+        .catch(z.partial(z.object({ hostCapabilities: z.unknown(), hostContext: z.unknown(), hostInfo: z.catch(z.object({ name: z.unknown() }), { name: undefined }) })), {})
+        .parse(raw ?? {})
       capabilities = capabilitiesSchema.parse(result.hostCapabilities ?? {})
-      applyContext(result.hostContext)
+      hostFonts = isChatGpt(result.hostInfo?.name)
+      follow(result.hostContext)
       notify("ui/notifications/initialized")
       watchSize(notify)
       const csp = capabilities.sandbox?.csp
-      emit({ type: "ready", canCallTools: canCallTools(), resourceDomains: csp ? (csp.resourceDomains ?? []) : null })
+      emit({ type: "ready", canCallTools: canCallTools(), resourceDomains: csp ? (csp.resourceDomains ?? []) : null, hostFonts })
     },
     () => {},
   )
@@ -249,6 +289,11 @@ export function connectHost(appVersion: string): HostBridge {
     },
     tellModel(text) {
       request("ui/update-model-context", { content: [{ type: "text", text }] }).catch(() => {})
+    },
+    canFullscreen: () => hostModes.includes("fullscreen") || typeof openai()?.requestDisplayMode === "function",
+    requestDisplayMode(mode) {
+      if (hostModes.includes(mode)) request("ui/request-display-mode", { mode }).catch(() => {})
+      else openai()?.requestDisplayMode?.({ mode })?.catch(() => {})
     },
     openaiMeta: () => openai()?.toolResponseMetadata,
   }

@@ -20,7 +20,7 @@ export function registerSearchTool(server: McpServer, { supabase, embed }: ToolC
         match_count: z.number().int().min(1).max(30).optional().describe('How many passages to return, up to 30. Defaults to 10.'),
         project_id: projectId.optional().describe('Only search this project, by its id from list_projects. Leave it out to search every project.'),
       }),
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ query, match_count, project_id }) => {
       try {

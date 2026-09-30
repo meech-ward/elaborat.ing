@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EMBED_PROBE_FRAME_ANCESTORS, handle, mcpPath } from "./index";
+import { EMBED_PROBE_FRAME_ANCESTORS, handle, mcpPath, OPENAI_CHALLENGE_PATH } from "./index";
 
 const UPSTREAM = "https://ref.supabase.co/functions/v1/mcp-server";
 const assets = { fetch: async () => new Response("app") };
@@ -52,6 +52,25 @@ describe("handle", () => {
   });
 });
 
+describe("OpenAI's domain check", () => {
+  const challenge = new Request(`https://site.test${OPENAI_CHALLENGE_PATH}`);
+
+  test("answers with the token as plain text", async () => {
+    const response = await handle(challenge, { ASSETS: assets, OPENAI_APPS_CHALLENGE: " token-123\n" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(await response.text()).toBe("token-123");
+  });
+
+  test("is not found when no token is set, rather than the app", async () => {
+    for (const env of [{ ASSETS: assets }, { ASSETS: assets, OPENAI_APPS_CHALLENGE: "" }]) {
+      const response = await handle(challenge, env);
+      expect(response.status).toBe(404);
+      expect(await response.text()).not.toBe("app");
+    }
+  });
+});
+
 // Temporary host capability probe, remove after testing.
 describe("the probe routes", () => {
   const DENY = { "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff" };
@@ -79,7 +98,7 @@ describe("the probe routes", () => {
     expect(headers).not.toMatch(/!\s*X-Frame-Options|frame-ancestors/i);
     const wrangler = await Bun.file(new URL("../wrangler.jsonc", import.meta.url)).text();
     const first = JSON.parse(wrangler.match(/"run_worker_first":\s*(\[[^\]]*\])/)![1]) as string[];
-    expect(first).toEqual(["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]);
+    expect(first).toEqual(["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]);
   });
 
   test("/mcp-probe passes to the probe function, and /mcp still to the MCP server", async () => {

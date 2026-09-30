@@ -237,3 +237,24 @@
 .card-editor code.island-source {
   white-space: normal;
 }
+
+/* Full screen, when the host shows the card so (Edit asks for it): the card
+   fills the view with its buttons at the foot, and the page scrolls as the
+   note grows. */
+:root[data-display-mode="fullscreen"] body {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+:root[data-display-mode="fullscreen"] #root,
+:root[data-display-mode="fullscreen"] #root > main,
+:root[data-display-mode="fullscreen"] [data-slot="chat-card"] {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+:root[data-display-mode="fullscreen"] [data-slot="chat-card"] > footer {
+  margin-top: auto;
+}

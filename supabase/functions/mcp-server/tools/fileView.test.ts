@@ -116,6 +116,7 @@ Deno.test('the file view is listed and read as an MCP App resource', async () =>
     assertEquals(content._meta, {
       ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: ['https://elaborat.ing'] } },
       'openai/widgetCSP': { connect_domains: [], resource_domains: ['https://elaborat.ing'] },
+      'openai/widgetDomain': 'https://elaborat.ing',
     })
 
     // Hosts that have not refreshed the tool list still get the view at the old URI.

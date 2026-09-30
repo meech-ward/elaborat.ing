@@ -14,6 +14,9 @@
  * The editor and the previews load from elaborat.ing when they are first
  * needed (modules.ts). Where the host does not allow that, the card stays
  * read-only with the server's HTML, and says why.
+ *
+ * Edit asks the host to show the card full screen, where it can, and the
+ * card asks to go back inline when editing ends.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
@@ -68,6 +71,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const [asked, setAsked] = useState<{ file: CardFile; url: string; spot: LinkSpot | null } | null>(null)
   // The shared file whose custom component code the person chose to run; each file shown asks again.
   const [ran, setRan] = useState<CardFile | null>(null)
+  // Edit asked the host for full screen, so the card goes back inline when editing ends.
+  const expanded = useRef(false)
 
   useEffect(
     () =>
@@ -92,7 +97,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
               blockModules()
               setEditorBlocked(true)
             } else {
-              addCardFonts()
+              addCardFonts(event.hostFonts)
             }
             return setCanCallTools(event.canCallTools)
           case "globals": {
@@ -107,6 +112,12 @@ export function ChatCard({ host }: { host: HostBridge }) {
   )
 
   const shown = state.phase === "shown" ? state : null
+  const editing = shown !== null && shown.mode !== "read"
+  useEffect(() => {
+    if (editing || !expanded.current) return
+    expanded.current = false
+    host.requestDisplayMode("inline")
+  }, [editing, host])
   const previewFile = shown && shown.mode === "read" && shown.file.components !== null ? shown.file : null
   const outcome = previewFile && previewed?.file === previewFile ? previewed.outcome : null
   // Custom component code from a project shared with the person runs only when they say so.
@@ -237,6 +248,10 @@ export function ChatCard({ host }: { host: HostBridge }) {
         preview={preview}
         onEdit={() => {
           setPreviewed(null)
+          if (host.canFullscreen()) {
+            expanded.current = true
+            host.requestDisplayMode("fullscreen")
+          }
           dispatch({ type: "start-edit" })
         }}
         onSave={() => void save()}

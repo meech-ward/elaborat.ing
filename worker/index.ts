@@ -7,6 +7,10 @@
  * requires. Everything else is the app. Without `MCP_UPSTREAM` (a self-host
  * that doesn't set it) there is no `/mcp` and the Worker only serves the app.
  *
+ * `/.well-known/openai-apps-challenge` answers OpenAI's domain check for a
+ * plugin listing with the token in `OPENAI_APPS_CHALLENGE`, as plain text;
+ * without it set, that path is not found.
+ *
  * Temporary host capability probe, remove after testing: `/mcp-probe` passes
  * to the probe function in `MCP_PROBE_UPSTREAM`, and `/embed-probe` is the one
  * page other sites may frame (only ChatGPT's, see EMBED_PROBE_FRAME_ANCESTORS).
@@ -16,6 +20,8 @@
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   MCP_UPSTREAM?: string;
+  /** The token OpenAI gives to verify this domain for a plugin listing. */
+  OPENAI_APPS_CHALLENGE?: string;
   /** Temporary host capability probe, remove after testing. */
   MCP_PROBE_UPSTREAM?: string;
 }
@@ -29,6 +35,15 @@ export function mcpPath(pathname: string): string | null {
   // RFC 9728's well-known location for the resource at /mcp.
   if (pathname === `/.well-known/oauth-protected-resource${PREFIX}`) return METADATA;
   return null;
+}
+
+export const OPENAI_CHALLENGE_PATH = "/.well-known/openai-apps-challenge";
+
+/** The domain check's answer: the token as plain text, or not found when none is set. */
+function openAiChallenge(env: Env): Response {
+  const token = env.OPENAI_APPS_CHALLENGE?.trim();
+  if (!token) return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  return new Response(token, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 // Temporary host capability probe, remove after testing.
@@ -49,6 +64,7 @@ async function embedProbe(request: Request, env: Env): Promise<Response> {
 
 export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === OPENAI_CHALLENGE_PATH) return openAiChallenge(env);
   if (url.pathname === EMBED_PROBE || url.pathname === `${EMBED_PROBE}/`) return embedProbe(request, env);
   const probeUpstream = env.MCP_PROBE_UPSTREAM?.replace(/\/+$/, "");
   if (probeUpstream && (url.pathname === PROBE_PREFIX || url.pathname.startsWith(`${PROBE_PREFIX}/`))) {

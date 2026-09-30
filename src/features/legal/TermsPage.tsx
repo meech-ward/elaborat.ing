@@ -6,7 +6,7 @@ import { LegalPage, OutLink, SOURCE_REPOSITORY } from "./LegalPage"
 /** The terms of using the hosted copy. */
 export function TermsPage() {
   return (
-    <LegalPage title="Terms">
+    <LegalPage title="Terms" updated={{ iso: "2026-09-28", text: "September 28, 2026" }}>
       <p>These terms cover using the copy of elaborat.ing at elaborat.ing. By using it, you agree to them.</p>
 
       <h2>Provided as is</h2>

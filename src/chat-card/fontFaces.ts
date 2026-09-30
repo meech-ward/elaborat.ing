@@ -3,7 +3,7 @@
  * the same sources to the component preview's frame, which adds them the same
  * way. The view declares the fonts' origin, which puts it in the policy's
  * font-src; where a host does not allow it, a font does not load and the
- * host's fonts or the system's stand in.
+ * system's fonts stand in.
  */
 
 /** A font's family, its file's address, and its weight range. */

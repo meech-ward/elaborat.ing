@@ -43,7 +43,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
           .describe('The one exported component to show. By default, each one the file exports.'),
         props: z.record(z.string(), z.unknown()).optional().describe('Sample props as JSON values, such as {"title": "Q3"}. By default, the componentMeta defaults.'),
       }),
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { resourceUri: FILE_VIEW_URI } },
     },
     async ({ project_id, path, source, component, props }) => {

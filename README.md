@@ -55,6 +55,7 @@ In Claude Code:
 - [Roadmap](docs/roadmap.md)
 - [Self-host guide](docs/self-host.md): from a new free Supabase project to a running copy
 - [Platform notes](docs/platform-notes.md): Supabase and Cloudflare details we rely on
+- [Golden prompts](docs/golden-prompts.md): prompts for checking that agents use the tools when they should
 
 ## Develop
 

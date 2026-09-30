@@ -72,7 +72,7 @@ A few files hold the hosted instance's values. Change them before you deploy.
 Optional: the email subjects in `config.toml` and the templates in
 `supabase/templates/` name elaborat.ing.
 
-The privacy and terms pages (`/privacy` and `/terms`, in `src/features/legal/`) are generic text, not legal advice: whoever runs a copy, the hosted one included, should review them and change what does not fit, `SOURCE_REPOSITORY` too.
+The support, privacy and terms pages (`/support`, `/privacy` and `/terms`, in `src/features/legal/`) are generic text, not legal advice: whoever runs a copy, the hosted one included, should review them and change what does not fit, `SOURCE_REPOSITORY` too.
 
 If you don't know `<site>` yet (a `workers.dev` address is shown on the first
 deploy), deploy the app first (steps 4 and 5), then set `site_url` and push the
@@ -254,6 +254,11 @@ bun run deploy        # bun run build, then wrangler deploy
 
 Your MCP URL is `<site>/mcp`. Static asset requests are free and unlimited;
 requests to `/mcp` run the Worker.
+
+To list your copy as a ChatGPT plugin, OpenAI checks that you own the domain:
+put the token it gives you in `vars.OPENAI_APPS_CHALLENGE` in `wrangler.jsonc`
+(it is public) and deploy. The Worker serves it as plain text at
+`<site>/.well-known/openai-apps-challenge`; without it, that path is not found.
 
 ### On any static host
 
