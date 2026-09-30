@@ -20,6 +20,7 @@ import {
   StrictMode,
   createContext,
   useContext,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -39,6 +40,7 @@ import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { receiveFrameModule, setFrameModuleRequest } from './frameModules';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
+import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import {
   Alert,
   AlertDescription,
@@ -434,6 +436,11 @@ function ResourceEmbed(props: {
     : undefined;
   const pixels = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
+  // A note can show the same picture twice: each copy's ids are its own.
+  const scope = useId().replace(/[^\w-]/g, "");
+  useLayoutEffect(() => {
+    if (pixels.current) scopeSvgIds(pixels.current, scope);
+  }, [svg, scope]);
   useLayoutEffect(() => {
     const box = pixels.current;
     if (!box) return;
