@@ -41,10 +41,17 @@ function revertContent(change: AgentChange): string | null | undefined {
   return before
 }
 
-/** Why Revert cannot run now, or null. */
+/**
+ * Why Revert cannot run now, or null. Revert saves over this device's copy
+ * (`local`), so that copy must be the agent's version (none, when the agent
+ * deleted the file): newer means the file changed again, even if the list
+ * loaded before that; older means the agent's version has not synced here.
+ */
 function revertBlocked(change: AgentChange, local: WorkspaceFileRef | undefined, reverted: boolean): string | null {
   if (reverted) return "Reverted"
-  if (!change.latest) return "Changed again since"
+  const at = local?.server?.version
+  if (!change.latest || (at !== undefined && at > change.version)) return "Changed again since"
+  if (change.deleted ? at !== undefined : at !== change.version) return `This device has not synced version ${change.version} yet`
   if (local && (local.draft || local.unsynced || local.conflict)) return "Unsynced edits on this device"
   return null
 }
@@ -89,13 +96,15 @@ export function AgentChangesView({
     setFiles(new Map(listed.flatMap((file) => (file.server ? [[file.server.id, file] as const] : []))))
     return listed
   }, [workspace])
+  // Sync can bring a file's newer version while the view is open.
+  useEffect(() => workspace.subscribe(() => void refreshFiles().catch(() => {})), [refreshFiles, workspace])
 
   useEffect(() => {
     let active = true
     const load = async () => {
       setStatus("loading")
       try {
-        void refreshFiles().catch(() => {})
+        const listing = refreshFiles().catch(() => {})
         let page = await store.remote.list(store.projectId)
         const all = [...page.changes]
         // Opened at a change: load older pages until it is there.
@@ -103,6 +112,8 @@ export function AgentChangesView({
           page = await store.remote.list(store.projectId, all[all.length - 1].version)
           all.push(...page.changes)
         }
+        // Revert's state needs this device's copies.
+        await listing
         if (!active) return
         const first = all[0]
         const seen = page.seen

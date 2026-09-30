@@ -75,6 +75,32 @@ test("an agent's change shows with its diff and the thread it answered, is seen,
   await expect(page.getByRole("button", { name: "Agent changes", exact: true })).toBeVisible()
 })
 
+test("Revert waits until this device has the agent's version, and stops once the file changed again", async ({ page }) => {
+  const { fake, id } = await openProject(page)
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  // The agent saves again, and this device has not heard yet.
+  const LATER = "# Plan\n\nShip the comments panel first, by Thursday.\n"
+  await fake.agentChanges.save(person.id, id, "notes/plan.md", LATER)
+
+  await page.getByRole("button", { name: /^Agent changes/ }).click()
+  const newest = view(page).getByRole("article").filter({ hasText: "changed, version 3" })
+  await expect(newest.getByText("This device has not synced version 3 yet")).toBeVisible()
+  await expect(newest.getByRole("button", { name: "Revert" })).toBeDisabled()
+  await expect(change(page).filter({ hasText: "changed, version 2" }).getByText("Changed again since")).toBeVisible()
+
+  // Once it syncs, Revert can run.
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(newest.getByRole("button", { name: "Revert" })).toBeEnabled()
+
+  // Another device changes the file after the list loaded: once that syncs here, Revert stops.
+  await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content: BEFORE, base_version: 3 }])
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(newest.getByText("Changed again since")).toBeVisible()
+  await expect(newest.getByRole("button", { name: "Revert" })).toBeDisabled()
+  expect(fake.requests.filter((request) => request.url().endsWith("/rpc/save_files"))).toEqual([])
+  expect(fake.server.content(id, "notes/plan.md")).toBe(BEFORE)
+})
+
 test("a comment's version link opens the change, and Open shows the file", async ({ page }) => {
   const { id } = await openProject(page, {
     path: "notes/plan.md",

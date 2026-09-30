@@ -32,7 +32,7 @@ export type AgentChangesSurfaceProps = {
   /** A phone: the view is a sheet from the bottom; else from the right. */
   compact: boolean
   /** The project's files on this device: Revert saves through it, as an edit does. */
-  workspace: Pick<WorkspaceStore, "listEntries" | "write" | "save">
+  workspace: Pick<WorkspaceStore, "listEntries" | "write" | "save" | "subscribe">
   /** Why the project cannot be changed (a viewer, or archived): no Revert. */
   readOnly: string | null
   /** Open a file by its path on this device. */
