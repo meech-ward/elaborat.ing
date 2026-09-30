@@ -1,4 +1,4 @@
-import { Bot, Check, CircleCheck, Ellipsis, FileText, Heading, Reply, RotateCcw, Shapes, UserRound } from "lucide-react"
+import { Bot, Check, CircleCheck, Ellipsis, FileClock, FileText, Heading, Reply, RotateCcw, Shapes, UserRound } from "lucide-react"
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -7,6 +7,7 @@ import { AlertDialog, DialogContent, DialogDescription, DialogFooter, DialogTitl
 import { cn } from "@/lib/utils"
 import { initialFor } from "./AccountRows"
 import { ActionMenu, type MenuEntry } from "./ActionMenu"
+import { AskAgentBadge, AskAgentSwitch } from "./AskAgent"
 import { CommentComposer } from "./CommentComposer"
 import { DetachedBadge } from "./CommentMarker"
 import { absoluteTime, relativeTime } from "./commentText"
@@ -161,12 +162,13 @@ export function CommentAnchorLine({
   return <div className={cn("min-w-0 leading-snug", text, className)}>{body}</div>
 }
 
-function CommentAvatar({ author, deleted, size }: { author: CommentAuthor | null; deleted?: boolean; size: CommentsSize }) {
+/** A person's picture or initial; an agent's is the bot icon. */
+function CommentAvatar({ author, agent, deleted, size }: { author: CommentAuthor | null; agent?: boolean; deleted?: boolean; size: CommentsSize }) {
   return (
     <Avatar aria-hidden="true" className={cn("after:hidden", size === "touch" ? "size-8" : "size-6", deleted && "opacity-50")}>
-      {author?.image && <AvatarImage src={author.image} alt="" />}
-      <AvatarFallback className={cn(size === "touch" ? "text-[13px]" : "text-[11px]", !author && "bg-seg text-dim")}>
-        {author ? initialFor(author.name) : <UserRound className="size-3.5" />}
+      {author?.image && !agent && <AvatarImage src={author.image} alt="" />}
+      <AvatarFallback className={cn(size === "touch" ? "text-[13px]" : "text-[11px]", !author && !agent && "bg-seg text-dim")}>
+        {agent ? <Bot className="size-3.5" /> : author ? initialFor(author.name) : <UserRound className="size-3.5" />}
       </AvatarFallback>
     </Avatar>
   )
@@ -226,9 +228,11 @@ export function DeleteCommentDialog({
 
 /**
  * One comment: the Avatar (the picture, or the initial in accentSoft; an
- * empty figure for a deleted account), the author's name at 600, "via
- * agent" when their agent wrote it, when (and "edited"), then the words.
- * A deleted comment keeps its author and time, and says "Comment deleted".
+ * empty figure for a deleted account), the author's name at 600, when (and
+ * "edited"), then the words. An agent's comment is named for the agent and
+ * its person ("Claude for Ada"), with the bot icon and the agent badge. A
+ * linked version shows under the words. A deleted comment keeps its author
+ * and time, and says "Comment deleted".
  * Its menu (Edit for its author, Delete for its author and the owner) shows
  * on hover and focus, and always on touch screens. Delete asks first.
  */
@@ -256,12 +260,14 @@ export function CommentItem({
   const size = useCommentsSize(sizeProp)
   const touch = size === "touch"
   const [confirming, setConfirming] = useState(false)
-  const name = comment.author?.name ?? DELETED_ACCOUNT
+  const person = comment.author?.name ?? DELETED_ACCOUNT
+  const agent = comment.viaAgent === true
+  const name = agent ? comment.agent || "An agent" : person
   const deleted = comment.body === null
   const entries: MenuEntry[] = []
   if (!deleted && comment.canEdit && onStartEdit) entries.push({ label: "Edit", onSelect: onStartEdit })
   if (!deleted && comment.canDelete && onDelete) entries.push({ label: "Delete", destructive: true, onSelect: () => setConfirming(true) })
-  const menuLabel = `Actions for the comment by ${name}`
+  const menuLabel = `Actions for the comment by ${agent ? `${name} for ${person}` : name}`
   return (
     <div
       data-slot="comment"
@@ -269,16 +275,19 @@ export function CommentItem({
       data-deleted={deleted || undefined}
       className={cn("group/comment grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2", touch ? "gap-y-1" : "gap-y-0.5", className)}
     >
-      <CommentAvatar author={comment.author} deleted={deleted} size={size} />
+      <CommentAvatar author={comment.author} agent={agent} deleted={deleted} size={size} />
       <div className={cn("flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-[normal]", touch ? "min-h-8" : "min-h-6")}>
         <span className={cn("min-w-0 truncate font-semibold", comment.author ? "text-foreground" : "text-muted-foreground", touch ? "text-[15px]" : "text-[13px]")}>
           {name}
         </span>
-        {comment.viaAgent && (
-          <Badge variant="secondary" title="Written by their agent">
-            <Bot data-icon="inline-start" aria-hidden="true" />
-            via agent
-          </Badge>
+        {agent && (
+          <>
+            <span className={cn("min-w-0 truncate text-muted-foreground", touch ? "text-[14px]" : "text-xs")}>for {person}</span>
+            <Badge variant="secondary" title={`Written by ${person}'s agent`}>
+              <Bot data-icon="inline-start" aria-hidden="true" />
+              agent
+            </Badge>
+          </>
         )}
         <span className={cn("text-dim", touch ? "text-[13px]" : "text-xs")}>
           <CommentTime when={comment.createdAt} now={now} />
@@ -310,6 +319,12 @@ export function CommentItem({
             {comment.body}
           </p>
         )}
+        {comment.version && !deleted && !editing ? (
+          <p data-slot="comment-version" className={cn("mt-1 flex items-center gap-1.5 text-dim", touch ? "text-[13px]" : "text-xs")}>
+            <FileClock aria-hidden="true" className="size-3.5 shrink-0" />
+            Changed in version {comment.version}
+          </p>
+        ) : null}
       </div>
       {/* After the words, so a screen reader hears the comment before its
       actions; the grid still draws it at the end of the first row. While
@@ -368,6 +383,10 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
   onEdit?: (commentId: string, body: string) => void | Promise<unknown>
   /** Delete a comment. Focus then moves to the thread's Reply, or to the thread. */
   onDelete?: (commentId: string) => void | Promise<unknown>
+  /** Its author asked their agent to deal with it: the badge shows, or the switch for the author. */
+  askAgent?: boolean
+  /** The thread's author, while it is open: offers the Ask an agent switch, which calls this at once. */
+  onAskAgentChange?: (ask: boolean) => void | Promise<unknown>
   /** Open the reply field at first (it opens from Reply otherwise). */
   defaultReplying?: boolean
   /** The time relative times count from; now by default. */
@@ -383,6 +402,10 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
  * CommentComposer until the reply is sent or cancelled, or a comment is
  * deleted while it is still empty. Viewers and offline
  * readers (`canWrite` false) see the words only.
+ *
+ * An open thread whose author asked an agent shows the Ask an agent badge;
+ * its author gets the switch instead, beside Reply (or in the reply's
+ * composer), which turns it on or off at once.
  *
  * Focus never falls to the page: closing or sending Reply goes back to Reply, an edit
  * back to its comment's actions, Resolve and Reopen to the next thread (or
@@ -401,6 +424,8 @@ export function CommentThread({
   onReply,
   onEdit,
   onDelete,
+  askAgent = false,
+  onAskAgentChange,
   defaultReplying = false,
   now,
   size: sizeProp,
@@ -416,6 +441,23 @@ export function CommentThread({
   const card = useRef<HTMLElement>(null)
   const replyButton = useRef<HTMLButtonElement>(null)
   const toggle = resolved ? onReopen : onResolve
+  const [asking, setAsking] = useState(false)
+  const askSwitch =
+    canWrite && onAskAgentChange && !resolved ? (
+      <AskAgentSwitch
+        checked={askAgent}
+        disabled={asking}
+        size={size}
+        onCheckedChange={async (ask) => {
+          setAsking(true)
+          try {
+            await onAskAgentChange(ask)
+          } finally {
+            setAsking(false)
+          }
+        }}
+      />
+    ) : null
 
   // Closing Reply (sent or cancelled) gives the keyboard back to Reply once it shows again.
   const replyFocus = useRef(false)
@@ -503,6 +545,7 @@ export function CommentThread({
           </IconButton>
         )}
       </div>
+      {askAgent && !resolved && !askSwitch && <AskAgentBadge className="-mt-0.5" />}
       {resolved && (
         <p id={resolvedId} className={cn("-mt-0.5 flex items-center gap-1.5 text-dim", touch ? "text-[13px]" : "text-xs")}>
           <CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-ok" />
@@ -550,19 +593,23 @@ export function CommentThread({
             }}
             onCancel={closeReply}
             autoFocus={!defaultReplying}
+            start={askSwitch}
             size={size}
           />
         ) : (
-          <Button
-            ref={replyButton}
-            variant="ghost"
-            size={touch ? "touch" : "xs"}
-            onClick={() => setReplying(true)}
-            className={cn("self-start", touch ? "-mb-1 -ml-2 px-2 [&_svg]:size-4" : "-mb-0.5 -ml-1.5 pointer-coarse:h-10")}
-          >
-            <Reply aria-hidden="true" />
-            Reply
-          </Button>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <Button
+              ref={replyButton}
+              variant="ghost"
+              size={touch ? "touch" : "xs"}
+              onClick={() => setReplying(true)}
+              className={cn("self-start", touch ? "-mb-1 -ml-2 px-2 [&_svg]:size-4" : "-mb-0.5 -ml-1.5 pointer-coarse:h-10")}
+            >
+              <Reply aria-hidden="true" />
+              Reply
+            </Button>
+            {askSwitch}
+          </div>
         ))}
     </article>
   )
@@ -571,27 +618,31 @@ export function CommentThread({
 /**
  * A new thread being written: the card with a 1px accent-line border, the
  * context line of what it will be on, and the composer, focused. `onSubmit`
- * starts the thread; Cancel drops it.
+ * starts the thread; Cancel drops it. With `offerAskAgent`, the composer has
+ * the Ask an agent switch, off at first, and `onSubmit` hears how it was set.
  */
 export function CommentDraft({
   anchor,
   onSubmit,
   onCancel,
   disabledReason,
+  offerAskAgent = false,
   autoFocus = true,
   size: sizeProp,
   className,
 }: {
   anchor: CommentAnchorView
-  onSubmit: (body: string) => void | Promise<unknown>
+  onSubmit: (body: string, options: { askAgent: boolean }) => void | Promise<unknown>
   onCancel: () => void
   disabledReason?: string | null
+  offerAskAgent?: boolean
   /** The composer takes focus when the draft opens. */
   autoFocus?: boolean
   size?: CommentsSize
   className?: string
 }) {
   const size = useCommentsSize(sizeProp)
+  const [askAgent, setAskAgent] = useState(false)
   return (
     <article
       data-slot="comment-draft"
@@ -603,7 +654,15 @@ export function CommentDraft({
       )}
     >
       <CommentAnchorLine anchor={anchor} size={size} />
-      <CommentComposer label="New comment" onSubmit={onSubmit} onCancel={onCancel} disabledReason={disabledReason} autoFocus={autoFocus} size={size} />
+      <CommentComposer
+        label="New comment"
+        onSubmit={(body) => onSubmit(body, { askAgent: offerAskAgent && askAgent })}
+        onCancel={onCancel}
+        disabledReason={disabledReason}
+        autoFocus={autoFocus}
+        start={offerAskAgent ? <AskAgentSwitch checked={askAgent} onCheckedChange={setAskAgent} size={size} /> : undefined}
+        size={size}
+      />
     </article>
   )
 }

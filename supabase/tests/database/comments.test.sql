@@ -168,7 +168,7 @@ select is(
   (select array_agg(a.attname::text order by a.attnum) from pg_attribute a
    where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and not a.attisdropped
      and has_column_privilege('authenticated', 'public.comments', a.attname, 'select')),
-  array['id', 'thread_id', 'project_id', 'author_id', 'body', 'created_at', 'edited_at', 'deleted_at'],
+  array['id', 'thread_id', 'project_id', 'author_id', 'body', 'created_at', 'edited_at', 'deleted_at', 'file_version'],
   'Signed-in users select every comment column except the agent''s OAuth client'
 );
 select is(
@@ -191,12 +191,12 @@ select ok(
 select policies_are('public', 'comment_threads', array['People can read comment threads in their projects'], 'Threads have one read policy');
 select policies_are('public', 'comments', array['People can read comments in their projects'], 'Comments have one read policy');
 
-select function_privs_are('public', 'list_comments', array['uuid', 'uuid'], 'authenticated', array['EXECUTE'], 'Signed-in users can list comments');
-select function_privs_are('public', 'list_comments', array['uuid', 'uuid'], 'anon', array[]::text[], 'Anonymous users cannot list comments');
-select function_privs_are('public', 'add_comment', array['uuid', 'uuid', 'uuid', 'bigint', 'jsonb', 'text'], 'authenticated', array['EXECUTE'], 'Signed-in users can add comments');
-select function_privs_are('public', 'add_comment', array['uuid', 'uuid', 'uuid', 'bigint', 'jsonb', 'text'], 'anon', array[]::text[], 'Anonymous users cannot add comments');
-select function_privs_are('public', 'reply_comment', array['uuid', 'uuid', 'text'], 'authenticated', array['EXECUTE'], 'Signed-in users can reply');
-select function_privs_are('public', 'reply_comment', array['uuid', 'uuid', 'text'], 'anon', array[]::text[], 'Anonymous users cannot reply');
+select function_privs_are('public', 'list_comments', array['uuid', 'uuid', 'boolean', 'bigint'], 'authenticated', array['EXECUTE'], 'Signed-in users can list comments');
+select function_privs_are('public', 'list_comments', array['uuid', 'uuid', 'boolean', 'bigint'], 'anon', array[]::text[], 'Anonymous users cannot list comments');
+select function_privs_are('public', 'add_comment', array['uuid', 'uuid', 'uuid', 'bigint', 'jsonb', 'text', 'boolean'], 'authenticated', array['EXECUTE'], 'Signed-in users can add comments');
+select function_privs_are('public', 'add_comment', array['uuid', 'uuid', 'uuid', 'bigint', 'jsonb', 'text', 'boolean'], 'anon', array[]::text[], 'Anonymous users cannot add comments');
+select function_privs_are('public', 'reply_comment', array['uuid', 'uuid', 'text', 'bigint'], 'authenticated', array['EXECUTE'], 'Signed-in users can reply');
+select function_privs_are('public', 'reply_comment', array['uuid', 'uuid', 'text', 'bigint'], 'anon', array[]::text[], 'Anonymous users cannot reply');
 select function_privs_are('public', 'edit_comment', array['uuid', 'text'], 'authenticated', array['EXECUTE'], 'Signed-in users can edit comments');
 select function_privs_are('public', 'edit_comment', array['uuid', 'text'], 'anon', array[]::text[], 'Anonymous users cannot edit comments');
 select function_privs_are('public', 'resolve_comment', array['uuid'], 'authenticated', array['EXECUTE'], 'Signed-in users can resolve threads');
@@ -311,19 +311,19 @@ select throws_ok(
 select pg_temp.act('dave');
 select is(
   (select array_agg(k order by k) from jsonb_object_keys(pg_temp.listed(pg_temp.project('P'), pg_temp.t(1))) k),
-  array['anchor', 'comments', 'created_at', 'file_deleted', 'file_id', 'file_version', 'id', 'path', 'resolved_at', 'resolved_by'],
-  'A thread lists its id, file, path, anchor, times, resolution and comments'
+  array['anchor', 'ask_agent', 'comments', 'created_at', 'file_deleted', 'file_id', 'file_version', 'id', 'path', 'resolved_at', 'resolved_by'],
+  'A thread lists its id, file, path, anchor, times, resolution, whether it asks an agent, and comments'
 );
 select is(
   (select array_agg(k order by k) from jsonb_object_keys(pg_temp.listed(pg_temp.project('P'), pg_temp.t(1)) #> '{comments,0}') k),
-  array['author', 'body', 'created_at', 'deleted_at', 'edited_at', 'id', 'via_agent'],
-  'A comment lists its id, author, whether an agent wrote it, body and times'
+  array['agent', 'author', 'body', 'created_at', 'deleted_at', 'edited_at', 'file_version', 'id', 'via_agent'],
+  'A comment lists its id, author, whether an agent wrote it and its name, body, times and linked version'
 );
 select is(
   pg_temp.listed(pg_temp.project('P'), pg_temp.t(1)) - 'created_at' - 'comments',
   jsonb_build_object(
     'id', pg_temp.t(1), 'file_id', pg_temp.file('a'), 'path', 'notes/a.md', 'file_deleted', false,
-    'file_version', 1, 'anchor', pg_temp.anchor('text'), 'resolved_at', null, 'resolved_by', null
+    'file_version', 1, 'anchor', pg_temp.anchor('text'), 'resolved_at', null, 'resolved_by', null, 'ask_agent', false
   ),
   'A viewer reads the thread with its anchor exactly as it was stored'
 );
@@ -331,7 +331,8 @@ select is(
   (pg_temp.listed(pg_temp.project('P'), pg_temp.t(1)) #> '{comments,0}') - 'id' - 'created_at',
   jsonb_build_object(
     'author', jsonb_build_object('user_id', pg_temp.id('alice'), 'email', 'alice@example.com', 'name', 'alice@example.com'),
-    'via_agent', false, 'body', 'Is this still true?', 'edited_at', null, 'deleted_at', null
+    'via_agent', false, 'agent', null, 'body', 'Is this still true?', 'edited_at', null, 'deleted_at', null,
+    'file_version', null
   ),
   'The opening comment names its author by id, email and name (the email, when they have no name)'
 );
@@ -457,7 +458,7 @@ select ok(
 );
 select pg_temp.act('bob');
 select is(
-  (public.reopen_comment(pg_temp.t(1)) -> 'thread') - 'created_at' - 'comments' - 'anchor' - 'file_id' - 'file_version' - 'path' - 'file_deleted',
+  (public.reopen_comment(pg_temp.t(1)) -> 'thread') - 'created_at' - 'comments' - 'anchor' - 'file_id' - 'file_version' - 'path' - 'file_deleted' - 'ask_agent',
   jsonb_build_object('id', pg_temp.t(1), 'resolved_at', null, 'resolved_by', null),
   'An editor reopens it'
 );
@@ -1037,7 +1038,7 @@ set local role authenticated;
 select pg_temp.act('alice');
 select is(
   (pg_temp.listed(pg_temp.project('P'), pg_temp.t(9)) #> '{comments,0}') - 'id' - 'created_at',
-  '{"author": null, "via_agent": false, "body": "Gina here", "edited_at": null, "deleted_at": null}',
+  '{"author": null, "via_agent": false, "agent": null, "body": "Gina here", "edited_at": null, "deleted_at": null, "file_version": null}',
   'A deleted account''s comments stay, with no author'
 );
 select lives_ok(

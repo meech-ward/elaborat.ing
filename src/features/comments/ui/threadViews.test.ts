@@ -91,6 +91,17 @@ describe("threadViews", () => {
     expect([asOwner.canEdit, asOwner.canDelete]).toEqual([false, true])
   })
 
+  test("the thread's creator may ask an agent; an agent's comment carries its name and linked version", () => {
+    const asked = { ...ship, ask_agent: true }
+    asked.comments = [...ship.comments, { ...comment(10, ME, "Done.", true), agent: "Claude", file_version: 4 }]
+    const [mine] = threadViews([asked], NONE, me, "note").open
+    expect([mine.askAgent, mine.own]).toEqual([true, true])
+    expect(mine.comments[2]).toMatchObject({ viaAgent: true, agent: "Claude", version: 4 })
+    const [theirs] = threadViews([steps], NONE, me, "note").open
+    expect([theirs.askAgent, theirs.own]).toEqual([false, false])
+    expect(theirs.comments[0]).toMatchObject({ viaAgent: false, agent: null, version: null })
+  })
+
   test("a deleted account and a deleted comment", () => {
     const view = threadViews([thread(7, { kind: "document" }, [comment(8, null, null), comment(9, OTHER)])], NONE, me, "note").open[0]
     expect(view.comments[0]).toMatchObject({ author: null, body: null, canEdit: false, canDelete: false })

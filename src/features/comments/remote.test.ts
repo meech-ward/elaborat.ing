@@ -58,6 +58,7 @@ const answers: Record<string, unknown> = {
   edit_comment: { revision: 10, comment },
   resolve_comment: { revision: 11, thread: { ...thread, resolved_at: TIME, resolved_by: { user_id: USER, email: "ada@example.com" } } },
   reopen_comment: { revision: 12, thread },
+  set_comment_ask_agent: { revision: 15, thread: { ...thread, ask_agent: true } },
   delete_comment: { revision: 13, comment_id: COMMENT, thread_deleted: false },
   delete_comment_thread: { revision: 14, thread_id: THREAD, deleted: true },
 }
@@ -74,6 +75,8 @@ describe("SupabaseCommentsRemote", () => {
     await comments.reopen(THREAD)
     expect(await comments.deleteComment(COMMENT)).toEqual({ revision: 13, comment_id: COMMENT, thread_deleted: false })
     expect(await comments.deleteThread(THREAD)).toEqual({ revision: 14, thread_id: THREAD })
+    await comments.add({ projectId: PROJECT, threadId: THREAD, fileId: FILE, fileVersion: 3, anchor: { kind: "document" }, body: "Hi", askAgent: true })
+    expect((await comments.setAskAgent(THREAD, true)).thread.ask_agent).toBe(true)
     expect(calls).toEqual([
       ["list_comments", { project_id: PROJECT }],
       ["list_comments", { project_id: PROJECT, file_id: FILE }],
@@ -84,6 +87,8 @@ describe("SupabaseCommentsRemote", () => {
       ["reopen_comment", { thread_id: THREAD }],
       ["delete_comment", { comment_id: COMMENT }],
       ["delete_comment_thread", { thread_id: THREAD }],
+      ["add_comment", { project_id: PROJECT, thread_id: THREAD, file_id: FILE, file_version: 3, anchor: { kind: "document" }, body: "Hi", ask_agent: true }],
+      ["set_comment_ask_agent", { thread_id: THREAD, ask: true }],
     ])
   })
 

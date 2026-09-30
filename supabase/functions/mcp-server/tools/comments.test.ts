@@ -101,7 +101,7 @@ const addAnswer = (args: Record<string, unknown>): Answer => ({
       file_id: args.file_id,
       path: FILES.find((file) => file.id === args.file_id)?.path,
       file_version: args.file_version,
-      comments: [comment(String(args.body), { via_agent: true })],
+      comments: [comment(String(args.body), { via_agent: true, agent: 'Claude' })],
     }),
   },
   error: null,
@@ -305,7 +305,7 @@ Deno.test('add_comment returns the thread as list_comments shows it', async () =
     anchor: { kind: 'text', quote: 'Intro text', line: 3 },
     comments: [{
       comment_id: 'cccccccc-0000-4000-8000-000000000001',
-      author: 'Ada Lovelace',
+      author: 'Claude for Ada Lovelace',
       via_agent: true,
       body: 'Look',
       created_at: TIME,
@@ -482,6 +482,74 @@ Deno.test("a deleted file's threads are found by its last path", async () => {
 })
 
 // Replies, resolving, errors.
+
+// list_comments: the threads the user asked an agent about.
+
+Deno.test('list_comments with ask_agent lists the asked threads of every file, with a cursor', async () => {
+  const asked = { ask_agent: true }
+  const threads = [
+    thread(noteAnchor('text', 'Intro text'), asked),
+    thread({ kind: 'element', element_id: 'box', label: 'Start' }, { ...asked, id: 'bbbbbbbb-0000-4000-8000-000000000001', file_id: FILES[1].id, path: 'sketch.excalidraw' }),
+    thread({ kind: 'document' }, {
+      ...asked,
+      id: 'bbbbbbbb-0000-4000-8000-000000000002',
+      comments: [
+        comment('Shorter, please.'),
+        comment('Done.', { id: 'cccccccc-0000-4000-8000-000000000002', via_agent: true, agent: 'Claude', file_version: 4 }),
+      ],
+    }),
+  ]
+  const { result, calls } = await callTool('list_comments', { project_id: PROJECT, ask_agent: true, since: 7 }, listAnswer(threads))
+  assert(!result.isError, JSON.stringify(result))
+  // One list, then each file read once.
+  assertEquals(calls, [
+    { rpc: 'list_comments', args: { project_id: PROJECT, ask_agent: true, since: 7 } },
+    readQuery('notes/guide.md'),
+    readQuery('sketch.excalidraw'),
+  ])
+  const content = result.structuredContent as { revision: number; threads: Record<string, unknown>[] }
+  assertEquals(content.revision, 9)
+  assertEquals(content.threads.map((entry) => [entry.path, entry.version, entry.ask_agent, entry.attached]), [
+    ['notes/guide.md', 4, true, true],
+    ['sketch.excalidraw', 2, true, true],
+    ['notes/guide.md', 4, true, true],
+  ])
+  assertEquals(content.threads[0].anchor, { kind: 'text', quote: 'Intro text', line: 3 })
+  assertEquals((content.threads[2].comments as unknown[])[1], {
+    comment_id: 'cccccccc-0000-4000-8000-000000000002',
+    author: 'Claude for Ada Lovelace',
+    via_agent: true,
+    body: 'Done.',
+    created_at: TIME,
+    edited_at: null,
+    deleted: false,
+    version: 4,
+  })
+})
+
+Deno.test('list_comments with ask_agent and a path lists only that file; since needs ask_agent', async () => {
+  const { calls } = await callTool('list_comments', { project_id: PROJECT, path: 'notes/guide.md', ask_agent: true }, listAnswer([]))
+  assertEquals(calls, [readQuery('notes/guide.md'), { rpc: 'list_comments', args: { project_id: PROJECT, file_id: FILES[0].id, ask_agent: true } }])
+
+  const { result, calls: none } = await callTool('list_comments', { project_id: PROJECT, since: 3 })
+  assertEquals(errorText(result), 'since works with ask_agent: true.')
+  assertEquals(none, [])
+})
+
+Deno.test('reply_comment links the version the agent saved', async () => {
+  const { result, calls } = await callTool('reply_comment', { thread_id: THREAD, body: 'Done', version: 5 }, {
+    reply_comment: (args) => ({
+      data: { revision: 6, comment: comment(String(args.body), { id: args.comment_id, via_agent: true, agent: 'Claude', file_version: args.file_version }) },
+      error: null,
+    }),
+  })
+  const [call] = rpcCalls(calls)
+  const { comment_id, ...rest } = call.args
+  assertMatch(String(comment_id), UUID)
+  assertEquals(rest, { thread_id: THREAD, body: 'Done', file_version: 5 })
+  const sent = (result.structuredContent as { comment: Record<string, unknown> }).comment
+  assertEquals([sent.author, sent.version], ['Claude for Ada Lovelace', 5])
+})
 
 Deno.test('reply_comment sends a new comment id', async () => {
   const { result, calls } = await callTool('reply_comment', { thread_id: THREAD, body: 'Done' }, {

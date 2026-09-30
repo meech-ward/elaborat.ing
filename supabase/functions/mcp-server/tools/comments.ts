@@ -26,15 +26,18 @@ import type { ToolContext } from './types.ts'
 /** `name` is the name they set or their sign-in provider gave, else their email. */
 type Person = { user_id: string; email: string | null; name?: string | null } | null
 
-/** A comment as list_comments returns it. */
+/** A comment as list_comments returns it. `agent` is the name of the agent that wrote it, when it has one. */
 type RemoteComment = {
   id: string
   author: Person
   via_agent: boolean
+  agent?: string | null
   body: string | null
   created_at: string
   edited_at: string | null
   deleted_at: string | null
+  /** The version of the thread's file the comment links to, such as one an agent saved in answer. */
+  file_version?: number | null
 }
 
 /** A thread as list_comments returns it. */
@@ -48,8 +51,13 @@ type RemoteThread = {
   created_at: string
   resolved_at: string | null
   resolved_by: Person
+  /** Its creator asked their agents to deal with it ("Ask an agent"). */
+  ask_agent?: boolean
   comments: RemoteComment[]
 }
+
+/** A project's threads, or one file's, and the project revision they were listed at. */
+type RemoteList = { revision: number; threads: RemoteThread[] }
 
 type SavedFile = { id: string; path: string; content: string; version: number }
 
@@ -111,21 +119,28 @@ function presentThread(thread: RemoteThread, view: FileView | null) {
     thread_id: thread.id,
     attached,
     resolved: thread.resolved_at !== null,
+    ...(thread.ask_agent ? { ask_agent: true } : {}),
     ...(thread.file_deleted ? { file_deleted: true } : {}),
     anchor: described,
     comments: thread.comments.map(presentComment),
   }
 }
 
+/**
+ * A comment for the agent. An agent's comment is named for the agent and its
+ * person, as the app names it ("Claude for Ada"), and says `via_agent`.
+ */
 function presentComment(comment: RemoteComment) {
+  const person = comment.author?.name || comment.author?.email || null
   return {
     comment_id: comment.id,
-    author: comment.author?.name || comment.author?.email || null,
+    author: comment.via_agent ? `${comment.agent || 'An agent'} for ${person ?? 'a deleted account'}` : person,
     via_agent: comment.via_agent,
     body: comment.body,
     created_at: comment.created_at,
     edited_at: comment.edited_at,
     deleted: comment.deleted_at !== null,
+    ...(comment.file_version ? { version: comment.file_version } : {}),
   }
 }
 
@@ -144,11 +159,17 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
     return data as SavedFile | null
   }
 
-  const listThreads = async (project: string, fileId?: string): Promise<RemoteThread[]> => {
-    const { data, error } = await supabase.rpc('list_comments', { project_id: project, ...(fileId ? { file_id: fileId } : {}) })
+  const listComments = async (project: string, filter: { fileId?: string; askAgent?: boolean; since?: number } = {}): Promise<RemoteList> => {
+    const { data, error } = await supabase.rpc('list_comments', {
+      project_id: project,
+      ...(filter.fileId ? { file_id: filter.fileId } : {}),
+      ...(filter.askAgent ? { ask_agent: true } : {}),
+      ...(filter.since !== undefined ? { since: filter.since } : {}),
+    })
     if (error) throw error
-    return (data as { threads: RemoteThread[] }).threads
+    return data as RemoteList
   }
+  const listThreads = async (project: string, fileId?: string) => (await listComments(project, { fileId })).threads
 
   server.registerTool(
     'list_comments',
@@ -158,16 +179,39 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         'With path, returns that file\'s threads, each found again in the saved file: attached says whether its text, ' +
         'heading or element is still there, and anchor says where (the quoted text and its line, a note\'s heading, ' +
         'a drawing element, or the whole file). A thread\'s first comment opens it; the rest are replies. ' +
-        'Resolved threads are left out unless include_resolved is true. A deleted file\'s threads are listed by its last path.',
+        'Resolved threads are left out unless include_resolved is true. A deleted file\'s threads are listed by its last path. ' +
+        'With ask_agent true, returns only the open threads the user started and asked an agent about ("Ask an agent" in the app), ' +
+        'from every file (or only path), each with its path and the file\'s version, plus revision: pass it as since next time ' +
+        'for only the threads asked about after it (new ones, and ones the user replied to again). This is the loop when the ' +
+        'user asks you to work through their comments: list with ask_agent, change each file, reply_comment with the version ' +
+        'your save returned, and leave the thread open for the user to resolve.',
       inputSchema: z.object({
         project_id: projectId,
         path: path.optional().describe('A file to read the threads of, such as notes/plan.md. Leave it out for counts per file.'),
         include_resolved: z.boolean().optional().describe('Include resolved threads. Defaults to false.'),
+        ask_agent: z.boolean().optional()
+          .describe('Only the open threads the user asked an agent about. Never another person\'s. Defaults to false.'),
+        since: z.number().int().nonnegative().optional()
+          .describe('With ask_agent: only threads asked about after this revision, from an earlier list.'),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
-    async ({ project_id, path, include_resolved }) => {
+    async ({ project_id, path, include_resolved, ask_agent, since }) => {
       try {
+        if (since !== undefined && !ask_agent) return errorResult('since works with ask_agent: true.')
+        if (ask_agent) {
+          const only = path === undefined ? null : await readFile(project_id, path)
+          if (path !== undefined && !only) return errorResult(`No file at ${path} in this project.`)
+          const list = await listComments(project_id, { fileId: only?.id, askAgent: true, since })
+          const files = new Map<string, SavedFile | null>()
+          const threads = []
+          for (const thread of list.threads) {
+            if (!files.has(thread.file_id)) files.set(thread.file_id, thread.file_deleted ? null : await readFile(project_id, thread.path))
+            const file = files.get(thread.file_id) ?? null
+            threads.push({ path: thread.path, version: file?.version ?? null, ...presentThread(thread, file ? fileView(file) : null) })
+          }
+          return jsonResult({ revision: list.revision, threads })
+        }
         if (path === undefined) {
           const files = new Map<string, { path: string; file_deleted: boolean; open: number; resolved: number }>()
           for (const thread of await listThreads(project_id)) {
@@ -292,13 +336,25 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
   server.registerTool(
     'reply_comment',
     {
-      description: 'Reply to a comment thread, as the user. People who can read the project see it.',
-      inputSchema: z.object({ thread_id: threadId, body }),
+      description:
+        'Reply to a comment thread, as the user. When you changed the file in answer, pass version: the file\'s new version ' +
+        'from your save, so the reply links to the change. People who can read the project see it.',
+      inputSchema: z.object({
+        thread_id: threadId,
+        body,
+        version: z.number().int().positive().optional()
+          .describe("The version of the thread's file you saved in answer, from write_file or save_files."),
+      }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async ({ thread_id, body }) => {
+    async ({ thread_id, body, version }) => {
       try {
-        const { data, error } = await supabase.rpc('reply_comment', { thread_id, comment_id: crypto.randomUUID(), body })
+        const { data, error } = await supabase.rpc('reply_comment', {
+          thread_id,
+          comment_id: crypto.randomUUID(),
+          body,
+          ...(version !== undefined ? { file_version: version } : {}),
+        })
         if (error) throw error
         return jsonResult({ thread_id, comment: presentComment((data as { comment: RemoteComment }).comment) })
       } catch (error) {

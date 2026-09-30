@@ -48,7 +48,9 @@ const SERVER_INSTRUCTIONS =
   "using the file's path in the project; the file must exist, so create it first. " +
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file; ' +
-  'to show the user a component you are writing, use preview_component.'
+  'to show the user a component you are writing, use preview_component. ' +
+  'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
+  'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',

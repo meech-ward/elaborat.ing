@@ -20,6 +20,8 @@ export type SampleThread = {
   anchor: CommentAnchorView
   comments: CommentEntry[]
   resolved: CommentResolution | null
+  /** Its author asked their agent to deal with it. */
+  askAgent?: boolean
 }
 
 /** Someone else's comment: the owner may delete it, not edit it. */
@@ -55,7 +57,7 @@ export const sampleThreads = {
         "q2",
         "Invited teammates sign in with the same email link, so everything after step 1 is the same. I can add a line under Steps.",
         64,
-        { viaAgent: true },
+        { viaAgent: true, agent: "Claude", version: 12 },
       ),
       theirs("q3", RAVI, "Yes please, and link the members page from it.", 21, { editedAt: ago(18) }),
     ],
@@ -113,6 +115,23 @@ export const sampleThreads = {
     comments: [theirs("a1", MEI, "Is this a question for the person, or a step the app decides?", 40)],
     resolved: null,
   },
+  asked: {
+    id: "asked",
+    anchor: { kind: "section", heading: "Steps" },
+    comments: [
+      mine("k1", "Add a date to each step.", 90),
+      mine("k2", "Added a target date under each step.", 12, { viaAgent: true, agent: "Claude", version: 14, canEdit: false }),
+    ],
+    resolved: null,
+    askAgent: true,
+  },
+  theirsAsked: {
+    id: "theirs-asked",
+    anchor: { kind: "document" },
+    comments: [theirs("t1", RAVI, "Tighten the intro to two sentences.", 25)],
+    resolved: null,
+    askAgent: true,
+  },
   gone: {
     id: "gone",
     anchor: { kind: "element", label: "Pricing page", detached: true },
@@ -136,6 +155,15 @@ export function useSampleThreads(initial: readonly SampleThread[]) {
   const update = (id: string, change: (thread: SampleThread) => SampleThread) =>
     setThreads((current) => current.map((thread) => (thread.id === id ? change(thread) : thread)))
   const handlers = (thread: SampleThread) => ({
+    // Only the thread's author asks their agent, or stops.
+    onAskAgentChange:
+      thread.comments[0]?.author === ME
+        ? async (ask: boolean) => {
+            await pause()
+            update(thread.id, (current) => ({ ...current, askAgent: ask }))
+            setAnnouncement(ask ? "Your agent is asked about this thread" : "Your agent is no longer asked")
+          }
+        : undefined,
     onResolve: () => {
       update(thread.id, (current) => ({ ...current, resolved: { by: ME, at: new Date() } }))
       setAnnouncement("Thread resolved, moved to Resolved")

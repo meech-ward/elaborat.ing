@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ensureGeneratedNativeFont } from "@/features/drawings"
 import { cn } from "@/lib/utils"
 import { Callout } from "../ui/Banner"
+import { AskAgentBadge, AskAgentSwitch } from "../ui/AskAgent"
 import { CanvasIsland, ToolButton, ToolGroup, ZoomControl, islandTools } from "../ui/CanvasIsland"
 import { CommentComposer } from "../ui/CommentComposer"
 import { CommentActionButton, CommentHighlight, CommentMarker, CommentsButton, DetachedBadge } from "../ui/CommentMarker"
@@ -54,6 +55,7 @@ function threadElement(
       anchor={thread.anchor}
       comments={thread.comments}
       resolved={thread.resolved}
+      askAgent={thread.askAgent}
       active={options.active === thread.id}
       canWrite={options.canWrite ?? true}
       defaultReplying={options.defaultReplying}
@@ -108,7 +110,7 @@ function ThreadStates() {
         <GuideLabel>Thread</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.quote} />
         <GuideValue>
-          Radius 12, padding 12, the panel border. Avatar 24, name 13/600, via agent on seg, when in 12 dim, edited. Your own comment's ... has Edit and Delete; the owner's has Delete on anyone's. Delete asks first, in an alert dialog with Cancel focused. Try Reply, Resolve and the menus.
+          Radius 12, padding 12, the panel border. Avatar 24, name 13/600, when in 12 dim, edited. An agent's comment is named for the agent and its person (Claude for Person), with the bot icon and the agent badge on seg, and the version it saved under its words. Your own comment's ... has Edit and Delete; the owner's has Delete on anyone's. Delete asks first, in an alert dialog with Cancel focused. Try Reply, Resolve and the menus.
         </GuideValue>
         <GuideLabel>Open in the file, replying</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.steps} active defaultReplying />
@@ -140,6 +142,12 @@ function ThreadStates() {
         <GuideLabel>Read only</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.whole} canWrite={false} />
         <GuideValue>Viewers, and anyone offline: the words only, no Reply, Resolve or menus.</GuideValue>
+        <GuideLabel>Ask an agent</GuideLabel>
+        <SampleThreadDemo thread={sampleThreads.asked} />
+        <SampleThreadDemo thread={sampleThreads.theirsAsked} />
+        <GuideValue>
+          The thread&apos;s author asks their own agents to deal with it: the switch beside Reply turns it on or off at once. Everyone else sees the badge. Their agents find it when asked to work through their comments, and reply with the version they saved.
+        </GuideValue>
       </div>
     </div>
   )
@@ -161,6 +169,11 @@ function FailingComposer() {
       onCancel={noop}
     />
   )
+}
+
+function AskAgentSwitchSample() {
+  const [ask, setAsk] = useState(true)
+  return <AskAgentSwitch checked={ask} onCheckedChange={setAsk} />
 }
 
 function ComposerAndMarkers() {
@@ -253,13 +266,19 @@ function ComposerAndMarkers() {
           <DetachedBadge />
           <GuideValue>warnBg with warnText, the unlink icon</GuideValue>
         </div>
+        <GuideLabel>Ask an agent</GuideLabel>
+        <div className="flex flex-wrap items-center gap-3">
+          <AskAgentBadge />
+          <AskAgentSwitchSample />
+        </div>
+        <GuideValue>The badge, accentSoft with the bot icon, on a thread whose author asked their agent; the small switch with its 12px label, for the author.</GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>New comment</GuideLabel>
         <div className="w-full max-w-[300px]">
-          <CommentDraft anchor={{ kind: "text", quote: "Connect an agent." }} onSubmit={noop} onCancel={noop} autoFocus={false} />
+          <CommentDraft anchor={{ kind: "text", quote: "Connect an agent." }} onSubmit={noop} onCancel={noop} offerAskAgent autoFocus={false} />
         </div>
-        <GuideValue>A thread being written, from Comment: a 1px accent-line border, what it will be on, the composer.</GuideValue>
+        <GuideValue>A thread being written, from Comment: a 1px accent-line border, what it will be on, the composer, and the Ask an agent switch, off at first.</GuideValue>
         <div className="w-full max-w-[300px]">
           <CommentDraft anchor={{ kind: "document", label: "Whole drawing" }} onSubmit={noop} onCancel={noop} autoFocus={false} />
         </div>

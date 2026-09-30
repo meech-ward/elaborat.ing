@@ -275,6 +275,12 @@ canvas.
 That was simple for one person, but it duplicates everything on every save and
 makes edits to different files conflict. It is not carried forward.)
 
+**Decision: every saved version records the agent that saved it.**
+`file_versions.agent_client_id` is the OAuth client id from the saving
+token, null for the app, and, as for comments, readers cannot select it.
+`list_file_authors` returns who saved each file's current version and the
+agent's name, and the MCP `list_files` tool shows it ("Claude for Ada").
+
 **Decision:** agents archive, people delete. Archive and unarchive are available
 to any editor, including agents. Permanent delete is for the project owner
 only, in a normal user session: the database refuses it when the token came
@@ -424,8 +430,25 @@ editor is not built yet.
   (an edit keeps no history, and would show the agent's words as the
   person's), and only a person does that. The database refuses edits and both
   deletes from an OAuth-client session. A comment an agent wrote records its
-  OAuth client id from the token; reads show only `via_agent`, and readers
-  cannot select the client id column.
+  OAuth client id from the token; reads show `via_agent` and the agent's name
+  (`agent`, the OAuth client's name as Connected agents shows it, read by
+  `private.agent_name`), and readers cannot select the client id column. The
+  app and the MCP tools name such a comment for the agent and its person
+  ("Claude for Ada").
+- **Ask an agent.** A thread's creator can ask their own agents to deal with
+  it: the switch in the new comment's composer, or beside Reply on their open
+  thread (`set_comment_ask_agent`, and `ask_agent` on `add_comment`). Only the
+  creator, and only as a person, turns it on or off; everyone else sees a
+  badge. `comment_threads.ask_agent_revision` records the project revision at
+  which they last asked: when they turned it on, and again whenever they
+  reply to it as a person. `list_comments` with `ask_agent` returns only the
+  caller's own open asked threads, and with `since` (a revision it returned
+  before) only those asked after it, so one person's request never reaches
+  another person's agent. The agent changes the file and replies with
+  `reply_comment`'s `file_version`, a saved version of the thread's file, which
+  the reply shows as "Changed in version n"; the person resolves the thread.
+  The MCP `list_comments` tool and the plugin's comment-loop skill describe
+  that loop.
 - **Deleting leaves a placeholder.** A deleted comment keeps its row, author
   and time, without its body, while its thread has live comments, so replies
   keep their context. When the last live comment goes, the thread goes too.

@@ -31,6 +31,8 @@ set search_path = ''
 as $$
 declare
   uid uuid := private.require_user();
+  -- The agent saving, from its token; null in the app.
+  agent_client text := nullif((select auth.jwt()) ->> 'client_id', '');
   p public.projects;
   existing_receipt private.save_receipts;
   change_hash bytea;
@@ -185,8 +187,8 @@ begin
         added_file_paths := added_file_paths || change_path;
         added_paths := added_paths || change_path;
       end if;
-      insert into public.file_versions (file_id, version, project_id, path, content, author_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, save_files.mutation_id);
+      insert into public.file_versions (file_id, version, project_id, path, content, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'id', saved_file.id, 'version', new_revision);
 
@@ -195,8 +197,8 @@ begin
       where f.project_id = p.id and f.path = change_path
       returning * into saved_file;
       byte_delta := byte_delta - octet_length(saved_file.content);
-      insert into public.file_versions (file_id, version, project_id, path, content, deleted, author_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, null, true, uid, save_files.mutation_id);
+      insert into public.file_versions (file_id, version, project_id, path, content, deleted, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, null, true, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'id', saved_file.id, 'version', new_revision);
 
@@ -218,8 +220,8 @@ begin
       byte_delta := byte_delta + octet_length(saved_file.content) - old_bytes;
       added_file_paths := added_file_paths || target_path;
       added_paths := added_paths || target_path;
-      insert into public.file_versions (file_id, version, project_id, path, content, author_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, save_files.mutation_id);
+      insert into public.file_versions (file_id, version, project_id, path, content, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'to', target_path, 'id', saved_file.id, 'version', new_revision);
 

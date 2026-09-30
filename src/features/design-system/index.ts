@@ -78,6 +78,7 @@ export { ScaleToFit } from "./ui/ScaleToFit"
 // --- end Pages outside a project ---
 
 // --- Comments (guide/CommentsSection.tsx) ---
+export { AskAgentBadge, AskAgentSwitch } from "./ui/AskAgent"
 export { CommentComposer } from "./ui/CommentComposer"
 export {
   CommentActionButton,

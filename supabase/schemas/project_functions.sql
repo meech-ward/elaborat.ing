@@ -636,3 +636,56 @@ $$;
 
 revoke all on function public.read_project(uuid) from public, anon;
 grant execute on function public.read_project(uuid) to authenticated;
+
+-- Who saved each file's current version, by path: the person, and whether
+-- an agent (an OAuth client) saved it for them, with the agent's name
+-- (`agent`, null when it has none). Anyone who can read the project; the
+-- agent's client id itself is never returned.
+create function private.list_file_authors(project_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.require_user();
+  if list_file_authors.project_id is null or private.project_role(list_file_authors.project_id) is null then
+    raise exception 'Project unavailable' using errcode = '42501';
+  end if;
+  return coalesce(
+    (
+      select jsonb_agg(
+        jsonb_build_object(
+          'path', f.path,
+          'version', f.version,
+          'author', private.comment_person(v.author_id),
+          'via_agent', v.agent_client_id is not null,
+          'agent', private.agent_name(v.agent_client_id)
+        )
+        order by f.path
+      )
+      from public.project_files f
+      left join public.file_versions v on v.file_id = f.id and v.version = f.version
+      where f.project_id = list_file_authors.project_id
+    ),
+    '[]'::jsonb
+  );
+end;
+$$;
+
+revoke all on function private.list_file_authors(uuid) from public, anon;
+grant execute on function private.list_file_authors(uuid) to authenticated;
+
+create function public.list_file_authors(project_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select private.list_file_authors(project_id)
+$$;
+
+revoke all on function public.list_file_authors(uuid) from public, anon;
+grant execute on function public.list_file_authors(uuid) to authenticated;

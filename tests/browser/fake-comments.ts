@@ -21,6 +21,8 @@ type Thread = {
   createdAt: string
   resolvedAt: string | null
   resolvedBy: string | null
+  /** Its creator asked their agents about it. */
+  askAgent: boolean
 }
 
 type Comment = {
@@ -29,6 +31,10 @@ type Comment = {
   authorId: string
   /** Written by the author's agent (an OAuth client token), not by them in the app. */
   viaAgent: boolean
+  /** That agent's name. */
+  agent: string | null
+  /** The version of the thread's file it links to. */
+  fileVersion: number | null
   body: string | null
   createdAt: string
   editedAt: string | null
@@ -63,23 +69,25 @@ export class FakeComments {
       "reopen_comment",
       "delete_comment",
       "delete_comment_thread",
+      "set_comment_ask_agent",
     ].includes(rpc)
   }
 
   /**
    * Call a comment function as `user`, as the app's rpc does, or as their
-   * agent (`agent`). Throws RemoteError as the database refuses.
+   * agent (`agent`, named `agentName`). Throws RemoteError as the database refuses.
    */
-  call(user: string, rpc: string, args: Args, { agent = false }: { agent?: boolean } = {}): unknown {
+  call(user: string, rpc: string, args: Args, { agent = false, agentName = "Claude" }: { agent?: boolean; agentName?: string | null } = {}): unknown {
+    const by = agent ? { name: agentName } : null
     if (this.server.offline) throw new RemoteError("network", "Failed to fetch")
     if (this.server.limited) throw new RemoteError("account-limit", this.server.limited)
     switch (rpc) {
       case "list_comments":
         return this.list(user, String(args.project_id), typeof args.file_id === "string" ? args.file_id : null)
       case "add_comment":
-        return this.add(user, args, agent)
+        return this.add(user, args, by)
       case "reply_comment":
-        return this.reply(user, String(args.thread_id), String(args.comment_id), args.body, agent)
+        return this.reply(user, String(args.thread_id), String(args.comment_id), args.body, by, typeof args.file_version === "number" ? args.file_version : null)
       case "edit_comment":
         return this.edit(user, String(args.comment_id), args.body)
       case "resolve_comment":
@@ -90,6 +98,8 @@ export class FakeComments {
         return this.deleteComment(user, String(args.comment_id))
       case "delete_comment_thread":
         return this.deleteThread(user, String(args.thread_id))
+      case "set_comment_ask_agent":
+        return this.setAskAgent(user, String(args.thread_id), args.ask === true, agent)
     }
     throw new Error(`No fake for ${rpc}`)
   }
@@ -157,6 +167,7 @@ export class FakeComments {
       created_at: thread.createdAt,
       resolved_at: thread.resolvedAt,
       resolved_by: this.person(thread.resolvedBy),
+      ask_agent: thread.askAgent,
       comments: this.comments.filter((comment) => comment.threadId === thread.id).map((comment) => this.commentJson(comment)),
     }
   }
@@ -166,10 +177,12 @@ export class FakeComments {
       id: comment.id,
       author: this.person(comment.authorId),
       via_agent: comment.viaAgent,
+      agent: comment.agent,
       body: comment.body,
       created_at: comment.createdAt,
       edited_at: comment.editedAt,
       deleted_at: comment.deletedAt,
+      file_version: comment.fileVersion,
     }
   }
 
@@ -225,9 +238,10 @@ export class FakeComments {
     return { project_id: projectId, revision: project.revision, threads: threads.map((thread) => this.threadJson(thread)) }
   }
 
-  private add(user: string, args: Args, agent: boolean) {
+  private add(user: string, args: Args, agent: { name: string | null } | null) {
     const body = this.checkBody(args.body)
     this.checkAnchor(args.anchor)
+    if (args.ask_agent === true && agent) throw new RemoteError("access", "Only a signed-in person can ask an agent")
     const projectId = String(args.project_id)
     const project = this.writable(user, projectId, true)
     const existing = this.threads.find((thread) => thread.id === args.thread_id)
@@ -252,13 +266,25 @@ export class FakeComments {
       createdAt,
       resolvedAt: null,
       resolvedBy: null,
+      askAgent: args.ask_agent === true,
     }
     this.threads.push(thread)
-    this.comments.push({ id: crypto.randomUUID(), threadId: thread.id, authorId: user, viaAgent: agent, body, createdAt, editedAt: null, deletedAt: null })
+    this.comments.push({
+      id: crypto.randomUUID(),
+      threadId: thread.id,
+      authorId: user,
+      viaAgent: agent !== null,
+      agent: agent?.name ?? null,
+      body,
+      createdAt,
+      editedAt: null,
+      deletedAt: null,
+      fileVersion: null,
+    })
     return { revision: this.bump(projectId), thread: this.threadJson(thread) }
   }
 
-  private reply(user: string, threadId: string, commentId: string, rawBody: unknown, agent: boolean) {
+  private reply(user: string, threadId: string, commentId: string, rawBody: unknown, agent: { name: string | null } | null, fileVersion: number | null) {
     const body = this.checkBody(rawBody)
     const thread = this.thread(user, threadId)
     const project = this.writable(user, thread.projectId, true)
@@ -268,7 +294,18 @@ export class FakeComments {
       throw new RemoteError("invalid", "This comment id was already used")
     }
     if (project.archivedAt) throw new RemoteError("archived", "Project is archived")
-    const comment: Comment = { id: commentId, threadId, authorId: user, viaAgent: agent, body, createdAt: this.tick(), editedAt: null, deletedAt: null }
+    const comment: Comment = {
+      id: commentId,
+      threadId,
+      authorId: user,
+      viaAgent: agent !== null,
+      agent: agent?.name ?? null,
+      body,
+      createdAt: this.tick(),
+      editedAt: null,
+      deletedAt: null,
+      fileVersion,
+    }
     this.comments.push(comment)
     return { revision: this.bump(thread.projectId), comment: this.commentJson(comment) }
   }
@@ -292,6 +329,16 @@ export class FakeComments {
     if ((thread.resolvedAt !== null) === resolved) return { revision: project.revision, thread: this.threadJson(thread) }
     thread.resolvedAt = resolved ? this.tick() : null
     thread.resolvedBy = resolved ? user : null
+    return { revision: this.bump(thread.projectId), thread: this.threadJson(thread) }
+  }
+
+  private setAskAgent(user: string, threadId: string, ask: boolean, agent: boolean) {
+    if (agent) throw new RemoteError("access", "Only a signed-in person can ask an agent")
+    const thread = this.thread(user, threadId)
+    const project = this.writable(user, thread.projectId)
+    if (thread.createdBy !== user) throw new RemoteError("access", "Only the person who started a thread can ask an agent about it")
+    if (thread.askAgent === ask) return { revision: project.revision, thread: this.threadJson(thread) }
+    thread.askAgent = ask
     return { revision: this.bump(thread.projectId), thread: this.threadJson(thread) }
   }
 

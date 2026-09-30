@@ -46,14 +46,22 @@ async function openNote(
   return { fake, id, server }
 }
 
-/** A whole note comment from someone else, written as another device would, or by their agent. */
-function commentAsSomeoneElse(fake: FakeSupabase, id: string, body: string, { agent = false } = {}) {
+/**
+ * A whole note comment from someone else, written as another device would,
+ * or by their agent (named `agentName`), or asking their agent (`ask`).
+ */
+function commentAsSomeoneElse(
+  fake: FakeSupabase,
+  id: string,
+  body: string,
+  { agent = false, agentName = "Claude", ask = false }: { agent?: boolean; agentName?: string | null; ask?: boolean } = {},
+) {
   const file = fake.server.projects.get(id)!.files.get("notes/plan.md")!
   fake.comments.call(
     SOMEONE_ELSE,
     "add_comment",
-    { project_id: id, thread_id: crypto.randomUUID(), file_id: file.id, file_version: file.version, anchor: { kind: "document" }, body },
-    { agent },
+    { project_id: id, thread_id: crypto.randomUUID(), file_id: file.id, file_version: file.version, anchor: { kind: "document" }, body, ask_agent: ask },
+    { agent, agentName },
   )
 }
 
@@ -214,28 +222,62 @@ test("comments show their authors' names, else their emails, and a person sets t
   await expect(thread(page, "Comments on Whole note").filter({ hasText: "Dates by Friday." }).getByText("Pat Person", { exact: true })).toBeVisible()
 })
 
-test("a comment an agent wrote says so, the person's own agent's included, and is read out as new", async ({ page }) => {
-  const { fake, id } = await openNote(page, { comments: ["Please add dates."] })
+test("a comment an agent wrote is named for the agent and its person, links its version, and is read out as new", async ({ page }) => {
+  const { fake, id } = await openNote(page, { comments: ["Please add dates."], name: "Ada Park" })
   await toggle(page).click()
   const whole = thread(page, "Comments on Whole note").filter({ hasText: "Please add dates." })
   await expect(whole).toBeVisible()
-  await expect(panel(page).getByText("via agent")).toHaveCount(0)
+  const badge = (scope: ReturnType<typeof panel>) => scope.getByText("agent", { exact: true })
+  await expect(badge(panel(page))).toHaveCount(0)
 
-  // The person's agent replies, and someone else's agent starts a thread.
+  // The person's agent replies with the version it saved, and someone else's agent, with no name, starts a thread.
   const threadId = fake.comments.threads[0].id
-  fake.comments.call(person.id, "reply_comment", { thread_id: threadId, comment_id: crypto.randomUUID(), body: "Dates added for each step." }, { agent: true })
-  commentAsSomeoneElse(fake, id, "Written by their agent too.", { agent: true })
+  const version = fake.server.projects.get(id)!.files.get("notes/plan.md")!.version
+  fake.comments.call(
+    person.id,
+    "reply_comment",
+    { thread_id: threadId, comment_id: crypto.randomUUID(), body: "Dates added for each step.", file_version: version },
+    { agent: true },
+  )
+  commentAsSomeoneElse(fake, id, "Written by their agent too.", { agent: true, agentName: null })
   fake.signal(id, fake.server.projects.get(id)!.revision)
   const reply = whole.locator('[data-slot="comment"]').filter({ hasText: "Dates added for each step." })
-  await expect(reply.getByText("via agent")).toBeVisible()
-  await expect(reply.getByText("via agent")).toHaveAttribute("title", "Written by their agent")
+  await expect(reply.getByText("Claude", { exact: true })).toBeVisible()
+  await expect(reply.getByText("for person@example.com", { exact: true })).toBeVisible()
+  await expect(badge(reply)).toHaveAttribute("title", "Written by person@example.com's agent")
+  await expect(reply.getByText(`Changed in version ${version}`)).toBeVisible()
   const other = panel(page).locator('[data-slot="comment"]').filter({ hasText: "Written by their agent too." })
-  await expect(other.getByText("via agent")).toBeVisible()
+  await expect(other.getByText("An agent", { exact: true })).toBeVisible()
+  await expect(other.getByText("for Ada Park", { exact: true })).toBeVisible()
   // Only the agents' comments say so.
-  await expect(panel(page).getByText("via agent")).toHaveCount(2)
-  await expect(whole.locator('[data-slot="comment"]').filter({ hasText: "Please add dates." }).getByText("via agent")).toHaveCount(0)
+  await expect(badge(panel(page))).toHaveCount(2)
+  await expect(badge(whole.locator('[data-slot="comment"]').filter({ hasText: "Please add dates." }))).toHaveCount(0)
   // Written through their agent, the person's own reply is new to them.
   await expect(announced(page)).toHaveText("2 new comments")
+})
+
+test("a new comment can ask an agent, its author turns that off on the thread, and others see a badge", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  await toggle(page).click()
+  await panel(page).getByRole("button", { name: "Comment on the whole note" }).first().click()
+  await panel(page).getByRole("switch", { name: "Ask an agent" }).click()
+  const field = panel(page).getByRole("textbox", { name: "New comment" })
+  await field.fill("Add dates to each step.")
+  await field.press("ControlOrMeta+Enter")
+  const mine = thread(page, "Comments on Whole note").filter({ hasText: "Add dates to each step." })
+  const ask = mine.getByRole("switch", { name: "Ask an agent" })
+  await expect(ask).toBeChecked()
+  expect(fake.comments.threads.map((entry) => entry.askAgent)).toEqual([true])
+  await ask.click()
+  await expect(ask).not.toBeChecked()
+  await expect.poll(() => fake.comments.threads.map((entry) => entry.askAgent)).toEqual([false])
+
+  // Someone else's thread asking their agent shows the badge, and offers no switch.
+  commentAsSomeoneElse(fake, id, "Tidy the steps.", { ask: true })
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  const theirs = thread(page, "Comments on Whole note").filter({ hasText: "Tidy the steps." })
+  await expect(theirs.getByText("Ask an agent", { exact: true })).toBeVisible()
+  await expect(theirs.getByRole("switch")).toHaveCount(0)
 })
 
 test("the shortcut shows the panel and focus goes back to the toggle when it closes", async ({ page }) => {

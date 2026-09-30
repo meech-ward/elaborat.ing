@@ -10,7 +10,7 @@ select plan(73);
 select table_privs_are('public', 'projects', 'authenticated', array['SELECT'], 'Signed-in users can only select projects');
 select table_privs_are('public', 'project_members', 'authenticated', array['SELECT'], 'Signed-in users can only select members');
 select table_privs_are('public', 'project_files', 'authenticated', array['SELECT'], 'Signed-in users can only select files');
-select table_privs_are('public', 'file_versions', 'authenticated', array['SELECT'], 'Signed-in users can only select file history');
+select table_privs_are('public', 'file_versions', 'authenticated', array[]::text[], 'Signed-in users get no table-wide privileges on file history (see agent_requests.test.sql)');
 select table_privs_are('public', 'project_folders', 'authenticated', array['SELECT'], 'Signed-in users can only select folders');
 select table_privs_are('public', 'projects', 'anon', array[]::text[], 'Anonymous users get nothing on projects');
 select table_privs_are('public', 'project_members', 'anon', array[]::text[], 'Anonymous users get nothing on members');

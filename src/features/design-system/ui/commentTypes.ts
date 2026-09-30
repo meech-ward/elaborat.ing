@@ -13,6 +13,10 @@ export type CommentEntry = {
   author: CommentAuthor | null
   /** Written by the author's agent, not by them in the app. */
   viaAgent?: boolean
+  /** The agent's name, when `viaAgent`: the one its person approved it under. */
+  agent?: string | null
+  /** The version of the file this comment links to, such as the one an agent saved in answer. */
+  version?: number | null
   /** null: the comment was deleted; a placeholder keeps its place among the replies. */
   body: string | null
   createdAt: string | Date

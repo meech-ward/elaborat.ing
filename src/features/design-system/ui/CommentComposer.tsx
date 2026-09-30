@@ -1,5 +1,5 @@
 import { CircleAlert } from "lucide-react"
-import { useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react"
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -27,7 +27,8 @@ function sendShortcut(apple: boolean) {
  * the button is disabled; when it resolves the field empties; when it
  * rejects, the text stays and the error's message shows under the field, so
  * nothing typed is lost. `disabledReason` turns the composer off and says
- * why, such as "Comments need a connection."
+ * why, such as "Comments need a connection." `start` goes at the start of
+ * the button row, such as the Ask an agent switch.
  */
 export function CommentComposer({
   label = "Comment",
@@ -43,6 +44,7 @@ export function CommentComposer({
   autoFocus,
   requireChange = false,
   maxLength = COMMENT_MAX_LENGTH,
+  start,
   size: sizeProp,
   className,
 }: {
@@ -66,6 +68,8 @@ export function CommentComposer({
   /** Sending needs text other than `defaultValue` (an edit that changed nothing can't be saved). */
   requireChange?: boolean
   maxLength?: number
+  /** Before the count and the buttons, such as the Ask an agent switch. */
+  start?: ReactNode
   size?: CommentsSize
   className?: string
 }) {
@@ -152,7 +156,8 @@ export function CommentComposer({
           {disabledReason}
         </p>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {start}
           {length.show && (
             <span
               id={countId}

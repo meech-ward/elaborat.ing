@@ -91,6 +91,13 @@ class MemoryComments implements CommentsRemote {
     return this.setResolved(threadId, false)
   }
 
+  setAskAgent(threadId: string, ask: boolean) {
+    const thread = this.thread(threadId)
+    this.revision++
+    thread.ask_agent = ask
+    return this.answer({ revision: this.revision, thread })
+  }
+
   deleteComment(commentId: string) {
     const thread = this.threads.find((candidate) => candidate.comments.some((comment) => comment.id === commentId))!
     this.revision++

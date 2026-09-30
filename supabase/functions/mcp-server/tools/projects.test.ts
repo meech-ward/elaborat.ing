@@ -102,6 +102,7 @@ const CASES: [string, Record<string, unknown>, Call[], Record<string, Answer>?][
         query: [['select', 'path, version, updated_at'], ['eq', 'project_id', PROJECT], ['order', 'path']],
       },
       { table: 'project_folders', query: [['select', 'path'], ['eq', 'project_id', PROJECT], ['order', 'path']] },
+      { rpc: 'list_file_authors', args: { project_id: PROJECT } },
     ],
   ],
   [
@@ -298,6 +299,43 @@ Deno.test('list_files and read_file return what the queries find', async () => {
 
   const missing = await callTool('read_file', { project_id: PROJECT, path: 'nope.md' })
   assertEquals(errorText(missing.result), 'No file at nope.md in this project. Use list_files to see what exists.')
+})
+
+Deno.test('list_files says who saved each version, naming the agent that saved it for its person', async () => {
+  const files = [
+    { path: 'a.md', version: 2, updated_at: '2026-09-26T00:00:00Z' },
+    { path: 'b.md', version: 3, updated_at: '2026-09-26T00:00:00Z' },
+    { path: 'c.md', version: 4, updated_at: '2026-09-26T00:00:00Z' },
+    { path: 'd.md', version: 6, updated_at: '2026-09-26T00:00:00Z' },
+  ]
+  const ada = { user_id: MEMBER, email: 'ada@example.com', name: 'Ada' }
+  const authors = [
+    { path: 'a.md', version: 2, author: ada, via_agent: false, agent: null },
+    { path: 'b.md', version: 3, author: ada, via_agent: true, agent: 'Claude' },
+    { path: 'c.md', version: 4, author: { ...ada, name: null }, via_agent: true, agent: null },
+    // Saved again since the authors were read: left without.
+    { path: 'd.md', version: 5, author: ada, via_agent: false, agent: null },
+  ]
+  const listed = await callTool('list_files', { project_id: PROJECT }, {
+    project_files: { data: files, error: null },
+    list_file_authors: { data: authors, error: null },
+  })
+  assertEquals(listed.result.structuredContent, {
+    files: [
+      { ...files[0], changed_by: 'Ada' },
+      { ...files[1], changed_by: 'Claude for Ada', via_agent: true },
+      { ...files[2], changed_by: 'An agent for ada@example.com', via_agent: true },
+      files[3],
+    ],
+    folders: [],
+  })
+
+  // A server without list_file_authors still lists the files.
+  const older = await callTool('list_files', { project_id: PROJECT }, {
+    project_files: { data: files, error: null },
+    list_file_authors: { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } },
+  })
+  assertEquals(older.result.structuredContent, { files, folders: [] })
 })
 
 Deno.test('Supabase errors come back as readable error results', async () => {

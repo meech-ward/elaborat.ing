@@ -141,6 +141,13 @@ export class ProjectComments {
     return thread
   }
 
+  /** Asks the author's agents to deal with a thread, or stops. */
+  async setAskAgent(threadId: string, ask: boolean): Promise<RemoteThread> {
+    const { revision, thread } = await this.remote.setAskAgent(threadId, ask)
+    this.written(revision, thread.file_id, (threads) => upsert(threads, thread))
+    return thread
+  }
+
   /** Deletes a comment's words. It stays as a placeholder while its thread has live comments. */
   async deleteComment(commentId: string): Promise<{ threadDeleted: boolean }> {
     const threadId = this.threadOf(commentId)

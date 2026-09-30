@@ -49,10 +49,14 @@ export const RemoteComment = z.object({
   author: Person,
   /** Written by the author's agent rather than by them in the app. */
   via_agent: z.boolean(),
+  /** That agent's name, when it has one (older servers leave it out). */
+  agent: z.string().nullish(),
   body: z.string().nullable(),
   created_at: z.string(),
   edited_at: z.string().nullable(),
   deleted_at: z.string().nullable(),
+  /** The version of the thread's file the comment links to, such as one an agent saved in answer. */
+  file_version: z.number().int().positive().nullish(),
 })
 export type RemoteComment = z.infer<typeof RemoteComment>
 
@@ -70,6 +74,8 @@ export const RemoteThread = z.object({
   created_at: z.string(),
   resolved_at: z.string().nullable(),
   resolved_by: Person,
+  /** Its creator asked their agents to deal with it (older servers leave it out). */
+  ask_agent: z.boolean().optional(),
   comments: z.array(RemoteComment),
 })
 export type RemoteThread = z.infer<typeof RemoteThread>
@@ -97,6 +103,8 @@ export type NewThread = {
   fileVersion: number
   anchor: CommentAnchor
   body: string
+  /** Start it asking the author's agents to deal with it. */
+  askAgent?: boolean
 }
 
 /**
@@ -114,6 +122,8 @@ export interface CommentsRemote {
   edit(commentId: string, body: string): Promise<{ revision: number; comment: RemoteComment }>
   resolve(threadId: string): Promise<{ revision: number; thread: RemoteThread }>
   reopen(threadId: string): Promise<{ revision: number; thread: RemoteThread }>
+  /** Ask the author's agents to deal with a thread, or stop. Its creator only, never an agent. */
+  setAskAgent(threadId: string, ask: boolean): Promise<{ revision: number; thread: RemoteThread }>
   /** Delete a comment's words: its author or the owner, never an agent. The thread goes with its last live comment. */
   deleteComment(commentId: string): Promise<{ revision: number; comment_id: string; thread_deleted: boolean }>
   /** Delete a thread: the owner, or its creator while every live comment in it is theirs; never an agent. */
@@ -155,6 +165,7 @@ export class SupabaseCommentsRemote implements CommentsRemote {
         file_version: input.fileVersion,
         anchor: input.anchor,
         body: input.body,
+        ...(input.askAgent ? { ask_agent: true } : {}),
       }),
     )
   }
@@ -173,6 +184,10 @@ export class SupabaseCommentsRemote implements CommentsRemote {
 
   async reopen(threadId: string) {
     return ThreadResult.parse(await this.rpc("reopen_comment", { thread_id: threadId }))
+  }
+
+  async setAskAgent(threadId: string, ask: boolean) {
+    return ThreadResult.parse(await this.rpc("set_comment_ask_agent", { thread_id: threadId, ask }))
   }
 
   async deleteComment(commentId: string) {

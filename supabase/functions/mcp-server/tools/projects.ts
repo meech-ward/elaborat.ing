@@ -33,6 +33,22 @@ export const VIEW_CALLABLE = { ui: { visibility: ['model', 'app'] }, 'openai/wid
 
 type Rpc = (name: string, args?: Record<string, unknown>, listKey?: string) => Promise<CallToolResult>
 
+/** Who saved a file's current version, as list_file_authors returns it. */
+type FileAuthor = {
+  path: string
+  version: number
+  author: { email: string | null; name?: string | null } | null
+  via_agent: boolean
+  agent: string | null
+}
+
+/** Who saved a version, in words: the person, or the agent that saved it for them ("Claude for Ada"). */
+function changedBy({ author, via_agent, agent }: FileAuthor) {
+  const person = author?.name || author?.email || null
+  if (!via_agent) return { changed_by: person }
+  return { changed_by: `${agent || 'An agent'} for ${person ?? 'a deleted account'}`, via_agent: true }
+}
+
 // MCP structured results must be objects, so list results are wrapped under a key.
 function rpcCaller({ supabase }: ToolContext): Rpc {
   return async (name, args, listKey) => {
@@ -71,24 +87,31 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'list_files',
     {
       description:
-        'List the files and folders in a project, with each file version. Does not return file contents; use read_file for that.',
+        'List the files and folders in a project, with each file version and who saved it (changed_by; via_agent when ' +
+        'an agent saved it for them, named like "Claude for Ada"). Does not return file contents; use read_file for that.',
       inputSchema: z.object({ project_id: projectId }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id }) => {
       try {
-        const [files, folders] = await Promise.all([
+        const [files, folders, authors] = await Promise.all([
           supabase
             .from('project_files')
             .select('path, version, updated_at')
             .eq('project_id', project_id)
             .order('path'),
           supabase.from('project_folders').select('path').eq('project_id', project_id).order('path'),
+          supabase.rpc('list_file_authors', { project_id }),
         ])
         if (files.error) throw files.error
         if (folders.error) throw folders.error
+        // Who saved each version is extra: a server without it still lists the files.
+        const saved = new Map(((authors.error ? null : authors.data) as FileAuthor[] | null ?? []).map((entry) => [entry.path, entry]))
         return jsonResult({
-          files: files.data,
+          files: (files.data as { path: string; version: number }[]).map((file) => {
+            const author = saved.get(file.path)
+            return author && author.version === file.version ? { ...file, ...changedBy(author) } : file
+          }),
           folders: folders.data.map((folder) => folder.path),
         })
       } catch (error) {

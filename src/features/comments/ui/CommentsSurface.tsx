@@ -242,6 +242,19 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
           problem("Not reopened", error)
         }
       }}
+      askAgent={thread.askAgent}
+      onAskAgentChange={
+        thread.own
+          ? async (ask) => {
+              try {
+                await store?.setAskAgent(thread.id, ask)
+                say(ask ? "Your agent is asked about this thread" : "Your agent is no longer asked")
+              } catch (error) {
+                problem("Not changed", error)
+              }
+            }
+          : undefined
+      }
       onReply={async (body) => {
         const commentId = replyIds.get(thread.id) ?? crypto.randomUUID()
         replyIds.set(thread.id, commentId)
@@ -272,8 +285,9 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
       <CommentDraft
         anchor={request.anchor.kind === "document" ? { kind: "document", label: `Whole ${noun}` } : anchorView(request.anchor, { attached: true, text: request.text })}
         disabledReason={online ? null : NEEDS_CONNECTION}
-        onSubmit={async (body) => {
-          const thread = await store.add({ threadId, fileId: request.file.fileId, fileVersion: request.file.fileVersion, anchor: request.anchor, body })
+        offerAskAgent
+        onSubmit={async (body, { askAgent }) => {
+          const thread = await store.add({ threadId, fileId: request.file.fileId, fileVersion: request.file.fileVersion, anchor: request.anchor, body, askAgent })
           controller.finishRequest(thread.id)
           say("Comment added")
           focusThread(thread.id)

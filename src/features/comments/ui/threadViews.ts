@@ -18,6 +18,10 @@ export type ThreadView = {
   detached: boolean
   comments: CommentEntry[]
   resolved: CommentResolution | null
+  /** Its author asked their agents to deal with it. */
+  askAgent: boolean
+  /** The viewer started it, so they may ask their agents or stop. */
+  own: boolean
 }
 
 /** A person as a comment shows them: their name, else their email, or null for a deleted account. */
@@ -41,6 +45,8 @@ function entry(comment: RemoteComment, viewer: Viewer): CommentEntry {
     id: comment.id,
     author: author(comment.author),
     viaAgent: comment.via_agent,
+    agent: comment.agent ?? null,
+    version: comment.file_version ?? null,
     body: comment.body,
     createdAt: comment.created_at,
     editedAt: comment.edited_at,
@@ -78,6 +84,9 @@ export function threadViews(
       detached: place?.attached === false,
       comments: thread.comments.map((comment) => entry(comment, viewer)),
       resolved: thread.resolved_at ? { by: author(thread.resolved_by), at: thread.resolved_at } : null,
+      askAgent: thread.ask_agent === true,
+      // The opening comment is always its creator's, a deleted one included.
+      own: viewer.userId !== null && thread.comments[0]?.author?.user_id === viewer.userId,
     }
   }
   const start = (thread: RemoteThread) => places.get(thread.id)?.range?.start ?? (thread.anchor.kind === "text" || thread.anchor.kind === "section" ? thread.anchor.position.start : 0)
