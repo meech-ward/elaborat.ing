@@ -14,11 +14,11 @@ import { projectWorkspace, workspacePersistenceKey } from "@/features/workbench/
 import { writeProjectView } from "@/features/workbench/projectViews"
 import { loadWorkbench } from "@/features/workbench/load"
 import { projectHits, type SearchPassage } from "@/features/workbench/contentSearch"
-import { createClient } from "@/lib/supabase/client"
+import { loadedClient } from "@/lib/supabase/client"
 import { fileStoreFor, libraryFor, openLocalProject, useLibraryState, type ProjectAccount } from "./account"
 import { DeletedProjectPage } from "./DeletedProject"
 import { useProjectDownload } from "./DownloadProject"
-import { MembersDialog } from "./MembersDialog"
+import { LazyMembersDialog } from "./LazyMembersDialog"
 import { projectMenuEntries } from "./projectMenu"
 import { readOnlyReason } from "./readOnly"
 import { syncDot } from "./statusLabel"
@@ -114,7 +114,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     account.local
       ? null
       : {
-          store: new ProjectComments(new SupabaseCommentsRemote(createClient()), projectId, seenRevisions.seen),
+          store: new ProjectComments(new SupabaseCommentsRemote(loadedClient()), projectId, seenRevisions.seen),
           controller: new CommentsController(),
         },
   )
@@ -128,7 +128,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   useEffect(() => {
     if (!listening) return
     const changes = new ProjectChanges(
-      createClient(),
+      loadedClient(),
       projectId,
       0,
       (revision) => {
@@ -174,7 +174,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   // The files panel's search: the server's search in this project.
   const searchFiles = useCallback(
     async (query: string) => {
-      const { data, error } = await createClient().functions.invoke<{ results: SearchPassage[] }>("search", {
+      const { data, error } = await loadedClient().functions.invoke<{ results: SearchPassage[] }>("search", {
         body: { query, matchCount: 30, projectId },
       })
       if (error) {
@@ -334,7 +334,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         />
         {download.dialog}
         {sharing && entry ? (
-          <MembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
+          <LazyMembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
         ) : null}
       </Suspense>
       </CustomCodeProvider>

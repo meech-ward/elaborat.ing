@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { OAuthGrant } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { Banner, BannerAction } from "@/features/design-system"
-import { createClient } from "@/lib/supabase/client"
+import { loadClient } from "@/lib/supabase/client"
 
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; grants: OAuthGrant[] }
 
@@ -23,11 +23,16 @@ export function ConnectedAgents() {
 
   useEffect(() => {
     let alive = true
-    void createClient()
-      .auth.oauth.listGrants()
-      .then(({ data, error }) => {
-        if (alive) setState(error ? { status: "error", message: error.message } : { status: "ready", grants: data ?? [] })
-      })
+    loadClient()
+      .then((client) => client.auth.oauth.listGrants())
+      .then(
+        ({ data, error }) => {
+          if (alive) setState(error ? { status: "error", message: error.message } : { status: "ready", grants: data ?? [] })
+        },
+        (cause: unknown) => {
+          if (alive) setState({ status: "error", message: cause instanceof Error ? cause.message : String(cause) })
+        },
+      )
     return () => {
       alive = false
     }
@@ -38,7 +43,7 @@ export function ConnectedAgents() {
     if (!window.confirm(`Disconnect ${name}? It stops working with your account now, and needs your approval to connect again.`)) return
     setDisconnecting(grant.client.id)
     setNotice(null)
-    const { error } = await createClient().auth.oauth.revokeGrant({ clientId: grant.client.id })
+    const { error } = await (await loadClient()).auth.oauth.revokeGrant({ clientId: grant.client.id })
     setDisconnecting(null)
     if (error) {
       setNotice(`Could not disconnect ${name}: ${error.message}`)

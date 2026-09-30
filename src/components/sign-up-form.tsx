@@ -5,13 +5,13 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; links point at `/sign-in`; it sits in the sign-in pages' card, with
- * the app's colours, banners and link buttons.
+ * the app's colours, banners and link buttons; the client loads on submit.
  */
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
 import { cn } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
+import { loadClient } from '@/lib/supabase/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,7 +26,6 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   const [success, setSuccess] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
-    const supabase = createClient()
     e.preventDefault()
     setError(null)
 
@@ -37,6 +36,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
     setIsLoading(true)
 
     try {
+      const supabase = await loadClient()
       const { error } = await supabase.auth.signUp({
         email,
         password,

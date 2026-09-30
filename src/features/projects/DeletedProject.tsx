@@ -6,7 +6,6 @@ import { AlertDialog, DialogContent, DialogDescription, DialogFooter, DialogHead
 import { Banner, BannerAction } from "@/features/design-system"
 import type { DeletedProject, ProjectLibrary } from "@/features/project-storage/library"
 import { downloadBlob } from "@/features/workbench/download"
-import { zipName, zipProject } from "./projectArchive"
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const files = (count: number) => (count === 1 ? "1 file" : `${count} files`)
@@ -15,6 +14,7 @@ const files = (count: number) => (count === 1 ? "1 file" : `${count} files`)
 async function downloadUnsaved(library: ProjectLibrary, project: DeletedProject): Promise<void> {
   const changes = await library.unsavedChanges(project.id)
   if (changes.length === 0) throw new Error("There are no unsaved changes to download.")
+  const { zipName, zipProject } = await import("./projectArchive")
   downloadBlob(new Blob([zipProject(changes, [])], { type: "application/zip" }), zipName(`${project.title} unsaved changes`))
 }
 

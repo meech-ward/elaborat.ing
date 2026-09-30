@@ -6,8 +6,11 @@ import { ActionMenu, Banner, type MenuEntry } from "@/features/design-system"
 import type { ProjectLibrary } from "@/features/project-storage/library"
 import { projectHref } from "@/features/navigation"
 import { fileStoreFor } from "./account"
-import { folderEntries, planArchive, titleFrom, unzipFiles, zipEntries } from "./projectArchive"
-import { importPrototype, planImport, readPrototypeExport, type ImportPlan } from "./prototypeImport"
+import type { ImportPlan } from "./prototypeImport"
+
+// The archive code (with fflate) and the prototype's reader load on the first import.
+const loadArchive = () => import("./projectArchive")
+const loadPrototype = () => import("./prototypeImport")
 
 export type ImportState =
   | { kind: "idle" }
@@ -25,6 +28,7 @@ export type ImportSource = "zip" | "folder" | "prototype"
 
 /** Plan an import from what was chosen, or say why it cannot be imported. */
 async function planFrom(source: ImportSource, files: File[]): Promise<{ ok: true; plan: ImportPlan } | { ok: false; error: string }> {
+  const { folderEntries, planArchive, titleFrom, unzipFiles, zipEntries } = await loadArchive()
   if (source === "folder") {
     const folder = folderEntries(files)
     const read = async (paths: string[]) => {
@@ -39,6 +43,7 @@ async function planFrom(source: ImportSource, files: File[]): Promise<{ ok: true
   }
   const file = files[0]
   if (source === "prototype") {
+    const { planImport, readPrototypeExport } = await loadPrototype()
     const read = readPrototypeExport(await file.text())
     return read.ok ? { ok: true, plan: planImport(read.value) } : read
   }
@@ -67,9 +72,11 @@ export function useProjectImport(library: ProjectLibrary) {
     // Let the same file be chosen again.
     input.value = ""
     if (files.length === 0) return
-    const name = source === "folder" ? titleFrom(folderEntries(files).name) : files[0].name
-    setState({ kind: "importing", name })
     try {
+      const { folderEntries, titleFrom } = await loadArchive()
+      const name = source === "folder" ? titleFrom(folderEntries(files).name) : files[0].name
+      setState({ kind: "importing", name })
+      const { importPrototype } = await loadPrototype()
       const planned = await planFrom(source, files)
       if (!planned.ok) {
         setState({ kind: "failed", message: `${name} could not be imported. ${planned.error}` })

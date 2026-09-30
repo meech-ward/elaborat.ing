@@ -74,7 +74,7 @@ import {
   type FolderPreferences,
 } from "./folderPreferences";
 import { type TabFile } from "./tabs";
-import { MoveDialog } from "./MoveDialog";
+import { LazyMoveDialog } from "./LazyMoveDialog";
 import { DeleteDialog } from "./DeleteDialog";
 import { LazyDiagramView as DiagramView, LazyDrawingView as DrawingView } from "./LazyCanvasViews";
 import { FLOW_D2_EXAMPLE } from "@/features/structured/examples";
@@ -1248,7 +1248,7 @@ export function WorkspaceWorkbench({
           pendingLabel="Creating…"
         />
       )}
-      {moves.target && <MoveDialog path={moves.target} kind={moves.kind} folders={directories} folder={moves.folder}
+      {moves.target && <LazyMoveDialog path={moves.target} kind={moves.kind} folders={directories} folder={moves.folder}
         plan={moves.plan} pending={moves.pending} error={moves.error} stale={moves.stale}
         onFolder={moves.changeFolder} onPreview={() => void moves.preview()}
         onCommit={() => void moves.commit()} onClose={moves.close} />}

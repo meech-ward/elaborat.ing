@@ -923,13 +923,26 @@ worker loads nothing that needs the DOM.
 `vite.config.ts` declares the app's own modules free of side effects (except
 the entry), so a page that imports one thing from a feature's `index.ts` does
 not download the rest of that feature. Libraries go in chunks named after
-them (react, router, supabase, ui, zod on first paint; monaco, prettier,
+them (react, router, ui, zod on first paint; supabase, monaco, prettier,
 prosemirror, mdx and the preview frame later), and the app code every page
 starts with goes in `app`, so a deploy that changes only the app's code leaves
 those files and their hashes alone and an update downloads only what changed.
 A group never moves lazy code into an earlier load: first-paint groups take
 only what the entry imports, the others split by what loads them. `bun run
 build:visualize` and `bun run report:bundle` show the result.
+
+**Decision: the shell paints before any script runs.** `index.html` holds the
+shell: the dotted page and the app's mark, in the saved palette and light or
+dark (a few lines of inline script read the saved appearance before the first
+paint, and `palettes.css` colours it). `src/main.tsx` renders the app only
+once the first route's code has loaded, so the shell gives way to that page,
+never to a blank one. supabase-js loads after the first paint too: the session
+check starts it (`loadClient` in `src/lib/supabase/client.ts`), and code that
+runs only once someone is signed in uses `loadedClient`. Settings' sections,
+the command palette's list, the comments panel, the members and move dialogs,
+the zip code, the home page's picture of the app and the style guide's
+component sections each load in chunks of their own, behind a loading line or
+a placeholder of their size.
 
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,

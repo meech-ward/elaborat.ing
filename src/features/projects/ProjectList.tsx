@@ -11,7 +11,7 @@ import { DeletedProjectBanner } from "./DeletedProject"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
 import { useProjectDownload } from "./DownloadProject"
 import { ImportProjectButton, ImportReport, useProjectImport } from "./ImportProject"
-import { MembersDialog } from "./MembersDialog"
+import { LazyMembersDialog } from "./LazyMembersDialog"
 import { statusLabel, syncDot } from "./statusLabel"
 import { useBackgroundRefresh } from "./useBackgroundRefresh"
 
@@ -245,7 +245,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         </section>
       ) : null}
       {membersOf ? (
-        <MembersDialog
+        <LazyMembersDialog
           library={library}
           projectId={membersOf.id}
           title={membersOf.title}

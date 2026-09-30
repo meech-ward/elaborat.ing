@@ -1,19 +1,18 @@
 import { useRef } from "react"
 import { DottedPage } from "@/components/panel"
 import { palettes, useAppearance } from "@/features/appearance"
+import { moduleLoader, useModule } from "@/lib/moduleLoader"
+import { Banner, BannerAction } from "../ui/Banner"
+import { LoadingLine } from "../ui/LoadingLine"
 import { AppearancePicker } from "./AppearancePicker"
-import { CanvasSection } from "./CanvasSection"
-import { ChatCardSection } from "./ChatCardSection"
 import { ColourTokensSection } from "./ColourTokensSection"
-import { CommentsSection } from "./CommentsSection"
-import { ComponentsSheet } from "./ComponentsSheet"
-import { ControlsSection } from "./ControlsSection"
-import { EditorChromeSection } from "./EditorChromeSection"
-import { HomeSection } from "./HomeSection"
-import { NavigationSection } from "./NavigationSection"
-import { GuideCard, GuidePortal, GuideValue } from "./parts"
+import { GuideCard, GuidePortal } from "./parts"
 import { SpaceSection } from "./SpaceSection"
 import { TypeSection } from "./TypeSection"
+
+// The components, from the approved sheet down, load after the foundations
+// have drawn: they are most of the page's code.
+const librarySections = moduleLoader(() => import("./LibrarySections"))
 
 /**
  * The style guide, built from the real components. The top of the page is
@@ -53,33 +52,31 @@ export function StyleGuidePage() {
               <TypeSection />
               <SpaceSection />
             </div>
-            <ComponentsSheet />
-
-            {/* On phones the phone samples span the screen, past the card's padding (c5Samples.tsx). */}
-            <GuideCard title="More components and states" className="gap-7 max-sm:overflow-visible">
-              <GuideValue className="-mt-3.5">
-                The rest of the library, for review: more states, and the components the sheet above leaves out.
-              </GuideValue>
-              <ControlsSection />
-              <NavigationSection />
-            </GuideCard>
-            <GuideCard title="C5 components" className="gap-7 max-sm:overflow-visible">
-              <EditorChromeSection />
-              <CanvasSection />
-            </GuideCard>
-            <GuideCard title="Comments" className="gap-7 max-sm:overflow-visible">
-              <CommentsSection />
-            </GuideCard>
-            <GuideCard title="Pages outside a project" className="gap-7">
-              <HomeSection />
-            </GuideCard>
-            <GuideCard title="Chat card" className="gap-7">
-              <ChatCardSection />
-            </GuideCard>
+            <Library />
           </div>
           <div ref={portal} />
         </main>
       </DottedPage>
     </GuidePortal>
+  )
+}
+
+/** The component sections once their chunk has loaded: a card with a loading line until then, and Try again when it fails. */
+function Library() {
+  const { module, error, retry } = useModule(librarySections, true)
+  if (module) {
+    const { LibrarySections } = module
+    return <LibrarySections />
+  }
+  return (
+    <GuideCard title="Components and states">
+      {error ? (
+        <Banner tone="danger" action={<BannerAction onClick={retry}>Try again</BannerAction>}>
+          The components could not load.
+        </Banner>
+      ) : (
+        <LoadingLine label="Loading the components" />
+      )}
+    </GuideCard>
   )
 }

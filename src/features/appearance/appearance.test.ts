@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { getAppearanceTokens, parseAppearanceSetting, themes } from './index';
 import { buildPaletteCss, COLOR_TOKEN_KEYS } from './paletteCss';
 import { palettes } from './palettes';
-import { tokenProperty } from './tokens';
+import { APPEARANCE_STORAGE_KEY, DEFAULT_THEME, tokenProperty } from './tokens';
 
 const luminance = (hex: string) => {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -140,6 +140,12 @@ describe('palettes.css', () => {
     expect(declarations(':root')).toEqual(expected('supabase-green', 'dark'));
     expect(css).toContain('@media (prefers-color-scheme: light) {\n  :root:not([data-scheme]) {');
     expect(declarations('  :root:not([data-scheme])')).toEqual(expected('supabase-green', 'light'));
+  });
+
+  test("index.html's shell reads the saved appearance under the app's key, with the app's default palette", () => {
+    const html = readFileSync(new URL('../../../index.html', import.meta.url), 'utf8');
+    expect(html).toContain(`localStorage.getItem("${APPEARANCE_STORAGE_KEY}")`);
+    expect(html).toContain(`: "${DEFAULT_THEME}"`);
   });
 });
 

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Banner } from "@/features/design-system"
 import { accountName, DISPLAY_NAME_KEY, NAME_MAX_LENGTH } from "@/features/auth/accountName"
 import { useAuth } from "@/features/auth/useAuth"
-import { createClient } from "@/lib/supabase/client"
+import { loadedClient } from "@/lib/supabase/client"
 import { DeleteAccountDialog } from "./DeleteAccountDialog"
 
 export function AccountSection({ onDeleted }: { onDeleted: () => void }) {
@@ -37,7 +37,7 @@ function YourName({ user, onDeleted }: { user: User; onDeleted: () => void }) {
     if (saving || name === saved) return
     setSaving(true)
     setNotice(null)
-    const { error } = await createClient().auth.updateUser({ data: { [DISPLAY_NAME_KEY]: name || null } })
+    const { error } = await loadedClient().auth.updateUser({ data: { [DISPLAY_NAME_KEY]: name || null } })
     setSaving(false)
     if (error) {
       setNotice({ tone: "danger", text: `Could not save your name: ${error.message}` })

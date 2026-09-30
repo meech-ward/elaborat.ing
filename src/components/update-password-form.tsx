@@ -5,12 +5,12 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; after updating it goes to the home page; it sits in the sign-in
- * pages' card, with the app's colours and banners.
+ * pages' card, with the app's colours and banners; the client loads on submit.
  */
 import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
+import { loadClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,12 +22,12 @@ export function UpdatePasswordForm({ className, ...props }: React.ComponentProps
   const [isLoading, setIsLoading] = useState(false)
 
   const handleForgotPassword = async (e: React.FormEvent) => {
-    const supabase = createClient()
     e.preventDefault()
     setIsLoading(true)
     setError(null)
 
     try {
+      const supabase = await loadClient()
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
       // Update this route to redirect to an authenticated route. The user already has an active session.

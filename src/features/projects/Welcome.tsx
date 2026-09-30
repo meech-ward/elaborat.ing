@@ -1,8 +1,13 @@
 import { Link } from "@tanstack/react-router"
 import { buttonVariants } from "@/components/ui/button"
-import { Callout, ScreenPreview } from "@/features/design-system"
+import { Callout } from "@/features/design-system"
 import { projectHref } from "@/features/navigation"
 import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
+import { moduleLoader, useModule } from "@/lib/moduleLoader"
+
+// The picture of the app is most of the page's code (the library's editor
+// pieces, drawn small), so it loads after the first paint.
+const screenPreview = moduleLoader(() => import("@/features/design-system/ui/ScreenPreview"))
 
 /**
  * The home page for someone signed out: what the app is in a line, a way to
@@ -45,7 +50,23 @@ export function Welcome({ configured = true }: { configured?: boolean }) {
           <Callout>This copy of elaborat.ing is not connected to a Supabase project yet.</Callout>
         )}
       </div>
-      <ScreenPreview />
+      <Picture />
     </section>
+  )
+}
+
+/**
+ * The picture of the app once its chunk has loaded, in a box that keeps its
+ * size (1440 by 900, scaled to the column), with its empty frame until then,
+ * so nothing moves when it appears. It is decorative: a failed load leaves
+ * the frame.
+ */
+function Picture() {
+  const { module } = useModule(screenPreview, true)
+  const ScreenPreview = module?.ScreenPreview
+  return (
+    <div className="aspect-[1440/900] w-full">
+      {ScreenPreview ? <ScreenPreview /> : <div aria-hidden="true" className="size-full rounded-panel border border-border bg-(--bg) shadow-panel" />}
+    </div>
   )
 }

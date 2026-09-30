@@ -13,7 +13,7 @@ import { browserSupportsPasskeys, passkeyErrorMessage } from "@/features/auth/pa
 import { signInOptions } from "@/features/auth/providers"
 import { useAuth } from "@/features/auth/useAuth"
 import { parseConfig } from "@/lib/config"
-import { createClient } from "@/lib/supabase/client"
+import { loadedClient } from "@/lib/supabase/client"
 
 type List = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; passkeys: PasskeyListItem[] }
 
@@ -53,7 +53,7 @@ function Passkeys() {
 
   useEffect(() => {
     let alive = true
-    void createClient()
+    void loadedClient()
       .auth.passkey.list()
       .then(({ data, error }) => {
         if (alive) setList(error ? { status: "error", message: error.message } : { status: "ready", passkeys: data ?? [] })
@@ -71,7 +71,7 @@ function Passkeys() {
   const add = async () => {
     setAdding(true)
     setNotice(null)
-    const { data, error } = await createClient().auth.registerPasskey()
+    const { data, error } = await loadedClient().auth.registerPasskey()
     setAdding(false)
     if (error || !data) {
       setNotice({ tone: "danger", text: error ? passkeyErrorMessage(error, "add") : "No passkey was added." })
@@ -84,7 +84,7 @@ function Passkeys() {
   const remove = async (passkey: PasskeyListItem) => {
     setRemoving(passkey.id)
     setNotice(null)
-    const { error } = await createClient().auth.passkey.delete({ passkeyId: passkey.id })
+    const { error } = await loadedClient().auth.passkey.delete({ passkeyId: passkey.id })
     setRemoving(null)
     if (error) {
       setNotice({ tone: "danger", text: `Could not remove the passkey: ${error.message}` })

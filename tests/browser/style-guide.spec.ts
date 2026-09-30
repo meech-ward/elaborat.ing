@@ -98,6 +98,8 @@ for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme })
     await page.goto(styleGuideUrl)
     await expect(page.locator("[data-token]").first()).toBeVisible()
+    // The component sections load after the foundations: check the whole page.
+    await expect(page.getByRole("heading", { level: 2, name: "Chat card" })).toBeVisible()
     await expect(page.locator("html")).toHaveAttribute("data-scheme", scheme)
     await expectAxeClean(page)
   })

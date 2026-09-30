@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react"
 import { readOfflineAccount, useAuth } from "@/features/auth"
 import { parseConfig } from "@/lib/config"
-import { createClient } from "@/lib/supabase/client"
+import { clientLoaded, loadedClient } from "@/lib/supabase/client"
 import { deleteAccountProjects, IndexedProjectDatabase } from "@/features/project-storage/database"
 import { ProjectFileStore } from "@/features/project-storage/fileStore"
 import { ProjectLibrary, offlineRemote, type LibraryState } from "@/features/project-storage/library"
@@ -30,7 +30,9 @@ export function useProjectAccount(): AccountResult {
   if (auth.status === "unconfigured") return { kind: "unconfigured" }
   if (auth.status === "loading") return { kind: "loading" }
   if (auth.status === "ready") return { kind: "account", account: { userId: auth.user.id, email: auth.email, online: true } }
-  if (auth.status === "error") {
+  // The account last signed in here, while the server cannot be reached. Not
+  // when the client itself could not load: the project page needs it.
+  if (auth.status === "error" && clientLoaded()) {
     const remembered = readOfflineAccount()
     if (remembered && remembered.supabaseUrl === parseConfig(import.meta.env).supabaseUrl) {
       return { kind: "account", account: { userId: remembered.userId, email: remembered.email, online: false } }
@@ -49,7 +51,7 @@ export function libraryFor(account: ProjectAccount): ProjectLibrary {
   let library = libraries.get(key)
   if (!library) {
     database ??= new IndexedProjectDatabase()
-    library = new ProjectLibrary(database, account.online ? new SupabaseProjectRemote(createClient()) : offlineRemote, partition)
+    library = new ProjectLibrary(database, account.online ? new SupabaseProjectRemote(loadedClient()) : offlineRemote, partition)
     libraries.set(key, library)
   }
   return library

@@ -4,14 +4,14 @@
  * Licensed under the Apache License 2.0
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
- * app's modules.
+ * app's modules; it awaits the app's client, which loads on demand.
  */
 import { isAuthSessionMissingError } from '@supabase/supabase-js'
 import type { OAuthAuthorizationDetails } from '@supabase/supabase-js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { safeNextPath } from '@/lib/safe-next-path'
-import { createClient } from '@/lib/supabase/client'
+import { loadClient } from '@/lib/supabase/client'
 
 export type OAuthConsentDecision = 'approve' | 'deny'
 
@@ -53,7 +53,7 @@ const useOAuthConsent = ({
         return
       }
 
-      const supabase = createClient()
+      const supabase = await loadClient()
       const {
         data: { user },
         error: userError,
@@ -110,7 +110,7 @@ const useOAuthConsent = ({
       isDeciding.current = true
       setDecision(action)
       setError(null)
-      const supabase = createClient()
+      const supabase = await loadClient()
       const result =
         action === 'approve'
           ? await supabase.auth.oauth.approveAuthorization(authorizationId, {

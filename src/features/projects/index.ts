@@ -1,4 +1,5 @@
 export { ProjectPage } from "./ProjectPage"
-export { ProjectRoute, ProjectsHome } from "./ProjectsHome"
+export { ProjectRoute } from "./ProjectRoute"
+export { ProjectsHome } from "./ProjectsHome"
 export { statusLabel } from "./statusLabel"
 export { useProjectAccount, type ProjectAccount } from "./account"

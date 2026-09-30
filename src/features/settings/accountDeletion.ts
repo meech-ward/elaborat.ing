@@ -8,7 +8,7 @@ import { z } from "zod"
 import { signOutAfter } from "@/features/auth/useAuth"
 import { classify } from "@/features/project-storage/remote"
 import { forgetAccountOnDevice } from "@/features/projects/account"
-import { createClient } from "@/lib/supabase/client"
+import { loadedClient } from "@/lib/supabase/client"
 import { deleteAccount, type DeletionOutcome } from "./deletionFlow"
 
 export const DeletionSummary = z.object({
@@ -24,7 +24,7 @@ export async function loadDeletionSummary(): Promise<DeletionSummary> {
   const offline = "Checking your projects needs a connection."
   let response
   try {
-    response = await createClient().rpc("account_deletion_summary")
+    response = await loadedClient().rpc("account_deletion_summary")
   } catch {
     throw new Error(offline)
   }
@@ -36,7 +36,7 @@ export async function loadDeletionSummary(): Promise<DeletionSummary> {
 }
 
 async function deleteOnServer(email: string): Promise<void> {
-  const { data, error } = await createClient().functions.invoke("delete-account", { body: { email } })
+  const { data, error } = await loadedClient().functions.invoke("delete-account", { body: { email } })
   if (error instanceof FunctionsHttpError) {
     const body: unknown = await (error.context as Response).json().catch(() => null)
     const parsed = z.object({ error: z.string() }).safeParse(body)

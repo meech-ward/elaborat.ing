@@ -1,4 +1,4 @@
-import { FunctionsHttpError, type SupabaseClient } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 import { ProjectPath, Role, SaveChange } from "./model"
 
@@ -125,6 +125,9 @@ export function classify(error: PostgrestLikeError): RemoteError {
 
 /** A refusal from an Edge Function, whose body is `{ error }`, in the same terms as the database's. */
 async function classifyFunctionError(error: unknown): Promise<RemoteError> {
+  // Already loaded: the client that made the request came from it. A static
+  // import would put supabase-js in every page's first paint.
+  const { FunctionsHttpError } = await import("@supabase/supabase-js")
   if (!(error instanceof FunctionsHttpError)) return new RemoteError("network", error instanceof Error ? error.message : String(error))
   const response = error.context as Response
   const body: unknown = await response.json().catch(() => null)

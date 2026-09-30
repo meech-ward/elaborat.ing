@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Banner } from "@/features/design-system"
-import { createClient } from "@/lib/supabase/client"
+import { loadClient } from "@/lib/supabase/client"
 import { emailLinkRedirect } from "./returnPath"
 
 /**
@@ -11,8 +11,8 @@ import { emailLinkRedirect } from "./returnPath"
  * the same email carries a code that signs in on the page instead. The
  * sign-in page continues to `next` once there is a session, however it came.
  */
-export function sendSignInEmail(email: string, next: string | null) {
-  return createClient().auth.signInWithOtp({
+export async function sendSignInEmail(email: string, next: string | null) {
+  return (await loadClient()).auth.signInWithOtp({
     email,
     options: { emailRedirectTo: emailLinkRedirect(window.location.origin, next) },
   })
@@ -30,7 +30,7 @@ export function EmailCodeStep({ email, next, onBack }: { email: string; next: st
     setVerifying(true)
     setError(null)
     setResent(false)
-    const { error } = await createClient().auth.verifyOtp({ email, token: code.trim(), type: "email" })
+    const { error } = await (await loadClient()).auth.verifyOtp({ email, token: code.trim(), type: "email" })
     setVerifying(false)
     if (error) setError(`That code did not work (${error.message}). Check it and try again, or send a new one.`)
   }

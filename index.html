@@ -4,9 +4,55 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>elaborat.ing</title>
+    <script>
+      // The saved palette and light or dark (src/features/appearance), set
+      // before the first paint so the shell below draws in them. The app sets
+      // the same attributes once it starts.
+      try {
+        const saved = JSON.parse(localStorage.getItem("elaborating.appearance.v1") || "{}") || {};
+        const mode = saved.mode || saved.scheme;
+        const scheme = mode === "light" || mode === "dark" ? mode : matchMedia("(prefers-color-scheme: dark)").matches === false ? "light" : "dark";
+        const root = document.documentElement;
+        root.setAttribute("data-theme", typeof saved.theme === "string" ? saved.theme : "supabase-green");
+        root.setAttribute("data-scheme", scheme);
+        root.classList.toggle("dark", scheme === "dark");
+      } catch {
+        // No storage: the stylesheet's default palette follows the device.
+      }
+    </script>
+    <style>
+      /* The shell, drawn with no JavaScript while the app downloads: the dotted
+         page in the palette's colours (palettes.css) and the app's mark. The
+         app replaces it when it starts. */
+      .app-shell {
+        display: grid;
+        place-items: center;
+        min-height: 100svh;
+        background-color: var(--bg);
+        background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+        background-size: 22px 22px;
+        color: var(--accent);
+      }
+      .app-shell svg {
+        width: 28px;
+        height: 28px;
+        animation: app-shell-pulse 1.2s ease-in-out infinite alternate;
+      }
+      @keyframes app-shell-pulse {
+        from { opacity: 0.35; }
+        to { opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .app-shell svg { animation: none; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-shell" role="status" aria-label="Loading elaborat.ing">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12Z" /></svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

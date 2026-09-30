@@ -7,14 +7,15 @@ import type { ProjectLibrary } from "@/features/project-storage/library"
 import { RemoteError } from "@/features/project-storage/remote"
 import { downloadBlob } from "@/features/workbench/download"
 import { fileStoreFor } from "./account"
-import { filesToDownload, zipName, zipProject } from "./projectArchive"
 
 type Snapshot = Awaited<ReturnType<ReturnType<typeof fileStoreFor>["snapshot"]>>
 
 /** A project with nothing saved in it: told as a notice, since nothing went wrong. */
 class NothingToDownload extends Error {}
 
-function save(snapshot: Snapshot, title: string, drafts: boolean) {
+/** Builds the .zip; the archive code (with fflate) loads on the first download. */
+async function save(snapshot: Snapshot, title: string, drafts: boolean) {
+  const { filesToDownload, zipName, zipProject } = await import("./projectArchive")
   const files = filesToDownload(snapshot.files, drafts)
   if (files.length === 0 && snapshot.folders.length === 0) throw new NothingToDownload("Nothing to download: this project has no saved files or folders yet.")
   const zip = zipProject(files, snapshot.folders)
@@ -46,7 +47,7 @@ export function useProjectDownload(library: ProjectLibrary, onError: (message: s
       if (!found) throw new Error("This project is not on this device or the server.")
       const snapshot = await fileStoreFor(library, projectId).snapshot()
       if (snapshot.files.some((file) => file.draft !== null)) setAsking({ title, snapshot })
-      else save(snapshot, title, false)
+      else await save(snapshot, title, false)
     } catch (cause) {
       report(cause)
     }
@@ -58,11 +59,7 @@ export function useProjectDownload(library: ProjectLibrary, onError: (message: s
       drafts={asking.snapshot.files.filter((file) => file.draft !== null).length}
       onDownload={(drafts) => {
         setAsking(null)
-        try {
-          save(asking.snapshot, asking.title, drafts)
-        } catch (cause) {
-          report(cause)
-        }
+        save(asking.snapshot, asking.title, drafts).catch(report)
       }}
       onClose={() => setAsking(null)}
     />

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Banner } from "@/features/design-system"
 import { parseConfig } from "@/lib/config"
-import { createClient } from "@/lib/supabase/client"
+import { loadClient } from "@/lib/supabase/client"
 import { browserSupportsPasskeys, passkeyErrorMessage } from "./passkeys"
 import { PROVIDERS, signInOptions, type ProviderId, type SignInOptions } from "./providers"
 import { emailLinkRedirect } from "./returnPath"
@@ -39,7 +39,7 @@ export function ProviderButtons({ next }: { next: string | null }) {
   const signInWithPasskey = async () => {
     setError(null)
     setSigningIn(true)
-    const { error } = await createClient().auth.signInWithPasskey()
+    const { error } = await (await loadClient()).auth.signInWithPasskey()
     if (error) {
       setSigningIn(false)
       setError(passkeyErrorMessage(error, "sign-in"))
@@ -48,7 +48,7 @@ export function ProviderButtons({ next }: { next: string | null }) {
   }
   const continueWith = async (provider: ProviderId) => {
     setError(null)
-    const { error } = await createClient().auth.signInWithOAuth({
+    const { error } = await (await loadClient()).auth.signInWithOAuth({
       provider,
       options: { redirectTo: emailLinkRedirect(window.location.origin, next) },
     })

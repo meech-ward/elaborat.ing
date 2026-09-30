@@ -65,7 +65,6 @@ const LIBRARY_CHUNKS: Rolldown.CodeSplittingGroup[] = [
   { name: "preload-helper", test: /^\0vite\/preload-helper/, priority: 40 },
   { ...firstPaint("react", pkg("react|react-dom|scheduler")), priority: 30 },
   firstPaint("router", pkg("@tanstack")),
-  firstPaint("supabase", pkg("@supabase")),
   firstPaint("ui", pkg(`${UI}|lucide-react`)),
   firstPaint("zod", pkg("zod")),
   // The rest of the component libraries, with their dependencies, by what
@@ -77,6 +76,8 @@ const LIBRARY_CHUNKS: Rolldown.CodeSplittingGroup[] = [
   // language shows (code blocks in a note too), as files of their own.
   later("monaco", /[\\/]node_modules[\\/]monaco-editor[\\/](?!esm[\\/]vs[\\/]languages[\\/]definitions[\\/][^\\/]+[\\/](?!register\.js$))/),
   later("prettier", pkg("prettier")),
+  // The session check loads it (src/lib/supabase/client.ts), once the page has drawn.
+  later("supabase", pkg("@supabase")),
   later("prosemirror", pkg("prosemirror-[\\w-]+")),
   // The MDX compiler, with its parsers (micromark, acorn) as dependencies.
   later("mdx", pkg("@mdx-js|remark-[\\w-]+|micromark[\\w-]*|mdast-util-[\\w-]+|unified")),

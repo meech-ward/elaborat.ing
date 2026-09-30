@@ -122,9 +122,9 @@ const FEATURES: Feature[] = [
     modules: [/node_modules\/@terrastruct\//, /src\/features\/structured\//, /src\/features\/workbench\/(DiagramView|diagramArtifact|diagramEmbed)\./],
     note: "the diagram view, then on the first compile D2's worker, its wasm and ELK layout script, and its measuring font; Excalidraw, as for a drawing, when the canvas shows",
   },
-  { name: "The command palette", start: [], modules: [/node_modules\/cmdk\//, /QuickOpen\.tsx$/, /FileSearch\.tsx$/, /contentSearch\.ts$/] },
-  { name: "Settings", start: [], modules: [/src\/features\/settings\//, /src\/features\/appearance\/.*\.tsx$/] },
-  { name: "Comments", start: [], modules: [/src\/features\/comments\//] },
+  { name: "The command palette", start: ["src/features/design-system/ui/QuickOpenList.tsx"], modules: [/node_modules\/cmdk\//, /QuickOpen(List)?\.tsx$/, /FileSearch\.tsx$/, /contentSearch\.ts$/] },
+  { name: "Settings", start: ["src/features/settings/SettingsSections.tsx"], modules: [/src\/features\/settings\//, /src\/features\/appearance\/.*\.tsx$/] },
+  { name: "Comments", start: ["src/features/comments/ui/CommentsSurfaceView.tsx"], modules: [/src\/features\/comments\//], note: "loads once the project has shown" },
 ]
 
 /**

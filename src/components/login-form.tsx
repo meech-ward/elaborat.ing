@@ -8,12 +8,12 @@
  * `next` path is given;
  * it is one card that emails a sign-in link and code first, with the password
  * as the other option and the enabled providers below; messages and links
- * are the app's banners and link buttons.
+ * are the app's banners and link buttons; the client loads on submit.
  */
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
-import { createClient } from '@/lib/supabase/client'
+import { loadClient } from '@/lib/supabase/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,7 +49,7 @@ export function LoginForm({ next }: { next: string | null }) {
 
     try {
       if (usePassword) {
-        const { error } = await createClient().auth.signInWithPassword({ email, password })
+        const { error } = await (await loadClient()).auth.signInWithPassword({ email, password })
         if (error) throw error
         // Signed in: the sign-in page moves on once the session is confirmed
         // (routes/sign-in.tsx), so there is one navigation, not two racing.

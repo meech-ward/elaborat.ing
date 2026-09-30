@@ -28,12 +28,20 @@ declare module "@tanstack/react-router" {
 const root = document.getElementById("root")
 if (!root) throw new Error("Missing #root element")
 
-createRoot(root).render(
-  <StrictMode>
-    <AppearanceProvider>
-      <SettingsProvider>
-        <RouterProvider router={router} />
-      </SettingsProvider>
-    </AppearanceProvider>
-  </StrictMode>,
-)
+// index.html's shell stays on screen until the first page's code has loaded,
+// so the app replaces it with that page, never with a blank one. A failed
+// load renders anyway, and the router shows the error.
+void router
+  .load()
+  .catch(() => {})
+  .then(() =>
+    createRoot(root).render(
+      <StrictMode>
+        <AppearanceProvider>
+          <SettingsProvider>
+            <RouterProvider router={router} />
+          </SettingsProvider>
+        </AppearanceProvider>
+      </StrictMode>,
+    ),
+  )

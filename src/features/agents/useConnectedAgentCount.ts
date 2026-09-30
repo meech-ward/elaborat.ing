@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { loadClient } from "@/lib/supabase/client"
 
 /**
  * How many agents the signed-in person has connected, from the same list the
@@ -11,8 +11,8 @@ export function useConnectedAgentCount(enabled: boolean): number | null {
   useEffect(() => {
     if (!enabled) return
     let alive = true
-    createClient()
-      .auth.oauth.listGrants()
+    loadClient()
+      .then((client) => client.auth.oauth.listGrants())
       .then(
         ({ data, error }) => alive && !error && setCount(data?.length ?? 0),
         () => undefined,
