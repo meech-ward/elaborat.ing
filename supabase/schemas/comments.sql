@@ -696,7 +696,9 @@ grant execute on function public.reply_comment(uuid, uuid, text, bigint) to auth
 
 -- Turn Ask an agent on or off for a thread. Only the thread's creator, and
 -- only as a person: an agent never asks itself, and no one asks another
--- person's agents. Setting it to what it is changes nothing.
+-- person's agents. Setting it to what it is changes nothing. Turning it on
+-- wakes their agents watching for comments, as a comment that asks does
+-- (queue_ask_agent_events in events.sql).
 create function private.set_comment_ask_agent(thread_id uuid, ask boolean)
 returns jsonb
 language plpgsql

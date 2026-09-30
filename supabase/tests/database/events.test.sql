@@ -6,7 +6,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(76);
+select plan(98);
 
 -- Alice owns the project; Bob is an editor. Frank has nothing to do with it.
 -- Each has an agent connected (Claude); Alice also has a second one.
@@ -126,10 +126,12 @@ returns jsonb
 language sql
 as $$ select private.comment_event_delivery(pg_temp.sub(n), comment) $$;
 
+-- Comments written in one transaction share a time, so the opening comment is
+-- the one that is not a reply (pg_temp.r).
 create function pg_temp.opening(n integer)
 returns uuid
 language sql
-as $$ select id from public.comments where thread_id = pg_temp.t(n) order by created_at, id limit 1 $$;
+as $$ select id from public.comments where thread_id = pg_temp.t(n) and id::text not like 'c1000000-%' $$;
 
 ------------------------------------------------------------------------------
 -- Grants.
@@ -255,6 +257,51 @@ select is(
 );
 
 ------------------------------------------------------------------------------
+-- Refreshing a watch on a file that was renamed.
+
+set local role authenticated;
+select pg_temp.act('alice');
+select lives_ok(
+  $$ select public.save_files(pg_temp.project(), gen_random_uuid(), '[{"op":"put","path":"notes/c.md","content":"C"}]') $$,
+  'Alice saves notes/c.md'
+);
+reset role;
+select set_config('test.file_c', pg_temp.file_id('notes/c.md')::text, true);
+set local role service_role;
+select lives_ok($$ select pg_temp.subscribe(20, 'alice', 'claude', 'notes/c.md') $$, 'Her agent watches it');
+reset role;
+set local role authenticated;
+select lives_ok(
+  $$ select public.save_files(pg_temp.project(), gen_random_uuid(), jsonb_build_array(jsonb_build_object(
+       'op', 'move', 'path', 'notes/c.md', 'to', 'notes/d.md',
+       'base_version', (select version from public.project_files where project_id = pg_temp.project() and path = 'notes/c.md')))) $$,
+  'She renames it to notes/d.md'
+);
+reset role;
+set local role service_role;
+select lives_ok($$ select pg_temp.subscribe(20, 'alice', 'claude', 'notes/c.md') $$,
+  'Her agent refreshes the watch with the path it subscribed with');
+select throws_ok(
+  $$ select public.prepare_event_subscription(pg_temp.id('bob'), pg_temp.client('claude'), pg_temp.sub(20), pg_temp.project(), 'notes/c.md', 'https://receiver.example.com/cb') $$,
+  '22023', 'No such file in this project', 'Someone else using that subscription''s id still needs the file to exist'
+);
+reset role;
+select is((select file_id::text from public.event_subscriptions where id = pg_temp.sub(20)), current_setting('test.file_c'),
+  'The refreshed watch is still on the renamed file');
+set local role authenticated;
+select lives_ok(
+  $$ select public.save_files(pg_temp.project(), gen_random_uuid(), '[{"op":"put","path":"notes/c.md","content":"Another C"}]') $$,
+  'She saves a new notes/c.md'
+);
+reset role;
+set local role service_role;
+select lives_ok($$ select pg_temp.subscribe(20, 'alice', 'claude', 'notes/c.md') $$, 'Her agent refreshes again');
+reset role;
+select is((select file_id::text from public.event_subscriptions where id = pg_temp.sub(20)), current_setting('test.file_c'),
+  'and the watch stays on the renamed file, not the new one at its old path');
+delete from public.event_subscriptions where id = pg_temp.sub(20);
+
+------------------------------------------------------------------------------
 -- Who sees subscriptions.
 
 set local role authenticated;
@@ -343,6 +390,49 @@ reset role;
 select is(pg_temp.queued(2), 1::bigint, 'An expired watch gets nothing new');
 select is(pg_temp.queued(3), 1::bigint, 'nor does one whose deliveries failed');
 update public.event_subscriptions set delivery_failed_at = null where id = pg_temp.sub(3);
+
+------------------------------------------------------------------------------
+-- Turning Ask an agent on for a thread that exists.
+
+set local role authenticated;
+select pg_temp.act('alice');
+select lives_ok($$ select public.reply_comment(pg_temp.t(2), pg_temp.r(10), 'And the summary.') $$,
+  'Alice replies on her thread that does not ask an agent');
+select pg_temp.act('alice', 'claude');
+select lives_ok($$ select public.reply_comment(pg_temp.t(2), pg_temp.r(11), 'Noted.') $$, 'then her agent does');
+select pg_temp.act('bob');
+select lives_ok($$ select public.reply_comment(pg_temp.t(2), pg_temp.r(12), 'Me too.') $$, 'and Bob');
+reset role;
+-- One transaction gives them all the same time: space them a minute apart, in order.
+update public.comments c
+set created_at = now() - interval '1 minute' * (3 - coalesce(array_position(array[pg_temp.r(10), pg_temp.r(11), pg_temp.r(12)], c.id), 0))
+where c.thread_id = pg_temp.t(2);
+select set_config('test.requests', pg_temp.requests()::text, true);
+select set_config('test.queued1', pg_temp.queued(1)::text, true);
+select set_config('test.queued3', pg_temp.queued(3)::text, true);
+set local role authenticated;
+select pg_temp.act('alice');
+select lives_ok($$ select public.set_comment_ask_agent(pg_temp.t(2), true) $$, 'Alice turns Ask an agent on for it');
+reset role;
+select is(pg_temp.queued(1) - current_setting('test.queued1')::bigint, 1::bigint, 'It queues an event for her project watch');
+select is(
+  (select message ->> 'commentId' from pgmq.q_comment_events
+   where message ->> 'subscriptionId' = pg_temp.sub(1) order by msg_id desc limit 1),
+  pg_temp.r(10)::text,
+  'with her latest comment on the thread as a person, not her agent''s or Bob''s'
+);
+select is(pg_temp.queued(3) - current_setting('test.queued3')::bigint, 0::bigint, 'Bob''s agent gets nothing');
+select is(pg_temp.requests() - current_setting('test.requests')::bigint, 1::bigint, 'and the sender is woken once');
+select is(pg_temp.delivery(1, pg_temp.r(10)) ->> 'deliver', 'true', 'Delivery checks it again and sends it');
+
+select set_config('test.queued', pg_temp.queued_total()::text, true);
+set local role authenticated;
+select lives_ok($$ select public.set_comment_ask_agent(pg_temp.t(2), false) $$, 'She turns it off');
+select lives_ok($$ select public.set_comment_ask_agent(pg_temp.t(4), false) $$, 'and off for her resolved thread');
+select lives_ok($$ select public.set_comment_ask_agent(pg_temp.t(4), true) $$, 'then on again');
+reset role;
+select is(pg_temp.queued_total() - current_setting('test.queued')::bigint, 0::bigint,
+  'Turning it off queues nothing, and neither does turning it on for a resolved thread');
 
 ------------------------------------------------------------------------------
 -- What delivery checks again.

@@ -37,7 +37,8 @@ export const COMMENT_CREATED = {
   name: 'comment.created',
   description:
     'A comment the user asked an agent about in an elaborat.ing project: a new thread they started with Ask an agent on, ' +
-    'or their reply on their own open thread that has it on. Only the user\'s own comments, never other people\'s or an agent\'s. ' +
+    'their reply on their own open thread that has it on, or their latest comment on their own open thread when they turn it on. ' +
+    'Only the user\'s own comments, never other people\'s or an agent\'s. ' +
     'Each event has the thread and a short excerpt; read the file and the thread with read_file and list_comments before acting.',
   delivery: ['webhook'],
   inputSchema: {

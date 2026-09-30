@@ -688,8 +688,10 @@ unchanged.
     person, on their own open thread that has it on (the rule of
     `list_comments` with `ask_agent`). Another person's comment never
     matches, and a comment an agent wrote never does, so an agent's reply
-    cannot wake anything. Turning Ask an agent on for an existing thread
-    writes no comment and sends nothing; `list_comments` finds it.
+    cannot wake anything. Turning Ask an agent on for an existing open
+    thread asks too: it writes no comment, so the event carries the
+    author's latest comment on the thread written as a person. Turning it
+    off sends nothing.
   - **Subscribing.** The server checks the event, its arguments and the
     `whsec_` secret (24 to 64 bytes), checks the callback URL, then asks the
     database whether the person can read the project, the file exists and
@@ -702,7 +704,9 @@ unchanged.
     (a local change to the block's server: it calls them with the
     service role client). The id is a hash of the person, the agent, the
     callback, the event and its arguments (canonical JSON), so subscribing
-    again refreshes the same one. It lives what the agent asked (`ttlMs`),
+    again refreshes the same one. A watched file is found by its path only
+    the first time and kept by its id, so a refresh after a rename still
+    works and stays on that file. It lives what the agent asked (`ttlMs`),
     at least 10 minutes and at most 7 days, and 7 days when it asked for no
     expiry; `refreshBefore` is that time. A new secret on refresh replaces the
     old one, which is still signed with for 15 minutes. Events have no
@@ -711,9 +715,10 @@ unchanged.
     select their own, without the callback or secrets; nobody writes it
     through the API. Signing secrets are in Vault and leave it with their
     subscription. Expired subscriptions are removed by the sweep below.
-  - **Delivery.** A trigger on `comments` queues one message per matching
-    live subscription in the `comment_events` pgmq queue and, only when it
-    queued one, wakes `send-events` with pg_net (with the database's secret
+  - **Delivery.** Triggers on `comments` and on `comment_threads` (Ask an
+    agent turned on) queue one message per matching live subscription in the
+    `comment_events` pgmq queue and, only when they queued one, wake
+    `send-events` with pg_net (with the database's secret
     key from Vault, as `embed` is called). The function checks each event
     again (`private.comment_event_delivery`: the subscription is live, the
     agent is still connected, the person can still read the project, the

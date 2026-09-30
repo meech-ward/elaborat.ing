@@ -6,14 +6,15 @@
 -- a signing secret. A subscription belongs to the person and the agent (OAuth
 -- client) that made it. A comment wakes only its own author's agents, and
 -- only when its author asked an agent: their own new thread with Ask an agent
--- on, or their own reply, as a person, on their own open thread that has it on
--- (the rule list_comments's ask_agent filter follows). Comments an agent
--- wrote never wake anything, so an agent's reply cannot start a loop, and no
--- one's comment ever reaches another person's agent.
+-- on, their own reply, as a person, on their own open thread that has it on,
+-- or turning it on for their own open thread (the rule list_comments's
+-- ask_agent filter follows). Comments an agent wrote never wake anything, so
+-- an agent's reply cannot start a loop, and no one's comment ever reaches
+-- another person's agent.
 --
--- A trigger on comments queues one message per matching subscription in the
--- comment_events pgmq queue and wakes the send-events Edge Function with
--- pg_net. The function checks it all again when it delivers
+-- Triggers on comments and threads queue one message per matching
+-- subscription in the comment_events pgmq queue and wake the send-events Edge
+-- Function with pg_net. The function checks it all again when it delivers
 -- (private.comment_event_delivery), signs the event and posts it. A failed
 -- delivery comes back when its visibility timeout ends; a pg_cron job looks
 -- once a minute and wakes the function only when one is due.
@@ -151,7 +152,10 @@ revoke all on function private.agent_connected(uuid, text) from public, anon, au
 -- project, the file (when one is named) is in it, and they have room for
 -- another. Returns the file's id and whether this agent verified this callback
 -- in the last 10 minutes, so subscribing again does not challenge it again.
--- Raises with the reason otherwise.
+-- Raises with the reason otherwise. The path is looked up only the first time:
+-- refreshing a subscription (the same id, person and agent) keeps the file it
+-- found then, so the watch follows that file through a rename and never moves
+-- to another file created at the old path.
 create function private.prepare_event_subscription(
   user_id uuid, client_id text, subscription_id text, project_id uuid, path text, callback_url text
 )
@@ -173,8 +177,15 @@ begin
     raise exception 'Project unavailable' using errcode = '42501';
   end if;
   if prepare_event_subscription.path is not null then
-    select f.id into found_file from public.project_files f
-    where f.project_id = prepare_event_subscription.project_id and f.path = prepare_event_subscription.path;
+    select s.file_id into found_file from public.event_subscriptions s
+    where s.id = prepare_event_subscription.subscription_id
+      and s.user_id = prepare_event_subscription.user_id
+      and s.client_id = prepare_event_subscription.client_id
+      and s.project_id = prepare_event_subscription.project_id;
+    if found_file is null then
+      select f.id into found_file from public.project_files f
+      where f.project_id = prepare_event_subscription.project_id and f.path = prepare_event_subscription.path;
+    end if;
     if found_file is null then
       raise exception 'No such file in this project' using errcode = '22023';
     end if;
@@ -380,12 +391,49 @@ $$;
 
 revoke all on function private.wake_event_sender() from public, anon, authenticated;
 
--- Queues comment.created for every live subscription of the comment's author
--- that it matches, and wakes the sender when there is one. The rule: a person
--- wrote it (not an agent), on their own open thread that asks an agent, so it
--- is either that thread's opening comment or their own reply to it. When the
--- opening comment is written the thread already asks, and a reply is written
--- before the thread records it was asked again, so both are seen here.
+-- Queues comment.created for one comment, whose person asked an agent, for
+-- every live subscription of that person's that watches its project or its
+-- thread's file, and wakes the sender when there is one. Never anyone else's.
+create function private.queue_comment_event(author_id uuid, project_id uuid, file_id uuid, comment_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  subscription record;
+  queued boolean := false;
+begin
+  for subscription in
+    select s.id from public.event_subscriptions s
+    where s.user_id = queue_comment_event.author_id
+      and s.project_id = queue_comment_event.project_id
+      and s.event = 'comment.created'
+      and (s.file_id is null or s.file_id = queue_comment_event.file_id)
+      and s.expires_at > now()
+      and s.delivery_failed_at is null
+  loop
+    perform pgmq.send('comment_events', jsonb_build_object(
+      'subscriptionId', subscription.id,
+      'commentId', queue_comment_event.comment_id,
+      'eventId', 'evt_' || replace(gen_random_uuid()::text, '-', '')
+    ));
+    queued := true;
+  end loop;
+  if queued then
+    perform private.wake_event_sender();
+  end if;
+end;
+$$;
+
+revoke all on function private.queue_comment_event(uuid, uuid, uuid, uuid) from public, anon, authenticated;
+
+-- Queues comment.created for a new comment that asks an agent. The rule: a
+-- person wrote it (not an agent), on their own open thread that asks an
+-- agent, so it is either that thread's opening comment or their own reply to
+-- it. When the opening comment is written the thread already asks, and a
+-- reply is written before the thread records it was asked again, so both are
+-- seen here.
 create function private.queue_comment_events()
 returns trigger
 language plpgsql
@@ -394,8 +442,6 @@ set search_path = ''
 as $$
 declare
   t public.comment_threads;
-  subscription record;
-  queued boolean := false;
 begin
   if new.agent_client_id is not null or new.author_id is null or new.body is null then
     return null;
@@ -405,25 +451,7 @@ begin
     or t.ask_agent_revision is null or t.resolved_at is not null then
     return null;
   end if;
-  for subscription in
-    select s.id from public.event_subscriptions s
-    where s.user_id = new.author_id
-      and s.project_id = new.project_id
-      and s.event = 'comment.created'
-      and (s.file_id is null or s.file_id = t.file_id)
-      and s.expires_at > now()
-      and s.delivery_failed_at is null
-  loop
-    perform pgmq.send('comment_events', jsonb_build_object(
-      'subscriptionId', subscription.id,
-      'commentId', new.id,
-      'eventId', 'evt_' || replace(gen_random_uuid()::text, '-', '')
-    ));
-    queued := true;
-  end loop;
-  if queued then
-    perform private.wake_event_sender();
-  end if;
+  perform private.queue_comment_event(new.author_id, new.project_id, t.file_id, new.id);
   return null;
 end;
 $$;
@@ -434,6 +462,47 @@ create trigger queue_comment_events
   after insert on public.comments
   for each row
   execute function private.queue_comment_events();
+
+-- Turning Ask an agent on for an existing thread asks too, though it writes
+-- no comment: it queues comment.created for the thread's creator, with their
+-- latest comment on it written as a person, when the thread is open. Only its
+-- creator, as a person, turns it on (set_comment_ask_agent). A new thread
+-- that asks is seen when its opening comment is written, and a reply that
+-- asks again changes a thread that already asks, so neither comes here.
+-- Turning it off sends nothing.
+create function private.queue_ask_agent_events()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  latest uuid;
+begin
+  if old.ask_agent_revision is not null or new.ask_agent_revision is null
+    or new.created_by is null or new.resolved_at is not null then
+    return null;
+  end if;
+  select c.id into latest from public.comments c
+  where c.thread_id = new.id
+    and c.author_id = new.created_by
+    and c.agent_client_id is null
+    and c.body is not null
+  order by c.created_at desc, c.id desc
+  limit 1;
+  if latest is not null then
+    perform private.queue_comment_event(new.created_by, new.project_id, new.file_id, latest);
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function private.queue_ask_agent_events() from public, anon, authenticated;
+
+create trigger queue_ask_agent_events
+  after update of ask_agent_revision on public.comment_threads
+  for each row
+  execute function private.queue_ask_agent_events();
 
 -- What to send for one queued event, checked now: the subscription is live,
 -- its agent is still connected, its person can still read the project, and

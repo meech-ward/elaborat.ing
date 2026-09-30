@@ -28,7 +28,7 @@ the reviewer's account needs no codes or links.
 | Add a D2 diagram of a sign-up flow to my elaborat.ing project. | `write_file` with a new `.d2` file. Shown with `show_file`, the card says to open it in elaborat.ing to draw it, since the app lays diagrams out. |
 | Preview a component in elaborat.ing that shows a number with a label. | `preview_component` with a draft `source`. Nothing is saved. |
 | Which elaborat.ing account am I connected with? | `whoami`: the account's id, name and email. |
-| Watch this project for review comments. | Today there is no way to watch: the agent says so, and offers to check now with `list_comments`. This changes when comment events ship. |
+| Watch this project for review comments. | `list_projects`, then, where the host supports MCP Events, a subscription to `comment.created` for that project (`events/subscribe`, not a tool). Each event is a thread the person asked an agent about; the agent reads it with `list_comments` and `read_file` before acting. Where the host cannot subscribe, the agent says so and offers to check now with `list_comments` and `ask_agent`. |
 
 ## Indirect: the prompt fits elaborat.ing without naming it
 
