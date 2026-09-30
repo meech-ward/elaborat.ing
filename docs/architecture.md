@@ -44,7 +44,8 @@ exactly the same database functions, as the user.
   MDX compiler) is a dynamic import, fetched only when the screen needs it,
   behind a placeholder or loading state. A slow download after first paint is
   fine; a slow first paint is not. `bun run report:bundle` measures it and CI
-  holds each page's first paint to a budget. Every change is judged by this.
+  holds each page's first paint to a budget (`bun run check:bundle`). Every
+  change is judged by this.
 - **Source is authoritative.** For notes, the Markdown/MDX text is the
   document; rendered edits are checked, precise source edits. For drawings, the
   native Excalidraw scene is authoritative.

@@ -16,6 +16,7 @@
     "build:chat-card": "bun scripts/build-chat-card.ts",
     "build:visualize": "vite build --mode visualize",
     "report:bundle": "bun scripts/bundle-report.ts",
+    "check:bundle": "bun scripts/bundle-report.ts --check",
     "palette-css": "bun scripts/palette-css.ts",
     "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"

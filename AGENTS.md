@@ -43,14 +43,26 @@ npx playwright test
 # Bundle size: the production build with a treemap (dist-visualize/stats.html),
 # then what each page and feature downloads, with gzip and brotli sizes
 bun run build:visualize && bun run report:bundle
+bun run check:bundle   # the loading rule, as CI checks it
 ```
+
+`bun run check:bundle` holds each page's first paint (home signed out, sign
+in, style guide, a project before a file opens) and the chat card's view to
+their JS and CSS budgets (kB gzip) in `scripts/bundle-budget.json`, and fails
+when a heavy library (Monaco, Excalidraw, D2, charts, Shiki, the MDX compiler,
+Prettier, the preview frame) is in any first paint, printing what grew by
+chunk and module. A heavy library goes behind a dynamic import. To raise a
+budget on purpose, run `bun run check:bundle --update` after the visualize
+build (it records today's sizes and sets each budget 5% above them) and commit
+`scripts/bundle-budget.json` with the reason.
 
 Edge Functions run on Deno 2. In a function's folder, such as
 `supabase/functions/mcp-server/`, run `deno check .` and `deno test`.
 
-CI runs build, typecheck, lint, test and the browser tests on every pull
-request, checks and tests every Edge Function, and fails if regenerating
-migrations from `supabase/schemas/` would change `supabase/migrations/`.
+CI runs build, typecheck, lint, test, the bundle check and the browser tests
+on every pull request, checks and tests every Edge Function, and fails if
+regenerating migrations from `supabase/schemas/` would change
+`supabase/migrations/`.
 
 ## Rules
 

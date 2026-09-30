@@ -1,0 +1,156 @@
+{
+  "$comment": "First-paint budgets in kB gzip (1 kB = 1000 bytes), with the sizes they were set from. Checked by `bun run check:bundle`; written by `bun run check:bundle --update` (scripts/bundle-report.ts).",
+  "home": {
+    "js": 367,
+    "css": 28,
+    "measured": {
+      "js": 349,
+      "css": 26.2,
+      "chunks": {
+        "ui.js": 89.1,
+        "react.js": 59.1,
+        "supabase.js": 54.2,
+        "app.js": 37.9,
+        "router.js": 26.3,
+        "zod.js": 24.4,
+        "index.css": 21.8,
+        "ProjectsHome.js": 20.8,
+        "ProjectHeader.js": 11.6,
+        "AccountRows.js": 8.8,
+        "ScreenPreview.js": 5.6,
+        "app.css": 4.4,
+        "index.js": 2.4,
+        "workbox-window.prod.es5.js": 2.2,
+        "AppBar.js": 1.5,
+        "AccountHeader.js": 1.4,
+        "preload-helper.js": 0.7,
+        "NoteProse.js": 0.6,
+        "rolldown-runtime.js": 0.6,
+        "location.js": 0.5,
+        "LegalLinks.js": 0.5,
+        "routes.js": 0.4,
+        "download.js": 0.2,
+        "useLocation.js": 0.1
+      }
+    }
+  },
+  "sign-in": {
+    "js": 318,
+    "css": 28,
+    "measured": {
+      "js": 302,
+      "css": 26.2,
+      "chunks": {
+        "ui.js": 76.1,
+        "react.js": 59.1,
+        "supabase.js": 54.2,
+        "app.js": 37.9,
+        "router.js": 26.3,
+        "zod.js": 24.4,
+        "index.css": 21.8,
+        "AccountRows.js": 8.8,
+        "app.css": 4.4,
+        "sign-in.js": 3.3,
+        "index.js": 2.4,
+        "workbox-window.prod.es5.js": 2.2,
+        "AppBar.js": 1.5,
+        "AccountHeader.js": 1.4,
+        "AuthPage.js": 0.9,
+        "card.js": 0.8,
+        "preload-helper.js": 0.7,
+        "rolldown-runtime.js": 0.6,
+        "location.js": 0.5,
+        "LegalLinks.js": 0.5,
+        "safe-next-path.js": 0.2
+      }
+    }
+  },
+  "style-guide": {
+    "js": 440,
+    "css": 30,
+    "measured": {
+      "js": 419,
+      "css": 28,
+      "chunks": {
+        "ui.js": 111.9,
+        "react.js": 59.1,
+        "supabase.js": 54.2,
+        "style-guide.js": 41.4,
+        "app.js": 37.9,
+        "router.js": 26.3,
+        "zod.js": 24.4,
+        "SearchHitRow.js": 22,
+        "index.css": 21.8,
+        "ProjectHeader.js": 11.6,
+        "AccountRows.js": 8.8,
+        "CanvasIsland.js": 5.8,
+        "ScreenPreview.js": 5.6,
+        "app.css": 4.4,
+        "index.js": 2.4,
+        "workbox-window.prod.es5.js": 2.2,
+        "AppBar.js": 1.5,
+        "style-guide.css": 1.4,
+        "card.js": 0.8,
+        "preload-helper.js": 0.7,
+        "NoteProse.js": 0.6,
+        "rolldown-runtime.js": 0.6,
+        "resourceViewer.js": 0.5,
+        "commentHighlightClass.css": 0.3,
+        "context.js": 0.3,
+        "commentHighlightClass.js": 0.1,
+        "chevron-left.js": 0.1,
+        "minus.js": 0.1,
+        "SearchHitRow.css": 0.1
+      }
+    }
+  },
+  "project": {
+    "js": 476,
+    "css": 30,
+    "measured": {
+      "js": 453.3,
+      "css": 28.3,
+      "chunks": {
+        "ui.js": 111.9,
+        "react.js": 59.1,
+        "supabase.js": 54.2,
+        "WorkspaceWorkbench.js": 50.6,
+        "app.js": 37.9,
+        "router.js": 26.3,
+        "zod.js": 24.4,
+        "SearchHitRow.js": 22,
+        "index.css": 21.8,
+        "ProjectsHome.js": 20.8,
+        "ProjectHeader.js": 11.6,
+        "AccountRows.js": 8.8,
+        "projects._projectId.js": 6.2,
+        "ScreenPreview.js": 5.6,
+        "app.css": 4.4,
+        "parse.js": 2.6,
+        "index.js": 2.4,
+        "contentSearch.js": 2.4,
+        "workbox-window.prod.es5.js": 2.2,
+        "WorkspaceWorkbench.css": 2,
+        "preload-helper.js": 0.7,
+        "NoteProse.js": 0.6,
+        "rolldown-runtime.js": 0.6,
+        "workspace.js": 0.6,
+        "location.js": 0.5,
+        "mdx.js": 0.4,
+        "context.js": 0.3,
+        "download.js": 0.2,
+        "chevron-left.js": 0.1,
+        "useLocation.js": 0.1,
+        "SearchHitRow.css": 0.1
+      }
+    }
+  },
+  "chat-card": {
+    "js": 99,
+    "css": 9,
+    "measured": {
+      "js": 93.8,
+      "css": 7.7
+    }
+  }
+}

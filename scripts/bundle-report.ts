@@ -13,7 +13,16 @@
 //
 // Pages and features name the source modules that start them. When one is
 // renamed, the report stops and says which, so update the lists below.
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+//
+//   bun run check:bundle [dir]            the loading rule, in CI
+//   bun run check:bundle --update [dir]   records today's sizes as the budgets
+//
+// The check holds each page's first paint, and the chat card's view, to its
+// budget in scripts/bundle-budget.json (JS and CSS, kB gzip), fails when a
+// heavy library (HEAVY below) is in any page's first paint, and prints what
+// grew. --update writes the file: today's sizes by chunk, and budgets 5% above
+// them, rounded up.
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { brotliCompressSync, constants, gzipSync } from "node:zlib"
 
@@ -32,13 +41,13 @@ type Manifest = Record<string, ManifestChunk>
 /** rollup-plugin-visualizer's raw data (template "raw-data"), the parts used here. */
 type Stats = {
   nodeParts: Record<string, { renderedLength: number; gzipLength: number; brotliLength: number; metaUid: string }>
-  nodeMetas: Record<string, { id: string; moduleParts: Record<string, string> }>
+  nodeMetas: Record<string, { id: string; moduleParts: Record<string, string>; importedBy?: Array<{ uid: string }> }>
 }
 
 type Match = string | RegExp
 
-/** A page: the route chunks it loads on top of the entry before the first paint. */
-type Page = { name: string; start: Match[]; note?: string }
+/** A page: the route chunks it loads on top of the entry before the first paint. `id` names its budget. */
+type Page = { id: string; name: string; start: Match[]; note?: string }
 
 /**
  * A feature on the project page: the chunks its first use loads, the files it
@@ -52,10 +61,11 @@ type Feature = { name: string; start: Match[]; workers?: RegExp[]; modules: RegE
 const EVERY_PAGE: Match[] = ["index.html", /^node_modules\/workbox-window\//]
 
 const PAGES: Page[] = [
-  { name: "Home, signed out (/)", start: ["src/routes/index.tsx?tsr-split=component"] },
-  { name: "Sign in (/sign-in)", start: ["src/routes/sign-in.tsx?tsr-split=component"] },
-  { name: "Style guide (/style-guide)", start: ["src/routes/style-guide.tsx?tsr-split=component"] },
+  { id: "home", name: "Home, signed out (/)", start: ["src/routes/index.tsx?tsr-split=component"] },
+  { id: "sign-in", name: "Sign in (/sign-in)", start: ["src/routes/sign-in.tsx?tsr-split=component"] },
+  { id: "style-guide", name: "Style guide (/style-guide)", start: ["src/routes/style-guide.tsx?tsr-split=component"] },
   {
+    id: "project",
     name: "Project page (/projects/<id>)",
     start: ["src/routes/projects.$projectId.tsx?tsr-split=component", "src/features/workbench/WorkspaceWorkbench.tsx"],
     note: "the route's loader starts the workbench chunk",
@@ -117,7 +127,29 @@ const FEATURES: Feature[] = [
   { name: "Comments", start: [], modules: [/src\/features\/comments\//] },
 ]
 
-const dir = path.resolve(process.argv[2] ?? "dist-visualize")
+/**
+ * Libraries that never load before a page's first paint: each is a dynamic
+ * import behind a loading state (docs/architecture.md, Principles). Matched
+ * against module ids.
+ */
+const HEAVY: Array<{ name: string; modules: RegExp }> = [
+  { name: "monaco-editor", modules: /node_modules\/monaco-editor\// },
+  { name: "@excalidraw/excalidraw", modules: /node_modules\/@excalidraw\// },
+  { name: "@terrastruct/d2", modules: /node_modules\/@terrastruct\// },
+  { name: "recharts", modules: /node_modules\/recharts\// },
+  { name: "shiki", modules: /node_modules\/(shiki|@shikijs\/[\w-]+)\// },
+  // The parser and compiler; not the small micromark-util-* helpers, such as the one that decodes a link's destination.
+  { name: "the MDX compiler", modules: /node_modules\/(@mdx-js\/mdx|micromark|micromark-core-commonmark|micromark-extension-[\w-]+|mdast-util-[\w-]+|remark-[\w-]+|unified)\// },
+  { name: "prettier", modules: /node_modules\/prettier\// },
+  { name: "the preview frame", modules: /^virtual:preview-frame/ },
+]
+const BUDGET_FILE = path.join(import.meta.dirname, "bundle-budget.json")
+/** The chat card's view: the script and stylesheet the MCP server inlines (scripts/build-chat-card.ts). */
+const CARD_VIEW = path.join(import.meta.dirname, "../supabase/functions/mcp-server/tools/cardEditorScript.ts")
+
+const UPDATE = process.argv.includes("--update")
+const CHECK = UPDATE || process.argv.includes("--check")
+const dir = path.resolve(process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "dist-visualize")
 const app = path.join(dir, "app")
 const manifestPath = path.join(app, ".vite/manifest.json")
 if (!existsSync(manifestPath)) {
@@ -127,6 +159,10 @@ if (!existsSync(manifestPath)) {
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest
 const statsPath = path.join(dir, "stats.json")
 const stats = existsSync(statsPath) ? (JSON.parse(readFileSync(statsPath, "utf8")) as Stats) : null
+if (CHECK && !stats) {
+  console.error(`No module data at ${statsPath}. Run \`bun run build:visualize\` first.`)
+  process.exit(1)
+}
 
 // Sizes ------------------------------------------------------------------
 
@@ -135,7 +171,7 @@ const zero = (): Size => ({ raw: 0, gzip: 0, brotli: 0 })
 const add = (a: Size, b: Size): Size => ({ raw: a.raw + b.raw, gzip: a.gzip + b.gzip, brotli: a.brotli + b.brotli })
 
 const sizes = new Map<string, Size>()
-/** A built file's size, as served and compressed (gzip level 9, brotli quality 11). */
+/** A built file's size, as served and compressed (gzip level 9, brotli quality 11; the check skips brotli). */
 function sizeOf(file: string): Size {
   let size = sizes.get(file)
   if (!size) {
@@ -143,7 +179,7 @@ function sizeOf(file: string): Size {
     size = {
       raw: bytes.length,
       gzip: gzipSync(bytes, { level: 9 }).length,
-      brotli: brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } }).length,
+      brotli: CHECK ? 0 : brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } }).length,
     }
     sizes.set(file, size)
   }
@@ -156,7 +192,7 @@ const cells = (size: Size) => [kB(size.raw), kB(size.gzip), kB(size.brotli)]
 function table(rows: string[][], header = ["", "raw", "gzip", "brotli"]) {
   const all = [header, ...rows]
   const widths = header.map((_, column) => Math.max(...all.map((row) => row[column]?.length ?? 0)))
-  const numeric = (column: number) => ["raw", "gzip", "brotli"].includes(header[column])
+  const numeric = (column: number) => ["raw", "gzip", "brotli", "JS", "CSS", "budget", "recorded", "now", "change"].includes(header[column])
   for (const row of all) console.log(`  ${row.map((cell, column) => (numeric(column) ? cell.padStart(widths[column]) : cell.padEnd(widths[column]))).join("   ").trimEnd()}`)
 }
 
@@ -211,14 +247,14 @@ function printFiles(files: Files, extra: string[] = []) {
 
 type ModuleSize = { id: string; chunk: string; size: Size }
 
-/** Every module with its estimated share of its chunk's served size. */
-function moduleSizes(): ModuleSize[] {
+/** Every module (or only those in these chunks) with its estimated share of its chunk's served size. */
+function moduleSizes(only?: Set<string>): ModuleSize[] {
   if (!stats) return []
   const byChunk = new Map<string, Array<{ id: string; part: Stats["nodeParts"][string] }>>()
   for (const meta of Object.values(stats.nodeMetas)) {
     for (const [chunk, uid] of Object.entries(meta.moduleParts)) {
       const part = stats.nodeParts[uid]
-      if (!part || !existsSync(path.join(app, chunk))) continue
+      if (!part || (only && !only.has(chunk)) || !existsSync(path.join(app, chunk))) continue
       const list = byChunk.get(chunk) ?? []
       list.push({ id: meta.id, part })
       byChunk.set(chunk, list)
@@ -258,7 +294,12 @@ function groupOf(id: string): string {
   return parts.join("/")
 }
 
-const modules = moduleSizes()
+const everyPage = EVERY_PAGE.map(keyFor)
+const pageKeys = new Map(PAGES.map((page) => [page, withImports([...everyPage, ...page.start.map(keyFor)])]))
+/** The files a page downloads before its first paint. */
+const firstPaint = (page: Page) => filesOf(pageKeys.get(page) ?? new Set())
+// The check only needs the modules of the pages' first paint.
+const modules = moduleSizes(CHECK ? new Set(PAGES.flatMap((page) => firstPaint(page).js)) : undefined)
 
 /** The largest packages and app folders in these files, by estimated gzip size. */
 function printParts(files: Set<string>, count = 8) {
@@ -268,19 +309,153 @@ function printParts(files: Set<string>, count = 8) {
   if (top.length > 0) console.log(`  Largest parts (gzip): ${top.map(([name, gzip]) => `${name} ${kB(gzip)}`).join(", ")}`)
 }
 
-// The report -----------------------------------------------------------------
+// The check ------------------------------------------------------------------
 
-const everyPage = EVERY_PAGE.map(keyFor)
-const pageKeys = new Map<Page, Set<string>>()
+/** Sizes in bytes, gzip; `chunks` by chunk name (see chunkName). */
+type Measured = { js: number; css: number; chunks?: Record<string, number> }
+/** A budget and the sizes it was set from (`measured`), all in kB gzip (1 kB = 1000 bytes). */
+type Budget = { js: number; css: number; measured: Measured }
+
+const CARD_ID = "chat-card"
+/** kB with one decimal, as the budget file records sizes. */
+const kB1 = (bytes: number) => Math.round(bytes / 100) / 10
+/** A file's name without its content hash, so a chunk keeps its name from build to build: assets/app-CVigm-rl.js is app.js. */
+const chunkName = (file: string) => file.replace(/^assets\//, "").replace(/-[\w-]{8}(\.\w+)$/, "$1")
+const error = (message: string) => console.log(process.env.GITHUB_ACTIONS ? `::error::${message}` : message)
+
+function measurePage(page: Page): Measured {
+  const files = firstPaint(page)
+  const chunks: Record<string, number> = {}
+  for (const file of [...files.js, ...files.css]) chunks[chunkName(file)] = (chunks[chunkName(file)] ?? 0) + sizeOf(file).gzip
+  return { js: total(files.js).gzip, css: total(files.css).gzip, chunks }
+}
+
+async function measureCard(): Promise<Measured> {
+  const { CARD_SCRIPT, CARD_STYLE } = (await import(CARD_VIEW)) as { CARD_SCRIPT: string; CARD_STYLE: string }
+  const gzip = (text: string) => gzipSync(Buffer.from(text), { level: 9 }).length
+  return { js: gzip(CARD_SCRIPT), css: gzip(CARD_STYLE) }
+}
+
+/** The heavy libraries in a page's first paint, with where they are and what imports them. */
+function heavyIn(page: Page): string[] {
+  const metas = new Map(Object.values(stats?.nodeMetas ?? {}).map((meta) => [meta.id.replace(/^\0/, ""), meta]))
+  const files = new Set(firstPaint(page).js)
+  const found: string[] = []
+  for (const heavy of HEAVY) {
+    const inPage = modules.filter((module) => files.has(module.chunk) && module.size.raw > 0 && heavy.modules.test(module.id))
+    if (inPage.length === 0) continue
+    const chunks = [...new Set(inPage.map((module) => path.basename(module.chunk)))]
+    // What pulls it in: first-paint modules outside the library that import any
+    // of its modules there, including an entry that only re-exports.
+    const importers = new Set<string>()
+    for (const module of modules) {
+      if (!files.has(module.chunk) || !heavy.modules.test(module.id)) continue
+      for (const { uid } of metas.get(module.id)?.importedBy ?? []) {
+        const importer = stats?.nodeMetas[uid]
+        const id = importer?.id.replace(/^\0/, "")
+        if (id && !heavy.modules.test(id) && Object.keys(importer?.moduleParts ?? {}).some((chunk) => files.has(chunk))) importers.add(id.replace(/^\//, ""))
+      }
+    }
+    const size = inPage.reduce((sum, module) => sum + module.size.gzip, 0)
+    found.push(
+      `${heavy.name} is in the first paint of ${page.name}: ${kB(size)} gzip in ${chunks.join(", ")}` +
+        (importers.size > 0 ? `, imported by ${[...importers].slice(0, 3).join(", ")}${importers.size > 3 ? ` and ${importers.size - 3} more` : ""}` : ""),
+    )
+  }
+  return found
+}
+
+/** What grew since the budget was set, by chunk, and the largest modules in the page's first paint now. */
+function printGrowth(page: Page, now: Measured, recorded: Measured) {
+  const names = new Set([...Object.keys(recorded.chunks ?? {}), ...Object.keys(now.chunks ?? {})])
+  const changes = [...names]
+    .map((name) => ({ name, before: recorded.chunks?.[name], after: kB1(now.chunks?.[name] ?? 0) }))
+    .map((row) => ({ ...row, change: row.after - (row.before ?? 0) }))
+    .filter((row) => Math.abs(row.change) >= 0.1)
+    .sort((a, b) => b.change - a.change)
+  if (changes.length > 0) {
+    console.log("  By chunk, since the budget was set (kB gzip):")
+    table(
+      changes.slice(0, 12).map(({ name, before, after, change }) => [`  ${name}`, before === undefined ? "new" : before.toFixed(1), after ? after.toFixed(1) : "gone", `${change > 0 ? "+" : ""}${change.toFixed(1)}`]),
+      ["", "recorded", "now", "change"],
+    )
+  }
+  const files = new Set(firstPaint(page).js)
+  const largest = modules.filter((module) => files.has(module.chunk)).sort((a, b) => b.size.gzip - a.size.gzip).slice(0, 10)
+  console.log("  Largest modules in its first paint now (gzip, estimated):")
+  table(largest.map((module) => [`  ${module.id.replace(/^\//, "")}`, kB(module.size.gzip), path.basename(module.chunk)]), ["", "gzip", "chunk"])
+  printParts(files)
+}
+
+async function check(): Promise<number> {
+  const measured = new Map<string, Measured>(PAGES.map((page) => [page.id, measurePage(page)]))
+  measured.set(CARD_ID, await measureCard())
+  const labels = new Map<string, string>([...PAGES.map((page) => [page.id, page.name] as const), [CARD_ID, "Chat card view (inline script and style)"]])
+
+  if (UPDATE) {
+    const budgets: Record<string, Budget | string> = {
+      $comment: "First-paint budgets in kB gzip (1 kB = 1000 bytes), with the sizes they were set from. Checked by `bun run check:bundle`; written by `bun run check:bundle --update` (scripts/bundle-report.ts).",
+    }
+    for (const [id, now] of measured) {
+      const chunks = now.chunks && Object.fromEntries(Object.entries(now.chunks).sort(([, a], [, b]) => b - a).map(([name, bytes]) => [name, kB1(bytes)]))
+      budgets[id] = { js: Math.ceil(kB1(now.js) * 1.05), css: Math.ceil(kB1(now.css) * 1.05), measured: { js: kB1(now.js), css: kB1(now.css), ...(chunks && { chunks }) } }
+    }
+    writeFileSync(BUDGET_FILE, `${JSON.stringify(budgets, null, 2)}\n`)
+    console.log(`Wrote ${path.relative(process.cwd(), BUDGET_FILE)}: today's sizes, and budgets 5% above them.`)
+  }
+
+  const budgets = existsSync(BUDGET_FILE) ? (JSON.parse(readFileSync(BUDGET_FILE, "utf8")) as Record<string, Budget>) : {}
+  const failures: string[] = []
+  const rows: string[][] = []
+  const over: Array<[string, Measured, Budget]> = []
+  for (const [id, now] of measured) {
+    const label = labels.get(id) ?? id
+    const budget = budgets[id]
+    if (!budget) {
+      failures.push(`${label} has no budget in ${path.basename(BUDGET_FILE)} (as "${id}").`)
+      continue
+    }
+    const jsOver = now.js > budget.js * 1000
+    const cssOver = now.css > budget.css * 1000
+    rows.push([label, kB(now.js), `${budget.js} kB`, kB(now.css), `${budget.css} kB`, jsOver || cssOver ? "OVER" : "ok"])
+    if (!jsOver && !cssOver) continue
+    over.push([id, now, budget])
+    const parts = [jsOver && `JS ${kB(now.js)} gzip, budget ${budget.js} kB`, cssOver && `CSS ${kB(now.css)} gzip, budget ${budget.css} kB`].filter(Boolean)
+    failures.push(`${label} is over its first-paint budget: ${parts.join("; ")}.`)
+  }
+  for (const page of PAGES) failures.push(...heavyIn(page))
+
+  console.log(`First paint against the budgets in ${path.relative(process.cwd(), BUDGET_FILE)} (gzip)\n`)
+  table(rows, ["", "JS", "budget", "CSS", "budget", ""])
+  console.log()
+  if (failures.length === 0) {
+    console.log("Every page is within its budget, and no heavy library is in a first paint.")
+    return 0
+  }
+  for (const failure of failures) error(failure)
+  for (const [id, now, budget] of over) {
+    console.log(`\n${labels.get(id)}: JS ${kB(now.js)} (recorded ${budget.measured.js.toFixed(1)} kB), CSS ${kB(now.css)} (recorded ${budget.measured.css.toFixed(1)} kB)`)
+    const page = PAGES.find((candidate) => candidate.id === id)
+    if (page) printGrowth(page, now, budget.measured)
+    else console.log("  `bun run build:chat-card --visualize` writes its treemap to dist-visualize/chat-card/.")
+  }
+  console.log(
+    "\nHeavy libraries load with a dynamic import behind a loading state, never before a page's first paint (docs/architecture.md, Principles)." +
+      "\nIf a page has to grow, run `bun run check:bundle --update` after `bun run build:visualize` and commit scripts/bundle-budget.json with the reason.",
+  )
+  return 1
+}
+
+if (CHECK) process.exit(await check())
+
+// The report -----------------------------------------------------------------
 
 console.log(`Bundle report for ${path.relative(process.cwd(), app) || app}: sizes of the served files (gzip level 9, brotli quality 11).\n`)
 console.log("First paint: what each page downloads before it can show anything\n")
 for (const page of PAGES) {
-  const keys = withImports([...everyPage, ...page.start.map(keyFor)])
-  pageKeys.set(page, keys)
   console.log(`${page.name}${page.note ? ` (${page.note})` : ""}`)
-  printFiles(filesOf(keys))
-  printParts(new Set(filesOf(keys).js))
+  printFiles(firstPaint(page))
+  printParts(new Set(firstPaint(page).js))
   console.log()
 }
 

@@ -38,6 +38,12 @@ jobs:
             echo "$changes"
             exit 1
           fi
+      # The loading rule (docs/architecture.md, Principles): each page's first
+      # paint and the chat card's view within its budget in
+      # scripts/bundle-budget.json, and no heavy library before a first paint.
+      # The visualize build writes the chunk graph and module map it reads.
+      - run: bun run build:visualize
+      - run: bun run check:bundle
 
   # Browser tests run the production builds in Chromium and Firefox.
   # Playwright runs on Node; Bun installs and builds.
