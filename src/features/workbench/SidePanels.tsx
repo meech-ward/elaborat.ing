@@ -38,6 +38,7 @@ export function ProjectPanel({
   menu,
   menuProps,
   onShare,
+  actions,
   local = false,
   notices,
   children,
@@ -48,6 +49,8 @@ export function ProjectPanel({
   menu: readonly MenuEntry[];
   menuProps?: ActionMenuProps;
   onShare?: () => void;
+  /** Buttons beside Share, such as Agent changes. */
+  actions?: ReactNode;
   local?: boolean;
   notices?: ReactNode;
   /** Hidden inputs that belong to the menu's actions. */
@@ -65,6 +68,7 @@ export function ProjectPanel({
         onShare={local ? undefined : onShare}
         shareLink={local ? <Link to="/sign-up" /> : undefined}
         shareLabel={local ? "Sign up to share" : "Share project"}
+        actions={actions}
         size={touch ? "touch" : "default"}
         variant={touch ? "flat" : "floating"}
       >

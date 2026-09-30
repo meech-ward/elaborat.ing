@@ -244,6 +244,7 @@ export function CommentItem({
   onEdit,
   onCancelEdit,
   onDelete,
+  onOpenVersion,
   size: sizeProp,
   className,
 }: {
@@ -254,6 +255,8 @@ export function CommentItem({
   onEdit?: (body: string) => void | Promise<unknown>
   onCancelEdit?: () => void
   onDelete?: () => void
+  /** Show the version the comment links to (its "Changed in version n" is then a link). */
+  onOpenVersion?: (version: number) => void
   size?: CommentsSize
   className?: string
 }) {
@@ -322,7 +325,13 @@ export function CommentItem({
         {comment.version && !deleted && !editing ? (
           <p data-slot="comment-version" className={cn("mt-1 flex items-center gap-1.5 text-dim", touch ? "text-[13px]" : "text-xs")}>
             <FileClock aria-hidden="true" className="size-3.5 shrink-0" />
-            Changed in version {comment.version}
+            {onOpenVersion ? (
+              <Button variant="inline" size="inline" onClick={() => comment.version && onOpenVersion(comment.version)}>
+                Changed in version {comment.version}
+              </Button>
+            ) : (
+              <>Changed in version {comment.version}</>
+            )}
           </p>
         ) : null}
       </div>
@@ -387,6 +396,8 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
   askAgent?: boolean
   /** The thread's author, while it is open: offers the Ask an agent switch, which calls this at once. */
   onAskAgentChange?: (ask: boolean) => void | Promise<unknown>
+  /** Show a version a comment links to, such as the one an agent saved in answer. */
+  onOpenVersion?: (version: number) => void
   /** Open the reply field at first (it opens from Reply otherwise). */
   defaultReplying?: boolean
   /** The time relative times count from; now by default. */
@@ -426,6 +437,7 @@ export function CommentThread({
   onDelete,
   askAgent = false,
   onAskAgentChange,
+  onOpenVersion,
   defaultReplying = false,
   now,
   size: sizeProp,
@@ -574,6 +586,7 @@ export function CommentThread({
               }
               onCancelEdit={() => endEdit(comment.id)}
               onDelete={canWrite && onDelete ? () => void deleteComment(comment.id) : undefined}
+              onOpenVersion={onOpenVersion}
             />
           </li>
         ))}

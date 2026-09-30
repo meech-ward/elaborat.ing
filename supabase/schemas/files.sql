@@ -54,6 +54,8 @@ create table public.file_versions (
 
 create index file_versions_project_id_idx on public.file_versions (project_id);
 create index file_versions_author_id_idx on public.file_versions (author_id);
+-- The versions agents saved, newest first, for Agent changes (agent_changes.sql).
+create index file_versions_agent_changes_idx on public.file_versions (project_id, version desc) where agent_client_id is not null;
 
 alter table public.file_versions enable row level security;
 

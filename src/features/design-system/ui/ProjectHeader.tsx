@@ -28,8 +28,9 @@ const sizes = {
 /**
  * The project panel at the top of the sidebar: the diamond mark in the
  * accent colour, the project's name as a menu button with a chevron (an
- * ActionMenu with `menu` as its entries), and the share button.
- * `children` go at the end of the panel (hidden inputs and the like).
+ * ActionMenu with `menu` as its entries), `actions` (such as the Agent
+ * changes button) and the share button. `children` go at the end of the
+ * panel (hidden inputs and the like).
  */
 export function ProjectHeader({
   name,
@@ -39,6 +40,7 @@ export function ProjectHeader({
   onShare,
   shareLink,
   shareLabel = "Share project",
+  actions,
   size = "default",
   variant,
   className,
@@ -59,6 +61,8 @@ export function ProjectHeader({
    */
   shareLink?: ReactElement<{ className?: string; title?: string; "aria-label"?: string; children?: ReactNode }>
   shareLabel?: string
+  /** Buttons between the name and the share button, sized to match it. */
+  actions?: ReactNode
   size?: "default" | "touch"
   /** `flat` drops the panel shadow, as on phones. */
   variant?: "floating" | "flat"
@@ -79,6 +83,7 @@ export function ProjectHeader({
           </Button>
         }
       />
+      {actions}
       {shareLink
         ? cloneElement(shareLink, {
             "aria-label": shareLabel,

@@ -10,6 +10,7 @@ import {
   type CommentsPanelProps,
   type CommentsStatus,
 } from "@/features/design-system"
+import { useAgentChanges } from "@/features/agent-changes"
 import { cn } from "@/lib/utils"
 import { anchorView } from "../anchorView"
 import { NEEDS_CONNECTION, useCommentsUi, useProjectComments } from "../context"
@@ -29,6 +30,7 @@ import { newComments, type ThreadView } from "./threadViews"
  */
 export function CommentsSurfaceView({ compact, className }: { compact: boolean; className?: string }) {
   const comments = useProjectComments()
+  const agentChanges = useAgentChanges()
   const guest = useContext(GuestContext)
   const ui = useCommentsUi()
   const { file, fileId, elementsId, threads, status, views, noun } = useFileComments(comments, ui)
@@ -116,6 +118,17 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
   const request = ui.request && fileId && (ui.request.file.fileId === fileId || ui.request.file.fileId === elementsId) ? ui.request : null
   const problem = (what: string, error: unknown) => say(`${what}: ${error instanceof Error ? error.message : String(error)}`)
 
+  // "Changed in version n" opens Agent changes at that version of the thread's file.
+  const openVersion = (threadId: string) => {
+    const threadFile = threads.find((thread) => thread.id === threadId)?.file_id
+    if (!agentChanges || !threadFile) return undefined
+    return (version: number) => {
+      // On a phone the sheet goes, so the view's sheet takes its place.
+      if (compact) controller?.setPanelOpen(false)
+      agentChanges.show({ fileId: threadFile, version })
+    }
+  }
+
   const threadElement = (thread: ThreadView): ReactElement => (
     <CommentThread
       key={thread.id}
@@ -150,6 +163,7 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
         }
       }}
       askAgent={thread.askAgent}
+      onOpenVersion={openVersion(thread.id)}
       onAskAgentChange={
         thread.own
           ? async (ask) => {

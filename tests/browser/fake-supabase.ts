@@ -2,6 +2,7 @@ import type { Page, Request, Route, WebSocketRoute } from "@playwright/test"
 import { accountName } from "../../src/features/auth/accountName.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
+import { FakeAgentChanges } from "./fake-agent-changes.ts"
 import { FakeComments } from "./fake-comments.ts"
 
 /**
@@ -67,6 +68,8 @@ export type FakeSupabase = {
   server: FakeProjectServer
   /** The comment functions, over the server's projects; `comments.call(user, rpc, args)` writes as someone else. */
   comments: FakeComments
+  /** The agent changes functions; `agentChanges.save(user, project, path, content)` saves as someone's agent. */
+  agentChanges: FakeAgentChanges
   requests: Request[]
   /** Requests refused while offline. */
   refused: Request[]
@@ -97,6 +100,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
   const fake: FakeSupabase = {
     server,
     comments: new FakeComments(server),
+    agentChanges: new FakeAgentChanges(server),
     requests: [],
     refused: [],
     passkeys: [],
@@ -267,6 +271,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
         })
       }
       if (FakeComments.handles(rpc)) return answer(route, async () => fake.comments.call(person.id, rpc, body))
+      if (FakeAgentChanges.handles(rpc)) return answer(route, async () => fake.agentChanges.call(person.id, rpc, body))
       if (rpc === "share_project") {
         return answer(route, async () => (
           await remote.shareProject(body.project_id, body.member_id, body.member_role),

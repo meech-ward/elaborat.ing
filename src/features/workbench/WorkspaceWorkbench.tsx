@@ -50,6 +50,7 @@ import { SignUpTo } from "@/features/projects/LocalProject";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
+import { AgentChangesEntry, AgentChangesSurface } from "@/features/agent-changes";
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
 import { nativePathFor, readDiagramCompanion } from "./diagramFiles";
@@ -932,6 +933,7 @@ export function WorkspaceWorkbench({
         menu={[...projectMenu, ...projectActions]}
         menuProps={closingMenu}
         onShare={onShare}
+        actions={<AgentChangesEntry size={panelSize} />}
         local={local}
         notices={projectNotices}
       >
@@ -1217,6 +1219,7 @@ export function WorkspaceWorkbench({
         </DottedPage>
         </section>
       )}
+      <AgentChangesSurface compact={narrow} workspace={client} readOnly={readOnly} onOpenFile={(path) => void openFromNavigation(path)} />
       <QuickOpen
         open={palette}
         onOpenChange={setPalette}

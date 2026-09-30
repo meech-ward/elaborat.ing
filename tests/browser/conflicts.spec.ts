@@ -137,7 +137,7 @@ test("Compare says so when the server deleted the note, instead of a diff", asyn
   await page.getByRole("button", { name: "Compare" }).click()
   const dialog = page.getByRole("dialog", { name: "Compare a.md" })
   await expect(dialog).toContainText("The server no longer has a.md: it was deleted there. Your copy is still on this device.")
-  await expect(dialog.locator(".wb-compare-diff")).toHaveCount(0)
+  await expect(dialog.locator('[data-slot="text-diff"]')).toHaveCount(0)
   await dialog.getByRole("button", { name: "Close" }).click()
   await expect(dialog).toBeHidden()
   // Closing chooses nothing.

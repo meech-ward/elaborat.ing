@@ -162,22 +162,7 @@ above the choices. */
   max-width: none;
   overflow-wrap: anywhere;
 }
-.wb-compare-sides {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.wb-compare-legend,
 .wb-compare-note { margin: 0; font-size: 12px; }
-.wb-compare-diff {
-  height: min(60dvh, 36rem);
-  min-height: 12rem;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-tool);
-  overflow: hidden;
-}
 .wb-compare-pictures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));

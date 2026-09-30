@@ -109,3 +109,10 @@ export {
   type CommentsSize,
 } from "./ui/commentTypes"
 // --- end Comments ---
+
+// --- Agent changes (guide/AgentChangesSection.tsx) ---
+export { AgentChangeRow, type AgentChangeAction, type AgentChangeRowProps } from "./ui/AgentChangeRow"
+export { AgentChangesButton, CountBadge } from "./ui/AgentChangesButton"
+// The diff editor itself (TextDiff) stays out: DiffBlock imports it when a diff shows.
+export { DiffBlock, type DiffBlockProps } from "./ui/DiffBlock"
+// --- end Agent changes ---

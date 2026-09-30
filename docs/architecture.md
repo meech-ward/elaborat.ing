@@ -282,6 +282,18 @@ token, null for the app, and, as for comments, readers cannot select it.
 `list_file_authors` returns who saved each file's current version and the
 agent's name, and the MCP `list_files` tool shows it ("Claude for Ada").
 
+**Decision: Agent changes, per project and per person.** `list_agent_changes`
+returns the versions agents saved, newest first and a page of whole saves at
+a time, each with the file's previous version and the thread whose reply
+links it, to anyone who can read the project. `agent_changes_seen` holds each
+person's marker (a project revision; only they read it, and only
+`mark_agent_changes_seen` moves it, forward, as a person, never an agent), and
+`count_agent_changes` counts the changes above it for the project's button.
+Opening the view marks everything up to then seen. Revert saves the previous
+version's content as a new version through the app's normal save, so a file
+that changed on the server meanwhile stops at the usual conflict. The view is
+a chunk of its own; the button and its count are not.
+
 **Decision:** agents archive, people delete. Archive and unarchive are available
 to any editor, including agents. Permanent delete is for the project owner
 only, in a normal user session: the database refuses it when the token came

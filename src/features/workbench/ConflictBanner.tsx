@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
-import { Banner, BannerAction, LoadingLine } from "@/features/design-system";
+import { Banner, BannerAction, DiffBlock } from "@/features/design-system";
 import { countElementChanges } from "@/features/drawings/serialize.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import type { ConflictCopies } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
-import { moduleLoader, useModule } from "@/lib/moduleLoader";
 import { drawingSvgForContent } from "./resources";
 import type { WorkspaceStore } from "./workspaceStore";
 import { dialogError } from "./dialogMessages";
@@ -234,20 +233,16 @@ function DrawingComparison({ theirs, mine, path }: { theirs: string; mine: strin
   );
 }
 
-// Monaco's diff editor loads the first time a text comparison shows.
-const conflictDiff = moduleLoader(() => import("./ConflictDiff"));
-
-function TextComparison(props: { theirs: string; mine: string; language: string }) {
-  const { module, error, retry } = useModule(conflictDiff, true);
-  if (module) {
-    const { ConflictDiff } = module;
-    return <ConflictDiff {...props} />;
-  }
-  if (error)
-    return (
-      <Banner tone="danger" action={<BannerAction onClick={retry}>Try again</BannerAction>}>
-        The comparison could not load.
-      </Banner>
-    );
-  return <LoadingLine label="Loading the comparison" />;
+/** The server's copy on the left and this device's on the right (Monaco's diff editor loads the first time one shows). */
+function TextComparison({ theirs, mine, language }: { theirs: string; mine: string; language: string }) {
+  return (
+    <DiffBlock
+      before={theirs}
+      after={mine}
+      language={language}
+      beforeLabel="On the server"
+      afterLabel="On this device"
+      legend="Lines marked − are on the server, and lines marked + are on this device."
+    />
+  )
 }

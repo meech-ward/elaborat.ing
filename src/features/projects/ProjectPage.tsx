@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PanelPage } from "@/components/panel"
+import { AgentChangesProvider, ProjectAgentChanges, SupabaseAgentChangesRemote } from "@/features/agent-changes"
 import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { accountName } from "@/features/auth/accountName"
 import { CustomCodeProvider, type CustomCodePolicy } from "@/features/custom-code"
@@ -119,8 +120,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         },
   )
 
+  // The versions agents saved here: the count of those new to this person, and the view.
+  const [agentChanges] = useState(() =>
+    account.local ? null : new ProjectAgentChanges(new SupabaseAgentChangesRemote(loadedClient()), projectId),
+  )
+  useEffect(() => () => agentChanges?.dispose(), [agentChanges])
+
   // Hear about changes made elsewhere while the project is open: files sync,
-  // and the comments listed so far reload. Once this project's sync stops
+  // the comments listed so far reload, and agent changes are counted again. Once this project's sync stops
   // because the server no longer lists it for this person (their access
   // ended, or its owner deleted it), the page leaves the channel at once
   // (docs/architecture.md, the decision on change signals).
@@ -134,10 +141,13 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       (revision) => {
         void syncNow()
         comments?.store.changed(revision)
+        agentChanges?.changed()
       },
-      // Signals sent while the channel was away are not replayed, so each (re)join reloads the comments listed so far.
+      // Signals sent while the channel was away are not replayed, so each (re)join reloads the comments listed so far and counts again.
       (status) => {
-        if (status === "SUBSCRIBED") comments?.store.refresh()
+        if (status !== "SUBSCRIBED") return
+        comments?.store.refresh()
+        void agentChanges?.refresh()
       },
     )
     seenRevisions.listen(changes)
@@ -145,7 +155,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       seenRevisions.listen(null)
       void changes.close()
     }
-  }, [comments, listening, projectId, seenRevisions, syncNow])
+  }, [agentChanges, comments, listening, projectId, seenRevisions, syncNow])
 
   // The person's own name, set in Settings, shows with their comments at once.
   const auth = useAuth()
@@ -307,6 +317,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
 
   return (
     <ProjectCommentsProvider value={commentsValue}>
+      <AgentChangesProvider value={agentChanges}>
       <CustomCodeProvider value={customCode}>
       <Suspense
         fallback={
@@ -338,6 +349,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         ) : null}
       </Suspense>
       </CustomCodeProvider>
+      </AgentChangesProvider>
     </ProjectCommentsProvider>
   )
 }
