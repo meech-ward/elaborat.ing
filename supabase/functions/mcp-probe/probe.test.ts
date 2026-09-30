@@ -182,6 +182,42 @@ Deno.test('subscribe fails with CallbackEndpointError when the echo is wrong, a 
   assertEquals(reasons, ['challenge_failed', 'redirect_refused', 'challenge_failed', 'timeout'])
 })
 
+Deno.test('a batch is refused before any handler runs, so it sends no challenge', async () => {
+  const { sent, fetcher } = network(echo)
+  const { handler } = probe(fetcher)
+  const entry = (id: number) => ({ jsonrpc: '2.0', id, method: 'events/subscribe', params: subscribeParams() })
+  const response = await handler(
+    new Request('https://site.test/mcp-probe', {
+      method: 'POST',
+      // The older protocol, which the SDK would otherwise answer batches for.
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-03-26' },
+      body: JSON.stringify([entry(1), entry(2), entry(3)]),
+    })
+  )
+  assertEquals(response.status, 400)
+  assertEquals((await response.json()).error.code, -32600)
+  assertEquals(sent.length, 0)
+})
+
+Deno.test('at most two challenges run at once; another subscribe fails as busy without calling out', async () => {
+  let open!: () => void
+  const gate = new Promise<void>((resolve) => (open = resolve))
+  const { sent, fetcher } = network(async (body) => {
+    await gate
+    return echo(body)
+  })
+  const { handler } = probe(fetcher)
+  const calls = [1, 2, 3].map((n) => rpc(handler, 'events/subscribe', subscribeParams(`https://receiver.example.com/cb_${n}`)))
+  // Nothing else can finish while the callbacks hang, so the first answer is the refused one.
+  const first = await Promise.race(calls)
+  assertEquals(first.error?.code, -32015)
+  assertEquals(first.error?.data?.reason, 'busy')
+  assertEquals(sent.length, 2)
+  open()
+  const all = await Promise.all(calls)
+  assertEquals(all.filter((call) => call.result).length, 2)
+})
+
 Deno.test('subscribe refuses bad secrets, unknown events and extra arguments', async () => {
   const { sent, fetcher } = network(echo)
   const { handler } = probe(fetcher)

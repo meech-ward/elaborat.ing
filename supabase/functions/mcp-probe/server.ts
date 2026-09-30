@@ -104,20 +104,29 @@ async function describeRequest(request: Request): Promise<Record<string, unknown
       protocol: meta['io.modelcontextprotocol/protocolVersion'] ?? params.protocolVersion ?? request.headers.get('mcp-protocol-version'),
       client: client ? `${client.name ?? '?'} ${client.version ?? ''}`.trim() : null,
       userAgent: request.headers.get('user-agent'),
+      batch: Array.isArray(body) ? body.length : undefined,
     }
   } catch {
     return { method: 'unparsed' }
   }
 }
 
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers)
+  for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value)
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
 export function createProbeHandler(deps: EventsDeps): (request: Request) => Promise<Response> {
   const handler = createMcpHandler(() => createProbeServer(deps), { onerror: (error) => console.error('MCP probe request failed', error) })
   return async (request) => {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS })
-    log('request', await describeRequest(request))
-    const response = await handler.fetch(request)
-    const headers = new Headers(response.headers)
-    for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value)
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+    const described = await describeRequest(request)
+    log('request', described)
+    // One message per request: a batch could make one request send many challenges. Protocol 2026-07-28 has no batches.
+    if (described.batch !== undefined) {
+      return withCors(Response.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Batch requests are not supported.' } }, { status: 400 }))
+    }
+    return withCors(await handler.fetch(request))
   }
 }

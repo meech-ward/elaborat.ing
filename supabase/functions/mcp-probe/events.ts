@@ -25,6 +25,8 @@ const MAX_TTL_MS = 24 * 60 * 60_000
 const MIN_TTL_MS = 60_000
 /** Bytes of a callback's answer read at most. */
 const MAX_ANSWER_BYTES = 16_384
+/** Challenges running at once, per function instance, at most; more subscribes fail as busy. */
+const MAX_CHALLENGES_IN_FLIGHT = 2
 /** The sample event goes out this long after the subscription is answered. */
 export const SAMPLE_DELAY_MS = 3_000
 /** Who subscribes: the probe has no sign-in, so everyone is the same principal. */
@@ -235,6 +237,7 @@ export type EventsDeps = {
 
 /** Callbacks verified recently, by URL, with when that ends. Per function instance. */
 const verified = new Map<string, number>()
+let challengesInFlight = 0
 
 /** Forgets verified callbacks (tests). */
 export function forgetVerified(): void {
@@ -275,8 +278,18 @@ export async function subscribe(raw: unknown, deps: EventsDeps): Promise<{ id: s
   const cachedUntil = verified.get(params.delivery.url) ?? 0
   const fresh = cachedUntil <= now.getTime()
   if (fresh) {
+    if (challengesInFlight >= MAX_CHALLENGES_IN_FLIGHT) {
+      log('challenge', { outcome: 'busy', host })
+      throw new ProtocolError(CALLBACK_ENDPOINT_ERROR, 'Other callbacks are being verified. Try again shortly.', { reason: 'busy' })
+    }
     const started = Date.now()
-    const failure = await verifyCallback(deps.fetch, params.delivery.url, params.delivery.secret, id)
+    challengesInFlight++
+    let failure: Awaited<ReturnType<typeof verifyCallback>>
+    try {
+      failure = await verifyCallback(deps.fetch, params.delivery.url, params.delivery.secret, id)
+    } finally {
+      challengesInFlight--
+    }
     log('challenge', { outcome: failure ? 'failed' : 'verified', ...(failure ?? {}), host, ms: Date.now() - started })
     if (failure) throw new ProtocolError(CALLBACK_ENDPOINT_ERROR, 'The callback did not answer the verification challenge.', failure)
     verified.set(params.delivery.url, now.getTime() + VERIFIED_FOR_MS)
