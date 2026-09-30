@@ -13,9 +13,12 @@ they ask you to resolve threads or to handle only some of them.
    the open threads the user asked an agent about ("Ask an agent" in the app),
    from every file, each with its `path` and the file's `version`, and a
    `revision`. When the user asks again later, pass that `revision` as `since`
-   for only the threads asked about after it. If there are none, or the user
-   means every comment, call `list_comments` with no `path` for how many open
-   threads each file has, then with each file's `path` for its threads.
+   for only the threads asked about after it. If there are none, tell the user
+   nothing is asked (or nothing new since last time) and stop. Other threads,
+   including other people's, are not yours to work on. Only when the user
+   explicitly asks for every comment, call `list_comments` with no `path` for
+   how many open threads each file has, then with each file's `path` for its
+   threads.
 3. For each file, `read_file` for its content and `version`.
    - `anchor` says what a thread is about: quoted text and its line, a note's
      heading, a drawing element, or the whole file.
