@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "elaborating",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
   "author": {
     "name": "elaborat.ing",
@@ -23,6 +23,9 @@
         "websiteURL": "https://elaborat.ing",
         "privacyPolicyURL": "https://elaborat.ing/privacy",
         "termsOfServiceURL": "https://elaborat.ing/terms",
+        "supportURL": "https://elaborat.ing/support",
+        "logo": "./assets/logo.png",
+        "composerIcon": "./assets/composer-icon.svg",
         "defaultPrompt": [
           "Work through the open comments in my elaborat.ing project.",
           "Write a note with a D2 diagram of how our sign-in flow works.",

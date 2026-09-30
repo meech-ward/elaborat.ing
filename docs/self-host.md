@@ -155,9 +155,9 @@ bunx supabase@2.118.0 config push --yes --project-ref "$SUPABASE_PROJECT_ID"
 **Edge Functions.** `functions deploy` deploys every function in
 `supabase/functions/` with its `verify_jwt` setting from `config.toml`, and
 `--use-api` bundles them on Supabase's side, so Docker is not needed. The MCP
-server calls itself `supabase-mcp` unless you give it a name. To use the name
-and description in `supabase/functions/mcp-server/.env.example` (edit them if
-you like):
+server calls itself `elaborat.ing` unless you give it another name. To set
+your own name and description, edit them in
+`supabase/functions/mcp-server/.env.example`, then:
 
 ```sh
 cp supabase/functions/mcp-server/.env.example supabase/functions/.env

@@ -394,8 +394,9 @@ approach Hypothesis uses, rather than anything custom.
   level, with its original quote. Nothing is ever written into the source.
 
 **Decision: the database and agent side** (`supabase/schemas/comments.sql`,
-`src/features/comments/`, the MCP comment tools). The comment panel in the
-editor is not built yet.
+`src/features/comments/`, the MCP comment tools). The editor's comment panel
+(`src/features/comments/ui/`) shows a file's threads beside a note, drawing or
+diagram, with pins on the canvas for drawing and diagram elements.
 
 - **Two tables.** `comment_threads` holds a thread's anchor, its file and
   whether it is resolved; `comments` holds the opening comment and every
@@ -504,7 +505,10 @@ editor is not built yet.
   makes every existing passkey stop working.
 - **Phone codes:** only with an SMS provider, rate limits and CAPTCHA, because
   SMS costs money per message and attracts abuse.
-- **CAPTCHA:** Cloudflare Turnstile on sign-up, sign-in and password reset.
+- **CAPTCHA:** planned and off. The plan is Cloudflare Turnstile on sign-up,
+  sign-in and password reset; nothing turns it on yet (`[auth.captcha]` in
+  `config.toml` is commented out, and the sign-in pages send no CAPTCHA
+  token). Phone codes wait for it.
 - **Not possible today:** "Sign in with ChatGPT" is a partner-only beta, and
   there is no "Sign in with Claude"; Anthropic doesn't allow apps to offer
   Claude.ai login. If OpenAI opens its sign-in to all apps, it can be added as a
@@ -624,9 +628,9 @@ Limits that were there already, kept as they are:
 server (`[auth.oauth_server]` in `config.toml`). The consent page uses
 Supabase's React OAuth consent block. Each tool gets a Supabase client scoped
 to the user, so RLS applies, and calls the same database functions the app
-uses. Tools live in `tools/projects.ts`; the server's name and description
-come from the `MCP_SERVER_NAME` and `MCP_SERVER_DESCRIPTION` function
-secrets.
+uses. Tools live in `tools/projects.ts`; the server is named and described as
+elaborat.ing unless the `MCP_SERVER_NAME` and `MCP_SERVER_DESCRIPTION`
+function secrets say otherwise.
 
 **Temporary: a host capability probe, removed after testing.** A separate
 MCP server (`supabase/functions/mcp-probe/`, at `/mcp-probe` through the

@@ -70,6 +70,25 @@ describe('getAppearanceTokens', () => {
     }
   });
 
+  test('ok is a green in every palette and scheme, shown at 3:1 on the panel and background', () => {
+    const hue = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const max = Math.max(r, g, b);
+      const range = max - Math.min(r, g, b);
+      if (range === 0) return 0;
+      const sector = max === r ? ((g - b) / range + 6) % 6 : max === g ? (b - r) / range + 2 : (r - g) / range + 4;
+      return sector * 60;
+    };
+    for (const { id } of themes) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const t = getAppearanceTokens({ theme: id, scheme });
+        const where = `${id} ${scheme}`;
+        expect([where, hue(t.ok) >= 90 && hue(t.ok) <= 160]).toEqual([where, true]);
+        for (const surface of [t.panel, t.bg]) expect([where, contrast(t.ok, surface) >= 3]).toEqual([where, true]);
+      }
+    }
+  });
+
   test('the unsaved dot shows at 3:1 on a tab, or gets a muted ring that does', () => {
     const ringed: string[] = [];
     for (const { id } of themes) {

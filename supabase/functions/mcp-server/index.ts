@@ -35,17 +35,17 @@ function readTextEnv(name: string, fallback: string): string {
   return Deno.env.get(name)?.trim() || fallback
 }
 
-const SERVER_NAME = readTextEnv('MCP_SERVER_NAME', 'supabase-mcp')
+// A self-hosted copy can name and describe itself with these function secrets.
+const SERVER_NAME = readTextEnv('MCP_SERVER_NAME', 'elaborat.ing')
 const SERVER_DESCRIPTION = readTextEnv(
   'MCP_SERVER_DESCRIPTION',
-  'MCP access to this Supabase project for the signed-in user.'
+  "Read, write and search the notes, drawings and diagrams in the user's elaborat.ing projects, and work through the comments people leave on them."
 )
 
 const SERVER_INSTRUCTIONS =
   `${SERVER_DESCRIPTION} ` +
-  'Every tool runs as the signed-in Supabase user, so role grants and Row Level Security apply. ' +
-  "Call tools/list to discover what this project exposes, and read a tool's description and " +
-  'annotations before calling it — some tools have side effects. ' +
+  'Every tool acts as the signed-in user, with their access: only the projects they own or that are shared with them. ' +
+  "Read a tool's description and annotations before calling it: some tools change files. " +
   // How elaborat.ing files are written, so what agents create renders in the app.
   'Projects hold notes, drawings and diagrams. Write new notes as MDX (.mdx): Markdown plus components. ' +
   'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
@@ -66,7 +66,7 @@ const CORS_HEADERS: Record<string, string> = {
 
 function createServer(context: ToolContext, events: EventsContext): McpServer {
   const server = new McpServer(
-    { name: SERVER_NAME, version: '1.0.0' },
+    { name: SERVER_NAME, description: SERVER_DESCRIPTION, version: '1.0.0' },
     { instructions: SERVER_INSTRUCTIONS, capabilities: EVENT_CAPABILITIES }
   )
 

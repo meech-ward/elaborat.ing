@@ -92,6 +92,10 @@ regenerating migrations from `supabase/schemas/` would change
   on a hosted Supabase project, not a local `supabase start` stack.
 - **Smallest complete change.** Do what the task asks, test in proportion to
   risk, and list anything else you notice instead of fixing it.
+- **Bump the plugin's version when a skill changes.** Change `version` in
+  `plugins/elaborating/plugin.json` whenever a skill in
+  `plugins/elaborating/skills/` changes: Codex installs a plugin by its
+  version, so without a bump its users keep the old skills.
 - **Keep docs true.** If a change settles an open question or changes a
   decision, update the architecture or roadmap in the same change.
 - **Plain language in user-facing text.** No em dashes in UI copy, README text

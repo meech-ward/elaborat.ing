@@ -143,6 +143,13 @@ export default defineConfig({
         display: "standalone",
         background_color: "#191c22",
         theme_color: "#11141a",
+        // The app's mark (public/favicon.svg), drawn at these sizes. The mark
+        // sits well inside the middle, so the 512 also serves as maskable.
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
       },
       workbox: {
         // What the app can need with no network: every chunk including lazy
