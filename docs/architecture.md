@@ -36,6 +36,15 @@ exactly the same database functions, as the user.
 - **Test against the cloud.** Database, auth and function changes are verified
   on a hosted Supabase project. There is no local `supabase start` stack in the
   workflow.
+- **An app, not a page; the shell first.** The app is separate from the data:
+  no server-side rendering, and it should feel like a desktop or mobile app.
+  The first download is only the shell: the page frame, its CSS and its
+  loading states, so something appears as fast as possible. Everything heavy
+  (Monaco, the drawing engine, the D2 engine, charts, code highlighting, the
+  MDX compiler) is a dynamic import, fetched only when the screen needs it,
+  behind a placeholder or loading state. A slow download after first paint is
+  fine; a slow first paint is not. `bun run report:bundle` measures it and CI
+  holds each page's first paint to a budget. Every change is judged by this.
 - **Source is authoritative.** For notes, the Markdown/MDX text is the
   document; rendered edits are checked, precise source edits. For drawings, the
   native Excalidraw scene is authoritative.
