@@ -37,12 +37,17 @@ export const CHART_TEXT = "Charts show in elaborat.ing."
 function ChartBox({ name, description, label }: { name: string; description?: unknown; label?: unknown }): ReactNode {
   const words = typeof description === "string" ? description : typeof label === "string" ? label : null
   return (
-    <EmbedBox data-chart-placeholder={name} caption={<code>{`<${name}>`}</code>} className="not-prose">
-      <div className="text-center text-[13px] leading-snug text-muted-foreground">
-        {words && <p className="m-0 mb-1 text-body">{words}</p>}
-        <p className="m-0">{CHART_TEXT}</p>
-      </div>
-    </EmbedBox>
+    <EmbedBox
+      data-chart-placeholder={name}
+      caption={<code>{`<${name}>`}</code>}
+      message={
+        <>
+          {words && <span className="mb-1 block text-body">{words}</span>}
+          {CHART_TEXT}
+        </>
+      }
+      className="not-prose"
+    />
   )
 }
 
