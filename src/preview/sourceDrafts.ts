@@ -200,6 +200,11 @@ export function captureDraftsBeforeRender() {
 
 export function getSourceDraft(region: DraftRegion): DraftValue | undefined { return store.get(region); }
 
+/** A focused draft for a region that has just appeared, holding `value` with the caret at its end. */
+export function startSourceDraft(region: DraftRegion, value: string, baseline: string) {
+  if (!store.get(region)) store.capture(region, { value, start: value.length, end: value.length, focused: true }, baseline);
+}
+
 export function restoreSourceDraft(element: HTMLElement) {
   const region = regionOfElement(element), draft = region && store.get(region);
   if (!draft) return;

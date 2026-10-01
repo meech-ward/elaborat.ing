@@ -9,7 +9,7 @@ import {
 import { COMPONENT_CATALOG } from "../features/document/componentCatalog";
 import type { RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
-import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft } from './sourceDrafts';
+import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
 import { isReadOnly } from './readOnly';
 
 let context: {
@@ -33,6 +33,14 @@ const subscribe = (listener: () => void) => {
 };
 const getPaths = () => resourcePaths;
 const getAuthoringContext = () => context;
+/**
+ * What the rendered editor gives a code block made from a typed fence: the
+ * text typed while it was being made, and undo in the note's history.
+ */
+let codeBlockHooks = { typed: () => "", undo: () => {} };
+export function setCodeBlockHooks(hooks: typeof codeBlockHooks) {
+  codeBlockHooks = hooks;
+}
 export function setAuthoringPaths(paths: readonly string[]) {
   resourcePaths = paths;
   for (const listener of listeners) listener();
@@ -145,8 +153,18 @@ export function SourceLeaf(props: {
 }
 /** Compiler-only component: source ownership is revalidated in the parent. */
 export function SourceCode(props: { from: number; to: number; expected: string; value: string; language: string }): ReactNode {
-  const { session, revision } = useSyncExternalStore(subscribe, getAuthoringContext);
+  const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
+  // An empty code block the parent put the caret in was just made from a
+  // typed fence: it opens for typing, with anything typed meanwhile, and
+  // Ctrl+Z before anything else undoes making it.
+  const [made] = useState(() => {
+    const focus = metadata?.focus;
+    if (props.value !== '' || focus == null || focus <= props.from || focus >= props.to) return false;
+    startSourceDraft(props, codeBlockHooks.typed(), props.value);
+    return true;
+  });
   return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={isReadOnly()}
+    onUndo={made ? codeBlockHooks.undo : undefined}
     draft={getSourceDraft(props)} onEditorInput={captureSourceDraft} onEditorMount={restoreSourceDraft} onCommit={value => {
     if (value === props.value) return;
     queueRangeEdit({ kind: 'prose-edit', session, revision, from: props.from, to: props.to, expected: props.expected, value });

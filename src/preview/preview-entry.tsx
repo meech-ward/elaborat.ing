@@ -77,6 +77,7 @@ import {
   RestoreAuthoringFocus,
   setAuthoringContext,
   setAuthoringPaths,
+  setCodeBlockHooks,
 } from "./authoring";
 
 type PendingRender = {
@@ -642,10 +643,20 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   setReadOnly(pending.readOnly === true);
   try {
     if (pending.fluid) {
-      if (!fluidEditor)
-        fluidEditor = new FluidEditor(editorMount, () => {
-          for (const listener of islandListeners) listener();
+      if (!fluidEditor) {
+        const editor = (fluidEditor = new FluidEditor(
+          editorMount,
+          () => {
+            for (const listener of islandListeners) listener();
+          },
+          undefined,
+          { codeFences: true },
+        ));
+        setCodeBlockHooks({
+          typed: () => editor.typedForCodeBlock,
+          undo: () => editor.undo(),
         });
+      }
       if (!fluidContent || runtimeKey !== pending.fluid.runtimeKey) {
         const workspaceModules: Record<string, Awaited<ReturnType<typeof run>>> = Object.create(null);
         for (const module of pending.modules ?? []) {

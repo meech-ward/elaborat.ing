@@ -23,7 +23,10 @@ import {
 } from "prosemirror-schema-list";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
 import { fluidSchema } from "../features/rendered/fluidSchema";
-import { emptyListBackspace } from "../features/rendered/fluidCommands";
+import {
+  codeFenceOpener,
+  emptyListBackspace,
+} from "../features/rendered/fluidCommands";
 import type {
   RenderMessage,
   FluidSyntaxHint,
@@ -186,26 +189,34 @@ export class FluidEditor {
   private historyPending: "undo" | "redo" | null = null;
   private keysSinceFocus = false;
   private flashTimer = 0;
+  /**
+   * A typed code fence opening the parent is making a code block of (`pos`
+   * is its paragraph). Until the new document arrives, typed text is kept
+   * here for the code block instead of going into the paragraph.
+   */
+  private fence: { pos: number; sent: boolean; typed: string } | null = null;
+  private fenceTyped = "";
   private notifyIslands: () => void;
   private send: (message: object) => void;
 
   /**
    * `send` delivers the editor's messages to whatever checks its edits: the
    * parent page by default, or a checker in the same page (the chat card).
+   * With `codeFences`, Enter after a typed fence opening (```js) asks for a
+   * code block; the chat card's code blocks are not editable, so it has none.
    */
   constructor(
     mount: HTMLElement,
     notifyIslands: () => void,
     send: (message: object) => void = (message) => parent.postMessage(message, "*"),
+    { codeFences = false }: { codeFences?: boolean } = {},
   ) {
     this.notifyIslands = notifyIslands;
     this.send = send;
     const requestHistory =
       (direction: "undo" | "redo"): Command =>
       () => {
-        this.group++;
-        this.historyPending = direction;
-        this.flush();
+        this.history(direction);
         return true;
       };
     const nodes = fluidSchema.nodes;
@@ -222,6 +233,21 @@ export class FluidEditor {
             "Mod-i": toggleMark(fluidSchema.marks.em),
             "Mod-`": toggleMark(fluidSchema.marks.code),
             Enter: chainCommands(
+              (state) => {
+                const { $from, empty } = state.selection;
+                if (
+                  !codeFences ||
+                  !empty ||
+                  $from.depth !== 1 ||
+                  $from.parentOffset !== $from.parent.content.size ||
+                  !codeFenceOpener($from.parent)
+                )
+                  return false;
+                this.fence = { pos: $from.before(), sent: false, typed: "" };
+                this.group++;
+                this.flush();
+                return true;
+              },
               (state, dispatch) => {
                 const { $from, empty } = state.selection;
                 if (
@@ -274,7 +300,17 @@ export class FluidEditor {
         inline_object: (node) => this.objectView(node, true),
       },
       // Runs before the keymap, so every key command sees the real caret.
-      handleKeyDown: (view) => {
+      handleKeyDown: (view, event) => {
+        if (this.fence) {
+          // The code block is on its way: Enter and Backspace act on the
+          // text kept for it, and no other key edits the paragraph.
+          if (event.key === "Enter") this.fence.typed += "\n";
+          else if (event.key === "Backspace")
+            this.fence.typed = this.fence.typed.slice(0, -1);
+          else if (!["Delete", "Tab"].includes(event.key) && !event.ctrlKey && !event.metaKey)
+            return false;
+          return true;
+        }
         this.keysSinceFocus = true;
         adoptDOMCaret(view);
         return false;
@@ -325,6 +361,10 @@ export class FluidEditor {
         },
       },
       handleTextInput: (view, from, to, text) => {
+        if (this.fence) {
+          this.fence.typed += text;
+          return true;
+        }
         // The finite structural Markdown shortcuts work through ordinary PM
         // transactions and the same checked source adapter, not a serializer.
         if (view.composing || from !== to) return false;
@@ -445,6 +485,11 @@ export class FluidEditor {
       this.view.updateState(this.view.state.apply(tr));
       return;
     }
+    if (this.fence) {
+      // Any other edit (a paste, an input method's) waits for the code block.
+      this.view.updateState(this.view.state);
+      return;
+    }
     if (objects(tr.doc) !== objects(this.view.state.doc)) {
       // DOMObserver may already have seen a native browser mutation. Re-read
       // the unchanged state to restore the rejected DOM, including islands.
@@ -493,6 +538,22 @@ export class FluidEditor {
     this.flush();
   }
 
+  private history(direction: "undo" | "redo") {
+    this.group++;
+    this.historyPending = direction;
+    this.flush();
+  }
+
+  /** Undo in the note's history, as Ctrl+Z in the prose does. */
+  undo() {
+    this.history("undo");
+  }
+
+  /** What was typed while the code block now shown was being made. */
+  get typedForCodeBlock(): string {
+    return this.fenceTyped;
+  }
+
   private flush() {
     if (this.inFlight || this.epoch < 0) return;
     const next = this.queue.shift();
@@ -504,6 +565,11 @@ export class FluidEditor {
         operation: ++this.operation,
         ...next,
       });
+    } else if (this.fence && !this.fence.sent) {
+      // Every earlier edit is checked, so the parent has this paragraph too.
+      this.fence.sent = true;
+      this.post({ kind: "fluid-pending", pending: false });
+      this.post({ kind: "fluid-code-fence", epoch: this.epoch, pos: this.fence.pos });
     } else if (this.historyPending) {
       const direction = this.historyPending;
       this.historyPending = null;
@@ -520,7 +586,10 @@ export class FluidEditor {
     const reset = fluid.reset || fluid.epoch !== this.epoch;
     this.session = message.session;
     this.revision = message.revision;
+    // The new document has the code block, if the parent made one.
+    this.fenceTyped = reset && this.fence ? this.fence.typed : "";
     if (reset) {
+      this.fence = null;
       this.epoch = fluid.epoch;
       this.operation = fluid.operation;
       this.inFlight = false;

@@ -42,6 +42,7 @@ import {
 } from "react";
 import { buildPreviewSrcdoc, frameModuleCode } from "../../preview/frame";
 import {
+  codeFenceFromParagraph,
   projectFluidSource,
   prepareFluidTransaction,
   fluidPositionForSourceOffset,
@@ -829,6 +830,41 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         } catch (error) {
           onError?.(error instanceof Error ? error.message : String(error));
         }
+        return;
+      }
+      if (message.kind === "fluid-code-fence") {
+        const before = authority.current;
+        const snapshot = latestDocument.current;
+        if (
+          !before ||
+          before.epoch !== message.epoch ||
+          before.epoch !== epoch.current ||
+          snapshot.text !== before.text ||
+          snapshot.revision !== before.revision
+        )
+          return;
+        const made = codeFenceFromParagraph(before, message.pos);
+        if (made) {
+          // The caret goes inside the new block. The source's own caret stays
+          // after the fence, so undo brings the typed opening back with the
+          // caret after it.
+          pendingFocus.current = { revision: snapshot.revision + 1, offset: made.focus };
+          const typed = { anchor: made.patch.to, head: made.patch.to };
+          if (onPatch(snapshot.revision, [made.patch], { before: typed }) !== false) return;
+          pendingFocus.current = null;
+        }
+        // Not made: the frame gets its document back, with the caret where it was.
+        const paragraph = before.doc.nodeAt(message.pos);
+        const end = paragraph ? message.pos + paragraph.nodeSize - 1 : undefined;
+        const reset = {
+          ...before,
+          epoch: ++epoch.current,
+          operation: 0,
+          reset: true,
+          selection: end === undefined ? undefined : { anchor: end, head: end },
+        };
+        authority.current = reset;
+        setExposed(reset);
         return;
       }
       if (message.kind === "edit-rejected") {

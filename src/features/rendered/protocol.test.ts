@@ -187,6 +187,7 @@ describe('staleChildMessage', () => {
       'edit-rejected': 'refusal',
       'fluid-transaction': 'lost-edit',
       'fluid-history': 'lost-edit',
+      'fluid-code-fence': 'lost-edit',
       'prose-enter': 'lost-edit',
       'block-edit': 'lost-edit',
       'insert-block': 'lost-edit',

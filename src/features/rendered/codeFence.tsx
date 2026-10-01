@@ -53,12 +53,14 @@ export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'
 }
 
 /** An uncontrolled textarea keeps rapid typing and multiline input in one draft. */
-export function EditableCodeFence({ value, language, onCommit, sourceRegion, draft, onEditorInput, onEditorMount, readOnly = false }: {
+export function EditableCodeFence({ value, language, onCommit, onUndo, sourceRegion, draft, onEditorInput, onEditorMount, readOnly = false }: {
   value: string;
   language: string;
   /** Show the code without an Edit code button (a read-only document). */
   readOnly?: boolean;
   onCommit: (value: string) => void;
+  /** Ctrl+Z (Cmd+Z) while the code is unchanged: undo in the note instead. */
+  onUndo?: () => void;
   sourceRegion?: { from: number; to: number; expected: string };
   draft?: { value: string; focused: boolean };
   onEditorInput?: (element: HTMLTextAreaElement) => void;
@@ -94,6 +96,12 @@ export function EditableCodeFence({ value, language, onCommit, sourceRegion, dra
           onKeyDown={event => {
             event.stopPropagation();
             if (event.nativeEvent.isComposing) return;
+            if (onUndo && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey
+              && event.key.toLowerCase() === 'z' && event.currentTarget.value === value) {
+              event.preventDefault();
+              onUndo();
+              return;
+            }
             if (event.key === 'Tab') {
               event.preventDefault();
               const input = event.currentTarget;

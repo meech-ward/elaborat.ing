@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { AddMarkStep, ReplaceStep, Transform } from "prosemirror-transform";
 import { Slice, Fragment } from "prosemirror-model";
 import { fluidSchema } from "./fluidSchema";
-import { projectFluidSource, prepareFluidTransaction } from "./fluidProjection";
+import { codeFenceFromParagraph, projectFluidSource, prepareFluidTransaction } from "./fluidProjection";
+import { applySourcePatches } from "../document";
 import {
   fluidPositionForSourceOffset,
   fluidSourceOffsetForPosition,
@@ -544,3 +545,39 @@ for (const format of ["md", "mdx"] as const) {
     expect(next.text).toBe("﻿S");
   });
 }
+
+for (const format of ["md", "mdx"] as const) {
+  test(`${format}: a typed code fence opening becomes an empty code block, saved as a plain fence`, async () => {
+    for (const [typed, fence] of [["```js", "```js\n```"], ["```", "```\n```"], ["``` ", "```\n```"], ["````ts ", "````ts\n````"]]) {
+      // Typed into a paragraph, the backticks are saved escaped.
+      let projection = await projectFluidSource("", format);
+      for (const [index, character] of [...typed].entries()) {
+        const accepted = await prepareFluidTransaction(
+          { text: projection.text, format, revision: index },
+          projection,
+          [replace(1 + index, 1 + index, character)],
+        );
+        projection = accepted.projection;
+      }
+      expect(projection.text).not.toContain(fence.split("\n")[0]);
+      const text = `Intro.\n\n${projection.text}\n\nAfter.\n`;
+      const before = await projectFluidSource(text, format);
+      const made = codeFenceFromParagraph(before, before.mapping.roots[1].pos)!;
+      const saved = applySourcePatches({ text, format, revision: 1 }, 1, [made.patch]).text;
+      expect(saved).toBe(`Intro.\n\n${fence}\n\nAfter.\n`);
+      // The caret goes inside the fence, where the code goes.
+      expect(saved.slice(0, made.focus)).toBe(`Intro.\n\n${fence.split("\n")[0]}\n`);
+      const after = await projectFluidSource(saved, format);
+      expect(after.doc.child(1).type.name).toBe("object");
+      expect(after.islands.map(({ from, to }) => saved.slice(from, to))).toEqual([fence]);
+    }
+  });
+}
+
+test("only a top-level paragraph holding just a fence opening becomes a code block", async () => {
+  const text = "Not a fence.\n\nSay \\`\\`\\`js\n\n\\`\\`js\n\n- \\`\\`\\`js\n\n\\`\\`\\`js \\`\n\n**\\`\\`\\`js**\n";
+  const projection = await projectFluidSource(text, "md");
+  for (const root of projection.mapping.roots)
+    expect(codeFenceFromParagraph(projection, root.pos)).toBeNull();
+  expect(projection.mapping.roots).toHaveLength(6);
+});

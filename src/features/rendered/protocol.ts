@@ -424,6 +424,15 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     epoch: whole,
     direction: z.enum(["undo", "redo"]),
   }),
+  // Enter after a typed code fence opening (```js): make the paragraph at
+  // `pos` a code block. The parent checks the paragraph in its own projection.
+  z.strictObject({
+    kind: z.literal("fluid-code-fence"),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    epoch: whole,
+    pos: whole,
+  }),
   z.object({
     kind: z.literal("prose-enter"),
     session: z.string().check(z.minLength(1)),

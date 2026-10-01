@@ -161,3 +161,29 @@ test("a note opened in Rendered edits and undoes without loading the code editor
   await expect(sourceText(page)).not.toContainText("ONE")
   expect(await saved(page, fake, id)).toBe(NOTE)
 })
+
+test("```js and Enter in the rendered prose make a code block for the code: Ctrl+Z turns it back, and Source shows the fence", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  const opening = frameOf(page).locator("p").filter({ hasText: /^```js$/ })
+  const code = frameOf(page).getByRole("textbox", { name: "Edit js code" })
+  await typeAtEnd(page, first(page), "")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("```js")
+  await expect(opening).toBeVisible()
+  await page.keyboard.press("Enter")
+  await expect(code).toBeFocused()
+  await expect(opening).toHaveCount(0)
+
+  // Undo right away brings the typed opening back, and Enter makes the block again.
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(opening).toBeVisible()
+  await expect(code).toHaveCount(0)
+  await page.keyboard.press("Enter")
+  // Typed straight after Enter, the code goes in the block.
+  await page.keyboard.type("const x = 1;")
+  await expect(code).toHaveValue("const x = 1;")
+
+  await toSource(page)
+  await expect(sourceText(page)).toContainText("```js")
+  expect(await saved(page, fake, id)).toBe(NOTE.replace(FIRST, `${FIRST}\n\n\`\`\`js\nconst x = 1;\n\`\`\``))
+})

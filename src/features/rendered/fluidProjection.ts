@@ -24,6 +24,7 @@ import {
   type Instrumentation,
 } from "./instrumentation";
 import { fluidSchema } from "./fluidSchema";
+import { codeFenceOpener } from "./fluidCommands";
 import { prepareComponentEnvironment, type ComponentEnvironment } from '../document/componentModules';
 import { COMPONENT_CATALOG } from '../document/componentCatalog';
 export interface FluidIsland {
@@ -1009,6 +1010,31 @@ function protectedHeadingPatch(
   const root = projection.mapping.roots[changed];
   if (!root || !root.node.eq(previous) || /[\r\n]/.test(projection.text.slice(root.from, root.to))) return null;
   return { from: root.from, to: root.from, insert: "#".repeat(level) + " ", expected: "" };
+}
+
+/**
+ * A top-level paragraph that is only a typed code fence opening (```js)
+ * becomes an empty code block: its source is replaced by the fence, and
+ * `focus` is the offset inside it, where the code goes. Null for any other
+ * node at `pos`.
+ */
+export function codeFenceFromParagraph(
+  projection: FluidProjection,
+  pos: number,
+): { patch: SourcePatch; focus: number } | null {
+  const root = projection.mapping.roots.find((entry) => entry.pos === pos);
+  const opener = root ? codeFenceOpener(root.node) : null;
+  if (!root || !opener) return null;
+  const open = opener.ticks + opener.info;
+  return {
+    patch: {
+      from: root.from,
+      to: root.to,
+      insert: `${open}\n${opener.ticks}`,
+      expected: projection.text.slice(root.from, root.to),
+    },
+    focus: root.from + open.length + 1,
+  };
 }
 
 const stepShape = z.looseObject({
