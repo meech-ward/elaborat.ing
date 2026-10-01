@@ -37,8 +37,25 @@ export function presentDrawing(scene: DrawingScene, colors: CanvasColors): Drawi
 // `filter: invert(93%) hue-rotate(180deg)` (0.18.1, `--theme-filter`).
 const INVERT = 0.93;
 const DARK_FILTER = 'invert(93%) hue-rotate(180deg)';
-// Its dark export turns raster images back, so they keep their colours.
+// Its dark export turns raster images back, so they keep their colours
+// (src/preview/reading.css does the same for a note's pictures).
 const IMAGE_FILTER = 'invert(100%) hue-rotate(180deg) saturate(1.25)';
+
+/**
+ * The `use` elements in an exported picture that draw a raster image: the
+ * ones Excalidraw's dark export turns back (each image is a symbol holding an
+ * `<image>`, drawn by a `use`; an SVG image stays under the dark filter).
+ */
+export function rasterImageUses(picture: ParentNode): Element[] {
+  const byId = new Map<string, Element>();
+  for (const element of picture.querySelectorAll('[id]')) if (!byId.has(element.id)) byId.set(element.id, element);
+  return [...picture.querySelectorAll('use')].filter((use) => {
+    const target = (use.getAttribute('href') ?? use.getAttribute('xlink:href'))?.slice(1);
+    const image = target ? byId.get(target)?.querySelector('image') : null;
+    const href = image?.getAttribute('href') ?? image?.getAttribute('xlink:href') ?? '';
+    return image != null && !href.startsWith('data:image/svg+xml');
+  });
+}
 
 /**
  * An exported picture as Excalidraw's dark export draws it (0.18.1,
@@ -51,12 +68,7 @@ export function darkPicture(svg: string): string {
   const root = doc.documentElement;
   if (root.localName !== 'svg') return svg;
   root.setAttribute('filter', DARK_FILTER);
-  for (const use of doc.querySelectorAll('use')) {
-    const target = (use.getAttribute('href') ?? use.getAttribute('xlink:href'))?.slice(1);
-    const image = target ? doc.getElementById(target)?.querySelector('image') : null;
-    const href = image?.getAttribute('href') ?? image?.getAttribute('xlink:href') ?? '';
-    if (image && !href.startsWith('data:image/svg+xml')) use.setAttribute('filter', IMAGE_FILTER);
-  }
+  for (const use of rasterImageUses(doc)) use.setAttribute('filter', IMAGE_FILTER);
   return new XMLSerializer().serializeToString(doc);
 }
 // hue-rotate(180deg) is 2L - I for the filter's luma weights, its own inverse.

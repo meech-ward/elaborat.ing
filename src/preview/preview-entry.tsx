@@ -22,6 +22,7 @@ import {
   useContext,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -41,6 +42,7 @@ import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { receiveFrameModule, setFrameModuleRequest } from './frameModules';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
+import { rasterImageUses } from '../features/drawings/presentation.ts';
 import {
   Alert,
   AlertDescription,
@@ -436,11 +438,18 @@ function ResourceEmbed(props: {
     ? ({ "--picture-width": `${size.width}px`, "--picture-ratio": size.width / size.height } as CSSProperties)
     : undefined;
   const pixels = useRef<HTMLSpanElement>(null);
+  // One object per picture: React writes the markup again whenever this
+  // object is a new one, which would undo the ids and marks set below.
+  const markup = useMemo(() => ({ __html: svg ?? "" }), [svg]);
   const [clipped, setClipped] = useState(false);
   // A note can show the same picture twice: each copy's ids are its own.
   const scope = useId().replace(/[^\w-]/g, "");
   useLayoutEffect(() => {
-    if (pixels.current) scopeSvgIds(pixels.current, scope);
+    if (!pixels.current) return;
+    scopeSvgIds(pixels.current, scope);
+    // reading.css turns these back under the dark filter, so a drawing's
+    // images keep their colours as the scheme switches.
+    for (const use of rasterImageUses(pixels.current)) use.setAttribute("data-raster-image", "");
   }, [svg, scope]);
   useLayoutEffect(() => {
     const box = pixels.current;
@@ -481,7 +490,7 @@ function ResourceEmbed(props: {
             ref={pixels}
             data-resource-pixels={src}
             data-clipped={clipped || undefined}
-            dangerouslySetInnerHTML={{ __html: svg }}
+            dangerouslySetInnerHTML={markup}
             style={{ display: "block", pointerEvents: "none", ...sizing }}
           />
         </button>

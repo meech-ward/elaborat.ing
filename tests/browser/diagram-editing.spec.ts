@@ -345,9 +345,18 @@ test("a note's drawing and diagram follow light and dark, and the viewer keeps a
     const { blue, red } = await noteColours()
     return blue[2] > 150 && Math.max(blue[0], blue[1]) < 130 && red[0] > 150 && Math.max(red[1], red[2]) < 110
   }, { message: "the drawing's image shows in the note" }).toBe(true)
+  const light = await noteColours()
   // The system turning dark redraws both through Excalidraw's dark theme filter, with no reload.
   await page.emulateMedia({ colorScheme: "dark" })
   await expect.poll(filters).toEqual([expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/), expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/)])
+  // The image keeps its colours, give or take, as Excalidraw's dark export
+  // draws it: not lightened to the sky blue and pink the dark filter alone
+  // makes (each of those is 60 or more off in some channel).
+  const drift = async () => {
+    const dark = await noteColours()
+    return Math.max(...[0, 1, 2].flatMap((at) => [Math.abs(dark.blue[at] - light.blue[at]), Math.abs(dark.red[at] - light.red[at])]))
+  }
+  await expect.poll(drift, { message: "the drawing's image keeps its colours in the dark note" }).toBeLessThan(45)
 
   // The viewer shows the drawing as Excalidraw's dark export does: the
   // background and box dark, the picture's blue and red as they are.

@@ -377,6 +377,11 @@ figure[data-resource] {
 :root[data-scheme="dark"] [data-resource-pixels] > svg {
   filter: invert(93%) hue-rotate(180deg);
 }
+/* A drawing's raster images turned back, as Excalidraw's dark export does
+   (darkPicture in src/features/drawings/presentation.ts), so they keep their colours. */
+:root[data-scheme="dark"] [data-resource-pixels] > svg [data-raster-image] {
+  filter: invert(100%) hue-rotate(180deg) saturate(1.25);
+}
 figure[data-resource] > figcaption {
   position: absolute;
   top: 6px;
