@@ -305,11 +305,12 @@ content_path = "./supabase/templates/recovery.html"
 subject = "Your elaborat.ing code"
 content_path = "./supabase/templates/reauthentication.html"
 
-# Uncomment to customize notification email template
-# [auth.email.notification.password_changed]
-# enabled = true
-# subject = "Your password has been changed"
-# content_path = "./supabase/templates/password_changed_notification.html"
+# elaborat.ing: tells the account's email when its password changes, so
+# someone who didn't change it knows to reset it.
+[auth.email.notification.password_changed]
+enabled = true
+subject = "Your elaborat.ing password changed"
+content_path = "./supabase/templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

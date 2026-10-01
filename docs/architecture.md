@@ -504,7 +504,9 @@ diagram, with pins on the canvas for drawing and diagram elements.
   confirms the email with a link or code that signs in. A forgotten password
   gets a reset link that signs in on a page that sets a new one. Settings >
   Account sets or changes a password; from a session older than a day, Auth
-  first emails a code (`secure_password_change`).
+  first emails a code (`secure_password_change`). After any change, Auth
+  emails the account to say so
+  (`supabase/templates/password_changed_notification.html`).
 - **Social:** GitHub and Google, declared in `config.toml` and off. Turning one
   on takes an OAuth app at the provider (callback
   `https://<project-ref>.supabase.co/auth/v1/callback`), its client id and
