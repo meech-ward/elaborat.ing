@@ -281,9 +281,20 @@ test("a new comment can ask an agent, its author turns that off on the thread, a
 })
 
 test("the shortcut shows the panel and focus goes back to the toggle when it closes", async ({ page }) => {
+  // The first press comes before the panel's code has arrived, and still shows it.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  let requested = false
+  await page.route(/\/assets\/CommentsSurfaceView-[\w-]+\.js$/, async (route) => {
+    requested = true
+    await held
+    await route.continue()
+  })
   await openNote(page)
-  await expect(toggle(page)).toBeVisible()
+  await expect.poll(() => requested).toBe(true)
   await page.keyboard.press("ControlOrMeta+Alt+m")
+  await expect(page.getByRole("progressbar", { name: "Loading comments" })).toBeVisible()
+  release()
   await expect(panel(page)).toBeFocused()
   await panel(page).getByRole("button", { name: "Close comments" }).click()
   await expect(panel(page)).toBeHidden()

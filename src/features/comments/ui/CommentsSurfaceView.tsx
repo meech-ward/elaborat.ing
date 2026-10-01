@@ -6,7 +6,6 @@ import {
   CommentsSheet,
   CommentThread,
   EmptyState,
-  isApplePlatform,
   type CommentsPanelProps,
   type CommentsStatus,
 } from "@/features/design-system"
@@ -24,9 +23,9 @@ import { newComments, type ThreadView } from "./threadViews"
 /**
  * The comments of the file on screen: the library's panel as an aside
  * beside the editor on a desktop (`compact` false), or its sheet from the
- * bottom on a phone. Always mounted: it answers ⌘⌥M / Ctrl+Alt+M where the
- * file does not take the key, moves focus to a thread a marker opens, and
- * reads out what changed.
+ * bottom on a phone. Always mounted: it moves focus to a thread a marker
+ * opens, and reads out what changed. CommentsSurface.tsx answers ⌘⌥M /
+ * Ctrl+Alt+M, before this chunk has arrived too.
  */
 export function CommentsSurfaceView({ compact, className }: { compact: boolean; className?: string }) {
   const comments = useProjectComments()
@@ -44,29 +43,6 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
     // A trailing space tells two same messages apart, so both are read out.
     setAnnouncement(`${text}${++said.current % 2 ? "" : " "}`)
   }
-
-  // ⌘⌥M or Ctrl+Alt+M shows and hides the comments. A note's editor takes
-  // the key first to comment on a selection or a heading; the page gets it
-  // everywhere else. Alt changes the key's character on a Mac, so its code is read.
-  const shown = useRef({ open, setOpen })
-  useEffect(() => {
-    shown.current = { open, setOpen }
-  })
-  useEffect(() => {
-    const apple = isApplePlatform()
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.code !== "KeyM" || !event.altKey || event.shiftKey) return
-      if (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return
-      event.preventDefault()
-      const { open: wasOpen, setOpen: change } = shown.current
-      const inside = document.activeElement?.closest(SURFACE)
-      change(!wasOpen)
-      if (!wasOpen) afterRender(() => document.querySelector<HTMLElement>(SURFACE)?.focus())
-      else if (inside) document.querySelector<HTMLElement>(TOGGLE)?.focus()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [])
 
   // A marker or a highlight's thread takes the keyboard.
   useEffect(() => controller?.onFocusThread(focusThread), [controller])

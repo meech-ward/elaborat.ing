@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react"
 import { CommentsButton, FloatingPanel, LoadingLine, commentsShortcut, isApplePlatform } from "@/features/design-system"
 import { moduleLoader, useModule } from "@/lib/moduleLoader"
 import { cn } from "@/lib/utils"
@@ -110,17 +110,56 @@ const surfaceView = moduleLoader(() => import("./CommentsSurfaceView"))
  * beside the editor on a desktop (`compact` false), or its sheet from the
  * bottom on a phone (CommentsSurfaceView.tsx). Mounted with the project, it
  * starts loading them; a panel opened before they arrive shows its frame
- * with a loading line.
+ * with a loading line. It answers ⌘⌥M / Ctrl+Alt+M from the start, so a key
+ * pressed before the panel's chunk arrives is not lost.
  */
 export function CommentsSurface({ compact, className }: { compact: boolean; className?: string }) {
   const { module } = useModule(surfaceView, true)
+  const comments = useProjectComments()
   const guest = useContext(GuestContext)
   const ui = useCommentsUi()
+  const open = guest ? guest.open : ui.panelOpen
+  const setOpen = (next: boolean) => (guest ? guest.onOpenChange(next) : comments?.controller.setPanelOpen(next))
+
+  // ⌘⌥M or Ctrl+Alt+M shows and hides the comments. A note's editor takes
+  // the key first to comment on a selection or a heading; the page gets it
+  // everywhere else. Alt changes the key's character on a Mac, so its code is read.
+  const shown = useRef({ open, setOpen })
+  useEffect(() => {
+    shown.current = { open, setOpen }
+  })
+  useEffect(() => {
+    const apple = isApplePlatform()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.code !== "KeyM" || !event.altKey || event.shiftKey) return
+      if (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return
+      event.preventDefault()
+      const { open: wasOpen, setOpen: change } = shown.current
+      const inside = document.activeElement?.closest(SURFACE)
+      change(!wasOpen)
+      if (wasOpen) {
+        if (inside) document.querySelector<HTMLElement>(TOGGLE)?.focus()
+        return
+      }
+      // The panel takes the keyboard once it shows, after its chunk if the
+      // key came first, unless the person has moved focus on by then.
+      const from = document.activeElement
+      surfaceView.load().then(
+        () =>
+          afterRender(() => {
+            if (document.activeElement === from || document.activeElement === document.body) document.querySelector<HTMLElement>(SURFACE)?.focus()
+          }),
+        () => {},
+      )
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   if (module) {
     const { CommentsSurfaceView } = module
     return <CommentsSurfaceView compact={compact} className={className} />
   }
-  const open = guest ? guest.open : ui.panelOpen
   if (compact || !open) return null
   return (
     <FloatingPanel className={cn("flex h-full w-[320px] max-w-full shrink-0 flex-col overflow-hidden", className)}>
