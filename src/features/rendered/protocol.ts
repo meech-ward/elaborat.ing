@@ -11,7 +11,7 @@
  * compiler so the child bundle (which imports this file) does not drag the
  * parser into the frame.
  */
-import { z } from "zod";
+import { z } from "zod/mini";
 import { PALETTE_IDS } from "../appearance/palettes";
 import { readingPreferencesSchema } from "../appearance/reading";
 import { FRAME_MODULES } from "../../preview/frameModuleList";
@@ -195,23 +195,26 @@ export function literalMatchesKind(
   return parsed != null && parsed.kind === kind;
 }
 
+/** A whole number from 0: an index, a position, a revision or an epoch. */
+const whole = z.int().check(z.nonnegative());
+
 /** A component slot lookup entry sent alongside compiled code. */
 export const slotSchema = z.object({
-  index: z.number().int().nonnegative(),
+  index: whole,
   element: z.string(),
   supported: z.boolean(),
-  reason: z.string().optional(),
-  titleInsertion: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), expected: z.literal('') }).optional(),
+  reason: z.optional(z.string()),
+  titleInsertion: z.optional(z.object({ from: whole, to: whole, expected: z.literal('') })),
   props: z.array(
     z.object({
       name: z.string(),
       kind: z.enum(["number", "string", "boolean"]),
       syntax: propSyntaxSchema,
-      from: z.number().int().nonnegative(),
-      to: z.number().int().nonnegative(),
+      from: whole,
+      to: whole,
       expected: z.string(),
-      value: z.union([z.string(), z.number().finite(), z.boolean()]).optional(),
-      choices: z.array(z.string().max(256)).max(32).optional(),
+      value: z.optional(z.union([z.string(), z.number(), z.boolean()])),
+      choices: z.optional(z.array(z.string().check(z.maxLength(256))).check(z.maxLength(32))),
     }),
   ),
 });
@@ -222,59 +225,59 @@ export type SlotInfo = z.infer<typeof slotSchema>;
 // The parent reparses them against its own schema and source projection.
 const fluidJsonObject = z.record(z.string(), z.json());
 const fluidSelection = z.object({
-  anchor: z.number().int().nonnegative(),
-  head: z.number().int().nonnegative(),
+  anchor: whole,
+  head: whole,
 });
 export const fluidSyntaxHintSchema = z.union([
-  z.object({ delimiter: z.enum(["*", "_", "**", "__"]) }).strict(),
-  z.object({ marker: z.enum(["-", "*", "+"]) }).strict(),
+  z.strictObject({ delimiter: z.enum(["*", "_", "**", "__"]) }),
+  z.strictObject({ marker: z.enum(["-", "*", "+"]) }),
 ]);
 export type FluidSyntaxHint = z.infer<typeof fluidSyntaxHintSchema>;
 export const fluidRenderSchema = z.object({
-  epoch: z.number().int().nonnegative(),
-  operation: z.number().int().nonnegative(),
+  epoch: whole,
+  operation: whole,
   reset: z.boolean(),
   runtimeKey: z.string(),
   islands: z.array(
-    z.object({ id: z.string(), from: z.number().int().nonnegative() }),
+    z.object({ id: z.string(), from: whole }),
   ),
   doc: fluidJsonObject,
-  selection: fluidSelection.optional(),
+  selection: z.optional(fluidSelection),
 });
 
 /** Parent -> child: render this compiled document. */
 export const renderMessageSchema = z.object({
   kind: z.literal("render"),
-  session: z.string().min(8),
-  revision: z.number().int().nonnegative(),
+  session: z.string().check(z.minLength(8)),
+  revision: whole,
   /** JS from `compile(..., { outputFormat: 'function-body' })`. Never evaluated in the parent. */
-  code: z.string().min(1),
-  modules: z.array(z.object({path:z.string().max(512),code:z.string().max(4*1024*1024)})).max(32).optional(),
+  code: z.string().check(z.minLength(1)),
+  modules: z.optional(z.array(z.object({ path: z.string().check(z.maxLength(512)), code: z.string().check(z.maxLength(4 * 1024 * 1024)) })).check(z.maxLength(32))),
   slots: z.array(slotSchema),
-  fluid: fluidRenderSchema.optional(),
+  fluid: z.optional(fluidRenderSchema),
   /** The person can read the document but not change it (a viewer, or an archived project). */
-  readOnly: z.boolean().optional(),
-  authoring: z
-    .object({
+  readOnly: z.optional(z.boolean()),
+  authoring: z.optional(
+    z.object({
       format: z.enum(["md", "mdx"]),
       boundaries: z.array(
-        z.object({ id: z.string(), offset: z.number().int().nonnegative() }),
+        z.object({ id: z.string(), offset: whole }),
       ),
-      availableResourcePaths: z.array(z.string().max(512)),
-      components: z.array(z.object({name:z.string().max(128).regex(/^[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)?$/),description:z.string().max(1024)})).max(128).optional(),
-      focus: z.number().int().nonnegative().optional(),
+      availableResourcePaths: z.array(z.string().check(z.maxLength(512))),
+      components: z.optional(z.array(z.object({ name: z.string().check(z.maxLength(128), z.regex(/^[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)?$/)), description: z.string().check(z.maxLength(1024)) })).check(z.maxLength(128))),
+      focus: z.optional(whole),
       /** Rebase permission for this exact accepted local rendered edit only. */
-      editAck: z.object({
-        fromRevision: z.number().int().nonnegative(),
-        draftId: z.number().int().nonnegative().optional(),
-        patches: z.array(z.object({
-          from: z.number().int().nonnegative(),
-          to: z.number().int().nonnegative(),
-          insertLength: z.number().int().nonnegative(),
-        }).strict()).max(256),
-      }).strict().optional(),
-    })
-    .optional(),
+      editAck: z.optional(z.strictObject({
+        fromRevision: whole,
+        draftId: z.optional(whole),
+        patches: z.array(z.strictObject({
+          from: whole,
+          to: whole,
+          insertLength: whole,
+        })).check(z.maxLength(256)),
+      })),
+    }),
+  ),
 });
 
 export type RenderMessage = z.infer<typeof renderMessageSchema>;
@@ -287,17 +290,14 @@ export type RenderMessage = z.infer<typeof renderMessageSchema>;
  * parent re-validates against the source refs before opening anything.
  */
 export const resourcePayloadSchema = z.object({
-  path: z.string().min(1).max(512),
-  svg: z
-    .string()
-    .min(1)
-    .max(2 * 1024 * 1024),
+  path: z.string().check(z.minLength(1), z.maxLength(512)),
+  svg: z.string().check(z.minLength(1), z.maxLength(2 * 1024 * 1024)),
 });
 
 export const resourcesMessageSchema = z.object({
   kind: z.literal("resources"),
-  session: z.string().min(1),
-  revision: z.number().int().nonnegative(),
+  session: z.string().check(z.minLength(1)),
+  revision: whole,
   resources: z.array(resourcePayloadSchema),
 });
 
@@ -306,7 +306,7 @@ export type ResourcesMessage = z.infer<typeof resourcesMessageSchema>;
 /** Presentation-only message: no CSS, URLs, document bytes or executable input. */
 export const appearanceMessageSchema = z.object({
   kind: z.literal("appearance"),
-  session: z.string().min(8),
+  session: z.string().check(z.minLength(8)),
   theme: z.enum(PALETTE_IDS),
   scheme: z.enum(["light", "dark"]),
 });
@@ -318,272 +318,272 @@ export type AppearanceMessage = z.infer<typeof appearanceMessageSchema>;
  * out from the source. Ids are the threads' (or "draft"), echoed back when
  * one is clicked. `canComment` turns on the selection and heading reports.
  */
-export const commentMarksMessageSchema = z.object({
+export const commentMarksMessageSchema = z.strictObject({
   kind: z.literal("comments"),
-  session: z.string().min(8),
-  revision: z.number().int().nonnegative(),
+  session: z.string().check(z.minLength(8)),
+  revision: whole,
   canComment: z.boolean(),
-  marks: z.array(z.object({
-    id: z.string().min(1).max(64),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
+  marks: z.array(z.strictObject({
+    id: z.string().check(z.minLength(1), z.maxLength(64)),
+    from: whole,
+    to: whole,
     active: z.boolean(),
-  }).strict()).max(1000),
-}).strict();
+  })).check(z.maxLength(1000)),
+});
 export type CommentMarksMessage = z.infer<typeof commentMarksMessageSchema>;
 
 export const parentMessageSchema = z.union([
-  z.object({
+  z.strictObject({
     kind: z.literal('source-draft-settled'),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
-    draftId: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    draftId: whole,
     outcome: z.enum(['noop', 'rejected']),
-    reason: z.string().max(2000).optional(),
-  }).strict(),
+    reason: z.optional(z.string().check(z.maxLength(2000))),
+  }),
   z.object({
     kind: z.literal("reading-preferences"),
-    session: z.string().min(8),
+    session: z.string().check(z.minLength(8)),
     preferences: readingPreferencesSchema,
   }),
   z.object({
     kind: z.literal("authoring-paths"),
-    session: z.string().min(8),
-    paths: z.array(z.string().max(512)),
+    session: z.string().check(z.minLength(8)),
+    paths: z.array(z.string().check(z.maxLength(512))),
   }),
   z.object({
     kind: z.literal("resource-focus"),
-    session: z.string().min(8),
+    session: z.string().check(z.minLength(8)),
     /** Workspace path whose View action should regain focus in the frame. */
-    path: z.string().min(1).max(512),
+    path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
   renderMessageSchema,
   resourcesMessageSchema,
   appearanceMessageSchema,
   commentMarksMessageSchema,
   // A part of the frame's own code that it asked for (src/preview/frameModules.ts): its code, or why it could not load.
-  z.object({
+  z.strictObject({
     kind: z.literal("module"),
-    session: z.string().min(8),
+    session: z.string().check(z.minLength(8)),
     name: z.enum(FRAME_MODULES),
-    code: z.string().max(16_000_000).optional(),
-    error: z.string().max(2000).optional(),
-  }).strict(),
+    code: z.optional(z.string().check(z.maxLength(16_000_000))),
+    error: z.optional(z.string().check(z.maxLength(2000))),
+  }),
   // Show commented text (a document range): scroll to it, flash it, and take the keyboard if asked.
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-reveal"),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    from: whole,
+    to: whole,
     focus: z.boolean(),
-  }).strict(),
+  }),
 ]);
 
 export type ParentMessage = z.infer<typeof parentMessageSchema>;
 
 /** Where something is in the frame's viewport, in CSS pixels, for the parent to place a control by it. */
-const frameRectSchema = z.object({
-  top: z.number().finite(),
-  left: z.number().finite(),
-  bottom: z.number().finite(),
-  right: z.number().finite(),
-}).strict();
+const frameRectSchema = z.strictObject({
+  top: z.number(),
+  left: z.number(),
+  bottom: z.number(),
+  right: z.number(),
+});
 export type FrameRect = z.infer<typeof frameRectSchema>;
 
 /** Child -> parent: result or edit messages. */
 export const childMessageSchema = z.discriminatedUnion("kind", [
-  z.object({
+  z.strictObject({
     kind: z.literal('source-draft-pending'),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
     pending: z.boolean(),
-  }).strict(),
+  }),
   z.object({
     kind: z.literal("fluid-pending"),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
     pending: z.boolean(),
   }),
   z.object({
     kind: z.literal("fluid-transaction"),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
-    epoch: z.number().int().nonnegative(),
-    operation: z.number().int().positive(),
-    steps: z.array(fluidJsonObject).min(1).max(100),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    epoch: whole,
+    operation: z.int().check(z.positive()),
+    steps: z.array(fluidJsonObject).check(z.minLength(1), z.maxLength(100)),
     before: fluidSelection,
     after: fluidSelection,
-    group: z.string().max(100),
-    syntax: fluidSyntaxHintSchema.optional(),
+    group: z.string().check(z.maxLength(100)),
+    syntax: z.optional(fluidSyntaxHintSchema),
   }),
   z.object({
     kind: z.literal("fluid-history"),
-    session: z.string().min(8),
-    revision: z.number().int().nonnegative(),
-    epoch: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    epoch: whole,
     direction: z.enum(["undo", "redo"]),
   }),
   z.object({
     kind: z.literal("prose-enter"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    from: whole,
+    to: whole,
     expected: z.string(),
-    value: z.string().max(100000),
-    caret: z.number().int().nonnegative(),
+    value: z.string().check(z.maxLength(100000)),
+    caret: whole,
   }),
   z.object({
     kind: z.literal("block-edit"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    block: z.string().max(100),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    block: z.string().check(z.maxLength(100)),
     action: z.enum(["commit", "enter", "shortcut"]),
-    value: z.string().max(100000),
-    caret: z.number().int().nonnegative(),
+    value: z.string().check(z.maxLength(100000)),
+    caret: whole,
   }),
   z.object({
     kind: z.literal("insert-block"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    boundary: z.string().max(100),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    boundary: z.string().check(z.maxLength(100)),
     // The authoritative parent catalog, not this transport shape, grants insertion.
-    element: z.string().min(1).max(100),
-    path: z.string().max(512).optional(),
+    element: z.string().check(z.minLength(1), z.maxLength(100)),
+    path: z.optional(z.string().check(z.maxLength(512))),
   }),
   z.object({
     kind: z.literal("ready"),
-    session: z.string().min(1),
+    session: z.string().check(z.minLength(1)),
   }),
   // An app shortcut pressed inside the frame, passed up so it works there too.
-  z.object({
+  z.strictObject({
     kind: z.literal("shortcut"),
-    session: z.string().min(1),
+    session: z.string().check(z.minLength(1)),
     key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3", "m"]),
     meta: z.boolean(),
     ctrl: z.boolean(),
     alt: z.boolean(),
-  }).strict(),
+  }),
   z.object({
     kind: z.literal("rendered"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
   }),
   // The note needs a part of the frame's own code that loads on first use
   // (src/preview/frameModules.ts): charts, or code highlighting.
-  z.object({
+  z.strictObject({
     kind: z.literal("load-module"),
-    session: z.string().min(1),
+    session: z.string().check(z.minLength(1)),
     name: z.enum(FRAME_MODULES),
-  }).strict(),
+  }),
   // The selected text (document positions) and the box around it on screen, or none.
   // Positions are proposals: the parent maps them through its own projection.
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-selection"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    range: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }).strict().nullable(),
-    rect: frameRectSchema.nullable(),
-  }).strict(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    range: z.nullable(z.strictObject({ from: whole, to: whole })),
+    rect: z.nullable(frameRectSchema),
+  }),
   // The heading under the pointer (a position in it) and where its words are, or none.
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-heading"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    pos: z.number().int().nonnegative().nullable(),
-    rect: frameRectSchema.nullable(),
-  }).strict(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    pos: z.nullable(whole),
+    rect: z.nullable(frameRectSchema),
+  }),
   // Where the commented text is: for each line where marked threads start,
   // their ids (ones the parent sent) and the line's middle in the frame's
   // viewport, for the parent's marker column.
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-markers"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    markers: z.array(z.object({
-      ids: z.array(z.string().min(1).max(64)).min(1).max(1000),
-      top: z.number().finite(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    markers: z.array(z.strictObject({
+      ids: z.array(z.string().check(z.minLength(1), z.maxLength(64))).check(z.minLength(1), z.maxLength(1000)),
+      top: z.number(),
       active: z.boolean(),
-    }).strict()).max(1000),
-  }).strict(),
+    })).check(z.maxLength(1000)),
+  }),
   // Commented text was clicked: open its thread (an id the parent sent).
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-open"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    id: z.string().min(1).max(64),
-  }).strict(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    id: z.string().check(z.minLength(1), z.maxLength(64)),
+  }),
   // The comment key in the frame: comment on the selection, or on the heading holding the caret (from = to).
-  z.object({
+  z.strictObject({
     kind: z.literal("comment-shortcut"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
-  }).strict(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    from: whole,
+    to: whole,
+  }),
   z.object({
     kind: z.literal("render-error"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
     message: z.string(),
   }),
   z.object({
     kind: z.literal("edit-rejected"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    message: z.string().min(1).max(2000),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    message: z.string().check(z.minLength(1), z.maxLength(2000)),
   }),
   z.object({
     kind: z.literal("prose-edit"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    draftId: z.number().int().nonnegative().optional(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    draftId: z.optional(whole),
     /** Source range the child was told the leaf occupies. */
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
+    from: whole,
+    to: whole,
     /** Exact source slice for the leaf (`SourceText expected` prop). */
     expected: z.string(),
     /** Raw edited text; the parent encodes it via the document module's encodeProseText. */
     value: z.string(),
-    shortcut: z.boolean().optional(),
-    caret: z.number().int().nonnegative().optional(),
+    shortcut: z.optional(z.boolean()),
+    caret: z.optional(whole),
   }),
   z.object({
     kind: z.literal("prop-edit"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    draftId: z.number().int().nonnegative().optional(),
-    slot: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    draftId: z.optional(whole),
+    slot: whole,
     prop: z.string(),
     /** Literal source text for the new value, e.g. `4` or `"New title"`. */
     literal: z.string(),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
+    from: whole,
+    to: whole,
     expected: z.string(),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal('component-value-edit'),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    draftId: z.number().int().nonnegative().optional(),
-    slot: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    draftId: z.optional(whole),
+    slot: whole,
     prop: z.enum(['title', 'ratio']),
-    value: z.string().max(32_000),
-  }).strict(),
+    value: z.string().check(z.maxLength(32_000)),
+  }),
   z.object({
     kind: z.literal("edit-resource"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
     /** Workspace path the child wants to edit (always re-checked by the parent). */
-    path: z.string().min(1).max(512),
+    path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
   z.object({
     kind: z.literal("view-resource"),
-    session: z.string().min(1),
-    revision: z.number().int().nonnegative(),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
     /** Workspace path the child wants to inspect (always re-checked by the parent). */
-    path: z.string().min(1).max(512),
+    path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
 ]);
 

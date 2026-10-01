@@ -1,4 +1,5 @@
-import { z } from "zod"
+import { z } from "zod/mini"
+import { en } from "zod/locales"
 import type { ProjectFileStore } from "@/features/project-storage/fileStore"
 import type { ProjectLibrary } from "@/features/project-storage/library"
 import {
@@ -26,16 +27,18 @@ export const PrototypeExport = z
     version: z.literal(1, { error: "Only version 1 of the prototype's export can be imported." }),
     title: z
       .string({ error: "The project title must be text." })
-      .refine(
-        (title) => [...title].length >= 1 && [...title].length <= 160 && /\S/.test(title),
-        "The project title must have 1 to 160 characters, and not only spaces.",
+      .check(
+        z.refine(
+          (title) => [...title].length >= 1 && [...title].length <= 160 && /\S/.test(title),
+          "The project title must have 1 to 160 characters, and not only spaces.",
+        ),
       ),
     files: z
       .array(z.strictObject({ path: z.string(), content: z.string() }))
-      .max(MAX_ENTRIES, `An export can hold at most ${MAX_ENTRIES} files.`),
-    directories: z.array(z.string()).max(MAX_ENTRIES, `An export can hold at most ${MAX_ENTRIES} folders.`),
+      .check(z.maxLength(MAX_ENTRIES, `An export can hold at most ${MAX_ENTRIES} files.`)),
+    directories: z.array(z.string()).check(z.maxLength(MAX_ENTRIES, `An export can hold at most ${MAX_ENTRIES} folders.`)),
   })
-  .superRefine((exported, context) => {
+  .check(z.superRefine((exported, context) => {
     const problem = (message: string) => context.addIssue({ code: "custom", message })
     const files = new Set<string>()
     for (const { path } of exported.files) {
@@ -59,13 +62,16 @@ export const PrototypeExport = z
       total += size
     }
     if (total > MAX_PROJECT_BYTES) problem("The files add up to more than 64 MiB.")
-  })
+  }))
 export type PrototypeExport = z.infer<typeof PrototypeExport>
 
 const ancestors = (path: string): string[] => {
   const parts = path.split("/")
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"))
 }
+
+/** Zod's English messages, which the errors below quote (zod/mini has none of its own). */
+const english = { error: en().localeError }
 
 /** Where an issue is, such as `files[2].content`. */
 const where = (path: PropertyKey[]) =>
@@ -86,7 +92,7 @@ export function readPrototypeExport(text: string): { ok: true; value: PrototypeE
   } catch {
     return { ok: false, error: "This file is not valid JSON, so it is not a project export." }
   }
-  const parsed = PrototypeExport.safeParse(json)
+  const parsed = PrototypeExport.safeParse(json, english)
   if (parsed.success) return { ok: true, value: parsed.data }
   const issues = parsed.error.issues.map(describe)
   const more = issues.length > 3 ? ` There are ${issues.length - 3} more problems.` : ""

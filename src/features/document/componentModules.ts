@@ -1,7 +1,8 @@
 import { compile } from '@mdx-js/mdx';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkGfm from 'remark-gfm';
-import { z } from 'zod';
+import { z } from 'zod/mini';
+import { en } from 'zod/locales';
 import { COMPONENT_CATALOG, type ComponentDefinition } from './componentCatalog';
 import { isTrustedReactExport } from './trustedReactImports';
 import type { ComponentSourceLoader } from './componentSource';
@@ -11,16 +12,18 @@ export { savedComponentSource, type ComponentSourceLoader } from './componentSou
 
 const identifier = /^[A-Z][A-Za-z0-9_]*$/;
 const reserved = new Set([...COMPONENT_CATALOG.map(c => c.name), 'SourceText', 'SourceCode', 'SourceBlock', 'FluidIsland', 'CustomControls']);
-const propSchema = z.object({
+const propSchema = z.strictObject({
   type: z.enum(['string', 'number', 'boolean']),
-  default: z.union([z.string().max(4096), z.number().finite(), z.boolean()]),
-  description: z.string().max(1024).optional(),
-  choices: z.array(z.string().max(256)).min(1).max(32).optional(),
-}).strict().refine(p => typeof p.default === p.type && (!p.choices || p.type === 'string' && p.choices.includes(String(p.default))), 'Default/choices must match the prop type');
-const metadataSchema = z.record(z.string().regex(identifier), z.object({
-  description: z.string().max(1024).optional(),
-  props: z.record(z.string().regex(/^[a-zA-Z][\w]*$/).refine(n => !['children','key','ref','__slot'].includes(n)), propSchema).refine(p => Object.keys(p).length <= 24).optional(),
-}).strict()).refine(m => Object.keys(m).length <= 64);
+  default: z.union([z.string().check(z.maxLength(4096)), z.number(), z.boolean()]),
+  description: z.optional(z.string().check(z.maxLength(1024))),
+  choices: z.optional(z.array(z.string().check(z.maxLength(256))).check(z.minLength(1), z.maxLength(32))),
+}).check(z.refine(p => typeof p.default === p.type && (!p.choices || p.type === 'string' && p.choices.includes(String(p.default))), 'Default/choices must match the prop type'));
+const metadataSchema = z.record(z.string().check(z.regex(identifier)), z.strictObject({
+  description: z.optional(z.string().check(z.maxLength(1024))),
+  props: z.optional(z.record(z.string().check(z.regex(/^[a-zA-Z][\w]*$/), z.refine(n => !['children','key','ref','__slot'].includes(n))), propSchema).check(z.refine(p => Object.keys(p).length <= 24))),
+})).check(z.refine(m => Object.keys(m).length <= 64));
+/** Zod's English messages, which a metadata error quotes (zod/mini has none of its own). */
+const english = { error: en().localeError };
 
 // Parser-owned ESTree is inspected as data, never evaluated in the parent.
 type Node = { type: string; [key: string]: unknown };
@@ -143,7 +146,7 @@ export async function inspectComponentModule(source: string): Promise<{definitio
       }
     });
   }]});
-  const parsed = metadataSchema.safeParse(metadata);
+  const parsed = metadataSchema.safeParse(metadata, english);
   if (!parsed.success) throw new Error(`Invalid component metadata: ${parsed.error.message}`);
   for (const name of Object.keys(parsed.data)) if (!names.has(name)) throw new Error(`Component metadata names missing local export ${name}`);
   const definitions = [...names].filter(name => identifier.test(name)).map(name => {

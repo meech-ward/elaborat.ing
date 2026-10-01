@@ -4,7 +4,8 @@
  * (the `delete-account` Edge Function). See "Accounts" in docs/architecture.md.
  */
 import { FunctionsHttpError } from "@supabase/supabase-js"
-import { z } from "zod"
+import { z } from "zod/mini"
+import { en } from "zod/locales"
 import { signOutAfter } from "@/features/auth/useAuth"
 import { classify } from "@/features/project-storage/remote"
 import { forgetAccountOnDevice } from "@/features/projects/account"
@@ -13,9 +14,9 @@ import { deleteAccount, type DeletionOutcome } from "./deletionFlow"
 
 export const DeletionSummary = z.object({
   /** The projects the person owns, deleted for everyone; `members` is how many people have accepted each. */
-  owned: z.array(z.object({ id: z.uuid(), title: z.string(), archived: z.boolean(), members: z.number().int().nonnegative() })),
+  owned: z.array(z.object({ id: z.uuid(), title: z.string(), archived: z.boolean(), members: z.int().check(z.nonnegative()) })),
   /** How many projects shared with them they have accepted, which they leave. */
-  shared: z.number().int().nonnegative(),
+  shared: z.int().check(z.nonnegative()),
 })
 export type DeletionSummary = z.infer<typeof DeletionSummary>
 
@@ -43,7 +44,8 @@ async function deleteOnServer(email: string): Promise<void> {
     throw new Error(parsed.success ? parsed.data.error : "Your account could not be deleted. Try again.")
   }
   if (error) throw new Error("Deleting your account needs a connection. Nothing was changed.")
-  z.object({ deleted: z.literal(true) }).parse(data)
+  // A wrong answer shows its issues, in Zod's English messages (zod/mini has none of its own).
+  z.object({ deleted: z.literal(true) }).parse(data, { error: en().localeError })
 }
 
 /**

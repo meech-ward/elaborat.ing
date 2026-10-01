@@ -13,7 +13,8 @@ import {
   RemoveMarkStep,
 } from "prosemirror-transform";
 import { decodeString } from "micromark-util-decode-string";
-import { z } from "zod";
+import { z } from "zod/mini";
+import { en } from "zod/locales";
 import type { FluidSyntaxHint } from "./protocol";
 import {
   compileForPreview,
@@ -1010,13 +1011,13 @@ function protectedHeadingPatch(
   return { from: root.from, to: root.from, insert: "#".repeat(level) + " ", expected: "" };
 }
 
-const stepShape = z
-  .object({
-    stepType: z.enum(["replace", "replaceAround", "addMark", "removeMark"]),
-    from: z.number().int().nonnegative(),
-    to: z.number().int().nonnegative(),
-  })
-  .passthrough();
+const stepShape = z.looseObject({
+  stepType: z.enum(["replace", "replaceAround", "addMark", "removeMark"]),
+  from: z.int().check(z.nonnegative()),
+  to: z.int().check(z.nonnegative()),
+});
+/** Zod's English messages, which a refused step's error shows (zod/mini has none of its own). */
+const english = { error: en().localeError };
 export async function prepareFluidTransaction(
   snapshot: DocumentSnapshot,
   projection: FluidProjection,
@@ -1032,10 +1033,10 @@ export async function prepareFluidTransaction(
       ? undefined
       : z
           .union([
-            z.object({ delimiter: z.enum(["*", "_", "**", "__"]) }).strict(),
-            z.object({ marker: z.enum(["-", "*", "+"]) }).strict(),
+            z.strictObject({ delimiter: z.enum(["*", "_", "**", "__"]) }),
+            z.strictObject({ marker: z.enum(["-", "*", "+"]) }),
           ])
-          .parse(syntaxHint);
+          .parse(syntaxHint, english);
   if (
     snapshot.text !== projection.text ||
     snapshot.format !== projection.format
@@ -1045,7 +1046,7 @@ export async function prepareFluidTransaction(
     throw new Error("Invalid transaction batch size");
   let candidate = projection;
   for (const json of steps) {
-    const parsed = stepShape.parse(json);
+    const parsed = stepShape.parse(json, english);
     if (parsed.from > parsed.to || parsed.to > candidate.doc.content.size)
       throw new Error("Invalid projection step range");
     const step = Step.fromJSON(fluidSchema, parsed);
