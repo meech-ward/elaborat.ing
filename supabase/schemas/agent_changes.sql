@@ -69,15 +69,56 @@ $$;
 
 revoke all on function private.agent_changes_seen_version(uuid) from public, anon, authenticated;
 
+-- A D2 diagram's generated files, which the app's file tree hides as part of
+-- the diagram, so Agent changes leaves them out too: `x.excalidraw` (its
+-- canvas) and `x.d2.json` (its layout) while `x.d2` is in the project, or
+-- when an agent saved `x.d2` with them (so a deleted diagram's stay out).
+create function private.is_d2_generated(project_id uuid, path text, version bigint)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from (
+      select case
+        when right(is_d2_generated.path, 8) = '.d2.json' then left(is_d2_generated.path, -5)
+        when right(is_d2_generated.path, 11) = '.excalidraw' then left(is_d2_generated.path, -11) || '.d2'
+      end as source
+    ) d
+    where d.source is not null
+      and (
+        exists (
+          select 1 from public.project_files f
+          where f.project_id = is_d2_generated.project_id and f.path = d.source
+        )
+        or exists (
+          select 1 from public.file_versions s
+          where s.project_id = is_d2_generated.project_id
+            and s.version = is_d2_generated.version
+            and s.agent_client_id is not null
+            and s.path = d.source
+        )
+      )
+  )
+$$;
+
+revoke all on function private.is_d2_generated(uuid, text, bigint) from public, anon, authenticated;
+
 -- A project's file versions saved by agents, newest first, for anyone who
--- can read the project. A page holds the `max_count` newest revisions with
+-- can read the project, without their contents (get_agent_change has those,
+-- one change at a time). A page holds the `max_count` newest revisions with
 -- agent versions (1 to 50, 20 by default) below `before` when it is given,
 -- with every file saved at each of them, so a save of several files is never
--- split between pages; `more` says whether older ones remain. Each change
--- has the person and the agent's name (never its client id), its content,
--- the file's previous version (null when the agent created the file),
--- whether it is still the file's latest version, and the thread whose reply
--- links it. `seen` is the caller's marker: changes above it are new to them.
+-- split between pages, and at most 100 changes unless its first save alone
+-- has more; `more` says whether older ones remain. A D2 diagram's generated
+-- files are left out. Each change has the person and the agent's name (never
+-- its client id), the size of its content in bytes (null when deleted), the
+-- file's previous version with its size and whether its content is the same
+-- (null when the agent created the file), whether it is still the file's
+-- latest version, and the thread whose reply links it. `seen` is the
+-- caller's marker: changes above it are new to them.
 create function private.list_agent_changes(project_id uuid, before bigint default null, max_count integer default 20)
 returns jsonb
 language plpgsql
@@ -88,23 +129,36 @@ as $$
 declare
   p public.projects := private.agent_changes_project(list_agent_changes.project_id);
   page_size integer := least(greatest(coalesce(list_agent_changes.max_count, 20), 1), 50);
+  max_rows constant integer := 100;
   revisions bigint[];
+  more boolean;
 begin
-  select coalesce(array_agg(r.version order by r.version desc), '{}') into revisions
+  -- The newest saves below `before`, one more than a page, each with how
+  -- many changes it and the newer ones hold; the page is those up to
+  -- `page_size` saves and `max_rows` changes, and always the first.
+  select
+    coalesce(array_agg(s.version order by s.version desc) filter (where s.n <= page_size and (s.n = 1 or s.total <= max_rows)), '{}'),
+    count(*) filter (where s.n > page_size or (s.n > 1 and s.total > max_rows)) > 0
+  into revisions, more
   from (
-    select distinct v.version
-    from public.file_versions v
-    where v.project_id = p.id
-      and v.agent_client_id is not null
-      and (list_agent_changes.before is null or v.version < list_agent_changes.before)
-    order by v.version desc
-    limit page_size + 1
-  ) r;
+    select c.version, row_number() over (order by c.version desc) as n, sum(c.changes) over (order by c.version desc) as total
+    from (
+      select v.version, count(*) as changes
+      from public.file_versions v
+      where v.project_id = p.id
+        and v.agent_client_id is not null
+        and (list_agent_changes.before is null or v.version < list_agent_changes.before)
+        and not private.is_d2_generated(p.id, v.path, v.version)
+      group by v.version
+      order by v.version desc
+      limit page_size + 1
+    ) c
+  ) s;
   return jsonb_build_object(
     'project_id', p.id,
     'revision', p.revision,
     'seen', private.agent_changes_seen_version(p.id),
-    'more', cardinality(revisions) > page_size,
+    'more', more,
     'changes', coalesce(
       (select jsonb_agg(
          jsonb_build_object(
@@ -112,7 +166,7 @@ begin
            'version', v.version,
            'path', v.path,
            'deleted', v.deleted,
-           'content', v.content,
+           'size', octet_length(v.content),
            'created_at', v.created_at,
            'author', private.comment_person(v.author_id),
            'agent', private.agent_name(v.agent_client_id),
@@ -120,7 +174,13 @@ begin
              select 1 from public.file_versions n where n.file_id = v.file_id and n.version > v.version
            ),
            'previous', (
-             select jsonb_build_object('version', pv.version, 'path', pv.path, 'deleted', pv.deleted, 'content', pv.content)
+             select jsonb_build_object(
+               'version', pv.version,
+               'path', pv.path,
+               'deleted', pv.deleted,
+               'size', octet_length(pv.content),
+               'same_content', pv.content is not distinct from v.content
+             )
              from public.file_versions pv
              where pv.file_id = v.file_id and pv.version < v.version
              order by pv.version desc
@@ -152,7 +212,8 @@ begin
        from public.file_versions v
        where v.project_id = p.id
          and v.agent_client_id is not null
-         and v.version = any (revisions[1:page_size])),
+         and v.version = any (revisions)
+         and not private.is_d2_generated(p.id, v.path, v.version)),
       '[]'::jsonb
     )
   );
@@ -175,9 +236,68 @@ $$;
 revoke all on function public.list_agent_changes(uuid, bigint, integer) from public, anon;
 grant execute on function public.list_agent_changes(uuid, bigint, integer) to authenticated;
 
+-- One agent change's content and its file's previous version's (null when
+-- the agent created the file), for the view's diff, to anyone who can read
+-- the project. A pair of more than 1 MiB together is too large for a diff
+-- and refused (54000). With `previous_only`, for Revert, only the previous
+-- version's content comes (`content` is null), at any size.
+create function private.get_agent_change(project_id uuid, file_id uuid, version bigint, previous_only boolean default false)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  p public.projects := private.agent_changes_project(get_agent_change.project_id);
+  v public.file_versions;
+  pv public.file_versions;
+begin
+  select * into v from public.file_versions x
+  where x.file_id = get_agent_change.file_id
+    and x.version = get_agent_change.version
+    and x.project_id = p.id
+    and x.agent_client_id is not null;
+  if v.file_id is null then
+    raise exception 'No such agent change' using errcode = '22023';
+  end if;
+  select * into pv from public.file_versions x
+  where x.file_id = v.file_id and x.version < v.version
+  order by x.version desc
+  limit 1;
+  if not coalesce(get_agent_change.previous_only, false)
+    and coalesce(octet_length(v.content), 0) + coalesce(octet_length(pv.content), 0) > 1048576 then
+    raise exception 'Too large to show here' using errcode = '54000';
+  end if;
+  return jsonb_build_object(
+    'file_id', v.file_id,
+    'version', v.version,
+    'content', case when coalesce(get_agent_change.previous_only, false) then null else v.content end,
+    'previous', case when pv.file_id is not null then jsonb_build_object('version', pv.version, 'content', pv.content) end
+  );
+end;
+$$;
+
+revoke all on function private.get_agent_change(uuid, uuid, bigint, boolean) from public, anon;
+grant execute on function private.get_agent_change(uuid, uuid, bigint, boolean) to authenticated;
+
+create function public.get_agent_change(project_id uuid, file_id uuid, version bigint, previous_only boolean default false)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select private.get_agent_change(project_id, file_id, version, previous_only)
+$$;
+
+revoke all on function public.get_agent_change(uuid, uuid, bigint, boolean) from public, anon;
+grant execute on function public.get_agent_change(uuid, uuid, bigint, boolean) to authenticated;
+
 -- How many file versions agents saved in a project are new to the caller
 -- (above their marker), up to 100, for the count on the project's Agent
--- changes button. Anyone who can read the project.
+-- changes button, leaving out a D2 diagram's generated files as the list
+-- does. Anyone who can read the project.
 create function private.count_agent_changes(project_id uuid)
 returns integer
 language plpgsql
@@ -192,7 +312,10 @@ begin
   return (
     select count(*)::integer from (
       select 1 from public.file_versions v
-      where v.project_id = p.id and v.agent_client_id is not null and v.version > seen
+      where v.project_id = p.id
+        and v.agent_client_id is not null
+        and v.version > seen
+        and not private.is_d2_generated(p.id, v.path, v.version)
       limit 100
     ) n
   );

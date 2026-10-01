@@ -1,12 +1,13 @@
 -- Agent changes: the file versions agents saved, with each one's previous
--- version and the thread it answered, only for people who can read the
--- project, and each person's own marker of what they have seen.
+-- version and the thread it answered, and each change's content on demand,
+-- only for people who can read the project, and each person's own marker of
+-- what they have seen.
 -- Run with the Supabase CLI: `supabase test db` (pgTAP). Everything happens
 -- in one transaction that is rolled back at the end.
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(40);
+select plan(60);
 
 -- Alice owns the project; Bob is an editor and Dave a viewer, both accepted.
 -- Erin was a member until Alice removed her. Frank has nothing to do with it.
@@ -83,6 +84,24 @@ as $$
   limit 1
 $$;
 
+-- One change's content, and its previous version's, as the caller gets them.
+create function pg_temp.contents(file_path text, previous_only boolean default false)
+returns jsonb
+language sql
+as $$
+  select public.get_agent_change(pg_temp.project(), (c ->> 'file_id')::uuid, (c ->> 'version')::bigint, previous_only)
+  from pg_temp.change(file_path) c
+$$;
+
+-- The agent's change to notes/a.md, noted by a reader, for asking as someone who cannot list it.
+create temp table known_change (file_id uuid, version bigint);
+grant select, insert on known_change to authenticated;
+
+create function pg_temp.known_contents()
+returns jsonb
+language sql
+as $$ select public.get_agent_change(pg_temp.project(), k.file_id, k.version) from known_change k $$;
+
 ------------------------------------------------------------------------------
 -- Grants.
 
@@ -92,6 +111,8 @@ select policies_are('public', 'agent_changes_seen', array['People can read their
 select function_privs_are('public', 'list_agent_changes', array['uuid', 'bigint', 'integer'], 'authenticated', array['EXECUTE'], 'Signed-in users can list agent changes');
 select function_privs_are('public', 'list_agent_changes', array['uuid', 'bigint', 'integer'], 'anon', array[]::text[], 'Anonymous users cannot');
 select function_privs_are('public', 'count_agent_changes', array['uuid'], 'anon', array[]::text[], 'nor count them');
+select function_privs_are('public', 'get_agent_change', array['uuid', 'uuid', 'bigint', 'boolean'], 'authenticated', array['EXECUTE'], 'Signed-in users can get a change''s content');
+select function_privs_are('public', 'get_agent_change', array['uuid', 'uuid', 'bigint', 'boolean'], 'anon', array[]::text[], 'Anonymous users cannot');
 select function_privs_are('public', 'mark_agent_changes_seen', array['uuid', 'bigint'], 'anon', array[]::text[], 'nor mark them seen');
 
 ------------------------------------------------------------------------------
@@ -162,18 +183,40 @@ select is(
   'A viewer lists the versions agents saved, newest first, and none the app saved'
 );
 select is(
-  (select jsonb_build_object('agent', c -> 'agent', 'by', c -> 'author' ->> 'email', 'content', c -> 'content', 'latest', c -> 'latest',
+  (select jsonb_build_object('agent', c -> 'agent', 'by', c -> 'author' ->> 'email', 'size', c -> 'size', 'latest', c -> 'latest',
      'previous', (c -> 'previous') - 'path', 'thread', (c -> 'thread') - 'comment_id')
    from pg_temp.change('notes/a.md') c),
-  '{"agent": "Claude", "by": "alice@example.com", "content": "A2", "latest": true,
-    "previous": {"version": 1, "deleted": false, "content": "A1"},
+  '{"agent": "Claude", "by": "alice@example.com", "size": 2, "latest": true,
+    "previous": {"version": 1, "deleted": false, "size": 2, "same_content": false},
     "thread": {"id": "c0000000-0000-4000-8000-000000000001", "opening": "Say it twice"}}'::jsonb,
-  'Each has the agent''s name and its person, its content, the previous version''s, and the thread its reply answered'
+  'Each has the agent''s name and its person, its size, the previous version''s, and the thread its reply answered'
+);
+select ok(
+  not exists (
+    select 1 from jsonb_array_elements(public.list_agent_changes(pg_temp.project()) -> 'changes') c
+    where c ? 'content' or coalesce(c -> 'previous' ? 'content', false)
+  ),
+  'The list has no contents'
 );
 select is(
-  (select jsonb_build_array(b -> 'latest', b -> 'previous' -> 'content', c -> 'previous', c -> 'thread')
+  pg_temp.contents('notes/a.md'),
+  jsonb_build_object('file_id', pg_temp.file_id('notes/a.md'), 'version', 2, 'content', 'A2', 'previous', jsonb_build_object('version', 1, 'content', 'A1')),
+  'A reader gets one change''s content and its previous version''s'
+);
+select is(
+  pg_temp.contents('notes/a.md', true) - 'file_id',
+  '{"version": 2, "content": null, "previous": {"version": 1, "content": "A1"}}'::jsonb,
+  'or only the previous version''s, for Revert'
+);
+select throws_ok(
+  format($$ select public.get_agent_change(pg_temp.project(), %L, 4) $$, pg_temp.file_id('notes/b.md')),
+  '22023', 'No such agent change', 'but not a version the app saved'
+);
+insert into known_change select (c ->> 'file_id')::uuid, (c ->> 'version')::bigint from pg_temp.change('notes/a.md') c;
+select is(
+  (select jsonb_build_array(b -> 'latest', b -> 'previous' -> 'version', c -> 'previous', c -> 'thread')
    from pg_temp.change('notes/b.md') b, pg_temp.change('notes/c.md') c),
-  '[false, "B1", null, null]'::jsonb,
+  '[false, 1, null, null]'::jsonb,
   'A version changed since is not the latest; a file the agent created has no previous version, and no thread'
 );
 select ok(
@@ -195,6 +238,7 @@ select pg_temp.act('frank');
 select throws_ok($$ select public.list_agent_changes(pg_temp.project()) $$, '42501', 'Project unavailable', 'Someone outside the project cannot list its agent changes');
 select throws_ok($$ select public.count_agent_changes(pg_temp.project()) $$, '42501', 'Project unavailable', 'nor count them');
 select throws_ok($$ select public.mark_agent_changes_seen(pg_temp.project(), 3) $$, '42501', 'Project unavailable', 'nor mark them seen');
+select throws_ok($$ select pg_temp.known_contents() $$, '42501', 'Project unavailable', 'nor get a change''s content');
 select throws_ok(
   $$ select public.list_agent_changes('aaaaaaaa-0000-4000-8000-000000000099') $$,
   '42501', 'Project unavailable', 'which is what a missing project gets'
@@ -203,9 +247,11 @@ select pg_temp.act('erin');
 select throws_ok($$ select public.list_agent_changes(pg_temp.project()) $$, '42501', 'Project unavailable', 'A removed member cannot list them');
 select throws_ok($$ select public.count_agent_changes(pg_temp.project()) $$, '42501', 'Project unavailable', 'nor count them');
 select throws_ok($$ select public.mark_agent_changes_seen(pg_temp.project(), 3) $$, '42501', 'Project unavailable', 'nor mark them seen');
+select throws_ok($$ select pg_temp.known_contents() $$, '42501', 'Project unavailable', 'nor get a change''s content');
 select is((select count(*)::int from public.agent_changes_seen), 0, 'and no longer reads the marker she had');
 select pg_temp.act('frank', true);
 select throws_ok($$ select public.list_agent_changes(pg_temp.project()) $$, '42501', 'Project unavailable', 'An outsider''s agent cannot list them either');
+select throws_ok($$ select pg_temp.known_contents() $$, '42501', 'Project unavailable', 'nor get a change''s content');
 
 ------------------------------------------------------------------------------
 -- The seen marker is each person's own.
@@ -238,6 +284,60 @@ select throws_ok(
 select throws_ok(
   $$ insert into public.agent_changes_seen (project_id, user_id, seen_version) values (pg_temp.project(), pg_temp.id('alice'), 3) $$,
   '42501', null, 'Nobody writes a marker directly'
+);
+
+------------------------------------------------------------------------------
+-- A D2 diagram's generated files are not agent changes; a page holds at
+-- most 100 changes; a diff of more than 1 MiB is refused.
+
+select lives_ok(
+  $$ select pg_temp.save('[{"op":"put","path":"d/flow.d2","content":"a -> b"},{"op":"put","path":"d/flow.excalidraw","content":"{}"},
+       {"op":"put","path":"d/flow.d2.json","content":"{}"},{"op":"put","path":"d/sketch.excalidraw","content":"{}"}]') $$,
+  'Alice''s agent saves a diagram with its generated canvas and layout, and a drawing'
+);
+select pg_temp.act('bob');
+select is(
+  pg_temp.listed(null, 1),
+  jsonb_build_array(jsonb_build_array('d/flow.d2', pg_temp.version('d/flow.d2')), jsonb_build_array('d/sketch.excalidraw', pg_temp.version('d/flow.d2'))),
+  'The list leaves out the diagram''s generated files'
+);
+select is(public.count_agent_changes(pg_temp.project()), 2, 'and so does the count');
+select pg_temp.act('alice', true);
+select lives_ok(
+  $$ select pg_temp.save(format('[{"op":"delete","path":"d/flow.d2","base_version":%1$s},{"op":"delete","path":"d/flow.excalidraw","base_version":%1$s},
+       {"op":"delete","path":"d/flow.d2.json","base_version":%1$s}]', pg_temp.version('d/flow.d2'))) $$,
+  'Her agent deletes the diagram with its files'
+);
+select is(
+  (select jsonb_agg(c -> 'path') from jsonb_array_elements(public.list_agent_changes(pg_temp.project(), null, 1) -> 'changes') c),
+  '["d/flow.d2"]'::jsonb,
+  'and only the diagram shows deleted'
+);
+
+select lives_ok(
+  $$ select pg_temp.save((select jsonb_agg(jsonb_build_object('op', 'put', 'path', format('bulk/n%s.md', n), 'content', 'N'))::text from generate_series(1, 100) n)) $$,
+  'Her agent saves 100 notes at once'
+);
+select is(
+  (select jsonb_build_array(jsonb_array_length(l -> 'changes'), l -> 'more') from public.list_agent_changes(pg_temp.project()) l),
+  '[100, true]'::jsonb,
+  'A page with them holds no other save'
+);
+
+select lives_ok(
+  $$ select pg_temp.save(format('[{"op":"put","path":"big.md","content":"%s"}]', repeat('x', 600000))) $$,
+  'Her agent saves a large note'
+);
+select lives_ok(
+  $$ select pg_temp.save(format('[{"op":"put","path":"big.md","content":"%s","base_version":%s}]', repeat('y', 600000), pg_temp.version('big.md'))) $$,
+  'and changes all of it'
+);
+select pg_temp.act('dave');
+select throws_ok($$ select pg_temp.contents('big.md') $$, '54000', 'Too large to show here', 'The two are too large for a diff');
+select is(
+  (select jsonb_build_array(c -> 'content', length(c -> 'previous' ->> 'content')) from pg_temp.contents('big.md', true) c),
+  '[null, 600000]'::jsonb,
+  'but Revert still gets the previous version'
 );
 
 select * from finish();

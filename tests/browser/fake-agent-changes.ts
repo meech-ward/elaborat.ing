@@ -5,7 +5,8 @@ import { RemoteError } from "../../src/features/project-storage/remote.ts"
  * The agent changes functions of `supabase/schemas/agent_changes.sql`, in
  * memory, over the fake project server's projects: the versions an agent
  * saved (recorded by `save`, which saves through the server as the agent
- * would), and each person's seen marker.
+ * would), listed without contents and fetched one at a time, and each
+ * person's seen marker.
  */
 
 type Change = {
@@ -32,7 +33,7 @@ export class FakeAgentChanges {
   constructor(private readonly server: FakeProjectServer) {}
 
   static handles(rpc: string): boolean {
-    return ["list_agent_changes", "count_agent_changes", "mark_agent_changes_seen"].includes(rpc)
+    return ["list_agent_changes", "get_agent_change", "count_agent_changes", "mark_agent_changes_seen"].includes(rpc)
   }
 
   /** Put `content` at `path` as `user`'s agent (named `agent`): a new version on the server, recorded as an agent change. */
@@ -75,6 +76,18 @@ export class FakeAgentChanges {
         this.seen.set(`${projectId}:${user}`, marked)
         return { project_id: projectId, seen: marked }
       }
+      case "get_agent_change": {
+        const change = mine.find((one) => one.file_id === args.file_id && one.version === args.version)
+        if (!change) throw new RemoteError("invalid", "No such agent change")
+        const size = (text: string | null | undefined) => new TextEncoder().encode(text ?? "").length
+        if (!args.previous_only && size(change.content) + size(change.previous?.content) > 1024 * 1024) throw new RemoteError("limit", "Too large to show here")
+        return {
+          file_id: change.file_id,
+          version: change.version,
+          content: args.previous_only ? null : change.content,
+          previous: change.previous ? { version: change.previous.version, content: change.previous.content } : null,
+        }
+      }
       case "list_agent_changes": {
         const before = typeof args.before === "number" ? args.before : null
         const size = Math.min(Math.max(typeof args.max_count === "number" ? args.max_count : 20, 1), 50)
@@ -89,7 +102,15 @@ export class FakeAgentChanges {
           changes: mine
             .filter((change) => page.has(change.version))
             .map(({ file_id, version, path, deleted, content, created_at, author, agent, previous, thread }) => ({
-              file_id, version, path, deleted, content, created_at, agent, previous, thread,
+              file_id, version, path, deleted, created_at, agent, thread,
+              size: content === null ? null : new TextEncoder().encode(content).length,
+              previous: previous && {
+                version: previous.version,
+                path: previous.path,
+                deleted: previous.deleted,
+                size: previous.content === null ? null : new TextEncoder().encode(previous.content).length,
+                same_content: previous.content === content,
+              },
               author: { user_id: author, email: this.server.emails.get(author) ?? null, name: this.server.nameOf(author) },
               latest: current.get(file_id) === version,
             })),

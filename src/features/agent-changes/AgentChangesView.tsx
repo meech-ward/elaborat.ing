@@ -1,45 +1,61 @@
 import { Bot, ChevronDown, CircleAlert, X } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { personName } from "@/features/auth/accountName"
 import { useProjectComments } from "@/features/comments"
-import { AgentChangeRow, DiffBlock, EmptyState, LoadingLine, type AgentChangeAction } from "@/features/design-system"
+import { AgentChangeRow, Banner, DiffBlock, EmptyState, LoadingLine, type AgentChangeAction } from "@/features/design-system"
 import { LocalConflictError } from "@/features/project-storage/fileStore"
+import { RemoteError } from "@/features/project-storage/remote"
 import { editorLanguageForPath, kindForPath } from "@/features/workbench/session"
 import type { WorkspaceFileRef } from "@/features/workbench/workspaceStore"
 import { cn } from "@/lib/utils"
 import type { AgentChangesSurfaceProps } from "./AgentChangesSurface"
-import type { AgentChange } from "./remote"
+import { DIFF_LIMIT_BYTES, type AgentChange } from "./remote"
 import type { ProjectAgentChanges } from "./store"
 
 // The Agent changes view (AgentChangesSurface.tsx loads it): the versions
 // agents saved in the project, newest first. The ones since the person last
 // looked show first; Show earlier adds the rest, a page at a time. Opening
-// it marks everything up to now seen.
-
-/** Load at most this many pages looking for the change a link opened. */
-const MAX_FOCUS_PAGES = 20
+// it marks everything up to now seen. The list has no contents: a change's
+// diff loads when it is shown, and Revert loads the text it saves.
 
 const keyOf = (change: Pick<AgentChange, "file_id" | "version">) => `${change.file_id}:${change.version}`
 
-type Loaded = { changes: AgentChange[]; seen: number; more: boolean }
+/**
+ * The changes loaded, newest first. Opened at a change past the first page,
+ * they are the first page and the page from that change down, and `gap` is
+ * the oldest version above the changes not loaded between them.
+ */
+type Loaded = { changes: AgentChange[]; seen: number; more: boolean; gap: number | null }
+
+/** A change's diff: loading, its two texts, too large to show, or failed. */
+type Diff = { status: "loading" } | { status: "ready"; before: string; after: string } | { status: "too-large" } | { status: "error" }
 
 /** What the agent did to the file, from the version before it. */
 function actionOf(change: AgentChange): AgentChangeAction {
   if (change.deleted) return "deleted"
   if (!change.previous || change.previous.deleted) return "created"
-  if (change.previous.path !== change.path && change.previous.content === change.content) return "moved"
+  if (change.previous.path !== change.path && change.previous.same_content) return "moved"
   return "changed"
 }
 
-/** The text Revert saves (null: Revert deletes the file), or undefined when there is nothing to revert. */
-function revertContent(change: AgentChange): string | null | undefined {
-  const before = change.previous && !change.previous.deleted ? change.previous.content : null
-  if (!change.deleted && before === change.content) return undefined
-  return before
+/** What Revert does: save the previous version's text again, delete the file, or nothing (the text is the same). */
+function revertAction(change: AgentChange): "restore" | "delete" | null {
+  if (!change.previous || change.previous.deleted) return "delete"
+  if (!change.deleted && change.previous.same_content) return null
+  return "restore"
 }
+
+/** The change shows a diff: a text file the agent changed or created. */
+function showsDiff(change: AgentChange): boolean {
+  const action = actionOf(change)
+  return kindForPath(change.path) !== "drawing" && (action === "changed" || action === "created")
+}
+
+/** Both texts of a change's diff together, in bytes. */
+const diffSize = (change: AgentChange) => (change.size ?? 0) + (change.previous?.size ?? 0)
 
 /**
  * Why Revert cannot run now, or null. Revert saves over this device's copy
@@ -88,7 +104,26 @@ export function AgentChangesView({
   const [reverting, setReverting] = useState<string | null>(null)
   const [results, setResults] = useState<ReadonlyMap<string, { text: string; done: boolean }>>(new Map())
   const [attempt, setAttempt] = useState(0)
+  const [diffs, setDiffs] = useState<ReadonlyMap<string, Diff>>(new Map())
+  const [focusMissing, setFocusMissing] = useState(false)
   const scrolled = useRef(false)
+
+  // A change's two texts, when its diff shows.
+  const loadDiff = useCallback(
+    async (change: AgentChange) => {
+      const key = keyOf(change)
+      const set = (diff: Diff) => setDiffs((current) => new Map(current).set(key, diff))
+      if (diffSize(change) > DIFF_LIMIT_BYTES) return set({ status: "too-large" })
+      set({ status: "loading" })
+      try {
+        const texts = await store.remote.contents(store.projectId, change.file_id, change.version)
+        set({ status: "ready", before: texts.previous?.content ?? "", after: texts.content ?? "" })
+      } catch (error) {
+        set({ status: error instanceof RemoteError && error.kind === "limit" ? "too-large" : "error" })
+      }
+    },
+    [store],
+  )
 
   // This device's copies, by the server's file id: where each file is now, and whether it has edits not synced yet.
   const refreshFiles = useCallback(async () => {
@@ -105,24 +140,32 @@ export function AgentChangesView({
       setStatus("loading")
       try {
         const listing = refreshFiles().catch(() => {})
-        let page = await store.remote.list(store.projectId)
-        const all = [...page.changes]
-        // Opened at a change: load older pages until it is there.
-        for (let pages = 1; focus && page.more && !all.some((change) => keyOf(change) === focusKey) && pages < MAX_FOCUS_PAGES; pages++) {
-          page = await store.remote.list(store.projectId, all[all.length - 1].version)
-          all.push(...page.changes)
+        const page = await store.remote.list(store.projectId)
+        let all = page.changes
+        let more = page.more
+        let gap: number | null = null
+        let missing = false
+        // Opened at a change past the first page: the page from it down, with a gap above it.
+        if (focus && !all.some((change) => keyOf(change) === focusKey)) {
+          const oldest = all.at(-1)?.version
+          const at = page.more && oldest !== undefined && focus.version < oldest ? await store.remote.list(store.projectId, focus.version + 1) : null
+          if (at && oldest !== undefined && at.changes.some((change) => keyOf(change) === focusKey)) {
+            all = [...all, ...at.changes]
+            more = at.more
+            gap = oldest
+          } else missing = true
         }
         // Revert's state needs this device's copies.
         await listing
         if (!active) return
         const first = all[0]
         const seen = page.seen
-        setLoaded({ changes: all, seen, more: page.more })
-        // The newest change starts open, and so does the one a link opened.
-        const open = new Set<string>()
-        if (first && first.version > seen) open.add(keyOf(first))
-        if (focusKey) open.add(focusKey)
-        setExpanded(open)
+        setLoaded({ changes: all, seen, more, gap })
+        setFocusMissing(missing)
+        // The newest change starts open, and so does the one a link opened; their diffs load.
+        const open = all.filter((change, index) => (index === 0 && change.version > seen) || (!missing && keyOf(change) === focusKey))
+        setExpanded(new Set(open.map(keyOf)))
+        for (const change of open) if (showsDiff(change)) void loadDiff(change)
         if (focus && all.some((change) => keyOf(change) === focusKey && change.version <= seen)) setEarlier(true)
         setStatus("ready")
         // Looked at: up to now, nothing is new. The marker is only a hint, so a failure is let go.
@@ -138,7 +181,7 @@ export function AgentChangesView({
     return () => {
       active = false
     }
-  }, [attempt, focus, focusKey, refreshFiles, store])
+  }, [attempt, focus, focusKey, loadDiff, refreshFiles, store])
 
   // The change a link opened comes into view and takes the keyboard.
   useEffect(() => {
@@ -171,13 +214,44 @@ export function AgentChangesView({
     }
   }
 
+  // The changes between the first page and the page a link opened, a page at a time.
+  const fillGap = async () => {
+    if (!loaded || loaded.gap === null) return
+    const gap = loaded.gap
+    setLoadingMore(true)
+    setProblem(null)
+    try {
+      const page = await store.remote.list(store.projectId, gap)
+      const above = loaded.changes.filter((change) => change.version >= gap)
+      const below = loaded.changes.filter((change) => change.version < gap)
+      const until = below[0]?.version ?? 0
+      const added = page.changes.filter((change) => change.version > until)
+      const oldest = added.at(-1)
+      // Closed once the page reaches the changes below it.
+      const closed = !oldest || added.length < page.changes.length || !page.more
+      setLoaded({ ...loaded, changes: [...above, ...added, ...below], gap: closed ? null : oldest.version })
+    } catch {
+      setProblem("Changes did not load. Check your connection and try again.")
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   const revert = async (change: AgentChange) => {
     const key = keyOf(change)
-    const content = revertContent(change)
-    if (content === undefined) return
+    const action = revertAction(change)
+    if (!action) return
     setReverting(key)
     const say = (text: string, done: boolean) => setResults((current) => new Map(current).set(key, { text, done }))
     try {
+      // The text Revert saves: the version before, from its diff when that loaded (none: Revert deletes the file).
+      let content: string | null = null
+      if (action === "restore") {
+        const diff = diffs.get(key)
+        content =
+          diff?.status === "ready" ? diff.before : ((await store.remote.contents(store.projectId, change.file_id, change.version, true)).previous?.content ?? null)
+        if (content === null) return say(`Not reverted: version ${change.previous?.version} did not load.`, false)
+      }
       const listed = await refreshFiles()
       const local = listed.find((file) => file.server?.id === change.file_id)
       const blocked = revertBlocked(change, local, false)
@@ -217,15 +291,19 @@ export function AgentChangesView({
   }
 
   const touch = compact
+  // The first change below the gap, which Show changes in between sits over.
+  const gap = loaded?.gap ?? null
+  const belowGap = gap === null ? undefined : loaded?.changes.find((change) => change.version < gap)
+  const gapKey = belowGap ? keyOf(belowGap) : null
   const row = (change: AgentChange) => {
     const key = keyOf(change)
     const local = files.get(change.file_id)
     const kind = kindForPath(change.path)
     const action = actionOf(change)
     const result = results.get(key)
-    const content = revertContent(change)
     const person = change.author ? (personName(change.author.name ?? null, change.author.email) ?? null) : null
     const isExpanded = expanded.has(key)
+    const diff = diffs.get(key)
     const thread = change.thread
     let body
     if (kind === "drawing") {
@@ -234,11 +312,13 @@ export function AgentChangesView({
       body = <p className="m-0 text-muted-foreground">The file was deleted{change.previous ? `. Revert brings back version ${change.previous.version}.` : "."}</p>
     } else if (action === "moved") {
       body = <p className="m-0 text-muted-foreground">Moved from {change.previous?.path}. The text did not change.</p>
-    } else {
-      body = isExpanded ? (
+    } else if (!isExpanded) {
+      body = null
+    } else if (diff?.status === "ready") {
+      body = (
         <DiffBlock
-          before={change.previous && !change.previous.deleted ? (change.previous.content ?? "") : ""}
-          after={change.content ?? ""}
+          before={diff.before}
+          after={diff.after}
           language={editorLanguageForPath(change.path)}
           beforeLabel={change.previous ? `Version ${change.previous.version}` : "Before"}
           afterLabel={`Version ${change.version}`}
@@ -249,55 +329,79 @@ export function AgentChangesView({
           }
           className="h-[min(50dvh,24rem)]"
         />
-      ) : null
+      )
+    } else if (diff?.status === "too-large") {
+      body = <p className="m-0 text-muted-foreground">Too large to show here. Open the file to see it.</p>
+    } else if (diff?.status === "error") {
+      body = (
+        <p className="m-0 text-muted-foreground">
+          The changes did not load.{" "}
+          <Button variant="inline" size="inline" onClick={() => void loadDiff(change)}>
+            Try again
+          </Button>
+        </p>
+      )
+    } else {
+      body = <LoadingLine label="Loading the changes" />
     }
     return (
-      <li key={key}>
-        <AgentChangeRow
-          data-change-key={key}
-          agent={change.agent}
-          person={person}
-          path={change.path}
-          kind={kind}
-          action={action}
-          movedFrom={action === "moved" ? change.previous?.path : undefined}
-          version={change.version}
-          when={change.created_at}
-          isNew={loaded !== null && change.version > loaded.seen}
-          active={focusKey === key}
-          size={touch ? "touch" : "default"}
-          thread={
-            thread
-              ? {
-                  opening: thread.opening,
-                  onShow:
-                    local && comments
-                      ? () => {
-                          open(local.path)
-                          openThreadOnceShown(comments.controller, change.file_id, thread.id)
-                        }
-                      : undefined,
-                }
-              : null
-          }
-          expanded={isExpanded}
-          onExpandedChange={(next) =>
-            setExpanded((current) => {
-              const changed = new Set(current)
-              if (next) changed.add(key)
-              else changed.delete(key)
-              return changed
-            })
-          }
-          onOpen={local ? () => open(local.path) : undefined}
-          onRevert={readOnly || content === undefined ? undefined : () => void revert(change)}
-          revertBlocked={revertBlocked(change, local, result?.done === true)}
-          reverting={reverting === key}
-          status={result?.text}
-        >
-          {body}
-        </AgentChangeRow>
-      </li>
+      <Fragment key={key}>
+        {key === gapKey && (
+          <li>
+            <Button variant="ghost" size={touch ? "touch" : "sm"} disabled={loadingMore} onClick={() => void fillGap()}>
+              <ChevronDown data-icon="inline-start" aria-hidden="true" />
+              {loadingMore ? "Loading…" : "Show changes in between"}
+            </Button>
+          </li>
+        )}
+        <li>
+          <AgentChangeRow
+            data-change-key={key}
+            agent={change.agent}
+            person={person}
+            path={change.path}
+            kind={kind}
+            action={action}
+            movedFrom={action === "moved" ? change.previous?.path : undefined}
+            version={change.version}
+            when={change.created_at}
+            isNew={loaded !== null && change.version > loaded.seen}
+            active={focusKey === key}
+            size={touch ? "touch" : "default"}
+            thread={
+              thread
+                ? {
+                    opening: thread.opening,
+                    onShow:
+                      local && comments
+                        ? () => {
+                            open(local.path)
+                            openThreadOnceShown(comments.controller, change.file_id, thread.id)
+                          }
+                        : undefined,
+                  }
+                : null
+            }
+            expanded={isExpanded}
+            onExpandedChange={(next) => {
+              setExpanded((current) => {
+                const changed = new Set(current)
+                if (next) changed.add(key)
+                else changed.delete(key)
+                return changed
+              })
+              if (next && showsDiff(change) && (!diff || diff.status === "error")) void loadDiff(change)
+            }}
+            onOpen={local ? () => open(local.path) : undefined}
+            onRevert={readOnly || !revertAction(change) ? undefined : () => void revert(change)}
+            revertBlocked={revertBlocked(change, local, result?.done === true)}
+            reverting={reverting === key}
+            status={result?.text}
+          >
+            {body}
+          </AgentChangeRow>
+        </li>
+      </Fragment>
     )
   }
 
@@ -326,6 +430,7 @@ export function AgentChangesView({
     const listClass = cn("m-0 flex list-none flex-col p-0", touch ? "gap-2.5" : "gap-2")
     content = (
       <>
+        {focusMissing && <Banner tone="info">That version is not an agent change.</Banner>}
         {fresh.length > 0 ? (
           <section aria-label="New since you last looked" className="flex flex-col gap-2">
             <h3 className="m-0 flex h-6 items-center gap-1.5 px-1 text-[11px] leading-none font-semibold tracking-[0.07em] text-dim uppercase">

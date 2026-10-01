@@ -101,6 +101,24 @@ test("Revert waits until this device has the agent's version, and stops once the
   expect(fake.server.content(id, "notes/plan.md")).toBe(BEFORE)
 })
 
+test("the list comes without contents: a change's diff loads when it is shown", async ({ page }) => {
+  const { fake, id } = await openProject(page)
+  await fake.agentChanges.save(person.id, id, "notes/plan.md", "# Plan\n\nShip the comments panel first, by Thursday.\n")
+  const fetched = () => fake.requests.filter((request) => request.url().endsWith("/rpc/get_agent_change")).map((request) => request.postDataJSON().version)
+
+  await page.getByRole("button", { name: /^Agent changes/ }).click()
+  const newest = view(page).getByRole("article").filter({ hasText: "changed, version 3" })
+  const older = view(page).getByRole("article").filter({ hasText: "changed, version 2" })
+  // The newest starts open: only its diff loads.
+  await expect(newest.locator(".editor.modified")).toContainText("by Thursday")
+  expect(fetched()).toEqual([3])
+
+  await older.getByRole("button", { name: "Show changes" }).click()
+  await expect(older.locator(".editor.original")).toContainText("Ship the comments panel first.")
+  await expect(older.locator(".editor.modified")).toContainText("by Friday")
+  expect(fetched()).toEqual([3, 2])
+})
+
 test("a comment's version link opens the change, and Open shows the file", async ({ page }) => {
   const { id } = await openProject(page, {
     path: "notes/plan.md",

@@ -284,12 +284,19 @@ agent's name, and the MCP `list_files` tool shows it ("Claude for Ada").
 
 **Decision: Agent changes, per project and per person.** `list_agent_changes`
 returns the versions agents saved, newest first and a page of whole saves at
-a time, each with the file's previous version and the thread whose reply
-links it, to anyone who can read the project. `agent_changes_seen` holds each
-person's marker (a project revision; only they read it, and only
-`mark_agent_changes_seen` moves it, forward, as a person, never an agent), and
-`count_agent_changes` counts the changes above it for the project's button.
-Opening the view marks everything up to then seen. Revert saves the previous
+a time (up to 20 saves and 100 changes, or one larger save on its own), each
+with the file's previous version and the thread whose reply links it, to
+anyone who can read the project. The list has sizes but no contents:
+`get_agent_change` returns one change's content and its previous version's
+when its diff shows, refusing a pair over 1 MiB ("Too large to show here"),
+or only the previous version's for Revert. A D2 diagram's generated canvas
+and layout files are left out, as the file tree hides them.
+`agent_changes_seen` holds each person's marker (a project revision; only
+they read it, and only `mark_agent_changes_seen` moves it, forward, as a
+person, never an agent), and `count_agent_changes` counts the changes above
+it for the project's button. Opening the view marks everything up to then
+seen; a comment's "Changed in version n" opens it at that change, loading
+the page that starts there rather than every page before it. Revert saves the previous
 version's content as a new version through the app's normal save, only over
 the agent's version: it waits until this device has that version, stops once
 the file changed again, and a change on the server not yet on the device
