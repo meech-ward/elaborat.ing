@@ -6,7 +6,9 @@
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; the reset link returns to this site, and links point at `/sign-in`;
  * it sits in the sign-in pages' card, with the app's colours, banners and link
- * buttons; the card's description says what it does; the client loads on submit.
+ * buttons; the card's description says what it does, and the message after
+ * sending says nothing about whether the email has an account; the client
+ * loads on submit.
  */
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -47,9 +49,8 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
   return (
     <div className={cn('flex flex-col gap-4', className)} {...props}>
       {success ? (
-        <Banner tone="info">
-          Check your email. If you registered using your email and password, you will receive a
-          password reset email.
+        <Banner tone="info" className="[overflow-wrap:anywhere]">
+          If {email} has an account, we sent it a link to choose a new password. It works once, for one hour.
         </Banner>
       ) : (
         <form onSubmit={handleForgotPassword} className="flex flex-col gap-4">

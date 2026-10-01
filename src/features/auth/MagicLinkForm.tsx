@@ -18,8 +18,12 @@ export async function sendSignInEmail(email: string, next: string | null) {
   })
 }
 
-/** After the email is sent: enter its code, send a new one, or start again with another email. */
-export function EmailCodeStep({ email, next, onBack }: { email: string; next: string | null; onBack: () => void }) {
+/**
+ * After the email is sent: enter its code, send a new one, or start again
+ * with another email. `sentMessage` says what was sent, when it was not a
+ * sign-in link (sign-up's confirmation).
+ */
+export function EmailCodeStep({ email, next, sentMessage, onBack }: { email: string; next: string | null; sentMessage?: string; onBack: () => void }) {
   const [code, setCode] = useState("")
   const [verifying, setVerifying] = useState(false)
   const [resent, setResent] = useState(false)
@@ -49,7 +53,7 @@ export function EmailCodeStep({ email, next, onBack }: { email: string; next: st
       <Banner tone="info" className="[overflow-wrap:anywhere]">
         {resent
           ? `Sent a new link and code to ${email}.`
-          : `Check ${email} for your sign-in link. It works once, for one hour. The email also has a code you can enter here.`}
+          : (sentMessage ?? `Check ${email} for your sign-in link. It works once, for one hour. The email also has a code you can enter here.`)}
       </Banner>
       <div className="grid gap-2">
         <Label htmlFor="magic-code">Code from the email</Label>

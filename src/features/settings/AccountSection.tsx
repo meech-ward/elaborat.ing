@@ -3,7 +3,8 @@
  * comments and in a project's members. It is kept in their Auth user
  * metadata (`display_name`), set here from their own session; agents have no
  * way to change it. Without one, the name their sign-in provider gave shows,
- * else their email. Below it, Delete account (DeleteAccountDialog.tsx).
+ * else their email. Below it, Password (PasswordForm.tsx) and Delete account
+ * (DeleteAccountDialog.tsx).
  */
 import type { User } from "@supabase/supabase-js"
 import { useId, useState, type FormEvent } from "react"
@@ -15,6 +16,7 @@ import { accountName, DISPLAY_NAME_KEY, NAME_MAX_LENGTH } from "@/features/auth/
 import { useAuth } from "@/features/auth/useAuth"
 import { loadedClient } from "@/lib/supabase/client"
 import { DeleteAccountDialog } from "./DeleteAccountDialog"
+import { PasswordForm } from "./PasswordForm"
 
 export function AccountSection({ onDeleted }: { onDeleted: () => void }) {
   const account = useAuth()
@@ -77,6 +79,7 @@ function YourName({ user, onDeleted }: { user: User; onDeleted: () => void }) {
         </p>
       </form>
       {notice ? <Banner tone={notice.tone}>{notice.text}</Banner> : null}
+      {user.email ? <PasswordForm email={user.email} /> : null}
       {user.email ? (
         <div className="grid gap-2 border-t border-border pt-3">
           <h4 className="text-[13px] font-medium">Delete account</h4>

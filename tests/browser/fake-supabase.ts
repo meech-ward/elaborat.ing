@@ -51,6 +51,10 @@ type Options = {
   grants?: OAuthGrant[] | "error"
   /** Whether Auth reports passkey sign-in on (see `FakeSupabase.passkeys`). */
   passkeys?: boolean
+  /** The person has signed up with a password and not confirmed their email yet. */
+  unconfirmed?: boolean
+  /** The session is over a day old, so a password change needs the emailed code (`otpCode`) first. */
+  staleSession?: boolean
 }
 
 /** A passkey the stand-in Auth registered for `person`, with the browser's credential id. */
@@ -75,6 +79,8 @@ export type FakeSupabase = {
   refused: Request[]
   /** The passkeys registered through the stand-in Auth, which accepts any credential it registered. */
   passkeys: FakePasskey[]
+  /** The person's password, which signs in; Settings and the reset page change it. */
+  password: string
   /** While true, every request fails as if the network were down. */
   offline: boolean
   /** Set once the `delete-account` function has deleted the person's account. */
@@ -104,6 +110,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     requests: [],
     refused: [],
     passkeys: [],
+    password: "a password",
     offline: false,
     accountDeleted: false,
     left: [],
@@ -144,7 +151,39 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
 
     // Auth
     if (path.startsWith("/auth/v1/")) {
-      if (path.endsWith("/token")) return json(route, { ...session(), user: me() })
+      if (path.endsWith("/token")) {
+        if (url.searchParams.get("grant_type") === "password") {
+          const body = request.postDataJSON() ?? {}
+          if (body.email !== person.email || body.password !== fake.password) {
+            return json(route, { code: 400, error_code: "invalid_credentials", msg: "Invalid login credentials" }, 400)
+          }
+          if (options.unconfirmed) return json(route, { code: 400, error_code: "email_not_confirmed", msg: "Email not confirmed" }, 400)
+        }
+        return json(route, { ...session(), user: me() })
+      }
+      // Auth's password rules, as supabase/config.toml sets them: 10 or more, letters and digits.
+      const weak = (password: string) =>
+        password.length < 10 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)
+          ? json(route, { code: 422, error_code: "weak_password", msg: "Password should be at least 10 characters.", weak_password: { reasons: ["length", "characters"] } }, 422)
+          : null
+      if (path.endsWith("/signup")) {
+        const body = request.postDataJSON() ?? {}
+        const refused = weak(String(body.password ?? ""))
+        if (refused) return refused
+        // With confirmations on, Auth answers with a user and no session, whether or not the email had an account.
+        return json(route, { ...person, id: crypto.randomUUID(), email: body.email, confirmation_sent_at: new Date().toISOString(), identities: [] })
+      }
+      if (path.endsWith("/recover") || path.endsWith("/reauthenticate")) return json(route, {})
+      if (path.endsWith("/user") && request.method() === "PUT" && typeof request.postDataJSON()?.password === "string") {
+        const { password, nonce } = request.postDataJSON() as { password: string; nonce?: string }
+        if (options.staleSession && !nonce) return json(route, { code: 400, error_code: "reauthentication_needed", msg: "Password update requires reauthentication" }, 400)
+        if (nonce !== undefined && nonce !== otpCode) return json(route, { code: 422, error_code: "reauthentication_not_valid", msg: "Invalid nonce" }, 422)
+        const refused = weak(password)
+        if (refused) return refused
+        if (password === fake.password) return json(route, { code: 422, error_code: "same_password", msg: "New password should be different from the old password." }, 422)
+        fake.password = password
+        return json(route, me())
+      }
       if (path.endsWith("/user")) {
         const { data } = request.method() === "PUT" ? (request.postDataJSON() ?? {}) : {}
         if (data && typeof data === "object") {

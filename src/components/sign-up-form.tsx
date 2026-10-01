@@ -5,9 +5,12 @@
  * (https://www.apache.org/licenses/LICENSE-2.0).
  * Changes: installed with the shadcn CLI, which rewrote the imports to this
  * app's modules; links point at `/sign-in`; it sits in the sign-in pages' card, with
- * the app's colours, banners and link buttons; the client loads on submit.
+ * the app's colours, banners and link buttons; it says what a password needs,
+ * and its errors in plain words; the confirmation link returns to the sign-in
+ * page with `next`, and once sent the form asks for the email's code
+ * instead (EmailCodeStep); the client loads on submit.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
 import { cn } from '@/lib/utils'
@@ -16,8 +19,10 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Banner } from '@/features/design-system'
+import { EmailCodeStep, emailLinkRedirect, PASSWORD_RULE, passwordErrorMessage } from '@/features/auth'
 
-export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<'div'>) {
+export function SignUpForm({ next, className, ...props }: React.ComponentPropsWithoutRef<'div'> & { next: string | null }) {
+  const hintId = useId()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [repeatPassword, setRepeatPassword] = useState('')
@@ -37,14 +42,16 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
 
     try {
       const supabase = await loadClient()
+      // An email that already has an account gets the same answer, and no email.
       const { error } = await supabase.auth.signUp({
         email,
         password,
+        options: { emailRedirectTo: emailLinkRedirect(window.location.origin, next) },
       })
       if (error) throw error
       setSuccess(true)
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      setError(error instanceof Error ? passwordErrorMessage(error) : 'An error occurred')
     } finally {
       setIsLoading(false)
     }
@@ -53,7 +60,16 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   return (
     <div className={cn('flex flex-col gap-4', className)} {...props}>
       {success ? (
-        <Banner tone="info">Thank you for signing up! Check your email to confirm your account before signing in.</Banner>
+        <EmailCodeStep
+          email={email}
+          next={next}
+          sentMessage={`Check ${email} for a link that confirms your account and signs you in. The email also has a code you can enter here.`}
+          onBack={() => {
+            setSuccess(false)
+            setPassword('')
+            setRepeatPassword('')
+          }}
+        />
       ) : (
         <form onSubmit={handleSignUp} className="flex flex-col gap-4">
           <div className="grid gap-2">
@@ -75,9 +91,13 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
               type="password"
               autoComplete="new-password"
               required
+              aria-describedby={hintId}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            <p id={hintId} className="text-xs text-muted-foreground">
+              {PASSWORD_RULE}
+            </p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="repeat-password">Repeat password</Label>
@@ -96,7 +116,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
           </Button>
           <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
             Already have an account?{' '}
-            <Link to="/sign-in" className={buttonVariants({ variant: 'link', size: 'inline' })}>
+            <Link to="/sign-in" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
               Sign in
             </Link>
           </p>

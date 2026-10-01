@@ -8,7 +8,8 @@
  * `next` path is given;
  * it is one card that emails a sign-in link and code first, with the password
  * as the other option and the enabled providers below; messages and links
- * are the app's banners and link buttons; the client loads on submit.
+ * are the app's banners and link buttons, with password errors in plain
+ * words; Sign up keeps `next`; the client loads on submit.
  */
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -18,7 +19,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { EmailCodeStep, ProviderButtons, sendSignInEmail } from '@/features/auth'
+import { EmailCodeStep, passwordErrorMessage, ProviderButtons, sendSignInEmail } from '@/features/auth'
 import { Banner } from '@/features/design-system'
 
 export function LoginForm({ next }: { next: string | null }) {
@@ -59,7 +60,7 @@ export function LoginForm({ next }: { next: string | null }) {
       if (error) throw error
       setSent(true)
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      setError(error instanceof Error ? (usePassword ? passwordErrorMessage(error) : error.message) : 'An error occurred')
     }
     setIsLoading(false)
   }
@@ -122,7 +123,7 @@ export function LoginForm({ next }: { next: string | null }) {
       <ProviderButtons next={next} />
       <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
         Don&apos;t have an account?{' '}
-        <Link to="/sign-up" className={buttonVariants({ variant: 'link', size: 'inline' })}>
+        <Link to="/sign-up" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
           Sign up
         </Link>
       </p>

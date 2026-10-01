@@ -499,7 +499,12 @@ diagram, with pins on the canvas for drawing and diagram elements.
 - **Email:** password, magic link and one-time code. Production needs custom
   SMTP; Supabase's built-in sender is for testing only. The magic link email
   (`supabase/templates/magic_link.html`) carries the code as well, and the
-  sign-in page accepts either.
+  sign-in page accepts either. A password needs 10 characters, with letters
+  and digits (Auth's rules in `config.toml`; the forms say so). Sign-up
+  confirms the email with a link or code that signs in. A forgotten password
+  gets a reset link that signs in on a page that sets a new one. Settings >
+  Account sets or changes a password; from a session older than a day, Auth
+  first emails a code (`secure_password_change`).
 - **Social:** GitHub and Google, declared in `config.toml` and off. Turning one
   on takes an OAuth app at the provider (callback
   `https://<project-ref>.supabase.co/auth/v1/callback`), its client id and

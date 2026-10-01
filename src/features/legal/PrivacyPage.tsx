@@ -14,7 +14,7 @@ export function PrivacyPage() {
 
       <h2>What is stored</h2>
       <ul>
-        <li>Your account: your email address, the name you set in Settings (if you set one), and how you sign in, such as a passkey or a GitHub or Google sign-in.</li>
+        <li>Your account: your email address, the name you set in Settings (if you set one), and how you sign in, such as a password (kept only as a secure hash), a passkey, or a GitHub or Google sign-in.</li>
         <li>Your projects: their files and folders (notes, drawings and diagrams), each file's history, a search index made from them, and the people you share them with.</li>
         <li>Comments you write, with your name.</li>
         <li>Agent connections: the agents you connect to your account, such as Claude or ChatGPT, until you disconnect them.</li>
