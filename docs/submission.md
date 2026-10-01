@@ -88,11 +88,11 @@ Every upload needs a new `version` in `plugin.json`.
    package again and upload the new ZIP.
 3. **MCPs**: select the server and **Connect**. The URL is your
    `<site>/mcp`, with OAuth.
-4. Domain verification: the portal shows a token. Put it in
-   `wrangler.jsonc`:
+4. Domain verification: the portal shows a token. Add it to `vars` in
+   `wrangler.jsonc`, next to `MCP_UPSTREAM`:
 
    ```jsonc
-   "vars": { "OPENAI_APPS_CHALLENGE": "<the token>" }
+   "OPENAI_APPS_CHALLENGE": "<the token>"
    ```
 
    and deploy. `<site>/.well-known/openai-apps-challenge` then answers with
