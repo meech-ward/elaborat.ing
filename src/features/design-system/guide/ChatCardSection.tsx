@@ -138,6 +138,7 @@ const SPECIMENS: Array<{ label: string; state: CardState; editor?: ReactNode; pr
     editor: <EditingSample />,
   },
   { label: "Diagram, out of date", state: shown(DIAGRAM) },
+  { label: "Diagram not drawn yet", state: shown({ ...NOTE, embeds: [{ ...NOTE.embeds[0]!, status: "not_drawn" }], svgs: {} }) },
   { label: "Draft component preview", state: shown(COMPONENT), preview: { status: "shown", message: null, frame: <ComponentSample /> } },
   {
     label: "Link in a preview",

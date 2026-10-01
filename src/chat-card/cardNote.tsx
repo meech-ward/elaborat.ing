@@ -75,6 +75,7 @@ export function EmbedFigure({ embed, svgs }: { embed: CardEmbed; svgs: Record<st
   return (
     <EmbedBox
       floatingCaption={Boolean(svg)}
+      message={svg ? undefined : EMBED_NOTES[embed.status]}
       caption={
         <>
           <KindBadge kind={badgeKind(embed.kind)} />
@@ -84,11 +85,7 @@ export function EmbedFigure({ embed, svgs }: { embed: CardEmbed; svgs: Record<st
         </>
       }
     >
-      {svg ? (
-        <EmbedArt svg={svg} embed={embed} />
-      ) : (
-        <div className="text-center text-[13px] leading-snug text-muted-foreground">{EMBED_NOTES[embed.status]}</div>
-      )}
+      {svg && <EmbedArt svg={svg} embed={embed} />}
       {svg && embed.status === "stale" && <Banner tone="warn">{EMBED_NOTES.stale}</Banner>}
     </EmbedBox>
   )
