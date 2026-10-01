@@ -143,8 +143,9 @@ create table public.comment_threads (
   resolved_at timestamptz,
   resolved_by uuid references auth.users (id) on delete set null,
   -- Ask an agent: the project revision at which the creator last asked, when
-  -- they turned it on or replied while it was on; null when it is off. It is
-  -- the cursor list_comments's ask_agent filter compares with `since`.
+  -- they turned it on, or replied or reopened the thread while it was on;
+  -- null when it is off. It is the cursor list_comments's ask_agent filter
+  -- compares with `since`.
   ask_agent_revision bigint,
   constraint comment_threads_anchor_valid check (private.is_valid_comment_anchor(anchor)),
   constraint comment_threads_file_version_positive check (file_version > 0)
@@ -827,6 +828,9 @@ grant execute on function public.edit_comment(uuid, text) to authenticated;
 
 -- Resolve or reopen a thread. Anyone who can comment may, agents included.
 -- Resolving a resolved thread, or reopening an open one, changes nothing.
+-- The creator reopening, as a person, their own thread that asks an agent
+-- asks again, as their reply would, so their agents list it after their last
+-- cursor and are woken (queue_ask_agent_events in events.sql).
 create function private.set_comment_resolved(thread_id uuid, resolved boolean)
 returns jsonb
 language plpgsql
@@ -855,14 +859,20 @@ begin
     return jsonb_build_object('revision', p.revision, 'thread', private.thread_json(t));
   end if;
 
-  update public.comment_threads ct
-  set resolved_at = case when set_comment_resolved.resolved then now() end,
-      resolved_by = case when set_comment_resolved.resolved then uid end
-  where ct.id = t.id
-  returning * into t;
   update public.projects set revision = revision + 1, updated_at = now()
   where id = p.id
   returning revision into new_revision;
+  update public.comment_threads ct
+  set resolved_at = case when set_comment_resolved.resolved then now() end,
+      resolved_by = case when set_comment_resolved.resolved then uid end,
+      ask_agent_revision = case
+        when not set_comment_resolved.resolved and t.created_by = uid
+          and t.ask_agent_revision is not null and not private.is_oauth_client()
+        then new_revision
+        else ct.ask_agent_revision
+      end
+  where ct.id = t.id
+  returning * into t;
   return jsonb_build_object('revision', new_revision, 'thread', private.thread_json(t));
 end;
 $$;

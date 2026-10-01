@@ -464,12 +464,13 @@ diagram, with pins on the canvas for drawing and diagram elements.
   creator, and only as a person, turns it on or off; everyone else sees a
   badge. `comment_threads.ask_agent_revision` records the project revision at
   which they last asked: when they turned it on, and again whenever they
-  reply to it as a person. `list_comments` with `ask_agent` returns only the
-  caller's own open asked threads, and with `since` (a revision it returned
-  before) only those asked after it, so one person's request never reaches
-  another person's agent. The agent changes the file and replies with
-  `reply_comment`'s `file_version`, a saved version of the thread's file, which
-  the reply shows as "Changed in version n"; the person resolves the thread.
+  reply to it or reopen it as a person. `list_comments` with `ask_agent`
+  returns only the caller's own open asked threads, and with `since` (a
+  revision it returned before) only those asked after it, so one person's
+  request never reaches another person's agent. The agent changes the file
+  and replies with `reply_comment`'s `file_version`, a saved version of the
+  thread's file, which the reply shows as "Changed in version n"; the person
+  resolves the thread.
   The MCP `list_comments` tool and the plugin's comment-loop skill describe
   that loop.
 - **Deleting leaves a placeholder.** A deleted comment keeps its row, author
@@ -703,9 +704,11 @@ unchanged.
     `list_comments` with `ask_agent`). Another person's comment never
     matches, and a comment an agent wrote never does, so an agent's reply
     cannot wake anything. Turning Ask an agent on for an existing open
-    thread asks too: it writes no comment, so the event carries the
-    author's latest comment on the thread written as a person. Turning it
-    off sends nothing.
+    thread asks too, and so does its creator reopening it, as a person,
+    while it is on: neither writes a comment, so the event carries the
+    author's latest comment on the thread written as a person. Anyone else
+    reopening it, their agents included, sends nothing, and neither does
+    turning it off.
   - **Subscribing.** The server checks the event, its arguments and the
     `whsec_` secret (24 to 64 bytes), checks the callback URL, then asks the
     database whether the person can read the project, the file exists and

@@ -6,7 +6,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(98);
+select plan(111);
 
 -- Alice owns the project; Bob is an editor. Frank has nothing to do with it.
 -- Each has an agent connected (Claude); Alice also has a second one.
@@ -125,6 +125,15 @@ create function pg_temp.delivery(n integer, comment uuid)
 returns jsonb
 language sql
 as $$ select private.comment_event_delivery(pg_temp.sub(n), comment) $$;
+
+-- The thread ids the caller's agents are asked about after a revision.
+create function pg_temp.asked(since bigint)
+returns uuid[]
+language sql
+as $$
+  select coalesce(array_agg((t ->> 'id')::uuid order by t ->> 'id'), '{}')
+  from jsonb_array_elements(public.list_comments(pg_temp.project(), null, true, since) -> 'threads') t
+$$;
 
 -- Comments written in one transaction share a time, so the opening comment is
 -- the one that is not a reply (pg_temp.r).
@@ -433,6 +442,45 @@ select lives_ok($$ select public.set_comment_ask_agent(pg_temp.t(4), true) $$, '
 reset role;
 select is(pg_temp.queued_total() - current_setting('test.queued')::bigint, 0::bigint,
   'Turning it off queues nothing, and neither does turning it on for a resolved thread');
+
+------------------------------------------------------------------------------
+-- Reopening a resolved thread that asks an agent.
+
+select set_config('test.queued', pg_temp.queued_total()::text, true);
+set local role authenticated;
+select pg_temp.act('alice', 'claude');
+select set_config('test.cursor', public.list_comments(pg_temp.project(), null, true) ->> 'revision', true);
+select lives_ok($$ select public.reopen_comment(pg_temp.t(4)) $$, 'Alice''s agent reopens her resolved thread that asks an agent');
+select is(pg_temp.asked(current_setting('test.cursor')::bigint), '{}'::uuid[], 'It does not list it as asked again');
+select lives_ok($$ select public.resolve_comment(pg_temp.t(4)) $$, 'and resolves it');
+select pg_temp.act('bob');
+select lives_ok($$ select public.reopen_comment(pg_temp.t(4)) $$, 'Bob reopens it');
+select pg_temp.act('alice', 'claude');
+select is(pg_temp.asked(current_setting('test.cursor')::bigint), '{}'::uuid[], 'nor does her agent after Bob reopens it');
+select pg_temp.act('bob');
+select lives_ok($$ select public.resolve_comment(pg_temp.t(4)) $$, 'and he resolves it');
+reset role;
+select is(pg_temp.queued_total() - current_setting('test.queued')::bigint, 0::bigint,
+  'Her agent or Bob reopening it queues nothing');
+
+select set_config('test.requests', pg_temp.requests()::text, true);
+select set_config('test.queued1', pg_temp.queued(1)::text, true);
+select set_config('test.queued3', pg_temp.queued(3)::text, true);
+set local role authenticated;
+select pg_temp.act('alice');
+select lives_ok($$ select public.reopen_comment(pg_temp.t(4)) $$, 'Alice reopens it herself');
+select pg_temp.act('alice', 'claude');
+select is(pg_temp.asked(current_setting('test.cursor')::bigint), array[pg_temp.t(4)], 'That asks again: her agent lists it after its last cursor');
+reset role;
+select is(pg_temp.queued(1) - current_setting('test.queued1')::bigint, 1::bigint, 'and it queues an event for her project watch');
+select is(pg_temp.queued(3) - current_setting('test.queued3')::bigint, 0::bigint, 'Bob''s agent gets nothing');
+select is(pg_temp.requests() - current_setting('test.requests')::bigint, 1::bigint, 'and the sender is woken once');
+select is(
+  pg_temp.delivery(1, (select (message ->> 'commentId')::uuid from pgmq.q_comment_events
+   where message ->> 'subscriptionId' = pg_temp.sub(1) order by msg_id desc limit 1)) ->> 'deliver',
+  'true',
+  'Delivery checks it again and sends her latest comment on it'
+);
 
 ------------------------------------------------------------------------------
 -- What delivery checks again.

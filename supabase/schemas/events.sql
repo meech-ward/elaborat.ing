@@ -7,10 +7,11 @@
 -- client) that made it. A comment wakes only its own author's agents, and
 -- only when its author asked an agent: their own new thread with Ask an agent
 -- on, their own reply, as a person, on their own open thread that has it on,
--- or turning it on for their own open thread (the rule list_comments's
--- ask_agent filter follows). Comments an agent wrote never wake anything, so
--- an agent's reply cannot start a loop, and no one's comment ever reaches
--- another person's agent.
+-- turning it on for their own open thread, or reopening, as a person, their
+-- own thread that has it on (the rule list_comments's ask_agent filter
+-- follows). Comments an agent wrote never wake anything, so an agent's reply
+-- cannot start a loop, and no one's comment ever reaches another person's
+-- agent.
 --
 -- Triggers on comments and threads queue one message per matching
 -- subscription in the comment_events pgmq queue and wake the send-events Edge
@@ -464,12 +465,15 @@ create trigger queue_comment_events
   execute function private.queue_comment_events();
 
 -- Turning Ask an agent on for an existing thread asks too, though it writes
--- no comment: it queues comment.created for the thread's creator, with their
--- latest comment on it written as a person, when the thread is open. Only its
--- creator, as a person, turns it on (set_comment_ask_agent). A new thread
+-- no comment, and so does its creator reopening it, as a person, while it is
+-- on (set_comment_resolved records that as asking again): it queues
+-- comment.created for the thread's creator, with their latest comment on it
+-- written as a person, when the thread is open. Only its creator, as a
+-- person, does either (set_comment_ask_agent, set_comment_resolved); anyone
+-- else reopening it leaves the ask as it was, so nothing is sent. A new thread
 -- that asks is seen when its opening comment is written, and a reply that
--- asks again changes a thread that already asks, so neither comes here.
--- Turning it off sends nothing.
+-- asks again changes a thread that is already open and asking, so neither
+-- comes here. Turning it off sends nothing.
 create function private.queue_ask_agent_events()
 returns trigger
 language plpgsql
@@ -479,8 +483,9 @@ as $$
 declare
   latest uuid;
 begin
-  if old.ask_agent_revision is not null or new.ask_agent_revision is null
-    or new.created_by is null or new.resolved_at is not null then
+  if new.ask_agent_revision is null or new.ask_agent_revision is not distinct from old.ask_agent_revision
+    or new.created_by is null or new.resolved_at is not null
+    or (old.ask_agent_revision is not null and old.resolved_at is null) then
     return null;
   end if;
   select c.id into latest from public.comments c
