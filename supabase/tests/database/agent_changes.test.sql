@@ -155,6 +155,8 @@ select lives_ok(
 );
 
 -- Alice asked on a thread, and her agent's reply links the version it saved.
+-- Comments in one transaction share a time, so the reply's id sorts last to
+-- keep Alice's comment the thread's opening one.
 select pg_temp.act('alice');
 select lives_ok(
   $$ select public.add_comment(pg_temp.project(), 'c0000000-0000-4000-8000-000000000001', pg_temp.file_id('notes/a.md'),
@@ -163,7 +165,7 @@ select lives_ok(
 );
 select pg_temp.act('alice', true);
 select lives_ok(
-  $$ select public.reply_comment('c0000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'Done.', pg_temp.version('notes/a.md')) $$,
+  $$ select public.reply_comment('c0000000-0000-4000-8000-000000000001', 'ffffffff-ffff-4fff-bfff-ffffffffffff', 'Done.', pg_temp.version('notes/a.md')) $$,
   'and her agent replies with the version it saved'
 );
 

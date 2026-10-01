@@ -18,7 +18,10 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    // Firefox on CI runners now and then drops a click made right after a page
+    // loads (never reproduced elsewhere), so CI gives Firefox one retry. A test
+    // that passes on retry is still reported as flaky.
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, retries: process.env.CI ? 1 : 0 },
   ],
   webServer: [
     {
