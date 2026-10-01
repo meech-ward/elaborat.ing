@@ -9,7 +9,9 @@ calls the wrong tool, or none, is a regression.
 
 The test cases for a directory submission come from here: the five prompts
 marked **Submit** under Direct and Indirect, and the three marked **Submit**
-under Negative.
+under Negative. They are copied into the plugin's manifest
+(`plugins/elaborating/plugin.json`, `review.test_cases`); change both
+together ([submitting the plugin](submission.md)).
 
 **Setup:** an account whose project was started from the welcome project
 (`welcome.mdx`, which embeds the drawing `sketch.excalidraw` and the diagram

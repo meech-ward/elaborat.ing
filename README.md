@@ -56,6 +56,7 @@ In Claude Code:
 - [Self-host guide](docs/self-host.md): from a new free Supabase project to a running copy
 - [Platform notes](docs/platform-notes.md): Supabase and Cloudflare details we rely on
 - [Golden prompts](docs/golden-prompts.md): prompts for checking that agents use the tools when they should
+- [Submitting the plugin](docs/submission.md): listing it in the plugin directory ChatGPT and Codex share
 
 ## Develop
 

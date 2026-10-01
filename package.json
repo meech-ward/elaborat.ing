@@ -18,6 +18,7 @@
     "report:bundle": "bun scripts/bundle-report.ts",
     "check:bundle": "bun scripts/bundle-report.ts --check",
     "palette-css": "bun scripts/palette-css.ts",
+    "package:plugin": "bun scripts/package-plugin.ts",
     "test:browser": "playwright test",
     "deploy": "bun run build && wrangler deploy"
   },

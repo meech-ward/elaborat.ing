@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "elaborating",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
   "author": {
     "name": "elaborat.ing",
@@ -26,13 +26,78 @@
         "supportURL": "https://elaborat.ing/support",
         "logo": "./assets/logo.png",
         "composerIcon": "./assets/composer-icon.svg",
+        "brandColor": "#097C4F",
+        "brandColorDark": "#3ECF8E",
         "defaultPrompt": [
           "Work through the open comments in my elaborat.ing project.",
           "Write a note with a D2 diagram of how our sign-in flow works.",
           "Sketch this idea as a drawing and show it to me."
+        ],
+        "screenshots": [
+          "./assets/screenshots/1-comments.png",
+          "./assets/screenshots/2-diagram-note.png",
+          "./assets/screenshots/3-drawing.png"
         ]
       },
-      "onboardingSkill": "./skills/get-started/SKILL.md"
+      "onboardingSkill": "./skills/get-started/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Show a note in the chat",
+              "prompt": "Show me the welcome note from my elaborat.ing project.",
+              "tools_triggered": "list_projects, show_file",
+              "expected_behavior": "Finds the project, then shows welcome.mdx as a card with its drawing, its diagram and an Open in elaborat.ing link."
+            },
+            {
+              "description": "Write a new note and show it",
+              "prompt": "In elaborat.ing, add a note called meeting.mdx to my welcome project with three action items from today's standup, then show it.",
+              "tools_triggered": "list_projects, write_file, show_file",
+              "expected_behavior": "Saves a new meeting.mdx with three action items in the project, then shows it as a card."
+            },
+            {
+              "description": "Make a drawing and show it",
+              "prompt": "Draw a simple drawing in elaborat.ing of three boxes, Browser, Worker and Database, joined by arrows, and show it to me.",
+              "tools_triggered": "list_projects, write_file, show_file",
+              "expected_behavior": "Saves a new .excalidraw drawing with three labelled boxes joined by arrows, then shows it drawn in a card."
+            },
+            {
+              "description": "Comment on a heading",
+              "prompt": "Leave a comment on the \"Drawings and diagrams\" heading of my welcome note: \"Add a caption here.\"",
+              "tools_triggered": "list_projects, add_comment",
+              "expected_behavior": "Starts a comment thread on the Drawings and diagrams heading of welcome.mdx with that text. It shows in the app's Comments panel."
+            },
+            {
+              "description": "Search notes",
+              "prompt": "Find my notes that mention D2.",
+              "tools_triggered": "search",
+              "expected_behavior": "Returns passages that mention D2, from welcome.mdx, with the project and path of each."
+            }
+          ],
+          "negative": [
+            {
+              "description": "A question with nothing to do with notes",
+              "prompt": "What's the weather in Paris tomorrow?",
+              "expected_behavior": "No elaborat.ing tool is called. The question has nothing to do with the user's notes or drawings."
+            },
+            {
+              "description": "Text help with nothing to save or show",
+              "prompt": "Rewrite this paragraph so it's shorter: \"Our team met on Tuesday to talk about the launch, and we agreed on most things.\"",
+              "expected_behavior": "No elaborat.ing tool is called. The assistant rewrites the text in the chat, since nothing asks to save or show a file."
+            },
+            {
+              "description": "Permanent deletion of projects",
+              "prompt": "Permanently delete all my elaborat.ing projects.",
+              "expected_behavior": "No tool deletes a project, so none is called for it. The assistant says a project is deleted by its owner in the app, and may offer to archive projects instead, which it does only after the user confirms."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "elaborat.ing does not sell anything or take payments."
+      },
+      "publication": {
+        "release_notes": "First release in the directory. Read, write and search the notes, drawings and D2 diagrams in your elaborat.ing projects, show a file in the chat as a card you can edit, and work through the comments people leave: make the change, then reply in the thread."
+      }
     }
   }
 }

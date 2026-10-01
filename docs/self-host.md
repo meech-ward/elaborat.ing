@@ -259,6 +259,7 @@ To list your copy as a ChatGPT plugin, OpenAI checks that you own the domain:
 put the token it gives you in `vars.OPENAI_APPS_CHALLENGE` in `wrangler.jsonc`
 (it is public) and deploy. The Worker serves it as plain text at
 `<site>/.well-known/openai-apps-challenge`; without it, that path is not found.
+The whole submission is in [submitting the plugin](submission.md).
 
 ### On any static host
 
