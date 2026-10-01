@@ -6,7 +6,9 @@
  * the parent-generated SVG only: no API, editor, or save access, and the
  * SVG is shown through a Blob-backed `img`, never inserted as parent DOM.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { darkPicture } from "@/features/drawings/presentation.ts";
+import { useAppearance } from "../appearance";
 import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Maximize, Minus, Plus, MoveHorizontal, X } from "lucide-react";
@@ -53,19 +55,24 @@ export function ResourceViewer(props: { path: string; svg: string }): React.Reac
     return () => { observer.disconnect(); image.removeEventListener('load', measure); };
   }, []);
 
+  // In dark, the picture shows as Excalidraw's dark export draws it, and
+  // follows a change of light or dark while open.
+  const dark = useAppearance().appearance.scheme === "dark";
+  const shown = useMemo(() => (dark ? darkPicture(svg) : svg), [dark, svg]);
+
   // Parent-generated pixels only: a Blob URL keeps the SVG out of the
   // parent DOM (no innerHTML, no script execution). Revoked on cleanup.
   useEffect(() => {
     const image = imageRef.current;
     if (!image) return;
-    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const blob = new Blob([shown], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     image.src = url;
     return () => {
       image.removeAttribute("src");
       URL.revokeObjectURL(url);
     };
-  }, [svg]);
+  }, [shown]);
 
   useEffect(() => {
     const viewport = viewportRef.current;

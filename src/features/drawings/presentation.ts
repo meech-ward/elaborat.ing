@@ -36,6 +36,29 @@ export function presentDrawing(scene: DrawingScene, colors: CanvasColors): Drawi
 // Excalidraw's dark theme draws the canvas through
 // `filter: invert(93%) hue-rotate(180deg)` (0.18.1, `--theme-filter`).
 const INVERT = 0.93;
+const DARK_FILTER = 'invert(93%) hue-rotate(180deg)';
+// Its dark export turns raster images back, so they keep their colours.
+const IMAGE_FILTER = 'invert(100%) hue-rotate(180deg) saturate(1.25)';
+
+/**
+ * An exported picture as Excalidraw's dark export draws it (0.18.1,
+ * `exportWithDarkMode`): the dark theme's filter over the whole picture and
+ * raster images turned back. Browser only (DOMParser); the markup is parsed
+ * into a detached document, never into the page.
+ */
+export function darkPicture(svg: string): string {
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  const root = doc.documentElement;
+  if (root.localName !== 'svg') return svg;
+  root.setAttribute('filter', DARK_FILTER);
+  for (const use of doc.querySelectorAll('use')) {
+    const target = (use.getAttribute('href') ?? use.getAttribute('xlink:href'))?.slice(1);
+    const image = target ? doc.getElementById(target)?.querySelector('image') : null;
+    const href = image?.getAttribute('href') ?? image?.getAttribute('xlink:href') ?? '';
+    if (image && !href.startsWith('data:image/svg+xml')) use.setAttribute('filter', IMAGE_FILTER);
+  }
+  return new XMLSerializer().serializeToString(doc);
+}
 // hue-rotate(180deg) is 2L - I for the filter's luma weights, its own inverse.
 const HUE_180 = [
   [-0.574, 1.43, 0.144],

@@ -309,6 +309,56 @@ test("a note shows pictures of the drawing and diagram it embeds, made from thei
   expect(saves(fake).length, "picturing embeds writes nothing").toBe(before)
 })
 
+test("a note's drawing and diagram follow light and dark, and the viewer keeps a drawing's images in their colours", async ({ page }) => {
+  // A pale yellow box, and an 8 by 8 picture: blue top left, red top right.
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAHElEQVR4nGMwSHgARw8MDOCIgYoSyBxkRVSUAACat1YBMJT5qgAAAABJRU5ErkJggg=="
+  const shape = { angle: 0, strokeColor: "#1e1e1e", backgroundColor: "#ffec99", fillStyle: "solid", strokeWidth: 2, strokeStyle: "solid", roughness: 0,
+    opacity: 100, groupIds: [], frameId: null, roundness: null, version: 1, versionNonce: 1, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false }
+  const scene = JSON.stringify({ type: "excalidraw", version: 2, elements: [
+    { ...shape, id: "box", type: "rectangle", x: 0, y: 0, width: 160, height: 80, seed: 1, index: "a0" },
+    { ...shape, id: "pic", type: "image", x: 200, y: 0, width: 80, height: 80, seed: 2, index: "a1", backgroundColor: "transparent", fileId: "f1", status: "saved", scale: [1, 1], crop: null },
+  ], appState: {}, files: { f1: { id: "f1", mimeType: "image/png", dataURL: `data:image/png;base64,${png}`, created: 1 } } })
+  await page.emulateMedia({ colorScheme: "light" })
+  await openProject(page, { "sketch.excalidraw": scene, "flow.d2": "a -> b\n", "page.mdx": '# Page\n\n<Drawing src="sketch.excalidraw" />\n\n<Diagram src="flow.d2" />\n' }, "page.mdx")
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const pictures = frame.locator("[data-resource-pixels] > svg")
+  await expect(pictures).toHaveCount(2, { timeout: 45_000 })
+  const filters = () => pictures.evaluateAll((svgs) => svgs.map((svg) => getComputedStyle(svg).filter))
+  await expect.poll(filters).toEqual(["none", "none"])
+  // The system turning dark redraws both through Excalidraw's dark theme filter, with no reload.
+  await page.emulateMedia({ colorScheme: "dark" })
+  await expect.poll(filters).toEqual([expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/), expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/)])
+
+  // The viewer shows the drawing as Excalidraw's dark export does: the
+  // background and box dark, the picture's blue and red as they are.
+  await frame.getByRole("button", { name: "View drawing sketch.excalidraw", exact: true }).click()
+  const image = page.getByRole("dialog", { name: "Drawing: sketch.excalidraw", exact: true }).getByRole("img", { name: "Drawing preview of sketch.excalidraw" })
+  // The picture is 300 by 100: the scene with 10 around it.
+  const colours = () => image.evaluate(async (img: HTMLImageElement) => {
+    await img.decode()
+    const canvas = document.createElement("canvas")
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const context = canvas.getContext("2d")!
+    context.drawImage(img, 0, 0)
+    const at = (x: number, y: number) => [...context.getImageData(x, y, 1, 1).data.slice(0, 3)]
+    return { background: at(5, 5), box: at(90, 50), blue: at(230, 30), red: at(270, 30) }
+  })
+  const dark = await colours()
+  expect(Math.max(...dark.background)).toBeLessThan(40)
+  expect(Math.max(...dark.box)).toBeLessThan(120)
+  // Its own colours, give or take (about 57,108,188 and 194,82,82): not
+  // lightened to the sky blue and pink the dark filter alone makes.
+  expect(Math.max(dark.blue[0], dark.blue[1])).toBeLessThan(130)
+  expect(dark.blue[2]).toBeGreaterThan(150)
+  expect(Math.max(dark.red[1], dark.red[2])).toBeLessThan(110)
+  expect(dark.red[0]).toBeGreaterThan(150)
+  // Back to light while it is open.
+  await page.emulateMedia({ colorScheme: "light" })
+  await expect.poll(async () => (await colours()).background).toEqual([255, 255, 255])
+})
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
