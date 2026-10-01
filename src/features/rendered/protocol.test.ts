@@ -354,7 +354,12 @@ describe('sandbox constants', () => {
     expect(PREVIEW_CHILD_CSP).toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(PREVIEW_CHILD_CSP).toMatch(/script-src[^;]*'unsafe-eval'/);
     expect(PREVIEW_CHILD_CSP).not.toMatch(/'self'/);
-    expect(PREVIEW_CHILD_CSP).toMatch(/img-src 'none'/);
+  });
+
+  test('child CSP allows images from data: only, so a drawing\'s images show and nothing is fetched', () => {
+    const img = PREVIEW_CHILD_CSP.split(';').map((part) => part.trim()).filter((part) => part.startsWith('img-src'));
+    expect(img).toEqual(['img-src data:']);
+    expect(PREVIEW_CHILD_CSP).not.toMatch(/blob:|https?:|\*/);
   });
 });
 

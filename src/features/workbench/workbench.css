@@ -184,10 +184,6 @@ above the choices. */
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-tool);
 }
-/* A drawing's picture in dark mode, as a rendered note shows it (reading.css). */
-:root[data-scheme="dark"] .wb-compare-pictures img {
-  filter: invert(93%) hue-rotate(180deg);
-}
 
 /* Phones and small landscape screens (one query sets data-compact): files
    and projects are a screen of their own, and an open file fills the screen

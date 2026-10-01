@@ -23,15 +23,18 @@ export const PREVIEW_SANDBOX = "allow-scripts";
  * Restrictive child content-security-policy for the self-contained srcdoc
  * frame. The bootstrap is an inline classic script and `run()` from
  * `@mdx-js/mdx` compiles document code with `new Function`, so inline
- * scripts and eval are allowed; everything else (including `'self'` and any
- * remote host, which are meaningless without network) is denied.
+ * scripts and eval are allowed. Images are allowed from `data:` only, so the
+ * images inside a drawing's picture show: a `data:` image is bytes already
+ * in the document and makes no request, so the frame still has no way to
+ * send anything out. Everything else (including `'self'`, `blob:` and any
+ * remote host) is denied.
  */
 export const PREVIEW_CHILD_CSP =
   "default-src 'none'; " +
   "script-src 'unsafe-inline' 'unsafe-eval'; " +
   "style-src 'unsafe-inline'; " +
   "font-src data:; " +
-  "img-src 'none'; " +
+  "img-src data:; " +
   "media-src 'none'; " +
   "connect-src 'none'; " +
   "form-action 'none'; " +

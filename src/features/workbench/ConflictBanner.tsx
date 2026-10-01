@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { Banner, BannerAction, DiffBlock } from "@/features/design-system";
 import { countElementChanges } from "@/features/drawings/serialize.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
+import { darkPicture } from "@/features/drawings/presentation.ts";
+import { useAppearance } from "@/features/appearance";
 import type { ConflictCopies } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { drawingSvgForContent } from "./resources";
@@ -182,6 +184,8 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** Both versions of a drawing as pictures (the SVG export embeds use), and how many elements differ. */
 function DrawingComparison({ theirs, mine, path }: { theirs: string; mine: string; path: string }) {
   const [shown, setShown] = useState<{ theirs: Picture; mine: Picture; changes: ReturnType<typeof countElementChanges> | null } | null>(null);
+  // In dark, each picture shows as Excalidraw's dark export draws it, with images in their own colours.
+  const dark = useAppearance().appearance.scheme === "dark";
 
   useEffect(() => {
     let current = true;
@@ -211,7 +215,7 @@ function DrawingComparison({ theirs, mine, path }: { theirs: string; mine: strin
     <figure>
       <figcaption>{caption}</figcaption>
       {"svg" in picture ? (
-        <img alt={alt} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(picture.svg)}`} />
+        <img alt={alt} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(dark ? darkPicture(picture.svg) : picture.svg)}`} />
       ) : (
         <p className={dialogError}>This version could not be drawn: {picture.error}</p>
       )}

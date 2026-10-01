@@ -326,6 +326,25 @@ test("a note's drawing and diagram follow light and dark, and the viewer keeps a
   await expect(pictures).toHaveCount(2, { timeout: 45_000 })
   const filters = () => pictures.evaluateAll((svgs) => svgs.map((svg) => getComputedStyle(svg).filter))
   await expect.poll(filters).toEqual(["none", "none"])
+  // The drawing's picture in the note shows its image (the frame allows
+  // data: images): blue and red where the picture is, not the empty box.
+  const noteColours = async () => {
+    const png = (await pictures.first().screenshot()).toString("base64")
+    return page.evaluate(async (data) => {
+      const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: "image/png" }))
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const context = canvas.getContext("2d")!
+      context.drawImage(bitmap, 0, 0)
+      // The picture is 300 by 100, however wide it shows.
+      const scale = bitmap.width / 300
+      const at = (x: number, y: number) => [...context.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data.slice(0, 3)]
+      return { blue: at(230, 30), red: at(270, 30) }
+    }, png)
+  }
+  await expect.poll(async () => {
+    const { blue, red } = await noteColours()
+    return blue[2] > 150 && Math.max(blue[0], blue[1]) < 130 && red[0] > 150 && Math.max(red[1], red[2]) < 110
+  }, { message: "the drawing's image shows in the note" }).toBe(true)
   // The system turning dark redraws both through Excalidraw's dark theme filter, with no reload.
   await page.emulateMedia({ colorScheme: "dark" })
   await expect.poll(filters).toEqual([expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/), expect.stringMatching(/^invert\(0\.93\) hue-rotate\(180deg\)$/)])
