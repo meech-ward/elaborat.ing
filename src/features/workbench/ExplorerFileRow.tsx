@@ -14,6 +14,7 @@
  */
 import { useState } from "react";
 import { TreeFileRow, TreeRowMenu, type MenuEntry, type PanelRowSize } from "@/features/design-system";
+import { embedded } from "@/features/embed/mode";
 import {
   copyPayloadForPath,
   copyTextToClipboard,
@@ -110,9 +111,14 @@ export function ExplorerFileRow({
   };
 
   // One list for the action button and the right-click menu.
+  // A chat's panel has no clipboard, so it has no Copy entries.
   const items: MenuEntry[] = [
-    { label: "Copy filename", onSelect: () => void copy(copyPayloadForPath(path).filename, "filename") },
-    { label: "Copy path", onSelect: () => void copy(path, "path") },
+    ...(embedded
+      ? []
+      : [
+          { label: "Copy filename", onSelect: () => void copy(copyPayloadForPath(path).filename, "filename") },
+          { label: "Copy path", onSelect: () => void copy(path, "path") },
+        ]),
     ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
     ...(onDuplicate ? [{ label: "Duplicate", onSelect: onDuplicate, shortcut: duplicateShortcutLabel() }] : []),
     ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
@@ -134,8 +140,8 @@ export function ExplorerFileRow({
         aria-label={draft ? `${path}, unsaved draft` : label && label !== path ? path : undefined}
         onClick={onOpen}
         onKeyDown={openRowMenuFromKeyboard}
-        rowMenu={{ label: menuLabel, entries: items }}
-        actions={<TreeRowMenu label={menuLabel} entries={items} size={size} />}
+        rowMenu={items.length > 0 ? { label: menuLabel, entries: items } : undefined}
+        actions={items.length > 0 ? <TreeRowMenu label={menuLabel} entries={items} size={size} /> : undefined}
       />
       <RenameDialog
         key={renameKey}

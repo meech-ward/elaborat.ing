@@ -13,4 +13,10 @@
   --heading-tracking:-0.5px;
   font-family:var(--ui-font);
 }
+:root[data-embed] {
+  /* The app in a chat's panel (index.html sets data-embed) uses the device's
+     fonts for its interface, as a chat's own interface does; drawings keep
+     their hand-drawn font and code keeps its monospace. */
+  --ui-font:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
 ::selection {background:var(--accent-soft);color:var(--text)}

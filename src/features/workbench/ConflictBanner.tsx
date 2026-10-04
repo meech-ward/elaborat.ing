@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
-import { Banner, BannerAction, DiffBlock } from "@/features/design-system";
+import { Banner, BannerAction, DiffBlock, confirmAction } from "@/features/design-system";
 import { countElementChanges } from "@/features/drawings/serialize.ts";
 import { parseDrawingFile } from "@/features/drawings/parse.ts";
 import { darkPicture } from "@/features/drawings/presentation.ts";
@@ -43,7 +43,7 @@ export function ConflictBanner({ name, path, client, compareAs, noun, hasUnsaved
 
   /** True once resolved, false if the person chose to keep their unsaved edits after all. Throws when the choice fails. */
   const settle = async (choice: ConflictChoice): Promise<boolean> => {
-    if (hasUnsavedEdits() && choice !== "mine" && !window.confirm(`Your unsaved edits to this ${noun} will be replaced. Continue?`)) return false;
+    if (hasUnsavedEdits() && choice !== "mine" && !(await confirmAction(`Your unsaved edits to this ${noun} will be replaced. Continue?`, { confirmLabel: "Replace them" }))) return false;
     setResolving(true);
     onNotice(null);
     try {

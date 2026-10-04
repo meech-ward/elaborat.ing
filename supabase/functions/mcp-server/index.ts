@@ -12,6 +12,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { postToCallback } from '../_shared/callbacks.ts'
 import { EVENT_CAPABILITIES, type EventsContext, registerEvents } from './events.ts'
 import { registerTools, type ToolContext } from './tools/index.ts'
+import { embedViewEnabled } from './tools/panel.ts'
 import { limitToolCalls } from './tools/limits.ts'
 
 // An MCP server as a single Supabase Edge Function, composed as a pipeline:
@@ -56,6 +57,10 @@ const SERVER_INSTRUCTIONS =
   'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
   'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'
 
+// open_panel and the app beside the chat (tools/panel.ts): on unless the
+// function secret EMBED_VIEW_ENABLED is `false`.
+const EMBED_VIEW = embedViewEnabled()
+
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -72,7 +77,7 @@ function createServer(context: ToolContext, events: EventsContext): McpServer {
 
   // Counts each tool call against the user's limit before the tool runs.
   limitToolCalls(server, context)
-  registerTools(server, context)
+  registerTools(server, context, { embedView: EMBED_VIEW })
   registerEvents(server, events)
   return server
 }

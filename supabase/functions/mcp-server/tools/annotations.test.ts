@@ -54,6 +54,9 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
     if (hints.readOnlyHint) assertEquals(hints.destructiveHint, false, `${tool.name} reads only, yet destroys`)
   }
   for (const name of DESTRUCTIVE) assert(tools.some((tool) => tool.name === name), `${name} is not a tool`)
+  // open_panel only shows the app beside the chat.
+  const panel = tools.find((tool) => tool.name === 'open_panel')
+  assertEquals(panel?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
 })
 
 Deno.test('whoami is the account profile: exactly id, name and email, as structured content and JSON text', async () => {

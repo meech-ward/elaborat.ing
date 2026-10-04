@@ -46,7 +46,7 @@ import {
 } from "react";
 import { FRAME_PAGE_PATH } from "virtual:preview-frame/page";
 import { moduleLoader, useModule } from "@/lib/moduleLoader";
-import { sandboxFrameUrl } from "./sandboxFrame";
+import { SANDBOX_ORIGIN, sandboxFrameUrl } from "./sandboxFrame";
 import {
   codeFenceFromParagraph,
   projectFluidSource,
@@ -124,8 +124,8 @@ export type RenderedEditorProps = {
   onEditResource?: (path: string) => void;
   /**
    * The sandbox domain whose page the frame loads (docs/architecture.md,
-   * Component isolation). Defaults to the build's VITE_SANDBOX_ORIGIN; none
-   * keeps the `srcdoc` frame.
+   * Component isolation). Defaults to the build's VITE_SANDBOX_ORIGIN (none
+   * in a chat's panel, see sandboxFrame.ts); none keeps the `srcdoc` frame.
    */
   sandboxOrigin?: string | null;
   /** Show the note without editing in the frame; `onPatch` should refuse edits too. */
@@ -170,7 +170,7 @@ const LOST_EDIT = "the note changed at the same time. Make the edit again.";
  */
 const srcdocFrame = moduleLoader(() => import("../../preview/frame"));
 // Without a sandbox domain every frame is a `srcdoc`: load it with this view.
-if (!import.meta.env.VITE_SANDBOX_ORIGIN) srcdocFrame.preload();
+if (!SANDBOX_ORIGIN) srcdocFrame.preload();
 /** The sandbox domain's page could not load in this tab: later notes start with the `srcdoc`. */
 let sandboxFailed = false;
 
@@ -223,7 +223,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     allowedResourcePaths,
     availableResourcePaths,
     onEditResource,
-    sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN ?? null,
+    sandboxOrigin = SANDBOX_ORIGIN,
     readOnly = false,
     comments = null,
     apiRef,

@@ -26,9 +26,10 @@ import {
   Minimize2,
   X,
 } from "lucide-react";
-import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
+import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, confirmAction, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
 import { DottedPage } from "@/components/panel";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
+import { embedded } from "@/features/embed/mode";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { accountName, personName, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
@@ -671,13 +672,14 @@ export function WorkspaceWorkbench({
     )
       setPersistReady(true);
   };
-  const closeTab = (path: string) => {
+  const closeTab = async (path: string) => {
     const tab = state.tabs.find((tab) => tab.path === path);
     if (
       tab?.dirty &&
-      !window.confirm(
+      !(await confirmAction(
         `Close ${path} and discard unsaved changes? Cancel to keep editing or save first.`,
-      )
+        { confirmLabel: "Discard" },
+      ))
     )
       return;
     void client.discardLocalDraft(path).then(() => {
@@ -851,7 +853,7 @@ export function WorkspaceWorkbench({
     ...((comments || local) && state.active
       ? [{ label: "Toggle comments", shortcut: commentsShortcut(apple), run: () => (comments ? comments.controller.setPanelOpen(!commentsUi.panelOpen) : setGuestComments((v) => !v)) }]
       : []),
-    { label: "Settings", run: () => { afterClose.current = openSettings; } },
+    ...(embedded ? [] : [{ label: "Settings", run: () => { afterClose.current = openSettings; } }]),
     ...(narrow ? [] : [{ label: focus ? "Exit full screen" : "Focus", shortcut: commandShortcut(".", apple), run: () => setFocus((v) => !v) }]),
     ...(readOnly
       ? []
@@ -881,8 +883,9 @@ export function WorkspaceWorkbench({
     },
   };
   // The project menu: the other projects and the way home (projectMenu), then this project's actions.
+  // In a chat's panel, importing is on the site.
   const projectActions: MenuEntry[] = [
-    ...(readOnly ? [] : [{ label: "Import a file", group: "actions", onSelect: () => fileInput.current?.click() }]),
+    ...(readOnly || embedded ? [] : [{ label: "Import a file", group: "actions", onSelect: () => fileInput.current?.click() }]),
     { label: "Refresh file list", group: "actions", onSelect: () => void refreshList() },
     {
       label: "Command palette",
@@ -911,12 +914,13 @@ export function WorkspaceWorkbench({
     { label: "New drawing", onSelect: () => afterMenu(() => startCreate("drawing")) },
     { label: "New diagram", onSelect: () => afterMenu(() => startCreate("diagram")) },
   ];
-  const agentCount = useConnectedAgentCount(!local && auth.status === "ready");
+  const agentCount = useConnectedAgentCount(!local && !embedded && auth.status === "ready");
   const person: PanelPerson | null = auth.status === "ready" ? personOf(auth.user, auth.email) : null;
+  // In a chat's panel there is no Settings, and Connected agents are on the site.
   const personMenu: MenuEntry[] = [
-    { label: "Settings", onSelect: () => afterMenu(openSettings) },
+    ...(embedded ? [] : [{ label: "Settings", onSelect: () => afterMenu(openSettings) }]),
     // On a phone the account panel has no Connected agents row.
-    ...(narrow ? [{ label: agentCount ? `Connected agents (${agentCount})` : "Connected agents", onSelect: () => void routerNavigate({ to: "/agents" }) }] : []),
+    ...(narrow && !embedded ? [{ label: agentCount ? `Connected agents (${agentCount})` : "Connected agents", onSelect: () => void routerNavigate({ to: "/agents" }) }] : []),
     ...(onSyncNow ? [{ label: "Sync now", onSelect: onSyncNow }] : []),
     {
       label: "Sign out",

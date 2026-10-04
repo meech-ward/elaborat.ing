@@ -3,6 +3,7 @@ import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import { registerCommentTools } from './comments.ts'
 import { registerComponentPreview } from './componentPreview.ts'
 import { registerFileView } from './fileView.ts'
+import { registerPanel } from './panel.ts'
 import { registerProjectTools } from './projects.ts'
 import { registerSearchTool } from './search.ts'
 import type { ToolContext } from './types.ts'
@@ -18,11 +19,15 @@ export type { ToolContext } from './types.ts'
 // has access) is destructive, even when it can be undone; only a tool that
 // just adds is not. No tool reaches outside the user's own account, so
 // openWorldHint is always false. annotations.test.ts holds the list.
-export function registerTools(server: McpServer, context: ToolContext): void {
+//
+// `embedView` (EMBED_VIEW_ENABLED, see panel.ts) adds open_panel and its view;
+// without it the tools and resources are exactly those below.
+export function registerTools(server: McpServer, context: ToolContext, { embedView = true }: { embedView?: boolean } = {}): void {
   registerWhoamiTool(server, context)
   registerProjectTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
   registerComponentPreview(server, context)
   registerCommentTools(server, context)
+  if (embedView) registerPanel(server, context)
 }

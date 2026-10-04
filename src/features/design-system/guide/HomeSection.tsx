@@ -1,4 +1,4 @@
-import { Ellipsis, Settings } from "lucide-react"
+import { ChevronLeft, Ellipsis, ExternalLink, Settings } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { AccountPill } from "../ui/AccountPill"
@@ -69,6 +69,25 @@ function TopBars() {
         The brand on a 44 high panel, the actions on their own, radius 12, 16 from the page edges. Signed in, the avatar and email open Settings,
         Connected agents and Sign out. Phones leave Start writing to the page.
       </GuideValue>
+      <GuideLabel>Top bar, compact</GuideLabel>
+      <AppBar
+        size="compact"
+        home={<a href="#top-bar-sample" />}
+        className="rounded-[4px] bg-(--bg) px-0"
+        actions={
+          <>
+            <Button variant="ghost" size="sm">
+              <ChevronLeft data-icon="inline-start" />
+              Projects
+            </Button>
+            <IconButton label="Open in elaborat.ing">
+              <ExternalLink />
+            </IconButton>
+            <AccountPill email="person@example.com" menu={[{ label: "Sign out", onSelect: noop }]} />
+          </>
+        }
+      />
+      <GuideValue>The app in a chat&apos;s panel: 40 high panels 8 from the edges, back to Projects on a project, Open in elaborat.ing, and Sign out.</GuideValue>
     </div>
   )
 }

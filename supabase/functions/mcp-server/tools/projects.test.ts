@@ -213,10 +213,12 @@ Deno.test('the tests cover every tool the server lists', async () => {
   try {
     const { tools } = await client.listTools()
     // search is tested in search.test.ts, show_file and preview_component in
-    // fileView.test.ts, and the comment tools in comments.test.ts.
+    // fileView.test.ts, the comment tools in comments.test.ts, and open_panel
+    // in panel.test.ts.
     const tested = [
       ...CASES.map(([name]) => name),
       'create_project',
+      'open_panel',
       'search',
       'show_file',
       'preview_component',

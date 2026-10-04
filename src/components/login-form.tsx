@@ -9,7 +9,8 @@
  * it is one card that emails a sign-in link and code first, with the password
  * as the other option and the enabled providers below; messages and links
  * are the app's banners and link buttons, with password errors in plain
- * words; Sign up keeps `next`; the client loads on submit.
+ * words; Sign up keeps `next`; the client loads on submit; and an `embedded`
+ * variant for the app in a chat's panel.
  */
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -22,7 +23,23 @@ import { cn } from '@/lib/utils'
 import { EmailCodeStep, passwordErrorMessage, ProviderButtons, sendSignInEmail } from '@/features/auth'
 import { Banner } from '@/features/design-system'
 
-export function LoginForm({ next }: { next: string | null }) {
+/** A page of the site in a new tab: the app in a chat's panel sends these through the panel (src/features/embed). */
+function SiteLink({ path, className, children }: { path: string; className: string; children: React.ReactNode }) {
+  return (
+    <a href={new URL(path, window.location.origin).href} target="_blank" rel="noopener" className={className}>
+      {children}
+    </a>
+  )
+}
+
+/**
+ * Sign in with an emailed link and code, or a password. `embedded` is the
+ * form in a chat's panel, which keeps a sign-in of its own: the code is
+ * entered there (the emailed link signs in on the site), with no passkey or
+ * provider buttons, which a frame cannot use, and Forgot your password? and
+ * Sign up open the site in a new tab.
+ */
+export function LoginForm({ next, embedded = false }: { next: string | null; embedded?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [usePassword, setUsePassword] = useState(false)
@@ -35,6 +52,7 @@ export function LoginForm({ next }: { next: string | null }) {
       <EmailCodeStep
         email={email}
         next={next}
+        sentMessage={embedded ? `Check ${email} for a code and enter it here. The link in the email signs you in on the site, not in this panel.` : undefined}
         onBack={() => {
           setSent(false)
           setError(null)
@@ -84,9 +102,15 @@ export function LoginForm({ next }: { next: string | null }) {
           <div className="grid gap-2">
             <div className="flex items-center">
               <Label htmlFor="password">Password</Label>
-              <Link to="/forgot-password" className={cn(buttonVariants({ variant: 'link', size: 'inline' }), 'ml-auto')}>
-                Forgot your password?
-              </Link>
+              {embedded ? (
+                <SiteLink path="/forgot-password" className={cn(buttonVariants({ variant: 'link', size: 'inline' }), 'ml-auto')}>
+                  Forgot your password?
+                </SiteLink>
+              ) : (
+                <Link to="/forgot-password" className={cn(buttonVariants({ variant: 'link', size: 'inline' }), 'ml-auto')}>
+                  Forgot your password?
+                </Link>
+              )}
             </div>
             <Input
               id="password"
@@ -100,11 +124,13 @@ export function LoginForm({ next }: { next: string | null }) {
         ) : null}
         {error ? <Banner tone="danger">{error}</Banner> : null}
         <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
-          {usePassword ? (isLoading ? 'Signing in...' : 'Sign in') : isLoading ? 'Sending...' : 'Email me a sign-in link'}
+          {usePassword ? (isLoading ? 'Signing in...' : 'Sign in') : isLoading ? 'Sending...' : embedded ? 'Email me a code' : 'Email me a sign-in link'}
         </Button>
         {usePassword ? null : (
           <p className="text-[13px] leading-normal text-muted-foreground">
-            No password needed. We&apos;ll email you a link that signs you in, and a code you can enter here instead.
+            {embedded
+              ? 'No password needed. We\'ll email you a code to enter here.'
+              : 'No password needed. We\'ll email you a link that signs you in, and a code you can enter here instead.'}
           </p>
         )}
         <Button
@@ -117,15 +143,21 @@ export function LoginForm({ next }: { next: string | null }) {
             setError(null)
           }}
         >
-          {usePassword ? 'Email me a link instead' : 'Use a password instead'}
+          {usePassword ? (embedded ? 'Email me a code instead' : 'Email me a link instead') : 'Use a password instead'}
         </Button>
       </form>
-      <ProviderButtons next={next} />
+      {embedded ? null : <ProviderButtons next={next} />}
       <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
         Don&apos;t have an account?{' '}
-        <Link to="/sign-up" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
-          Sign up
-        </Link>
+        {embedded ? (
+          <SiteLink path="/sign-up" className={buttonVariants({ variant: 'link', size: 'inline' })}>
+            Sign up
+          </SiteLink>
+        ) : (
+          <Link to="/sign-up" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
+            Sign up
+          </Link>
+        )}
       </p>
     </>
   )

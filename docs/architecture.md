@@ -830,6 +830,31 @@ unchanged.
   committed too, since the functions and the app deploy separately;
   `builds.json` keeps the committed build's files next to a new one's, for
   a view whose function deploys before the app or that a host cached.
+- **Decision: the app itself beside the chat, framed from `/embed`.** The
+  `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
+  sidebar (global entrypoint), a conversation's side panel (thread
+  entrypoint), or a model's call with a project and file; `{}` opens the
+  projects list. Its view (`ui://elaborating/panel-v1.html`) is a small
+  hand-written page, not the card's build: it declares
+  `https://elaborat.ing` in `frameDomains` (and `frame_domains` and
+  `redirect_domains` in `openai/widgetCSP`), uses the card's widget domain so
+  a chat has one view origin to allow, and frames
+  `https://elaborat.ing/embed[/projects/<id>[/<path>]]?theme=<host theme>`:
+  the tool's page first, then the host's deep link (only `/` or
+  `/projects/<uuid>/...`), then the projects list. It fills the view (inline
+  at the host's maximum height), forwards theme changes to the frame, takes
+  messages only from that frame and from the app's origin, and opens only
+  `https://elaborat.ing/...` links through `ui/open-link`. When the host's
+  `sandbox.csp.frameDomains` lacks the app's origin (Claude restricts frame
+  domains), or the app has not said it is ready within 10 seconds, the view
+  says "elaborat.ing can't open in this panel." with Open in elaborat.ing and,
+  under Details, its own origin and its ancestors: the line to set as
+  `EMBED_FRAME_ANCESTORS` (Frontend hosting). The app in the panel keeps a
+  sign-in of its own (the host partitions its storage under the chat's site)
+  and updates through the app's own Realtime sync when an agent saves. The
+  `EMBED_VIEW_ENABLED` function secret set to `false` removes the tool and
+  its view, leaving the tool list and resources as they were; it is on
+  otherwise. `show_file` and every other tool are unchanged.
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
   keep the MCP layer a thin wrapper around the database functions. Local
@@ -1139,6 +1164,42 @@ anywhere in the app shares Zod's core with the first paint, which then carries
 the parts only full Zod uses. Where people see Zod's messages, the code passes
 Zod's English messages itself, since `zod/mini` has none of its own.
 `bun run check:bundle` fails if full Zod reaches a first paint.
+
+**Decision: the app in a chat's panel is `/embed`, framed only by origins
+the Worker names.** `/embed`, `/embed/` and `/embed/projects/<anything>` (GET
+and HEAD) run the Worker first, which sends the page with
+`Content-Security-Policy: frame-ancestors <EMBED_FRAME_ANCESTORS>` in place of
+`X-Frame-Options: DENY`, and `X-Robots-Tag: noindex`. Every other path keeps
+DENY, including other `/embed/` pages. `EMBED_FRAME_ANCESTORS` (a public
+value in `vars`) is exact origins separated by spaces, checked as the sandbox
+domain's `FRAME_ANCESTORS` is (`worker/frameAncestors.ts`); unset, or with a
+wildcard, a path or anything else, the policy is `'none'`. frame-ancestors
+checks every ancestor, so the list holds the panel view's origin, the origins
+it shows as its ancestors, and `https://chatgpt.com`; the panel's view shows
+that line when it cannot open. Until it is set the browser refuses every
+framed `/embed`, so no signed-in page shows in any frame, and the app does no
+check of its own. The service worker never answers `/embed` (it is in
+`navigateFallbackDenylist`), and in the panel none registers.
+
+In the app, embed mode is decided once at start (`src/features/embed/mode.ts`):
+opened on its own, `/embed/...` goes to the same page on the site; framed,
+the router runs with `basepath: "/embed"`, so routes, links and project URLs
+are the same as on the site. Only the projects and a project's workbench show;
+any other page offers Open in elaborat.ing. The embed's chrome, sign-in and
+messages to the view load in a chunk of their own (`EmbedRoot`): a compact
+top bar with back to Projects, Open in elaborat.ing (sent to the view as
+`elaborating-embed:open`, which opens it through the host) and Sign out; no
+Settings, no legal footer, and project management (members, transfer,
+archive, delete, leave, download, import) and Copy path left to the site.
+Sign-in in the panel is the emailed code or a password (passkeys and GitHub
+or Google need permissions or top-level redirects a frame does not get).
+Light or dark comes from `?theme=` before the first paint and then from the
+view's `elaborating-embed:theme` messages, and is not saved; the interface
+uses the device's fonts (`html[data-embed]`). Questions before losing work go
+through `confirmAction`, which shows the library's dialog in the panel, where
+the frame may block `window.confirm`. Notes render in the `srcdoc` frame from
+the start there, since the sandbox domain lets only the app's own site frame
+its page.
 
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,

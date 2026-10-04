@@ -23,6 +23,7 @@ import {
   type PanelRowSize,
   type SaveStatus,
 } from "@/features/design-system";
+import { embedded } from "@/features/embed/mode";
 import { cn } from "@/lib/utils";
 
 /**
@@ -156,7 +157,8 @@ export interface PanelPerson {
  * The account panel. Signed in: Connected agents with how many (on phones it
  * is in the person's menu), Look and theme, and the person with the sync
  * status and a menu (Settings, Sync now, Sign out). A local project instead
- * says where its work is kept, with the ways to sign up.
+ * says where its work is kept, with the ways to sign up. In a chat's panel
+ * only the person shows: Connected agents and Settings are on the site.
  */
 export function AccountPanel({
   size,
@@ -201,14 +203,16 @@ export function AccountPanel({
       render={<section aria-label="Account and app" />}
       className={cn("flex shrink-0 flex-col", touch ? "px-2 pt-1.5 pb-2" : "p-2")}
     >
-      <SidebarMenu>
-        {local ? (
-          <IconRow size={size} icon={<Lock aria-hidden="true" />} label="Sign up to connect agents" render={<Link to="/sign-up" />} />
-        ) : (
-          !touch && <IconRow icon={<Bot aria-hidden="true" />} label="Connected agents" count={agentCount || undefined} render={<Link to="/agents" />} />
-        )}
-        <IconRow size={size} icon={<Sun aria-hidden="true" />} label="Look and theme" onClick={onLookAndTheme} />
-      </SidebarMenu>
+      {embedded ? null : (
+        <SidebarMenu>
+          {local ? (
+            <IconRow size={size} icon={<Lock aria-hidden="true" />} label="Sign up to connect agents" render={<Link to="/sign-up" />} />
+          ) : (
+            !touch && <IconRow icon={<Bot aria-hidden="true" />} label="Connected agents" count={agentCount || undefined} render={<Link to="/agents" />} />
+          )}
+          <IconRow size={size} icon={<Sun aria-hidden="true" />} label="Look and theme" onClick={onLookAndTheme} />
+        </SidebarMenu>
+      )}
       {local ? (
         <LocalNote size={size} />
       ) : person ? (

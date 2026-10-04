@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OperationSession } from "./operationSession";
-import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
 import type { TabFile } from "./tabs";
@@ -470,11 +470,13 @@ export function WorkspaceSession({
       if (!file.path) return;
       if (
         store.snapshot().dirty &&
-        !window.confirm(
+        !(await confirmAction(
           "Reload this file? Unsaved changes will be lost if you load the saved version.",
-        )
+          { confirmLabel: "Reload" },
+        ))
       )
         return;
+      if (frozen.current) return;
       setNotice(null);
       pendingOperation.current++;
       try {
@@ -515,13 +517,14 @@ export function WorkspaceSession({
   );
 
   const adoptServerText = useCallback(
-    (content: string, revision: string, label: string) => {
+    async (content: string, revision: string, label: string) => {
       if (frozen.current) return;
       if (
         store.snapshot().dirty &&
-        !window.confirm("Load the saved version and discard your unsaved changes?")
+        !(await confirmAction("Load the saved version and discard your unsaved changes?", { confirmLabel: "Load it" }))
       )
         return;
+      if (frozen.current) return;
       const target =
         openFile.path ?? openFile.pendingName ?? "notes/untitled.md";
       setSnapshot(store.replaceDocument(content, formatForFilename(target)));
@@ -684,7 +687,7 @@ export function WorkspaceSession({
             <span className="inline-flex flex-wrap gap-x-3">
               <BannerAction
                 onClick={() =>
-                  adoptServerText(
+                  void adoptServerText(
                     conflict.currentContent,
                     conflict.currentRevision,
                     `Loaded the saved version of ${displayName}.`,
@@ -717,7 +720,7 @@ export function WorkspaceSession({
             <span className="inline-flex flex-wrap gap-x-3">
               <BannerAction
                 onClick={() =>
-                  adoptServerText(
+                  void adoptServerText(
                     openFile.serverChanged?.currentContent ?? "",
                     openFile.serverChanged?.currentRevision ?? "",
                     `Loaded the saved version of ${displayName}.`,

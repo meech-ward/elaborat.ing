@@ -3,7 +3,8 @@
   // A single-page app on Cloudflare Workers static assets: files come from
   // ./dist, and unknown paths fall back to index.html so client-side routes
   // work. The small Worker (worker/index.ts) runs first only for the MCP
-  // server's paths, which it passes to the Supabase Edge Function.
+  // server's paths, which it passes to the Supabase Edge Function, and for
+  // /embed, the app in a chat's panel, whose framing policy it sets.
   "name": "elaborating",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
@@ -12,13 +13,19 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // /mcp-probe and /embed-probe: temporary host capability probe, remove after testing.
-    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]
+    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]
   },
   // The hosted instance's MCP server. Self-hosters: your project's
   // https://<ref>.supabase.co/functions/v1/mcp-server, or remove it.
   // OPENAI_APPS_CHALLENGE (not set here yet): the token OpenAI gives to verify
   // the domain when a plugin is submitted, served as plain text at
   // /.well-known/openai-apps-challenge. It is public, so add it to "vars".
+  // EMBED_FRAME_ANCESTORS (not set here yet): who may frame /embed, the app in
+  // a chat's panel, as exact origins separated by spaces: the panel's view
+  // origin, the origins it shows as its ancestors, and the chat's site, such
+  // as "https://<view origin> https://chatgpt.com". The panel shows the line
+  // to copy when it cannot open. Unset, or with a wildcard, a path or anything
+  // else that is not an origin, nothing may frame it.
   // MCP_PROBE_UPSTREAM: temporary host capability probe, remove after testing.
   "vars": {
     "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server",

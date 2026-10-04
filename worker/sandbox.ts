@@ -15,6 +15,8 @@
  * origin is opaque (`sandbox="allow-scripts"`).
  */
 
+import { frameAncestors } from "./frameAncestors.ts";
+
 export interface SandboxEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   /** The app's origin, the only page that may frame the preview, such as https://elaborat.ing. Unset, nothing may. */
@@ -32,7 +34,7 @@ const VERSIONS = "/frame/versions.json";
  * src/features/rendered/protocol.ts), with scripts from the folder in place
  * of inline ones, and who may frame it.
  */
-export function sandboxCsp(folder: string, frameAncestors: string): string {
+export function sandboxCsp(folder: string, ancestors: string): string {
   return (
     "default-src 'none'; " +
     `script-src ${folder} 'unsafe-eval'; ` +
@@ -45,15 +47,8 @@ export function sandboxCsp(folder: string, frameAncestors: string): string {
     "frame-src 'none'; " +
     "object-src 'none'; " +
     "base-uri 'none'; " +
-    `frame-ancestors ${frameAncestors};`
+    `frame-ancestors ${ancestors};`
   );
-}
-
-/** Origins only (scheme, host and port), separated by spaces; anything else leaves `'none'`. */
-function ancestors(value: string | undefined): string {
-  const origins = (value ?? "").split(/\s+/).filter(Boolean);
-  if (origins.length === 0 || !origins.every((origin) => /^https?:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(origin))) return "'none'";
-  return origins.join(" ");
 }
 
 export async function handleSandbox(request: Request, env: SandboxEnv): Promise<Response> {
@@ -63,7 +58,7 @@ export async function handleSandbox(request: Request, env: SandboxEnv): Promise<
   const list = read && url.pathname === VERSIONS;
   const folder = file ? `${url.origin}/frame/${file[1]}/` : `${url.origin}/frame/`;
   const headers = new Headers({
-    "Content-Security-Policy": sandboxCsp(folder, ancestors(env.FRAME_ANCESTORS)),
+    "Content-Security-Policy": sandboxCsp(folder, frameAncestors(env.FRAME_ANCESTORS)),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
   });

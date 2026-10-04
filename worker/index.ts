@@ -11,17 +11,29 @@
  * plugin listing with the token in `OPENAI_APPS_CHALLENGE`, as plain text;
  * without it set, that path is not found.
  *
+ * `/embed` and its project pages are the app inside a chat's panel
+ * (docs/architecture.md, Frontend hosting): framed only by the origins in
+ * `EMBED_FRAME_ANCESTORS`, and by nothing while it is unset.
+ *
  * Temporary host capability probe, remove after testing: `/mcp-probe` passes
- * to the probe function in `MCP_PROBE_UPSTREAM`, and `/embed-probe` is the one
- * page other sites may frame (only ChatGPT's, see EMBED_PROBE_FRAME_ANCESTORS).
+ * to the probe function in `MCP_PROBE_UPSTREAM`, and `/embed-probe` may be
+ * framed by ChatGPT's origins (EMBED_PROBE_FRAME_ANCESTORS).
  * Every other page keeps `X-Frame-Options: DENY` from public/_headers.
  */
+
+import { frameAncestors } from "./frameAncestors.ts";
 
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   MCP_UPSTREAM?: string;
   /** The token OpenAI gives to verify this domain for a plugin listing. */
   OPENAI_APPS_CHALLENGE?: string;
+  /**
+   * Who may frame `/embed`: exact origins separated by spaces, such as a chat
+   * panel's view origin and the chat's own site. Unset, or with any entry that
+   * is not an origin, nothing may.
+   */
+  EMBED_FRAME_ANCESTORS?: string;
   /** Temporary host capability probe, remove after testing. */
   MCP_PROBE_UPSTREAM?: string;
 }
@@ -46,26 +58,33 @@ function openAiChallenge(env: Env): Response {
   return new Response(token, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
+/** The app in a chat's panel: `/embed`, and a project or file under it. Other `/embed/` pages are never framed. */
+export function embedPage(pathname: string): boolean {
+  return pathname === "/embed" || pathname === "/embed/" || pathname.startsWith("/embed/projects/");
+}
+
+/** The page, with the framing policy in place of X-Frame-Options, kept out of search. */
+async function framable(request: Request, env: Env, ancestors: string): Promise<Response> {
+  const response = await env.ASSETS.fetch(request);
+  const headers = new Headers(response.headers);
+  headers.delete("X-Frame-Options");
+  headers.set("Content-Security-Policy", `frame-ancestors ${ancestors}`);
+  headers.set("X-Robots-Tag", "noindex");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 // Temporary host capability probe, remove after testing.
 const PROBE_PREFIX = "/mcp-probe";
 const EMBED_PROBE = "/embed-probe";
 /** Who may frame /embed-probe: ChatGPT, and the origins it serves plugin views from. */
 export const EMBED_PROBE_FRAME_ANCESTORS = "https://chatgpt.com https://*.chatgpt.com https://*.oaiusercontent.com";
 
-/** The app's /embed-probe page, with a frame-ancestors policy in place of X-Frame-Options. */
-async function embedProbe(request: Request, env: Env): Promise<Response> {
-  const response = await env.ASSETS.fetch(request);
-  const headers = new Headers(response.headers);
-  headers.delete("X-Frame-Options");
-  headers.set("Content-Security-Policy", `frame-ancestors ${EMBED_PROBE_FRAME_ANCESTORS}`);
-  headers.set("X-Robots-Tag", "noindex");
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}
-
 export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === OPENAI_CHALLENGE_PATH) return openAiChallenge(env);
-  if (url.pathname === EMBED_PROBE || url.pathname === `${EMBED_PROBE}/`) return embedProbe(request, env);
+  const read = request.method === "GET" || request.method === "HEAD";
+  if (read && embedPage(url.pathname)) return framable(request, env, frameAncestors(env.EMBED_FRAME_ANCESTORS));
+  if (url.pathname === EMBED_PROBE || url.pathname === `${EMBED_PROBE}/`) return framable(request, env, EMBED_PROBE_FRAME_ANCESTORS);
   const probeUpstream = env.MCP_PROBE_UPSTREAM?.replace(/\/+$/, "");
   if (probeUpstream && (url.pathname === PROBE_PREFIX || url.pathname.startsWith(`${PROBE_PREFIX}/`))) {
     return fetcher(new Request(`${probeUpstream}${url.pathname.slice(PROBE_PREFIX.length)}${url.search}`, request));

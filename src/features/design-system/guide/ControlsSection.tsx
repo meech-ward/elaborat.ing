@@ -6,6 +6,7 @@ import { CustomCodeNotice, CustomCodeProvider, type CodeFile, type CustomCodePol
 import { ActionContextMenu, ActionMenu } from "../ui/ActionMenu"
 import { Banner } from "../ui/Banner"
 import { ButtonShortcut } from "../ui/ButtonShortcut"
+import { ConfirmDialog } from "../ui/ConfirmAction"
 import { EmptyState } from "../ui/EmptyState"
 import { Hint } from "../ui/Hint"
 import { LoadingLine } from "../ui/LoadingLine"
@@ -243,6 +244,8 @@ function FeedbackDemo() {
         <DirtyDot label="Unsaved changes" />
       </span>
 
+      <ConfirmDemo />
+
       <GuideLabel>Loading line</GuideLabel>
       <div className="overflow-hidden rounded-panel border border-panel-border bg-panel">
         <LoadingLine label="Opening customer-model.mdx" />
@@ -252,6 +255,33 @@ function FeedbackDemo() {
         <LoadingLine value={60} label="Uploading flow.excalidraw" />
         <p className="px-3 py-2.5 text-[13px] text-muted-foreground">Uploading flow.excalidraw, 60%</p>
       </div>
+    </>
+  )
+}
+
+/** confirmAction's dialog, as the app in a chat's panel asks with it (the app's own window uses the browser's). */
+function ConfirmDemo() {
+  const [open, setOpen] = useState(false)
+  const [answer, setAnswer] = useState<string | null>(null)
+  return (
+    <>
+      <GuideLabel>Confirm</GuideLabel>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="outline" onClick={() => setOpen(true)}>
+          Close notes.mdx
+        </Button>
+        {answer && <span className="text-[13px] text-muted-foreground">{answer}</span>}
+      </div>
+      <ConfirmDialog
+        open={open}
+        message="Close notes.mdx and discard unsaved changes? Cancel to keep editing or save first."
+        confirmLabel="Discard"
+        onAnswer={(confirmed) => {
+          setOpen(false)
+          setAnswer(confirmed ? "Discarded." : "Kept editing.")
+        }}
+      />
+      <GuideValue>confirmAction asks before work is lost: the browser&apos;s confirm in the app, this dialog in a chat&apos;s panel, where the browser&apos;s may be blocked.</GuideValue>
     </>
   )
 }

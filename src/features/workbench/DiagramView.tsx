@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Banner, BannerAction, PhoneHeader, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, PhoneHeader, commandShortcut, confirmAction, isApplePlatform, type MenuEntry } from "@/features/design-system";
 // Excalidraw's own layout, for the generated canvas.
 import "@excalidraw/excalidraw/index.css";
 import { DrawingCanvas, exportDrawingPng, exportDrawingSvg, scenesEqual, type DrawingCanvasApi, type DrawingScene } from "@/features/drawings/index.ts";
@@ -344,7 +344,8 @@ export function DiagramView({
       setNotice("Wait for the canvas label to reach the code before resetting.");
       return;
     }
-    if (!window.confirm("Reset every moved or restyled shape to the generated layout? Freehand additions are kept.")) return;
+    if (!(await confirmAction("Reset every moved or restyled shape to the generated layout? Freehand additions are kept.", { confirmLabel: "Reset layout" }))) return;
+    if (frozen.current) return;
     setNotice(null);
     setRegenerating(true);
     try {
@@ -688,7 +689,9 @@ export function DiagramView({
             <span className="inline-flex flex-wrap gap-x-3">
               <BannerAction
                 onClick={() => {
-                  if (!dirty || window.confirm("Load the saved version and discard your unsaved edits?")) void reopen();
+                  void (async () => {
+                    if (!dirty || (await confirmAction("Load the saved version and discard your unsaved edits?", { confirmLabel: "Load it" }))) void reopen();
+                  })();
                 }}
               >
                 Load the saved version

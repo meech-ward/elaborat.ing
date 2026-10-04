@@ -70,6 +70,12 @@ const PAGES: Page[] = [
     start: ["src/routes/projects.$projectId.tsx?tsr-split=component", "src/features/workbench/WorkspaceWorkbench.tsx"],
     note: "the route's loader starts the workbench chunk",
   },
+  {
+    id: "embed",
+    name: "In a chat's panel, projects (/embed)",
+    start: ["src/routes/index.tsx?tsr-split=component", "src/features/embed/EmbedRoot.tsx"],
+    note: "the embed's own chunk loads with the first route; a project there adds the project page's chunks",
+  },
 ]
 const PROJECT_PAGE = PAGES[3]
 

@@ -6,6 +6,7 @@ import { ActionMenu, Banner, BannerAction, FloatingPanel, NewProjectCard, Projec
 import { projectHref } from "@/features/navigation"
 import type { Invitation, ProjectEntry } from "@/features/project-storage/library"
 import { canEdit } from "@/features/project-storage/model"
+import { embedded } from "@/features/embed/mode"
 import { libraryFor, moveLocalProjectTo, useLibraryState, type ProjectAccount } from "./account"
 import { DeletedProjectBanner } from "./DeletedProject"
 import { DeleteProjectDialog } from "./DeleteProjectDialog"
@@ -50,7 +51,12 @@ function ProjectMenu({ entry, onMembers, onDownload, onArchive, onDelete, onLeav
   )
 }
 
-/** The account's projects as cards, its invitations, and ways to start a new one or import one. */
+/**
+ * The account's projects as cards, its invitations, and ways to start a new
+ * one or import one. In a chat's panel a project is only opened or started
+ * here: importing, members, downloads, archiving, deleting and leaving are on
+ * the site.
+ */
 export function ProjectList({ account }: { account: ProjectAccount }) {
   const library = libraryFor(account)
   const state = useLibraryState(library)
@@ -164,7 +170,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
         <StatusDot status={syncDot(entry, offline).status}>{statusLabel(entry)}</StatusDot>
       }
       actions={
-        entry.role !== null ? (
+        entry.role !== null && !embedded ? (
           <ProjectMenu
             entry={entry}
             onMembers={() => {
@@ -195,7 +201,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
           </h1>
           {state.loaded && state.entries.length === 0 ? <p className="text-[15px] text-muted-foreground">No projects yet.</p> : null}
         </div>
-        <ImportProjectButton state={importing.state} onChoose={(input, source) => void importing.choose(input, source)} />
+        {embedded ? null : <ImportProjectButton state={importing.state} onChoose={(input, source) => void importing.choose(input, source)} />}
       </div>
       {offline || error || notice || importing.state.kind !== "idle" || state.deleted.length > 0 ? (
         <div className="flex flex-col gap-2">

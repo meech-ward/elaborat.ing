@@ -47,7 +47,8 @@ bun run check:bundle   # the loading rule, as CI checks it
 ```
 
 `bun run check:bundle` holds each page's first paint (home signed out, sign
-in, style guide, a project before a file opens) and the chat card's view to
+in, style guide, a project before a file opens, the projects in a chat's
+panel) and the chat card's view to
 their JS and CSS budgets (kB gzip) in `scripts/bundle-budget.json`, and fails
 when a heavy library (Monaco, Excalidraw, D2, charts, Shiki, the MDX compiler,
 Prettier, the preview frame, full Zod) is in any first paint, printing what grew by

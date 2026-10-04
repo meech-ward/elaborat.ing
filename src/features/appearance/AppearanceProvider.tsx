@@ -58,8 +58,25 @@ function deviceScheme(): ColorScheme {
   }
 }
 
-export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [setting, setSetting] = useState<AppearanceSetting>(readStoredSetting);
+/**
+ * The palette, light or dark, and reading preferences for the page, kept on
+ * this device. `mode` starts light, dark or System in place of the saved
+ * one, and with `persist` false nothing is saved (the app in a chat's panel,
+ * whose light or dark is the chat's).
+ */
+export function AppearanceProvider({
+  children,
+  mode: startMode,
+  persist = true,
+}: {
+  children: ReactNode;
+  mode?: ColorMode;
+  persist?: boolean;
+}) {
+  const [setting, setSetting] = useState<AppearanceSetting>(() => {
+    const stored = readStoredSetting();
+    return startMode ? { ...stored, mode: startMode } : stored;
+  });
   const [device, setDevice] = useState<ColorScheme>(deviceScheme);
   // Follow the device while the page is open, for the System mode.
   useEffect(() => {
@@ -86,12 +103,13 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (!persist) return;
     try {
       window.localStorage.setItem(READING_STORAGE_KEY, JSON.stringify(reading));
     } catch {
       /* Keep in-memory preferences when storage is unavailable. */
     }
-  }, [reading]);
+  }, [persist, reading]);
 
   const setTheme = useCallback((theme: ThemeName) => {
     setSetting((prev) => (prev.theme === theme ? prev : { ...prev, theme }));
@@ -110,6 +128,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (!persist) return;
     try {
       window.localStorage.setItem(
         APPEARANCE_STORAGE_KEY,
@@ -118,7 +137,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     } catch {
       // Storage unavailable (private mode, quota, disabled): keep in-memory state.
     }
-  }, [setting]);
+  }, [persist, setting]);
 
   // The palette's colours are CSS variables selected by these attributes
   // (palettes.css); the dark class drives Tailwind's dark: variant.

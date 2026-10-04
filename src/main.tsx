@@ -2,10 +2,16 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
-import { AppearanceProvider } from "./features/appearance"
+import { AppearanceProvider, type ColorMode } from "./features/appearance"
 import { SettingsProvider } from "./features/settings/SettingsDialog"
 import { configureExcalidrawAssets } from "./features/drawings/assets.ts"
+import { EMBED_BASE, embedded, framed, requestedScheme, sitePath } from "./features/embed/mode"
+import { loadEmbedRoot } from "./features/embed/load"
 import "./index.css"
+
+// /embed opened on its own, outside a panel: the same page on the site, and nothing starts here.
+const leaving = embedded && !framed()
+if (leaving) window.location.replace(`${sitePath(window.location.pathname)}${window.location.search}${window.location.hash}`)
 
 configureExcalidrawAssets()
 
@@ -17,7 +23,8 @@ for (const type of ["gesturestart", "gesturechange"]) {
   document.addEventListener(type, (event) => event.preventDefault(), { passive: false })
 }
 
-const router = createRouter({ routeTree })
+// In a panel the app runs under /embed, so its routes and links stay as they are.
+const router = createRouter({ routeTree, basepath: embedded ? EMBED_BASE : undefined })
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -28,16 +35,20 @@ declare module "@tanstack/react-router" {
 const root = document.getElementById("root")
 if (!root) throw new Error("Missing #root element")
 
-// index.html's shell stays on screen until the first page's code has loaded,
-// so the app replaces it with that page, never with a blank one. A failed
-// load renders anyway, and the router shows the error.
-void router
-  .load()
-  .catch(() => {})
+// In a panel, light or dark is the panel's (`?theme=`, then its messages), and nothing is kept.
+const panelAppearance: { mode: ColorMode; persist: boolean } | undefined = embedded
+  ? { mode: requestedScheme(window.location.search) ?? "system", persist: false }
+  : undefined
+
+// index.html's shell stays on screen until the first page's code has loaded
+// (in a panel, the embed's chunk too), so the app replaces it with that page,
+// never with a blank one. A failed load renders anyway, and the router shows
+// the error.
+if (!leaving) void Promise.all([router.load().catch(() => {}), embedded ? loadEmbedRoot().catch(() => {}) : null])
   .then(() =>
     createRoot(root).render(
       <StrictMode>
-        <AppearanceProvider>
+        <AppearanceProvider {...panelAppearance}>
           <SettingsProvider>
             <RouterProvider router={router} />
           </SettingsProvider>

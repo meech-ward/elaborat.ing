@@ -102,6 +102,9 @@ Every upload needs a new `version` in `plugin.json`.
    hints, the reasons are in [architecture](architecture.md) (every tool
    states its three hints). The card loads its editor, component previews and
    fonts from your site, which is the only other origin it uses.
+   The Projects panel (`open_panel`) frames your site, which needs a frame
+   domain justification; to submit without it, set the `EMBED_VIEW_ENABLED`
+   function secret to `false` first.
 
 ## 6. Review details and submit
 

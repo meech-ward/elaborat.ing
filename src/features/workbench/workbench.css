@@ -8,6 +8,8 @@
   font-family: var(--ui-font);
 }
 .project-hub .wb-app { height: 100%; }
+/* In a chat's panel the workbench fills the room under the panel's bar (src/features/embed). */
+html[data-embed] .wb-app { height: 100%; }
 .wb-body {
   display: flex;
   min-width: 0;

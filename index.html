@@ -9,10 +9,15 @@
     <script>
       // The saved palette and light or dark (src/features/appearance), set
       // before the first paint so the shell below draws in them. The app sets
-      // the same attributes once it starts.
+      // the same attributes once it starts. In a chat's panel (/embed, see
+      // src/features/embed) light or dark is the panel's `?theme=`, and the
+      // interface uses the device's fonts (data-embed).
       try {
-        const saved = JSON.parse(localStorage.getItem("elaborating.appearance.v1") || "{}") || {};
-        const mode = saved.mode || saved.scheme;
+        const embed = /^\/embed(\/|$)/.test(location.pathname);
+        if (embed) document.documentElement.setAttribute("data-embed", "");
+        const asked = embed ? new URLSearchParams(location.search).get("theme") : null;
+        const saved = embed ? {} : JSON.parse(localStorage.getItem("elaborating.appearance.v1") || "{}") || {};
+        const mode = asked || saved.mode || saved.scheme;
         const scheme = mode === "light" || mode === "dark" ? mode : matchMedia("(prefers-color-scheme: dark)").matches === false ? "light" : "dark";
         const root = document.documentElement;
         root.setAttribute("data-theme", typeof saved.theme === "string" ? saved.theme : "supabase-green");

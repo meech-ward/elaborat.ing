@@ -12,6 +12,7 @@ export { ActionContextMenu, ActionMenu, type ActionMenuProps, type MenuChoice, t
 export { ColorModeToggle, PaletteSelect } from "./ui/AppearanceControls"
 export { Banner, BannerAction, Callout, type BannerTone } from "./ui/Banner"
 export { ButtonShortcut } from "./ui/ButtonShortcut"
+export { ConfirmActionHost, ConfirmDialog, confirmAction, type ConfirmRequest } from "./ui/ConfirmAction"
 export { EmptyState } from "./ui/EmptyState"
 export { Hint } from "./ui/Hint"
 export { LoadingLine } from "./ui/LoadingLine"

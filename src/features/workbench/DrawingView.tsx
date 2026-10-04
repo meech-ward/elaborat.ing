@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 // Excalidraw's own layout. Without it the canvas sizes itself to its content,
 // which grows without limit.
 import "@excalidraw/excalidraw/index.css";
-import { Banner, BannerAction, commandShortcut, isApplePlatform, type MenuEntry } from "@/features/design-system";
+import { Banner, BannerAction, commandShortcut, confirmAction, isApplePlatform, type MenuEntry } from "@/features/design-system";
 import {
   DrawingCanvas,
   exportDrawingPng,
@@ -499,7 +499,10 @@ export function DrawingView({
             <span className="inline-flex flex-wrap gap-x-3">
               <BannerAction
                 onClick={() => {
-                  if (window.confirm("Load the saved version and discard your unsaved edits?")) adopt(changedElsewhere.content, changedElsewhere.revision);
+                  const { content, revision } = changedElsewhere;
+                  void confirmAction("Load the saved version and discard your unsaved edits?", { confirmLabel: "Load it" }).then((confirmed) => {
+                    if (confirmed) adopt(content, revision);
+                  });
                 }}
               >
                 Load the saved version
