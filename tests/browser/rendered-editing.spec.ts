@@ -307,6 +307,24 @@ test.describe("lists", () => {
     })
   }
 
+  test("Enter and Tab in a list with blank lines between its items keep them", async ({ page }) => {
+    let mark = await load(page, `${before}* first\n\n* second\n\n* third${after}`, "mdx", /^Before paragraph\.$/)
+    await paragraph(page, /^second$/).click()
+    await press(page, "End")
+    await press(page, "Enter")
+    await accepted(page, mark)
+    for (const character of "added") {
+      mark = await revision(page)
+      await page.keyboard.type(character)
+      await accepted(page, mark)
+    }
+    mark = await revision(page)
+    await press(page, "Tab")
+    await accepted(page, mark)
+    await expect(frameOf(page).locator("li li")).toHaveText("added")
+    expect(await source(page)).toBe(`${before}* first\n\n* second\n\n  * added\n\n* third${after}`)
+  })
+
   test("simple lists stay compact while multi-paragraph items keep their spacing", async ({ page }) => {
     const spacing = `${before}* compact one\n* compact two\n\n1. ordered one\n2. ordered two\n\n* multiple first\n\n  multiple second\n\n  * nested child\n\n* multiple sibling${after}`
     await load(page, spacing, "mdx", /^compact one$/)

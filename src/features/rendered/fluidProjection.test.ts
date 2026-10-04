@@ -11,11 +11,13 @@ import {
 import {
   EditorState,
   TextSelection,
+  type Command,
   type Transaction,
 } from "prosemirror-state";
 import {
   splitListItem,
   liftListItem,
+  sinkListItem,
   wrapInList,
 } from "prosemirror-schema-list";
 import { emptyListBackspace } from "./fluidCommands";
@@ -640,4 +642,70 @@ test("Enter in a task item makes another task; an empty one keeps its box; typed
   const tight = await projectFluidSource("- [ ]", "mdx");
   expect(tight.doc.child(0).child(0).attrs.checked).toBe(false);
   expect((await edit("- [ ]", [replace(3, 3, "a")])).text).toBe("- [ ] a");
+});
+
+test("Enter, Tab and Shift+Tab keep a loose list loose and a tight one tight, and the rest as written", async () => {
+  const run = async (text: string, at: number, command: Command) => {
+    const projection = await projectFluidSource(text, "mdx");
+    const state = EditorState.create({
+      doc: projection.doc,
+      selection: TextSelection.create(projection.doc, fluidPositionForSourceOffset(projection, at)!),
+    });
+    let transaction: Transaction | undefined;
+    expect(command(state, (tr) => (transaction = tr))).toBe(true);
+    const next = await edit(text, transaction!.steps.map((step) => step.toJSON()));
+    expect(next.projection.doc.eq(transaction!.doc)).toBe(true);
+    return next;
+  };
+  const item = fluidSchema.nodes.list_item;
+  const enter = splitListItem(item), tab = sinkListItem(item), untab = liftListItem(item);
+  for (const gap of ["\n", "\n\n"]) {
+    const list = (...items: string[]) => "Intro.\n\n" + items.join(gap) + "\n\nTail.\n";
+    const text = list("- one", "- two", "- three");
+    const end = (word: string) => text.indexOf(word) + word.length;
+    // Enter at the end of an item, at the end of the list, and in the middle of an item.
+    expect((await run(text, end("two"), enter)).text).toBe(list("- one", "- two", "- ", "- three"));
+    expect((await run(text, end("three"), enter)).text).toBe(list("- one", "- two", "- three", "- "));
+    expect((await run(text, end("tw"), enter)).text).toBe(list("- one", "- tw", "- o", "- three"));
+    // Tab nests an item under the one before; Shift+Tab brings it back as it was.
+    const nested = await run(text, end("two"), tab);
+    expect(nested.text).toBe(list(`- one${gap}  - two`, "- three"));
+    const position = text.indexOf("two");
+    const back = await prepareFluidTransaction(
+      { text: nested.text, revision: 4, format: "mdx" },
+      nested.projection,
+      (() => {
+        const state = EditorState.create({
+          doc: nested.projection.doc,
+          selection: TextSelection.create(nested.projection.doc, fluidPositionForSourceOffset(nested.projection, position + 2)!),
+        });
+        let transaction: Transaction | undefined;
+        untab(state, (tr) => (transaction = tr));
+        return transaction!.steps.map((step) => step.toJSON());
+      })(),
+    );
+    expect(back.text).toBe(text);
+  }
+  // Only the new item is written: an uneven gap elsewhere, and a nested
+  // list's own spacing, stay byte for byte.
+  const uneven = "- one\n\n\n- two\n  - a\n\n  - b\n- three";
+  const added = await run(uneven, uneven.indexOf("a") + 1, enter);
+  expect(added.text).toBe("- one\n\n\n- two\n  - a\n\n  - \n\n  - b\n- three");
+  expect(added.patches).toMatchObject([{ insert: "\n\n  - ", expected: "" }]);
+  // A list holding a code block takes a new item; the block is not rewritten.
+  const fenced = "- one\n- two\n\n  ```sh\n  echo hi\n  ```\n- three";
+  expect((await run(fenced, 5, enter)).patches).toMatchObject([{ insert: "\n- ", expected: "" }]);
+});
+
+test("a new list item holding a protected object is refused", async () => {
+  // Not even a copy of a code block already in the list.
+  const text = "- one\n- two\n\n  ```sh\n  echo hi\n  ```";
+  const projection = await projectFluidSource(text, "mdx");
+  const copy = fluidSchema.node("list_item", null, [
+    fluidSchema.node("paragraph", null, [fluidSchema.text("x")]),
+    fluidSchema.node("object", { id: projection.islands[0].id }),
+  ]);
+  const at = projection.doc.child(0).child(0).nodeSize + 1;
+  const step = new ReplaceStep(at, at, new Slice(Fragment.from(copy), 0, 0)).toJSON();
+  await expect(edit(text, [step])).rejects.toThrow("Selection crosses a protected object");
 });

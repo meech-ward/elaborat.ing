@@ -863,6 +863,98 @@ function inlinePatch(
   };
 }
 
+/**
+ * How a written list marks its items and spaces them: `loose` puts a blank
+ * line between items, `nested` one between an item's text and its nested list.
+ */
+type ListStyle = { marker: string; loose: boolean; nested: boolean };
+const TIGHT: ListStyle = { marker: "-", loose: false, nested: false };
+const isList = (node: PMNode) =>
+  node.type === fluidSchema.nodes.bullet_list ||
+  node.type === fluidSchema.nodes.ordered_list;
+const blankLine = (source: string) => /\n[ \t>]*\n/.test(source);
+
+/**
+ * How `list`, a list in the source, writes items: with its bullet, spaced
+ * like `gap` (the source between two of its items, by default its first
+ * two), and with nested lists set off as its own are, else like its items.
+ * What the source does not show comes from `fallback`.
+ */
+function listStyle(
+  projection: FluidProjection,
+  list: PMNode,
+  fallback: ListStyle,
+  gap?: string,
+): ListStyle {
+  const text = projection.text;
+  const source = (node: PMNode) =>
+    projection.mapping.nodes.find((entry) => entry.node === node);
+  const first = source(list.firstChild!),
+    second = list.childCount > 1 ? source(list.child(1)) : undefined;
+  if (gap === undefined && first && second)
+    gap = text.slice(first.to, second.from);
+  const loose = gap === undefined ? fallback.loose : blankLine(gap);
+  let nested: boolean | undefined;
+  for (const item of list.content.content)
+    for (let i = 1; i < item.childCount && nested === undefined; i++) {
+      const before = source(item.child(i - 1)),
+        after = source(item.child(i));
+      if (isList(item.child(i)) && before && after)
+        nested = blankLine(text.slice(before.to, after.from));
+    }
+  return {
+    marker: (first && /^[-+*]/.exec(text.slice(first.from))?.[0]) || fallback.marker,
+    loose,
+    nested: nested ?? loose,
+  };
+}
+
+/** One item of `list`: an unchanged item exactly as written, or its marker, box and blocks. */
+function itemSource(
+  list: PMNode,
+  index: number,
+  projection: FluidProjection,
+  hint: FluidSyntaxHint | undefined,
+  style: ListStyle,
+): string {
+  const item = list.child(index);
+  const unchanged = projection.mapping.nodes.find((entry) =>
+    entry.node.eq(item),
+  );
+  if (unchanged) return projection.text.slice(unchanged.from, unchanged.to);
+  const marker =
+    list.type.name === "ordered_list"
+      ? `${list.attrs.order + index}. `
+      : `${hint && "marker" in hint ? hint.marker : style.marker} `;
+  const box =
+    item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
+  let body = "";
+  item.forEach((child, _, i) => {
+    // A nested list can start on the line after the item's text, except an
+    // ordered one not starting at 1, which cannot interrupt a paragraph.
+    if (i)
+      body +=
+        !style.nested &&
+        (child.type === fluidSchema.nodes.bullet_list ||
+          (child.type === fluidSchema.nodes.ordered_list && child.attrs.order === 1))
+          ? "\n"
+          : "\n\n";
+    body += blockSource(
+      child,
+      projection,
+      true,
+      hint,
+      isList(child) ? { ...style, loose: style.nested } : style,
+    );
+  });
+  return body
+    .split("\n")
+    .map((line, i) =>
+      i === 0 ? marker + box + line : line && " ".repeat(marker.length) + line,
+    )
+    .join("\n");
+}
+
 /** Serialize only a changed, parser-owned ordinary subtree. Exact unchanged
  * sibling subtrees are reused; this never serializes the document. */
 function blockSource(
@@ -870,7 +962,7 @@ function blockSource(
   projection: FluidProjection,
   reuse = true,
   hint?: FluidSyntaxHint,
-  originalMarker = "-",
+  style: ListStyle = TIGHT,
 ): string {
   const old = reuse
     ? projection.mapping.nodes.find((entry) => entry.node.eq(node))
@@ -897,7 +989,7 @@ function blockSource(
     case "blockquote": {
       const parts: string[] = [];
       node.forEach((child) => {
-        parts.push(blockSource(child, projection, true, hint, originalMarker));
+        parts.push(blockSource(child, projection, true, hint, style));
       });
       return parts
         .join("\n\n")
@@ -907,42 +999,141 @@ function blockSource(
     }
     case "bullet_list":
     case "ordered_list": {
+      // Spaced like the list its first kept item comes from.
+      const kept = node.content.content
+        .map((item) => projection.mapping.nodes.find((entry) => entry.node.eq(item)))
+        .find(Boolean);
+      const original =
+        kept &&
+        projection.mapping.nodes.find(
+          (entry) => isList(entry.node) && entry.node.content.content.includes(kept.node),
+        );
+      const own = original ? listStyle(projection, original.node, style) : style;
       const parts: string[] = [];
-      node.forEach((item, _, index) => {
-        const unchanged = projection.mapping.nodes.find((entry) =>
-          entry.node.eq(item),
-        );
-        if (unchanged) {
-          parts.push(projection.text.slice(unchanged.from, unchanged.to));
-          return;
-        }
-        const marker =
-          node.type.name === "ordered_list"
-            ? `${node.attrs.order + index}. `
-            : `${hint && "marker" in hint ? hint.marker : originalMarker} `;
-        const body: string[] = [];
-        item.forEach((child) => {
-          body.push(blockSource(child, projection, true, hint, originalMarker));
-        });
-        const box =
-          item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
-        parts.push(
-          body
-            .join("\n\n")
-            .split("\n")
-            .map(
-              (line, i) =>
-                (i === 0 ? marker + box : " ".repeat(marker.length)) + line,
-            )
-            .join("\n"),
-        );
+      node.forEach((_, __, index) => {
+        parts.push(itemSource(node, index, projection, hint, own));
       });
-      return parts.join("\n");
+      return parts.join(own.loose ? "\n\n" : "\n");
     }
     default:
       throw new Error("Unsupported structural serialization");
   }
 }
+
+/**
+ * An edit inside a list (Enter, Tab, Shift+Tab, joining items) writes only
+ * the items it changed, in the innermost list holding them. The rest of the
+ * list keeps its source exactly, and new items are spaced like their
+ * neighbours, so a list with blank lines between its items keeps them and a
+ * list without stays without. A changed item still cannot contain a
+ * protected object. Null when the list's source cannot say where items go
+ * (an item without a source range, or other source between items).
+ */
+function listItemsPatch(
+  projection: FluidProjection,
+  previous: PMNode,
+  next: PMNode,
+  hint?: FluidSyntaxHint,
+): SourcePatch | null {
+  const text = projection.text;
+  let context = TIGHT;
+  for (;;) {
+    let first = 0,
+      oldLast = previous.childCount,
+      newLast = next.childCount;
+    while (
+      first < oldLast &&
+      first < newLast &&
+      previous.child(first).eq(next.child(first))
+    )
+      first++;
+    while (
+      oldLast > first &&
+      newLast > first &&
+      previous.child(oldLast - 1).eq(next.child(newLast - 1))
+    ) {
+      oldLast--;
+      newLast--;
+    }
+    if (first === oldLast && first === newLast) return null;
+    // One item changed only in its nested list: the edit is in that list.
+    if (oldLast === first + 1 && newLast === first + 1) {
+      const before = previous.child(first),
+        after = next.child(first);
+      let changed = -1;
+      if (before.sameMarkup(after) && before.childCount === after.childCount)
+        before.forEach((child, _, i) => {
+          if (!child.eq(after.child(i))) changed = changed === -1 ? i : -2;
+        });
+      if (
+        changed >= 0 &&
+        isList(before.child(changed)) &&
+        before.child(changed).sameMarkup(after.child(changed))
+      ) {
+        const parent = listStyle(projection, previous, context);
+        context = { ...parent, loose: parent.nested };
+        previous = before.child(changed);
+        next = after.child(changed);
+        continue;
+      }
+    }
+    const items: MappedNode[] = [];
+    for (const item of previous.content.content) {
+      const mapped = projection.mapping.nodes.find((entry) => entry.node === item);
+      if (!mapped) return null;
+      items.push(mapped);
+    }
+    const gaps = items
+      .slice(1)
+      .map((item, i) => text.slice(items[i].to, item.from));
+    if (gaps.some((gap) => !/^\s*$/.test(gap))) return null;
+    // A nested list's lines start at its column ("- - a" opens one on its
+    // parent's line, so the column is spaces).
+    const indent = text
+      .slice(text.lastIndexOf("\n", items[0].from - 1) + 1, items[0].from)
+      .replace(/\S/g, " ");
+    // New items are spaced like the items next to the edit.
+    const near: string | undefined =
+      gaps[Math.min(Math.max(first - (oldLast > first ? 0 : 1), 0), gaps.length - 1)];
+    const style = listStyle(projection, previous, context, near);
+    const gap = near ?? (style.loose ? "\n\n" : "\n") + indent;
+    const written: string[] = [];
+    for (let i = first; i < newLast; i++) {
+      next.child(i).descendants((node) => {
+        if (node.type === fluidSchema.nodes.object || node.type === fluidSchema.nodes.inline_object)
+          throw new Error("Selection crosses a protected object");
+      });
+      written.push(
+        itemSource(next, i, projection, hint, style)
+          .split("\n")
+          .map((line, j) => (j && line ? indent + line : line))
+          .join("\n"),
+      );
+    }
+    let insert = written.join(gap),
+      from: number,
+      to: number;
+    if (oldLast > first) {
+      assertUnprotected(projection, items[first].pos, items[oldLast - 1].end);
+      from = items[first].from;
+      to = items[oldLast - 1].to;
+      // Removed items take a gap with them.
+      if (!written.length) {
+        if (first > 0) from = items[first - 1].to;
+        else if (oldLast < items.length) to = items[oldLast].from;
+        else return null;
+      }
+    } else if (first > 0) {
+      from = to = items[first - 1].to;
+      insert = gap + insert;
+    } else {
+      from = to = items[0].from;
+      insert += gap;
+    }
+    return { from, to, insert, expected: text.slice(from, to) };
+  }
+}
+
 function structuralPatch(
   projection: FluidProjection,
   next: PMNode,
@@ -965,7 +1156,7 @@ function structuralPatch(
     oldEnd--;
     newEnd--;
   }
-  let affected = projection.mapping.roots.slice(prefix, oldEnd);
+  const affected = projection.mapping.roots.slice(prefix, oldEnd);
   if (!affected.length)
     throw new Error("Unsupported top-level insertion boundary");
   const originalList = projection.mapping.nodes.find(
@@ -974,63 +1165,31 @@ function structuralPatch(
       entry.from >= affected[0].from &&
       entry.to <= affected.at(-1)!.to,
   );
-  const originalMarker = originalList
-    ? (/^[-+*]/.exec(
-        projection.text.slice(originalList.from, originalList.to),
-      )?.[0] ?? "-")
-    : "-";
-  let content = Fragment.fromArray(next.content.content.slice(prefix, newEnd));
+  const style: ListStyle = {
+    ...TIGHT,
+    marker: originalList
+      ? (/^[-+*]/.exec(
+          projection.text.slice(originalList.from, originalList.to),
+        )?.[0] ?? "-")
+      : "-",
+  };
+  const content = Fragment.fromArray(next.content.content.slice(prefix, newEnd));
   const previous = affected[0].node,
     replacement = content.firstChild;
   if (
     affected.length === 1 &&
     content.childCount === 1 &&
     replacement &&
-    ["bullet_list", "ordered_list"].includes(previous.type.name) &&
+    isList(previous) &&
     previous.sameMarkup(replacement)
   ) {
-    // Keep unchanged list items outside both the source patch and its guard.
-    // A changed item still cannot contain a protected object.
-    let first = 0,
-      oldLast = previous.childCount,
-      newLast = replacement.childCount;
-    while (
-      first < oldLast &&
-      first < newLast &&
-      previous.child(first).eq(replacement.child(first))
-    )
-      first++;
-    while (
-      oldLast > first &&
-      newLast > first &&
-      previous.child(oldLast - 1).eq(replacement.child(newLast - 1))
-    ) {
-      oldLast--;
-      newLast--;
-    }
-    if (first < oldLast) {
-      affected = previous.content.content.slice(first, oldLast).map((item) => {
-        const mapped = projection.mapping.nodes.find(
-          (entry) => entry.node === item,
-        );
-        if (!mapped) throw new Error("List item has no authoritative source range");
-        return mapped;
-      });
-      content = Fragment.from(
-        replacement.type.create(
-          replacement.type.name === "ordered_list"
-            ? { ...replacement.attrs, order: replacement.attrs.order + first }
-            : replacement.attrs,
-          replacement.content.content.slice(first, newLast),
-          replacement.marks,
-        ),
-      );
-    }
+    const patch = listItemsPatch(projection, previous, replacement, hint);
+    if (patch) return patch;
   }
   assertUnprotected(projection, affected[0].pos, affected.at(-1)!.end);
   const chunks: string[] = [];
   content.forEach((node) => {
-    chunks.push(blockSource(node, projection, true, hint, originalMarker));
+    chunks.push(blockSource(node, projection, true, hint, style));
   });
   const from = affected[0].from,
     to = affected.at(-1)!.to;
