@@ -568,10 +568,16 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
-    monaco.editor.setModelLanguage(
-      model,
-      editorLanguage ?? languageForFormat(docFormat),
-    );
+    const language = editorLanguage ?? languageForFormat(docFormat);
+    monaco.editor.setModelLanguage(model, language);
+    // Markdown and MDX: a typed backtick stays one character, as in a code
+    // editor's Markdown, so typing `code` or a ``` fence never leaves a
+    // stray closing one. Monaco counts the backtick as a quote, so quotes
+    // stop pairing too; selected text is still wrapped. Other languages
+    // keep their own pairs.
+    editorRef.current?.updateOptions({
+      autoClosingQuotes: language === "markdown" || language === "mdx" ? "never" : "languageDefined",
+    });
     documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
   }, [documentText, docFormat, documentId, editorLanguage]);
 

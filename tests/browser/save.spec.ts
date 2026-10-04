@@ -29,3 +29,32 @@ test("an edit shows Save and the tree row's dot, and saving hides them and write
   await expect(treeDot).toHaveCount(0)
   await expect.poll(() => fake.server.content(id, "a.md")).toContain("More.")
 })
+
+// Backticks type as themselves in Markdown and MDX: inline code and a fence
+// save exactly as typed, with no stray closing backtick.
+for (const path of ["a.md", "a.mdx"]) {
+  test(`typing inline code and a fence in ${path} saves exactly what was typed`, async ({ page }) => {
+    const fake = await fakeSupabase(page)
+    const id = crypto.randomUUID()
+    const remote = fake.server.remote(person.id)
+    await remote.createProject(id, "Notes")
+    await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path, content: "# A\n" }])
+    await signedIn(page)
+    await page.goto(new URL(`projects/${id}/${path}`, APP_URL).href)
+    await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+    await page.locator(".monaco-editor:visible .view-lines").first().click()
+    await page.keyboard.press("ControlOrMeta+End")
+    // Typed at a person's pace: the editor pairs a character only once the
+    // line's highlighting has caught up, which instant typing never waits for.
+    // Escape before each Enter so a suggestion never takes the keystroke.
+    for (const [index, line] of ["Use `code` here.", "```js", "let x = 1;", "```"].entries()) {
+      if (index > 0) {
+        await page.keyboard.press("Escape")
+        await page.keyboard.press("Enter")
+      }
+      await page.keyboard.type(line, { delay: 100 })
+    }
+    await page.getByRole("button", { name: "Save", exact: true }).click()
+    await expect.poll(() => fake.server.content(id, path)).toBe("# A\nUse `code` here.\n```js\nlet x = 1;\n```")
+  })
+}
