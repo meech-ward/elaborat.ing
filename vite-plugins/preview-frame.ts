@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
+import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { build, type Plugin } from "vite"
 import { FRAME_MODULES, FRAME_SHARED, type FrameModuleName } from "../src/preview/frameModuleList.ts"
+import type { frameHtml } from "../src/preview/frameHtml.ts"
 
 // The rendered view evaluates document code only inside an opaque-origin
 // iframe (sandbox="allow-scripts", no network), so the frame's script and
@@ -18,12 +21,22 @@ import { FRAME_MODULES, FRAME_SHARED, type FrameModuleName } from "../src/previe
 // src/preview/modules/<name>.ts is built on its own as CommonJS that takes
 // React from the frame, and served as "virtual:preview-frame/<name>", which
 // the app imports when the frame asks for it (src/preview/frame.ts).
+//
+// The same files make the frame's page on a sandbox domain (docs/architecture.md,
+// Component isolation): with `sandboxDir`, the build writes
+// <sandboxDir>/frame/<hash>/ with index.html (src/preview/frameHtml.ts, the
+// script as a file), frame.js, and each module as <name>.js, which registers
+// its code with the frame (`elaboratingFrameModule`, src/preview/frameModules.ts).
+// The hash names this build's frame files, so a page and its modules never
+// mix versions. The app finds the folder in "virtual:preview-frame/page".
 
 const VIRTUAL = "virtual:preview-frame"
 const RESOLVED = `\0${VIRTUAL}`
 /** The repository root: the frame's entry and fonts are found from here, whatever config uses the plugin. */
 const REPO = path.resolve(import.meta.dirname, "..")
 const ENTRY = path.join(REPO, "src/preview/preview-entry.tsx")
+const HTML = path.join(REPO, "src/preview/frameHtml.ts")
+const PAGE = `${VIRTUAL}/page`
 const UTILS = path.join(REPO, "src/lib/utils.ts")
 
 /** Fonts the frame embeds as data URLs, since the frame cannot load URLs. */
@@ -99,6 +112,47 @@ function fontCss(): string {
 }
 
 /**
+ * The frame's page, with its script as a file beside it: src/preview/frameHtml.ts
+ * built on its own (with Tailwind, for the frame's stylesheet) and run here.
+ */
+async function buildPage(fonts: string): Promise<string> {
+  const result = (await build({
+    configFile: false,
+    root: REPO,
+    mode: "production",
+    logLevel: "warn",
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+    resolve: { alias: { "@": path.join(REPO, "src") } },
+    plugins: [tailwindcss()],
+    build: { write: false, minify: true, lib: { entry: HTML, formats: ["cjs"], fileName: () => "page.js" } },
+  })) as Output | Output[]
+  const chunks = (Array.isArray(result) ? result : [result]).flatMap((entry) => entry.output).filter((item) => item.type === "chunk")
+  if (chunks.length !== 1 || chunks[0].type !== "chunk") throw new Error("The preview frame's page did not build as one script.")
+  const module = { exports: {} as { frameHtml?: typeof frameHtml } }
+  const require = (id: string) => {
+    throw new Error(`The preview frame's page needs ${id}, which it should bundle.`)
+  }
+  new Function("module", "exports", "require", chunks[0].code)(module, module.exports, require)
+  if (!module.exports.frameHtml) throw new Error("The preview frame's page did not export frameHtml.")
+  return module.exports.frameHtml({ fontCss: fonts, script: { src: "frame.js" } })
+}
+
+/** The frame's files for a sandbox domain, by name, and the folder they go in (named after their contents). */
+type Page = { folder: string; files: Record<string, string> }
+
+/** A module's file: its CommonJS code, registered with the frame that loads it. */
+function moduleFile(name: FrameModuleName, code: string): string {
+  return `elaboratingFrameModule(${JSON.stringify(name)},function(require,module,exports){\n${code}\n});\n`
+}
+
+/** The folder for a set of frame files: `frame/` and 16 hex digits of their SHA-256. */
+function pageFolder(files: Record<string, string>): string {
+  const hash = createHash("sha256")
+  for (const name of Object.keys(files).sort()) hash.update(`${name}\0${files[name]}\0`)
+  return `frame/${hash.digest("hex").slice(0, 16)}/`
+}
+
+/**
  * Add the frame's package sections ("## name - version (license)") that the
  * app's notices do not already have.
  */
@@ -112,7 +166,7 @@ export function mergeLicenses(app: string, frame: string): string {
   return merged
 }
 
-export function previewFrame(): Plugin {
+export function previewFrame(options: { sandboxDir?: string } = {}): Plugin {
   // The builds this app build includes, by virtual module id: the frame's
   // script and its modules. Only those are listed in the licenses.
   const builds = new Map<string, Promise<FrameBuild>>()
@@ -122,16 +176,28 @@ export function previewFrame(): Plugin {
     if (!frame) builds.set(id, (frame = buildFrame(moduleOf(id))))
     return frame
   }
+  let page: Promise<Page> | null = null
+  const sandboxPage = () =>
+    (page ??= (async () => {
+      const files: Record<string, string> = { "index.html": await buildPage(fontCss()), "frame.js": (await current(RESOLVED)).code }
+      for (const name of FRAME_MODULES) files[`${name}.js`] = moduleFile(name, (await current(`${RESOLVED}/${name}`)).code)
+      return { folder: pageFolder(files), files }
+    })())
+  let building = false
   return {
     name: "preview-frame",
+    configResolved(config) {
+      building = config.command === "build"
+    },
     resolveId(id) {
-      if (id === VIRTUAL || FRAME_MODULES.some((name) => id === `${VIRTUAL}/${name}`)) return `\0${id}`
+      if (id === VIRTUAL || id === PAGE || FRAME_MODULES.some((name) => id === `${VIRTUAL}/${name}`)) return `\0${id}`
     },
     async load(id) {
       if (id === RESOLVED) {
         const { code } = await current(id)
         return `export const bootstrap = ${JSON.stringify(code)}\nexport const fontCss = ${JSON.stringify(fontCss())}\n`
       }
+      if (id === `\0${PAGE}`) return `export const FRAME_PAGE_PATH = ${JSON.stringify((await sandboxPage()).folder)}\n`
       if (moduleOf(id)) return `export const code = ${JSON.stringify((await current(id)).code)}\n`
     },
     // In dev, rebuild the frame and its modules when a file they bundle changes.
@@ -139,12 +205,23 @@ export function previewFrame(): Plugin {
       if (this.environment.name !== "client" || builds.size === 0) return
       const bundled = await Promise.all([...builds.values()].map(async (frame) => (await frame).modules.has(file)))
       if (!bundled.includes(true)) return
-      for (const id of builds.keys()) {
+      for (const id of [...builds.keys(), `\0${PAGE}`]) {
         const module = this.environment.moduleGraph.getModuleById(id)
         if (module) this.environment.moduleGraph.invalidateModule(module)
       }
       builds.clear()
+      page = null
       this.environment.hot.send({ type: "full-reload" })
+    },
+    // The frame's page for a sandbox domain, in a folder of its own: only this
+    // build's version, so a deploy serves the frame the app it ships with names.
+    async writeBundle() {
+      if (!options.sandboxDir || !building || this.environment.name !== "client") return
+      const { folder, files } = await sandboxPage()
+      rmSync(options.sandboxDir, { recursive: true, force: true })
+      const dir = path.join(options.sandboxDir, folder)
+      mkdirSync(dir, { recursive: true })
+      for (const [name, text] of Object.entries(files)) writeFileSync(path.join(dir, name), text)
     },
     generateBundle: {
       order: "post",

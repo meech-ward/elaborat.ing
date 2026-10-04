@@ -6,9 +6,11 @@ export default defineConfig(
   {
     ignores: [
       "dist/",
+      "dist-sandbox/",
       "dist-visualize/",
       "dist-next/",
       "tests/browser/harness/dist/",
+      "tests/browser/harness/dist-sandbox/",
       "test-results/",
       "playwright-report/",
       "node_modules/",

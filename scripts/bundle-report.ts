@@ -87,9 +87,9 @@ const FEATURES: Feature[] = [
   },
   {
     name: "A note's Rendered view (the frame)",
-    start: ["src/features/rendered/RenderedEditor.tsx"],
+    start: ["src/features/rendered/RenderedEditor.tsx", "src/preview/frame.ts"],
     modules: [/virtual:preview-frame$/, /src\/features\/rendered\//, /src\/preview\//, /node_modules\/prosemirror-/, /node_modules\/@mdx-js\//],
-    note: "the frame's own code (React, MDX runtime, ProseMirror) is one string inside a chunk; charts and code highlighting load on their own, below",
+    note: "with the srcdoc frame: its own code (React, MDX runtime, ProseMirror) is one string inside a chunk; a frame on the sandbox domain loads its page from there instead. Charts and code highlighting load on their own, below",
   },
   {
     name: "A note's compile check (the MDX compiler)",
@@ -101,13 +101,13 @@ const FEATURES: Feature[] = [
     name: "A chart in a note (the frame's charts)",
     start: ["virtual:preview-frame/charts"],
     modules: [/virtual:preview-frame\/charts$/],
-    note: "sent into the note's frame the first time it shows a chart",
+    note: "sent into a srcdoc frame the first time it shows a chart (a frame on the sandbox domain loads its own)",
   },
   {
     name: "A code block in a note (the frame's highlighter)",
     start: ["virtual:preview-frame/highlighter"],
     modules: [/virtual:preview-frame\/highlighter$/],
-    note: "sent into the note's frame the first time it shows a code block with a language",
+    note: "sent into a srcdoc frame the first time it shows a code block with a language (a frame on the sandbox domain loads its own)",
   },
   {
     name: "A drawing (Excalidraw)",

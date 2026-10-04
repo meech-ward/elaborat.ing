@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The note frame's page for a sandbox domain (wrangler.sandbox.jsonc), written by the build
+dist-sandbox/
 # `bun run build:visualize`
 dist-visualize/
 # `bun run package:plugin`
@@ -10,6 +12,7 @@ src/routeTree.gen.ts
 
 # Browser tests
 tests/browser/harness/dist/
+tests/browser/harness/dist-sandbox/
 dist-next/
 test-results/
 playwright-report/

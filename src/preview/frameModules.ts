@@ -1,11 +1,13 @@
 /**
  * The frame's modules that load the first time a note needs them
  * (frameModuleList.ts), as the app's own lazy parts do
- * (src/lib/moduleLoader.ts). The frame is an opaque-origin `srcdoc` document
- * with no network, so it cannot `import()` a file: it asks the parent, which
- * imports the module's code (a file of the app's build, precached for offline
- * use, src/preview/frame.ts) and posts it back, and the frame runs it here
- * with the frame's own React.
+ * (src/lib/moduleLoader.ts), and run here with the frame's own React.
+ *
+ * On the sandbox domain the frame loads each module's file from beside its
+ * page (`loadModuleFiles`). As a `srcdoc` document it has no files of its
+ * own, so it asks the parent, which imports the module's code (a file of the
+ * app's build, precached for offline use, src/preview/frame.ts) and posts it
+ * back.
  */
 import * as React from "react"
 import * as ReactDOM from "react-dom"
@@ -42,30 +44,69 @@ function request(name: FrameModuleName): Promise<unknown> {
   })
 }
 
+/** A module's CommonJS code as a function: how a module's file registers it (vite-plugins/preview-frame.ts). */
+type ModuleFactory = (require: (id: string) => unknown, module: { exports: Record<string, unknown> }, exports: Record<string, unknown>) => void
+
 /** Run a module's code (built as CommonJS) with the frame's shared modules. */
-function evaluate(name: FrameModuleName, code: string): unknown {
+function evaluate(name: FrameModuleName, code: string | ModuleFactory): unknown {
   const module = { exports: {} as Record<string, unknown> }
   const require = (id: string) => {
     if (Object.hasOwn(SHARED, id)) return SHARED[id as keyof typeof SHARED]
     throw new Error(`The preview's ${name} part needs ${id}, which the frame does not provide.`)
   }
-  new Function("require", "module", "exports", `${code}\n//# sourceURL=frame-${name}.js`)(require, module, module.exports)
+  const factory = typeof code === "string" ? (new Function("require", "module", "exports", `${code}\n//# sourceURL=frame-${name}.js`) as ModuleFactory) : code
+  factory(require, module, module.exports)
   return module.exports
+}
+
+/** A request's answer: the module's code, or why it could not load. */
+function settle(name: FrameModuleName, code: string | ModuleFactory | undefined, reason?: string): void {
+  const pending = waiting.get(name)
+  if (!pending) return
+  waiting.delete(name)
+  if (code === undefined) {
+    pending.reject(new Error(reason ?? "This part of the preview could not load."))
+    return
+  }
+  try {
+    pending.resolve(evaluate(name, code))
+  } catch (error) {
+    pending.reject(error instanceof Error ? error : new Error(String(error)))
+  }
 }
 
 /** The parent's answer to a request: the module's code, or why it could not load. */
 export function receiveFrameModule(message: { name: FrameModuleName; code?: string; error?: string }): void {
-  const pending = waiting.get(message.name)
-  if (!pending) return
-  waiting.delete(message.name)
-  if (message.code === undefined) {
-    pending.reject(new Error(message.error ?? "This part of the preview could not load."))
-    return
-  }
-  try {
-    pending.resolve(evaluate(message.name, message.code))
-  } catch (error) {
-    pending.reject(error instanceof Error ? error : new Error(String(error)))
+  settle(message.name, message.code, message.error)
+}
+
+/**
+ * On the sandbox domain: load each module from its file beside the frame's
+ * page (`<name>.js`), which registers its code with `elaboratingFrameModule`.
+ * The page's policy allows scripts from its own folder only.
+ */
+export function loadModuleFiles(): void {
+  const registered = new Map<FrameModuleName, ModuleFactory>()
+  Object.assign(window, {
+    elaboratingFrameModule: (name: FrameModuleName, factory: ModuleFactory) => {
+      registered.set(name, factory)
+    },
+  })
+  send = (name) => {
+    const script = document.createElement("script")
+    script.src = `${name}.js`
+    // With CORS, so an error in the module's code is reported with its message.
+    script.crossOrigin = "anonymous"
+    const done = () => {
+      script.remove()
+      const factory = registered.get(name)
+      registered.delete(name)
+      settle(name, factory)
+    }
+    script.addEventListener("load", done)
+    script.addEventListener("error", done)
+    document.head.append(script)
+    return true
   }
 }
 

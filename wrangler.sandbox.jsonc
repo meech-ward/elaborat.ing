@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The sandbox domain: the note preview frame's page, on a registrable
+  // domain of its own (docs/architecture.md, Component isolation). A second
+  // Worker, so the app's own files stay plain static assets: the Worker
+  // (worker/sandbox.ts) runs for every request here, serves only the frame's
+  // files from ./dist-sandbox (written by `bun run build`) and 404s the rest.
+  // Deploy: wrangler deploy --config wrangler.sandbox.jsonc
+  "name": "elaborating-sandbox",
+  "main": "worker/sandbox.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist-sandbox",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  // The app's origin: the only page that may frame the preview.
+  // Self-hosters: your app's origin.
+  "vars": {
+    "FRAME_ANCESTORS": "https://elaborat.ing"
+  },
+  // The hosted instance's sandbox domain, which the app's build names in
+  // VITE_SANDBOX_ORIGIN. Self-hosters: your own registrable domain.
+  "routes": [{ "pattern": "elaboratingusercontent.com", "custom_domain": true }]
+}

@@ -203,8 +203,14 @@ Realtime's own source in `supabase/realtime`.
 - **Workers Builds** deploys from GitHub on push, keeps its own token, and posts
   preview URLs on pull requests.
   [Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
-- **Static asset requests are free and unlimited.**
+- **Static asset requests are free and unlimited.** Requests that run the
+  Worker are billed; with `run_worker_first`, matching requests always run it,
+  and on the free plan they get a 429 past its limit instead of the asset.
   [Billing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)
+- **`run_worker_first` matches URL paths only** (globs, with `!` to exclude),
+  never hosts, so one Worker's asset rules are the same on every domain it
+  serves.
+  [Assets binding](https://developers.cloudflare.com/workers/static-assets/binding/)
 
 ## MCP Apps hosts
 
@@ -323,3 +329,11 @@ Re-check it against OpenAI's pages linked below.
   active content on a separate registrable domain.
   [Same-site and same-origin](https://web.dev/articles/same-site-same-origin),
   [securely hosting user data](https://web.dev/articles/securely-hosting-user-data)
+- **Desktop Chrome puts a frame sandboxed without `allow-same-origin` in a
+  process apart from its parent** (since 127.0.6483.0), `srcdoc` included,
+  even when it is same-site; Chrome on Android does only when the parent uses
+  its partial site isolation.
+  [Process model and site isolation](https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md)
+- **Firefox's site isolation (Fission) gives cross-site frames processes of
+  their own**; a `srcdoc` frame belongs to its parent's site.
+  [Site isolation in Firefox](https://blog.mozilla.org/security/2021/05/18/introducing-site-isolation-in-firefox/)

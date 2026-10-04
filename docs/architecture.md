@@ -900,42 +900,83 @@ never run with the app's privileges.
 and the app accepts only a fixed set of validated messages from it. The frame
 never receives tokens or files, only compiled code and rendered images.
 
-**Decision: until then, the frame is a `srcdoc` document built into the app.**
-`src/preview/preview-entry.tsx` is built by Vite as one script
+**Decision: the frame is a page on a sandbox domain, `elaboratingusercontent.com`.**
+A registrable domain of its own (Google's documented pattern for untrusted
+content, like `googleusercontent.com`): a subdomain of elaborat.ing would be
+the same site. `src/preview/preview-entry.tsx` is built by Vite as one script
 (`vite-plugins/preview-frame.ts`), so its npm packages are listed in the site's
-license notices, and inlined with the frame's styles and fonts into the
-`srcdoc`. The iframe has `sandbox="allow-scripts"` only (an opaque origin), and
-the frame document carries its own Content Security Policy
-(`PREVIEW_CHILD_CSP`): no network, inline script and style only, fonts from
-`data:` URLs. MDX's `run()` evaluates compiled code with `new Function`, so the
-frame's policy allows `'unsafe-eval'`. A `srcdoc` document also inherits the
-parent page's CSP, so any CSP added to `public/_headers` must allow the frame's
-inline script, `'unsafe-eval'` and `data:` fonts, or the frame goes blank.
-Messages use `postMessage` with target `*` and are checked by `event.source`;
-the sandbox domain replaces this with pinned origins.
+license notices, and the build writes the frame's page to
+`dist-sandbox/frame/<hash>/`: `index.html` (`src/preview/frameHtml.ts`, with
+the frame's styles and fonts inline), that script as `frame.js`, and a file for
+each heavy part (below). The hash is of the files' contents, so a page never
+mixes versions and every file is cached for a year; the app's build names the
+folder. A second Worker (`wrangler.sandbox.jsonc`, `worker/sandbox.ts`, see
+Frontend hosting) serves that folder on the sandbox domain, and every other
+path there is not found. The page's Content Security Policy is a response
+header: scripts only from the page's own folder, plus `'unsafe-eval'`, since
+MDX's `run()` evaluates compiled code with `new Function`; no network
+(`connect-src 'none'`); images and fonts from `data:` only; inline styles; and
+`frame-ancestors https://elaborat.ing`, nothing else. Its files are sent with
+`X-Content-Type-Options: nosniff`, no cookies, and
+`Access-Control-Allow-Origin: *`: the page loads its scripts with CORS from an
+opaque origin, so an error in them reports its message.
+
+The iframe has `sandbox="allow-scripts"` only, so the page's origin is opaque:
+nothing it stores is shared with another note or project. Messages use
+`postMessage` with target `*` both ways (an opaque origin cannot be named as
+a target) and each side checks `event.source`; the frame is given nothing a
+component in it could not already see. A frame that loads a second time has
+navigated itself (a note's code, or a link): the app stops posting to it and
+puts a new frame in its place, or stops the preview, with a notice, when it
+happens again within seconds.
+
+The app's build names the domain in `VITE_SANDBOX_ORIGIN` (set in
+`deploy-app.yml`). Without it (local dev, the browser tests, a self-host that
+sets none) the frame is the `srcdoc` below, as before.
+
+**Decision: when the sandbox domain's page cannot load, the frame is a
+`srcdoc` document.** This is the model the app used before the sandbox
+domain, still sandboxed: the same document with its script inline, as the
+iframe's `srcdoc`, with `sandbox="allow-scripts"` only and the same policy in
+a meta tag (`PREVIEW_CHILD_CSP`: inline script in place of the folder's). The
+app uses it when the browser is offline as the note opens, or when the page
+does not say it is ready within 2 seconds of loading (an error page: offline,
+blocked, or a version the domain no longer serves) or within 10 seconds at
+all; the frame stays hidden behind a loading line until then, and later notes
+in that tab start with the `srcdoc`. The app is offline-first and its service
+worker cannot serve another origin's page, so this keeps notes rendering
+offline: the `srcdoc` and the parts it asks for are precached. A deploy
+replaces the sandbox domain's files, so a tab still on the previous version
+uses the `srcdoc` until it updates. A `srcdoc` document inherits the parent
+page's CSP, so any CSP added to `public/_headers` must allow the frame's
+inline script, `'unsafe-eval'` and `data:` fonts, or that frame goes blank.
 
 **Decision: the frame's heavy parts load the first time a note shows them.**
 Charts (Recharts) and code highlighting (Shiki and its grammars) are most of
 the frame's code, so each is built on its own (`src/preview/modules/`) and
-left out of the `srcdoc`. The frame has no network and cannot `import()` a
-file, so a chart or code block that renders asks the app for its part by name
-(`load-module`); the app imports that file, a chunk precached like any other,
-and posts its code back, and the frame runs it with its own React
-(`src/preview/frameModules.ts`). Until then a chart keeps its place with an
-empty box and code shows as plain text. With the sandbox domain the frame can
-import these files itself.
+left out of `frame.js` and the `srcdoc`. On the sandbox domain the frame loads
+a part's file from beside its page (`charts.js`, `highlighter.js`), which
+registers the part with the frame. The `srcdoc` frame has no files of its own,
+so it asks the app for a part by name (`load-module`); the app imports that
+file, a chunk precached like any other, and posts its code back. Either way the
+frame runs it with its own React (`src/preview/frameModules.ts`). Until then a
+chart keeps its place with an empty box and code shows as plain text.
 
-**Decision:** before components are offered publicly, the frame is served from
-a separate registrable domain (a "sandbox domain", Google's documented pattern
-for untrusted content, like `googleusercontent.com`). Chrome's Site Isolation
-groups processes by site, and subdomains of elaborat.ing are the same site, so
-only a separate domain gets the frame its own process. That protects against
-Spectre-style and renderer attacks, and keeps a runaway component from freezing
-the app where the browser isolates cross-site frames (fully on desktop Chrome,
-partly on Android).
+**What the domain adds.** Browsers with site isolation put a cross-site frame
+in a process of its own, which protects against Spectre-style and renderer
+attacks and keeps a runaway component from freezing the app: with the sandbox
+domain, Firefox moves the frame out of the app's process, as it does not for a
+`srcdoc` frame; desktop Chrome has given a frame sandboxed like this one a
+process of its own since Chrome 127, `srcdoc` included, and Chrome on Android
+does when the app's page is isolated ([Chromium's process
+model](https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md)).
+The frame also loads its own script and parts, so the app no longer downloads
+them to pass them in, and its document no longer inherits the app's CSP.
 
 The chat card previews components the same way, in a frame nested in the
-card (see "Agents (MCP)").
+card (see "Agents (MCP)"). It keeps `srcdoc` frames: a ChatGPT view can embed
+only the MCP server's own registrable domain without extra review, and the
+host already gives the card a frame of its own.
 
 What the domain does not fix: a component can still navigate its own frame
 (carrying out whatever the frame displays) and can draw a fake login prompt
@@ -969,8 +1010,10 @@ an agent's draft is its own, so only the saved files it imports ask. The card
 does not remember the choice, since its storage belongs to the host. The
 notice is a mitigation: the frame is the boundary.
 
-**Open:** the sandbox domain name, and whether to add it to the Public Suffix
-List so each document's subdomain is isolated from every other.
+**Open:** per-document subdomains of the sandbox domain, and adding it to the
+Public Suffix List, so each document's frame is a site of its own. Today one
+page serves every note: its origin is opaque, so notes share no storage, but
+where a browser groups frames by site they can share a process.
 
 ## Rendered editing
 
@@ -1016,9 +1059,21 @@ also answers `/.well-known/openai-apps-challenge` with the token in
 for a plugin listing), and with not found while it is unset. The hosted
 instance deploys with `wrangler deploy`, using a Cloudflare API token from the
 "Edit Cloudflare Workers" template, restricted to one account and the
-`elaborat.ing` zone. Static asset requests are free and unlimited.
+`elaborat.ing` and `elaboratingusercontent.com` zones. Static asset requests
+are free and unlimited.
 
-The build only needs public values (the Supabase URL and publishable key).
+**Decision: the sandbox domain is a second Worker.** `wrangler.sandbox.jsonc`
+deploys `worker/sandbox.ts` with `dist-sandbox/` as its assets on the
+`elaboratingusercontent.com` custom domain (Component isolation). Asset rules
+match paths, not hosts, so a Worker that answered only frame files on one of
+its domains would have to run first for every request on all of them, and
+those requests are billed (on the free plan, refused past its limit). As a
+Worker of its own it runs first for every request on the sandbox domain only,
+and the app's files stay plain static assets. `deploy-app.yml` deploys it
+before the app, so the page the new app names is there when it goes live.
+
+The build only needs public values (the Supabase URL and publishable key, and
+the sandbox domain's origin).
 Self-hosters can deploy the same static build to any host.
 `.github/workflows/deploy-app.yml` deploys it after CI passes on `main`, with
 the `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` repository variables
@@ -1083,8 +1138,9 @@ generated worker (`generateSW`), configured in `vite.config.ts`:
   English (the app never sets its language, so they never load): every chunk
   including lazy ones, styles, workers, the fonts of the app's own interface
   and of drawings (Excalifont, the default for new text, among them), the
-  preview frame (a chunk of its own), the D2 compiler, `.wasm` files and the
-  license texts. That is about 44 MB, about 13 MB over the network. The worker registers once the page
+  preview frame (a chunk of its own, the `srcdoc` fallback: the sandbox
+  domain's page is another origin's, which the worker never sees), the D2
+  compiler, `.wasm` files and the license texts. That is about 44 MB, about 13 MB over the network. The worker registers once the page
   has loaded, so this download does not compete with the page's own files,
   and it finds those in the browser's cache. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`

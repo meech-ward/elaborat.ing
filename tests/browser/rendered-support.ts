@@ -23,8 +23,8 @@ export const frameOf = (page: Page) => page.frameLocator(FRAME)
 export const source = (page: Page) => page.evaluate(() => window.renderedHarness.source())
 export const paragraph = (page: Page, text: string | RegExp) => frameOf(page).locator("p").filter({ hasText: text }).first()
 
-/** Open the harness and record every message the frame sends the page. */
-export async function openHarness(page: Page): Promise<string[]> {
+/** Open the harness (with `query`, such as `?sandbox=<origin>`) and record every message the frame sends the page. */
+export async function openHarness(page: Page, query = ""): Promise<string[]> {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.addInitScript(() => {
@@ -48,7 +48,7 @@ export async function openHarness(page: Page): Promise<string[]> {
       }
     })
   })
-  await page.goto(RENDERED_URL)
+  await page.goto(`${RENDERED_URL}${query}`)
   return errors
 }
 

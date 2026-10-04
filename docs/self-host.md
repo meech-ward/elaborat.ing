@@ -64,6 +64,8 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | `supabase/config.toml` | `[db.pooler]` `default_pool_size`, `max_client_conn` | `config push` sets these on your pooler. They hold the hosted project's values; if `config diff` shows a change, set them to your project's current values. |
 | `wrangler.jsonc` | `vars.MCP_UPSTREAM` | `https://<ref>.supabase.co/functions/v1/mcp-server` |
 | `wrangler.jsonc` | `routes` | Your domain, or remove it to serve from `workers.dev`. You may rename `name` too. |
+| `wrangler.sandbox.jsonc` | `routes`, `vars.FRAME_ANCESTORS` | Your sandbox domain and `<site>`, if you use one (step 4). |
+| `.github/workflows/deploy-app.yml` | `VITE_SANDBOX_ORIGIN` | Your sandbox domain's origin, or empty for none. |
 | `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here, and its view's policy lets it load its editor, previews and fonts from here. |
 | `src/chat-card/toolResult.ts` | `APP_ORIGIN` | `<site>/`, then `bun run build:chat-card`. The chat card follows only links to this origin. |
 | `scripts/build-chat-card.ts` | `MODULES_URL` | `<site>/chat-card/`, then `bun run build:chat-card`. Where the chat card loads its editor, previews and fonts from (`public/chat-card`). |
@@ -235,6 +237,16 @@ bun run build
 The app is in `dist/`. A build without these values opens with "This copy of
 elaborat.ing is not connected to a Supabase project yet."
 
+**Optional: a sandbox domain for the note frame.** Notes run their code in a
+sandboxed frame. By default it is a `srcdoc` document inside the app's page.
+To serve it from a registrable domain of your own instead (not a subdomain of
+your app's), as the hosted instance does, add
+`VITE_SANDBOX_ORIGIN=https://<your sandbox domain>` to the build and host
+`dist-sandbox/` there (step 5). The build always writes `dist-sandbox/`; the
+app uses it only when the variable is set, and falls back to the `srcdoc`
+frame when that page cannot load. See "Component isolation" in
+[the architecture](architecture.md).
+
 ## 5. Host it
 
 ### On Cloudflare Workers
@@ -255,6 +267,17 @@ bun run deploy        # bun run build, then wrangler deploy
 Your MCP URL is `<site>/mcp`. Static asset requests are free and unlimited;
 requests to `/mcp` run the Worker.
 
+With a sandbox domain, it is a second Worker, `wrangler.sandbox.jsonc`: it
+serves only the frame's files from `dist-sandbox/` (`worker/sandbox.ts` adds
+the frame's Content Security Policy and 404s every other path). Set its
+`routes` to your sandbox domain (a second custom domain, on a zone in the same
+account) and `vars.FRAME_ANCESTORS` to your app's origin, then deploy it
+before the app:
+
+```sh
+bunx wrangler deploy --config wrangler.sandbox.jsonc
+```
+
 To list your copy as a ChatGPT plugin, OpenAI checks that you own the domain:
 put the token it gives you in `vars.OPENAI_APPS_CHALLENGE` in `wrangler.jsonc`
 (it is public) and deploy. The Worker serves it as plain text at
@@ -269,6 +292,9 @@ Upload `dist/` to any host that can:
   browser, for example `/projects/<id>/notes/today.mdx`);
 - send `Cache-Control: no-cache` for `/sw.js` and `/manifest.webmanifest`, as
   `public/_headers` asks, so updates reach people.
+
+Build without `VITE_SANDBOX_ORIGIN` there: the frame's page needs the headers
+`worker/sandbox.ts` sends, which a plain static host does not.
 
 Your MCP URL is then the function's own:
 `https://<ref>.supabase.co/functions/v1/mcp-server`.
@@ -291,7 +317,7 @@ In the fork's Settings > Secrets and variables > Actions:
 | `SUPABASE_DEPLOY_TOKEN` | Repository secret | An access token (see below) | Deploy Supabase, `deploy` job |
 | `SUPABASE_DB_PASSWORD` | Repository secret | The database password | Deploy Supabase, `deploy` job |
 | `EMBED_SECRET_KEY` | Repository secret | The secret key from step 1 | Deploy Supabase, `deploy` job |
-| `CLOUDFLARE_API_TOKEN` | Repository secret | A token from Cloudflare's "Edit Cloudflare Workers" template, limited to your account (and zone, with a custom domain) | Deploy app |
+| `CLOUDFLARE_API_TOKEN` | Repository secret | A token from Cloudflare's "Edit Cloudflare Workers" template, limited to your account (and zones, with custom domains: the sandbox domain's too) | Deploy app |
 | `CLOUDFLARE_ACCOUNT_ID` | Repository secret | Your Cloudflare account id | Deploy app |
 
 Then, under Settings > Environments, create an environment named
@@ -330,8 +356,12 @@ What runs when:
   hand run pushes the config only when you tick "Push config.toml after
   showing the diff".
 - **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand:
-  builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co` and your
-  publishable key, then runs `wrangler deploy`.
+  builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your
+  publishable key and `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain
+  (`wrangler.sandbox.jsonc`) when that is set, then runs `wrangler deploy`.
+  The workflow sets `VITE_SANDBOX_ORIGIN` to the hosted instance's sandbox
+  domain: change it to yours, or empty it to keep the `srcdoc` frame and skip
+  that deploy.
 
 A Vault secret changes only when `db push` applies a migration. To rotate
 `EMBED_SECRET_KEY`, update the secret and either commit an empty migration or

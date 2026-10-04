@@ -17,7 +17,8 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
-    previewFrame(),
+    // The frame's page for a sandbox domain, served by tests/browser/sandbox-server.ts.
+    previewFrame({ sandboxDir: path.join(import.meta.dirname, "dist-sandbox") }),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "../../../src") } },
   // ES module workers, as in the app's config.

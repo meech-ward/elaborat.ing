@@ -6,6 +6,11 @@ declare module "virtual:preview-frame" {
   export const fontCss: string
 }
 
+declare module "virtual:preview-frame/page" {
+  /** The frame's page on a sandbox domain: a folder named after this build's frame files, such as `frame/<hash>/`. */
+  export const FRAME_PAGE_PATH: string
+}
+
 declare module "virtual:preview-frame/*" {
   /** A frame module (src/preview/modules/<name>.ts) as CommonJS, for src/preview/frameModules.ts to run. */
   export const code: string

@@ -11,6 +11,8 @@ import type { DocumentSnapshot } from "../../../src/features/document/index.ts"
 import { RenderedEditor } from "../../../src/features/rendered/index.ts"
 import { createDocumentStore } from "../../../src/lib/documentStore.ts"
 
+// `?sandbox=<origin>` loads the frame's page from that origin (tests/browser/sandbox-server.ts).
+const sandboxOrigin = new URLSearchParams(location.search).get("sandbox")
 const store = createDocumentStore("", "md")
 let state = { snapshot: store.snapshot(), resources: undefined as Record<string, string> | undefined }
 let pending = false
@@ -48,6 +50,7 @@ function App() {
         document={snapshot}
         documentId={snapshot.docId}
         resources={resources}
+        sandboxOrigin={sandboxOrigin}
         onPatch={(revision, patches) => {
           try {
             publish({ snapshot: store.applyPatches(revision, patches) })

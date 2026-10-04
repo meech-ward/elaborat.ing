@@ -1,8 +1,10 @@
 /**
  * Parent/child frame protocol for the isolated MDX preview.
  *
- * Child runs in an opaque-origin iframe with `sandbox="allow-scripts"` only,
- * fed a self-contained `srcdoc` document (inline bootstrap, no network).
+ * Child runs in an opaque-origin iframe with `sandbox="allow-scripts"` only:
+ * the frame's page on the sandbox domain (worker/sandbox.ts gives it this
+ * policy, with its own folder's scripts), or a self-contained `srcdoc`
+ * document (inline bootstrap, no network).
  * Every message is checked for sender (event.source), session, revision and
  * Zod shape. Stale revisions are rejected visibly, never applied.
  *

@@ -15,10 +15,11 @@
  * - Both `.md` and `.mdx` render through one pipeline: the official
  *   compiler (with `format: 'md'` for plain markdown, so braces never
  *   evaluate as expressions) runs in the parent, and the emitted code is
- *   evaluated exclusively inside a self-contained opaque-origin `srcdoc`
- *   iframe (`sandbox="allow-scripts"`). The parent never calls `eval`/`run`
- *   on document code and never loads a second preview page over the
- *   network.
+ *   evaluated exclusively inside an opaque-origin iframe
+ *   (`sandbox="allow-scripts"`): the frame's page on the sandbox domain when
+ *   the build has one, else (and when that page cannot load) a
+ *   self-contained `srcdoc` document. The parent never calls `eval`/`run`
+ *   on document code. A frame that navigates itself away is replaced.
  * - Ordinary prose uses one persistent source-derived ProseMirror view.
  *   Vendor transactions are proposals, validated against parent-owned source
  *   mappings in full before one exact source/Monaco commit. Monaco owns undo.
@@ -40,7 +41,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { buildPreviewSrcdoc, frameModuleCode } from "../../preview/frame";
+import { FRAME_PAGE_PATH } from "virtual:preview-frame/page";
+import { moduleLoader, useModule } from "@/lib/moduleLoader";
+import { sandboxFrameUrl } from "./sandboxFrame";
 import {
   codeFenceFromParagraph,
   projectFluidSource,
@@ -115,6 +118,12 @@ export type RenderedEditorProps = {
   /** Listing metadata for insertion, not authority to open/edit a resource. */
   availableResourcePaths?: readonly string[];
   onEditResource?: (path: string) => void;
+  /**
+   * The sandbox domain whose page the frame loads (docs/architecture.md,
+   * Component isolation). Defaults to the build's VITE_SANDBOX_ORIGIN; none
+   * keeps the `srcdoc` frame.
+   */
+  sandboxOrigin?: string | null;
   /** Show the note without editing in the frame; `onPatch` should refuse edits too. */
   readOnly?: boolean;
   /** The note's commented text, and the Comment actions when the person may comment. */
@@ -149,6 +158,23 @@ type CommentAction = { top: number; left: number; request: NoteCommentRequest; s
 
 /** Shown after "Edit not applied:" when an edit in the frame was made against an older revision of the note. */
 const LOST_EDIT = "the note changed at the same time. Make the edit again.";
+
+/**
+ * The `srcdoc` frame (src/preview/frame.ts): the frame without a sandbox
+ * domain, and when its page cannot load (offline, or blocked). It also holds
+ * the charts and highlighter a `srcdoc` frame asks for.
+ */
+const srcdocFrame = moduleLoader(() => import("../../preview/frame"));
+// Without a sandbox domain every frame is a `srcdoc`: load it with this view.
+if (!import.meta.env.VITE_SANDBOX_ORIGIN) srcdocFrame.preload();
+/** The sandbox domain's page could not load in this tab: later notes start with the `srcdoc`. */
+let sandboxFailed = false;
+
+/** How long the sandbox domain's page may take to say it is ready, and how long after its load event. */
+const FRAME_READY_TIMEOUT = 10_000;
+const FRAME_READY_AFTER_LOAD = 2_000;
+/** A frame that navigates away again this soon after being replaced is stopped, not replaced again. */
+const FRAME_RESET_WINDOW = 5_000;
 
 /** Session token binding one mounted editor to its frame. Never the source. */
 function newSessionToken(): string {
@@ -193,6 +219,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     allowedResourcePaths,
     availableResourcePaths,
     onEditResource,
+    sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN ?? null,
     readOnly = false,
     comments = null,
     apiRef,
@@ -204,9 +231,58 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   }, [onPendingChangeProp]);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const session = useMemo(() => newSessionToken(), []);
-  // Stable for the mount lifetime: the frame loads once and every later
-  // render arrives via postMessage (reposted when the frame says ready).
-  const srcdoc = useMemo(() => buildPreviewSrcdoc(), []);
+  // The frame's document: the sandbox domain's page, or the `srcdoc`. Each
+  // loads once and every render arrives via postMessage (reposted when the
+  // frame says ready). A new key is a new iframe.
+  const pageUrl = useMemo(() => sandboxFrameUrl(sandboxOrigin, FRAME_PAGE_PATH), [sandboxOrigin]);
+  const [frameDoc, setFrameDoc] = useState(() => ({ key: 0, hosted: pageUrl !== null && !sandboxFailed && navigator.onLine !== false, ready: false, stopped: false }));
+  const srcdocModule = useModule(srcdocFrame, !frameDoc.hosted);
+  const srcdoc = useMemo(() => srcdocModule.module?.buildPreviewSrcdoc() ?? null, [srcdocModule.module]);
+  const frameLoads = useRef(0);
+  const frameReady = useRef(false);
+  const readyAfterLoad = useRef(0);
+  const lastReplaced = useRef(-Infinity);
+  // A new frame in place of the current one: messages stop going to the old
+  // one at once (every post goes through frameRef), and the new one gets the
+  // current render when it says ready.
+  const replaceFrame = useCallback((next: { hosted?: boolean; stopped?: boolean }) => {
+    frameRef.current = null;
+    frameLoads.current = 0;
+    frameReady.current = false;
+    window.clearTimeout(readyAfterLoad.current);
+    pendingOwners.current = { fluid: false, draft: false };
+    onPendingChangeProp?.(false);
+    if (next.hosted === false) sandboxFailed = true;
+    setFrameDoc((current) => ({ key: current.key + 1, hosted: next.hosted ?? current.hosted, ready: false, stopped: next.stopped ?? current.stopped }));
+  }, [onPendingChangeProp]);
+  // The sandbox domain's page says ready, or the `srcdoc` frame takes its place.
+  useEffect(() => {
+    if (!frameDoc.hosted || frameDoc.stopped) return;
+    const timer = window.setTimeout(() => {
+      if (!frameReady.current) replaceFrame({ hosted: false });
+    }, FRAME_READY_TIMEOUT);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(readyAfterLoad.current);
+    };
+  }, [frameDoc.hosted, frameDoc.key, frameDoc.stopped, replaceFrame]);
+  const onFrameLoad = () => {
+    frameLoads.current += 1;
+    if (frameLoads.current > 1) {
+      // The frame navigated itself (a note's code, or a link): what it shows
+      // now is not the frame this editor made.
+      const now = performance.now();
+      const again = now - lastReplaced.current < FRAME_RESET_WINDOW;
+      lastReplaced.current = now;
+      replaceFrame(again ? { stopped: true } : {});
+      return;
+    }
+    if (!frameDoc.hosted || frameReady.current) return;
+    // Loaded but not ready: an error page (offline, or not found).
+    readyAfterLoad.current = window.setTimeout(() => {
+      if (!frameReady.current) replaceFrame({ hosted: false });
+    }, FRAME_READY_AFTER_LOAD);
+  };
   const [exposed, setExposed] = useState<Exposed | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
   const [editNotice, setEditNotice] = useState<string | null>(null);
@@ -594,6 +670,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       // The frame announcing readiness gets the current render reposted so
       // no compiled document is lost to the load race.
       if (message.kind === "ready") {
+        frameReady.current = true;
+        setFrameDoc((current) => (current.ready ? current : { ...current, ready: true }));
         sentModules.current.clear();
         setReadyTick((tick) => tick + 1);
         return;
@@ -603,7 +681,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         const name = message.name;
         if (sentModules.current.has(name)) return;
         sentModules.current.add(name);
-        void frameModuleCode(name).then(
+        void srcdocFrame.load().then((module) => module.frameModuleCode(name)).then(
           (code) => ({ code }),
           (error: unknown) => {
             sentModules.current.delete(name);
@@ -1085,12 +1163,26 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           {displayedError} Source is unchanged and remains editable.
         </Banner>
       ) : null}
+      {frameDoc.stopped ? (
+        <Banner tone="danger" className="shrink-0 rounded-none">
+          The preview stopped: this note's code keeps leaving it. Source is unchanged and remains editable.
+        </Banner>
+      ) : !frameDoc.hosted && srcdocModule.error ? (
+        <Banner tone="danger" className="shrink-0 rounded-none">
+          The preview could not load: {srcdocModule.error}
+        </Banner>
+      ) : (frameDoc.hosted ? !frameDoc.ready : !srcdoc) ? (
+        <LoadingLine label="Loading preview" className="shrink-0" />
+      ) : null}
       <div style={{ display: componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
-        <iframe
+        {!frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
+          key={frameDoc.key}
           ref={frameRef}
           title="Isolated document preview"
           sandbox={PREVIEW_SANDBOX}
-          srcDoc={srcdoc}
+          src={frameDoc.hosted ? (pageUrl ?? undefined) : undefined}
+          srcDoc={frameDoc.hosted ? undefined : (srcdoc ?? undefined)}
+          onLoad={onFrameLoad}
           aria-describedby={displayedError ? errorId : undefined}
           // The frame fills the space its container gives the editor; the
           // document scrolls inside it. The sandbox stays allow-scripts only,
@@ -1101,8 +1193,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             minHeight: 320,
             border: 0,
             display: "block",
+            // The sandbox domain's page shows once it says ready, never a browser's error page.
+            visibility: frameDoc.hosted && !frameDoc.ready ? "hidden" : undefined,
           }}
-        />
+        /> : null}
         {railShown && (
           // A column at the right of the note, beside the lines it marks (as the source's).
           <div className="relative w-12 shrink-0 overflow-hidden">

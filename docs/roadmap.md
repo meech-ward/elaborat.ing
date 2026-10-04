@@ -168,11 +168,11 @@ Also done in this phase: the comment anchoring library (see the task below).
   and each path it cannot store listed with the reason, such as a file that is
   not UTF-8 text. A downloaded .zip imports back byte for byte.)
 - **Component isolation on a sandbox domain**, with a custom-code notice on
-  shared projects (the notice is done: a note in a shared project that runs
-  custom code asks before it runs it, in the app and in the chat card, and so
-  does a shared component file previewed in the card; the
-  sandbox domain waits for its name. See "Component isolation" in
-  `architecture.md`).
+  shared projects (done: a note in a shared project that runs custom code asks
+  before it runs it, in the app and in the chat card, and so does a shared
+  component file previewed in the card; notes render in a frame served from
+  `elaboratingusercontent.com`, or as a `srcdoc` when that page cannot load.
+  See "Component isolation" in `architecture.md`).
 - **MCP Apps views:** a read-only document with its drawings, a single drawing,
   and draft component previews inside Claude and ChatGPT (done: `show_file`
   shows notes, drawings and diagrams and previews an MDX note's built-in and

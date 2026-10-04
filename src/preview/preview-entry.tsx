@@ -3,9 +3,10 @@
  *
  * This module is the ONLY place where compiled document JavaScript is
  * evaluated, via `run()` from `@mdx-js/mdx`. The build bundles it for the
- * parent's self-contained `srcdoc` frame (roadmap phase 2 step 4) (`sandbox="allow-scripts"`,
- * no `allow-same-origin`), so it has no access to the parent document,
- * storage, or file privileges, and the CSP forbids all network.
+ * frame's page on the sandbox domain and for the `srcdoc` frame
+ * (`sandbox="allow-scripts"`, no `allow-same-origin`, either way), so it has
+ * no access to the parent document, storage, or file privileges, and the CSP
+ * forbids all network.
  *
  * The child never sees document source. It receives compiled code plus slot
  * metadata (source ranges), renders in-place editable `SourceText` spans and
@@ -39,7 +40,7 @@ import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
-import { receiveFrameModule, setFrameModuleRequest } from './frameModules';
+import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import { rasterImageUses } from '../features/drawings/presentation.ts';
@@ -117,13 +118,18 @@ function postToParent(message: unknown): void {
   window.parent.postMessage(message, "*");
 }
 
-// Charts and code highlighting load the first time a note shows them: the
-// parent sends their code (frameModules.ts).
-setFrameModuleRequest((name) => {
-  if (activeSession == null) return false;
-  postToParent({ kind: "load-module", session: activeSession, name });
-  return true;
-});
+// Charts and code highlighting load the first time a note shows them
+// (frameModules.ts): on the sandbox domain from files beside this page, and
+// in a `srcdoc` frame (no files of its own) the parent sends their code.
+if (location.protocol === "https:" || location.protocol === "http:") {
+  loadModuleFiles();
+} else {
+  setFrameModuleRequest((name) => {
+    if (activeSession == null) return false;
+    postToParent({ kind: "load-module", session: activeSession, name });
+    return true;
+  });
+}
 
 // The app's shortcuts (save, commands, go to file, duplicate, focus, and the
 // view switch) work while the keyboard is in the frame: the frame passes them

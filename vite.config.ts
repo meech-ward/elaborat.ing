@@ -124,7 +124,9 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
     // Before thirdPartyNotices, so the frame's licenses are merged first.
-    previewFrame(),
+    // The frame's page for a sandbox domain goes in dist-sandbox/, which
+    // wrangler.sandbox.jsonc serves (docs/architecture.md, Component isolation).
+    previewFrame({ sandboxDir: path.resolve(import.meta.dirname, "dist-sandbox") }),
     // The generated service worker ships these Workbox modules in its own
     // workbox-*.js file, outside the bundle (checked by offline.spec.ts).
     thirdPartyNotices({

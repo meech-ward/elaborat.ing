@@ -1,10 +1,11 @@
 import { defineConfig, devices } from "@playwright/test"
-import { APP_URL, HARNESS_URL } from "./tests/browser/urls.ts"
+import { APP_URL, HARNESS_URL, SANDBOX_URL } from "./tests/browser/urls.ts"
 
 // Browser tests run against production builds: the app built against a
 // stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test),
-// the test harness (`bun run build:harness`), and the app's next version for
-// the update journey (`bun run build:next-version`). Build all three first.
+// the test harness (`bun run build:harness`, which also writes its frame page
+// for a sandbox domain), and the app's next version for the update journey
+// (`bun run build:next-version`). Build all three first.
 export default defineConfig({
   testDir: "tests/browser",
   forbidOnly: !!process.env.CI,
@@ -32,6 +33,14 @@ export default defineConfig({
     {
       command: "npx vite preview --config tests/browser/harness/vite.config.ts --host 127.0.0.1 --port 4174 --strictPort",
       url: HARNESS_URL,
+      reuseExistingServer: !process.env.CI,
+    },
+    // The harness's frame page on a second origin, through the sandbox
+    // domain's Worker (rendered-sandbox.spec.ts). Every path but the frame's
+    // files is not found, so it waits for the port.
+    {
+      command: "node tests/browser/sandbox-server.ts",
+      port: Number(new URL(SANDBOX_URL).port),
       reuseExistingServer: !process.env.CI,
     },
   ],
