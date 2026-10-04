@@ -14,6 +14,8 @@
 @import "../features/appearance/radii.css";
 /* Commented text, marked the way the app marks it (the library's look). */
 @import "../features/design-system/ui/commentHighlight.css";
+/* A task list item's box (the library's look). */
+@import "../features/design-system/ui/taskList.css";
 @plugin "@tailwindcss/typography";
 
 @source "../features/rendered/components.tsx";

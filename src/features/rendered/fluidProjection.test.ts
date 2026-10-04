@@ -581,3 +581,63 @@ test("only a top-level paragraph holding just a fence opening becomes a code blo
     expect(codeFenceFromParagraph(projection, root.pos)).toBeNull();
   expect(projection.mapping.roots).toHaveLength(6);
 });
+
+/** Steps that set the task box of the list item at `pos`. */
+const tick = (doc: ConstructorParameters<typeof Transform>[0], pos: number, checked: boolean | null) =>
+  new Transform(doc).setNodeMarkup(pos, undefined, { checked }).steps.map((step) => step.toJSON());
+
+test("ticking a task item's box changes only the character in it, even beside an island", async () => {
+  const text = "# Today\n\n- [ ] **Buy** milk\n- [x] Call the bank\n\n  ```sh\n  echo hi\n  ```\n\nTail.\n";
+  const projection = await projectFluidSource(text, "mdx");
+  const list = projection.doc.child(1);
+  expect([list.child(0).attrs.checked, list.child(1).attrs.checked]).toEqual([false, true]);
+  expect(list.child(0).firstChild!.textContent).toBe("Buy milk");
+  const first = projection.doc.child(0).nodeSize + 1;
+  const ticked = await edit(text, tick(projection.doc, first, true));
+  expect(ticked.text).toBe(text.replace("- [ ] **Buy**", "- [x] **Buy**"));
+  expect(ticked.patches).toEqual([{ from: text.indexOf("[ ]") + 1, to: text.indexOf("[ ]") + 2, insert: "x", expected: " " }]);
+  // The second item holds a code block, which the editor cannot change.
+  const second = first + list.child(0).nodeSize;
+  const cleared = await edit(text, tick(projection.doc, second, false));
+  expect(cleared.text).toBe(text.replace("- [x] Call", "- [ ] Call"));
+  expect(cleared.projection.doc.child(1).child(1).attrs.checked).toBe(false);
+});
+
+test("Enter in a task item makes another task; an empty one keeps its box; typed [ ] makes one", async () => {
+  const text = "- [x] **Done**\n- Next";
+  let projection = await projectFluidSource(text, "mdx");
+  const split = async (offset: number) => {
+    const state = EditorState.create({
+      doc: projection.doc,
+      selection: TextSelection.create(projection.doc, fluidPositionForSourceOffset(projection, offset)!),
+    });
+    let transaction: Transaction | undefined;
+    splitListItem(fluidSchema.nodes.list_item, { checked: false })(state, (tr) => {
+      transaction = tr;
+    });
+    return edit(projection.text, transaction!.steps.map((step) => step.toJSON()));
+  };
+  // In the middle, both halves keep the box; at the end the new task is not ticked yet.
+  expect((await split(text.indexOf("ne"))).text).toBe("- [x] **Do**\n- [x] **ne**\n- Next");
+  const ended = await split(text.indexOf("**\n"));
+  expect(ended.text).toBe("- [x] **Done**\n- [ ] \n- Next");
+  projection = ended.projection;
+  expect(projection.doc.child(0).child(1).attrs.checked).toBe(false);
+  // Typing in the empty task writes after its box.
+  const empty = projection.doc.child(0).child(0).nodeSize + 3;
+  const typed = await prepareFluidTransaction({ text: projection.text, revision: 1, format: "mdx" }, projection, [replace(empty, empty, "M")]);
+  expect(typed.text).toBe("- [x] **Done**\n- [ ] M\n- Next");
+
+  // "[ ]" typed before an item's text, then a space: the input rule's steps give it a box.
+  const plain = await projectFluidSource("- [ ]Next", "mdx");
+  const rule = new Transform(plain.doc).delete(3, 6).setNodeMarkup(1, undefined, { checked: false });
+  const ruled = await edit("- [ ]Next", rule.steps.map((step) => step.toJSON()));
+  expect(ruled.text).toBe("- [ ] Next");
+  // "]" typed in an empty item, and a box with no space after it: typing adds one.
+  const bare = await projectFluidSource("- [x", "mdx");
+  const closed = await edit("- [x", new Transform(bare.doc).delete(3, 5).setNodeMarkup(1, undefined, { checked: true }).steps.map((step) => step.toJSON()));
+  expect(closed.text).toBe("- [x] ");
+  const tight = await projectFluidSource("- [ ]", "mdx");
+  expect(tight.doc.child(0).child(0).attrs.checked).toBe(false);
+  expect((await edit("- [ ]", [replace(3, 3, "a")])).text).toBe("- [ ] a");
+});

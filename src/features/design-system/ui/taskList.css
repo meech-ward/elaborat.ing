@@ -1,0 +1,76 @@
+/*
+ * A task list item's box ("- [ ] step" in a note), as plain classes: the
+ * rendered note's editor draws an item's box with them (fluidEditor.ts; the
+ * frame's stylesheet imports this file), and the style guide shows them.
+ * The box sits in the bullet's place, so the item's text lines up with the
+ * list's other items. Like the library's radio item: 16px, the field fill
+ * with a faint border; the accent with an accent-text tick when ticked; the
+ * 2px focus ring. A read-only box looks the same and cannot be ticked.
+ *
+ *   <li class="task-list-item">
+ *     <label class="task-list-box"><input type="checkbox" class="task-list-check" aria-label="..."></label>
+ *     <div class="task-list-text">the item's text</div>
+ *   </li>
+ */
+.task-list-item {
+  position: relative;
+  list-style: none;
+}
+/* The item's text: no space above its first paragraph or below its last, as in any list item. */
+.task-list-text > :first-child {
+  margin-block-start: 0;
+}
+.task-list-text > :last-child {
+  margin-block-end: 0;
+}
+/* In the list's 22px indent, centred on the item's first line. The label
+   around it reaches 8px further out and fills the line, to be easier to hit. */
+.task-list-box {
+  position: absolute;
+  inset-inline-start: -30px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 30px;
+  height: 1lh;
+  padding-inline-start: 8px;
+  cursor: pointer;
+}
+.task-list-check {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 4px;
+  background: var(--field);
+  cursor: pointer;
+}
+.task-list-check::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--accent-text);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+}
+.task-list-check:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.task-list-check:checked::before {
+  transform: scale(1);
+}
+.task-list-check:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.task-list-check:disabled {
+  cursor: default;
+}

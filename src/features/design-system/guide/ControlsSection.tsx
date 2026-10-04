@@ -11,6 +11,7 @@ import { Hint } from "../ui/Hint"
 import { LoadingLine } from "../ui/LoadingLine"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { DirtyDot, StatusDot } from "../ui/StatusDot"
+import "../ui/taskList.css"
 import { fileActions } from "./fileActions"
 import { GuideGroup, GuideLabel, GuideValue, useGuidePortal } from "./parts"
 
@@ -110,7 +111,44 @@ function ButtonsDemo() {
         </Hint>
         <GuideValue className="ml-2">Point at or tab to an icon button.</GuideValue>
       </div>
+
+      <GuideLabel>Task list</GuideLabel>
+      <TaskListDemo />
+      <GuideValue>
+        A note&apos;s &quot;- [ ] step&quot; in Rendered: a 16 box in the bullet&apos;s place, the accent when ticked. A click or Space
+        ticks it; in a note you can only read, it only shows.
+      </GuideValue>
     </>
+  )
+}
+
+const TASKS = ["Write the outline", "Draw the flow"]
+
+/** A rendered note's task list (taskList.css): two boxes to tick, and one in a note you can only read. */
+function TaskListDemo() {
+  const [ticked, setTicked] = useState([true, false])
+  const item = (text: string, checked: boolean, onChange?: (checked: boolean) => void) => (
+    <li key={text} className="task-list-item">
+      <label className="task-list-box">
+        <input
+          type="checkbox"
+          className="task-list-check"
+          aria-label={text}
+          checked={checked}
+          disabled={!onChange}
+          onChange={(event) => onChange?.(event.target.checked)}
+        />
+      </label>
+      <div className="task-list-text">{text}</div>
+    </li>
+  )
+  return (
+    <ul className="m-0 pl-[22px] text-[15.5px] leading-[1.6] text-body">
+      {TASKS.map((text, index) =>
+        item(text, ticked[index], (checked) => setTicked((current) => current.map((value, at) => (at === index ? checked : value)))),
+      )}
+      {item("Share it (read-only)", true)}
+    </ul>
   )
 }
 

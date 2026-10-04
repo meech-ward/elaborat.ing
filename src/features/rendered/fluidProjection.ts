@@ -41,6 +41,10 @@ type Ast = {
   start?: number;
   url?: string;
   title?: string | null;
+  /** A list item's task box, from remark-gfm. */
+  checked?: boolean | null;
+  /** For an empty task item's paragraph: what typing there writes first. */
+  pad?: string;
   children?: Ast[];
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
@@ -71,6 +75,8 @@ type Leaf = {
   boundaries: Array<number | null>;
   frames: Frame[];
   root: number;
+  /** Source written before the first text typed into this empty leaf. */
+  pad?: string;
 };
 export interface FluidProjection {
   components: ComponentEnvironment;
@@ -147,6 +153,54 @@ function decodedBoundaries(
   if (output !== value.length)
     throw new Error("Decoded source length differs from its parser value");
   return result;
+}
+
+/** A task item's box in its source: the list marker, spaces, then `[ ]` or `[x]`. */
+const TASK_BOX = /^(?:[-+*]|\d{1,9}[.)])[ \t]+\[([ xX])\]/;
+
+/**
+ * A list item's task box and the children to show under it. An item with
+ * nothing after its box ("- [ ] ") is not a task item to the parser, which
+ * keeps the box as text, so it shows as an empty task item: a task's text
+ * can be cleared, and a new one started, without the box turning into text.
+ */
+function taskItem(
+  ast: Ast,
+  text: string,
+): { checked: boolean | null; children: Ast[] } {
+  const children = ast.children ?? [];
+  const head = children[0];
+  if (typeof ast.checked === "boolean") {
+    // The parser starts the item's paragraph after its box, except when the
+    // text opens with formatting ("- [ ] **Bold**"): start it there too.
+    const from = head?.type === "paragraph" ? range(head).from : -1;
+    const box = from < 0 ? null : /^\[[ xX]\][ \t]*/.exec(text.slice(from, range(head).to));
+    if (!box) return { checked: ast.checked, children };
+    const start = { offset: from + box[0].length };
+    return {
+      checked: ast.checked,
+      children: [{ ...head, position: { start, end: head.position!.end } }, ...children.slice(1)],
+    };
+  }
+  const only =
+    head?.type === "paragraph" && head.children?.length === 1
+      ? head.children[0]
+      : undefined;
+  if (!head || only?.type !== "text") return { checked: null, children };
+  const box = /^\[([ xX])\]$/.exec(
+    text.slice(range(only).from, range(only).to),
+  );
+  const end = range(head).to;
+  if (!box || !/^[ \t]*$/.test(text.slice(range(only).to, end)))
+    return { checked: null, children };
+  const empty: Ast = {
+    type: "paragraph",
+    children: [],
+    // Text typed after a box with no space after it needs one.
+    pad: /[ \t]$/.test(text.slice(0, end)) ? undefined : " ",
+    position: { start: { offset: end }, end: { offset: end } },
+  };
+  return { checked: box[1] !== " ", children: [empty, ...children.slice(1)] };
 }
 
 export async function projectFluidSource(
@@ -354,6 +408,7 @@ export async function projectFluidSource(
           boundaries: [from + prefix],
           frames: [],
           root,
+          ...(ast.pad ? { pad: ast.pad } : {}),
         });
       }
     } else if (ast.type === "thematicBreak")
@@ -388,9 +443,10 @@ export async function projectFluidSource(
           : ast.type === "listItem"
             ? "list_item"
             : "blockquote";
+      const task = ast.type === "listItem" ? taskItem(ast, text) : null;
       const content: PMNode[] = [];
       let at = pos + 1;
-      for (const child of ast.children ?? []) {
+      for (const child of task?.children ?? ast.children ?? []) {
         const next =
           isPlainBlock(child) || isContainer(child)
             ? block(child, at, root)
@@ -427,7 +483,9 @@ export async function projectFluidSource(
             name,
             ast.type === "list" && ast.ordered
               ? { order: ast.start ?? 1 }
-              : null,
+              : task
+                ? { checked: task.checked }
+                : null,
             content,
           );
         } catch {
@@ -785,6 +843,7 @@ function inlinePatch(
       undefined,
       hint,
     );
+  if (start.leaf.pad && insert && !split) insert = start.leaf.pad + insert;
   const emptyRoot = projection.mapping.roots.find(
     (root) => root.pos + 1 === from && root.from === root.to,
   );
@@ -865,13 +924,15 @@ function blockSource(
         item.forEach((child) => {
           body.push(blockSource(child, projection, true, hint, originalMarker));
         });
+        const box =
+          item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
         parts.push(
           body
             .join("\n\n")
             .split("\n")
             .map(
               (line, i) =>
-                (i === 0 ? marker : " ".repeat(marker.length)) + line,
+                (i === 0 ? marker + box : " ".repeat(marker.length)) + line,
             )
             .join("\n"),
         );
@@ -1013,6 +1074,46 @@ function protectedHeadingPatch(
 }
 
 /**
+ * Ticking a task item's box changes only the character inside it, and giving
+ * an item a box (typing `[ ] ` at its start) writes one before its text, so
+ * the rest of the item stays as written. Null for any other change at `pos`.
+ */
+function taskBoxPatch(
+  projection: FluidProjection,
+  next: PMNode,
+  pos: number,
+): SourcePatch | null {
+  const before = projection.doc.nodeAt(pos),
+    after = next.nodeAt(pos);
+  if (
+    before?.type !== fluidSchema.nodes.list_item ||
+    after?.type !== before.type ||
+    !before.content.eq(after.content) ||
+    typeof after.attrs.checked !== "boolean" ||
+    before.attrs.checked === after.attrs.checked
+  )
+    return null;
+  const find = (node: PMNode | null, at: number) =>
+    projection.mapping.nodes.find((entry) => entry.pos === at && entry.node === node);
+  if (before.attrs.checked === null) {
+    const first = find(before.firstChild, pos + 1);
+    if (!first) return null;
+    const insert = after.attrs.checked ? "[x] " : "[ ] ";
+    return { from: first.from, to: first.from, insert, expected: "" };
+  }
+  const item = find(before, pos);
+  const box = item && TASK_BOX.exec(projection.text.slice(item.from, item.to));
+  if (!item || !box) return null;
+  const at = item.from + box[0].length - 2;
+  return {
+    from: at,
+    to: at + 1,
+    insert: after.attrs.checked ? "x" : " ",
+    expected: projection.text.slice(at, at + 1),
+  };
+}
+
+/**
  * A top-level paragraph that is only a typed code fence opening (```js)
  * becomes an empty code block: its source is replaced by the fence, and
  * `focus` is the offset inside it, where the code goes. Null for any other
@@ -1080,9 +1181,12 @@ export async function prepareFluidTransaction(
     if (result.failed || !result.doc)
       throw new Error(result.failed ?? "Invalid projection step");
     const heading = protectedHeadingPatch(candidate, result.doc);
-    if (!heading) assertUnprotected(candidate, parsed.from, parsed.to);
+    // A task box patch touches only the box, so an item holding an island can be ticked too.
+    const task = heading ? null : taskBoxPatch(candidate, result.doc, parsed.from);
+    if (!heading && !task) assertUnprotected(candidate, parsed.from, parsed.to);
     const attempts: Array<() => SourcePatch> = [];
     if (heading) attempts.push(() => heading);
+    if (task) attempts.push(() => task);
     if (step instanceof ReplaceStep) {
       const inlineOnly =
         step.slice.openStart === 0 &&

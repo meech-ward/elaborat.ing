@@ -49,10 +49,24 @@ export const fluidSchema = new Schema({
       ],
     },
     list_item: {
+      // A task list item's box ("- [ ] step"): true, false, or null for none.
+      attrs: { checked: { default: null } },
       content: "paragraph block*",
       defining: true,
-      toDOM: () => ["li", 0],
-      parseDOM: [{ tag: "li" }],
+      // The editor draws a task item's box itself (fluidEditor.ts).
+      toDOM: (node) =>
+        node.attrs.checked === null
+          ? ["li", 0]
+          : ["li", { "data-checked": String(node.attrs.checked) }, 0],
+      parseDOM: [
+        {
+          tag: "li",
+          getAttrs: (node) => {
+            const checked = node.getAttribute("data-checked");
+            return { checked: checked === null ? null : checked === "true" };
+          },
+        },
+      ],
     },
     horizontal_rule: {
       group: "block",

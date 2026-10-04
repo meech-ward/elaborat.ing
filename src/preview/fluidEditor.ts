@@ -165,6 +165,66 @@ function commentMarksPlugin() {
   });
 }
 
+/**
+ * A list item. A task item ("- [ ] step") shows its box, the library's task
+ * box (taskList.css), named by the item's text. Ticking it while the note
+ * can be edited sets the item's `checked`, an edit like any other, which the
+ * parent writes as `[x]` or `[ ]` in the source.
+ */
+function listItemView(
+  node: PMNode,
+  view: EditorView,
+  getPos: () => number | undefined,
+  history: (direction: "undo" | "redo") => void,
+): NodeView {
+  const dom = document.createElement("li");
+  if (node.attrs.checked === null)
+    return { dom, contentDOM: dom, update: (next) => next.type === node.type && next.attrs.checked === null };
+  dom.className = "task-list-item";
+  // A label, so the space around the box ticks it too.
+  const holder = document.createElement("label");
+  holder.className = "task-list-box";
+  holder.contentEditable = "false";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.className = "task-list-check";
+  holder.append(box);
+  const contentDOM = document.createElement("div");
+  contentDOM.className = "task-list-text";
+  dom.append(holder, contentDOM);
+  let current = node;
+  const show = () => {
+    box.checked = current.attrs.checked === true;
+    box.disabled = !view.editable;
+    box.setAttribute("aria-label", current.firstChild?.textContent.trim() || "Task");
+  };
+  show();
+  box.addEventListener("change", () => {
+    const pos = getPos();
+    if (!view.editable || pos === undefined) return show();
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, checked: box.checked }));
+  });
+  // Undo and redo work from the box as from the text.
+  box.addEventListener("keydown", (event) => {
+    const key = event.key.toLowerCase();
+    if (!(event.ctrlKey || event.metaKey) || (key !== "z" && key !== "y")) return;
+    event.preventDefault();
+    history(key === "z" && !event.shiftKey ? "undo" : "redo");
+  });
+  return {
+    dom,
+    contentDOM,
+    update: (next) => {
+      if (next.type !== node.type || next.attrs.checked === null) return false;
+      current = next;
+      show();
+      return true;
+    },
+    stopEvent: (event) => event.target instanceof Node && holder.contains(event.target),
+    ignoreMutation: (mutation) => holder.contains(mutation.target),
+  };
+}
+
 function objects(doc: PMNode): string {
   const ids: string[] = [];
   doc.descendants((node) => {
@@ -275,7 +335,12 @@ export class FluidEditor {
                 }
                 return true;
               },
-              splitListItem(nodes.list_item),
+              // A new item after a task item is a task too, not yet ticked.
+              (state, dispatch) => {
+                const { $from } = state.selection;
+                const task = $from.depth > 1 && $from.node(-1).attrs.checked != null;
+                return splitListItem(nodes.list_item, task ? { checked: false } : undefined)(state, dispatch);
+              },
               baseKeymap.Enter,
             ),
             Tab: sinkListItem(nodes.list_item),
@@ -299,6 +364,8 @@ export class FluidEditor {
       nodeViews: {
         object: (node) => this.objectView(node, false),
         inline_object: (node) => this.objectView(node, true),
+        list_item: (node, view, getPos) =>
+          listItemView(node, view, getPos, (direction) => this.history(direction)),
       },
       // Runs before the keymap, so every key command sees the real caret.
       handleKeyDown: (view, event) => {
@@ -335,7 +402,7 @@ export class FluidEditor {
           if (
             !(event.target instanceof Element) ||
             !event.target.closest(
-              "button,input,select,textarea,[data-authoring-from]",
+              "button,input,select,textarea,[data-authoring-from],.task-list-box",
             )
           )
             view.focus();
@@ -350,7 +417,7 @@ export class FluidEditor {
             !view.hasFocus() &&
             (!(event.target instanceof Element) ||
               !event.target.closest(
-                "button,input,select,textarea,[data-authoring-from]",
+                "button,input,select,textarea,[data-authoring-from],.task-list-box",
               ))
           )
             view.dom.focus({ preventScroll: true });
@@ -424,6 +491,27 @@ export class FluidEditor {
           tr.removeStoredMark(fluidSchema.marks[name]);
           this.dispatch(tr);
           return true;
+        }
+        // `[ ]` or `[x]` typed at the start of a list item gives it a task
+        // box: "]" in an empty item, or a space before the item's text.
+        const item = at.depth > 1 ? at.node(-1) : null;
+        const box = /^\[([ xX])(\]?)$/.exec(prefix);
+        if (
+          box &&
+          item?.type === nodes.list_item &&
+          item.attrs.checked === null &&
+          at.index(-1) === 0 &&
+          at.parent.type === nodes.paragraph
+        ) {
+          const rest = at.parent.textBetween(at.parentOffset, at.parent.content.size);
+          const closed = !box[2] && text === "]" && !rest;
+          const spaced = !!box[2] && text === " " && !!rest.trim();
+          if (closed || spaced) {
+            const tr = view.state.tr.delete(from - prefix.length, from);
+            tr.setNodeMarkup(at.before(-1), undefined, { ...item.attrs, checked: box[1] !== " " });
+            this.dispatch(tr);
+            return true;
+          }
         }
         if (text !== " " || at.parent.type !== nodes.paragraph) return false;
         let command: Command | null = null;
@@ -619,7 +707,11 @@ export class FluidEditor {
       this.inFlight = false;
     }
     // The render may have changed whether the document is read-only.
-    if (this.view.editable === isReadOnly()) this.view.setProps({});
+    if (this.view.editable === isReadOnly()) {
+      this.view.setProps({});
+      for (const box of this.view.dom.querySelectorAll<HTMLInputElement>(".task-list-check"))
+        box.disabled = !this.view.editable;
+    }
     this.post({ kind: "rendered" });
     this.flush();
   }

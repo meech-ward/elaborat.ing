@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 60_000 })
 const projectUrl = (id: string, path?: string) => new URL(`projects/${id}${path ? `/${path}` : ""}`, APP_URL).href
 const SOMEONE_ELSE = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f"
 const SCENE = '{\n  "type": "excalidraw",\n  "version": 2,\n  "elements": [],\n  "appState": {},\n  "files": {}\n}\n'
-const NOTE = "# Plan\n\nThe first paragraph."
+const NOTE = "# Plan\n\nThe first paragraph.\n\n- [x] Agree the plan"
 
 const editorText = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
 const saves = (fake: { requests: { url(): string }[] }) => fake.requests.filter((request) => request.url().endsWith("/rpc/save_files"))
@@ -75,6 +75,9 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   await page.keyboard.type(" TYPED")
   await expect(paragraph).toHaveText("The first paragraph.")
   await expect(frame.getByRole("button", { name: "+ Insert block" })).toHaveCount(0)
+  // A task's box shows it is ticked, and cannot be unticked.
+  await expect(frame.getByRole("checkbox", { name: "Agree the plan" })).toBeChecked()
+  await expect(frame.getByRole("checkbox", { name: "Agree the plan" })).toBeDisabled()
 
   // The file can be exported, not saved or formatted.
   expect(await menuItems(page, page.getByRole("button", { name: "File actions" }))).toEqual(["Export"])

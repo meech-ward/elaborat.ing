@@ -21,16 +21,16 @@ const first = (page: Page) => frameOf(page).locator("p").filter({ hasText: "The 
 const second = (page: Page) => frameOf(page).locator("p").filter({ hasText: "The second paragraph" })
 const sourceText = (page: Page) => page.locator(".monaco-editor:visible .view-lines")
 
-async function openNote(page: Page) {
+async function openNote(page: Page, note = NOTE, shown = (page: Page) => expect(first(page)).toHaveText(FIRST, { timeout: 15_000 })) {
   const fake = await fakeSupabase(page)
   const remote = fake.server.remote(person.id)
   const id = crypto.randomUUID()
   await remote.createProject(id, "Notes")
-  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: PATH, content: NOTE }])
+  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: PATH, content: note }])
   await signedIn(page)
   await page.goto(projectUrl(id, PATH))
   await page.getByRole("button", { name: "Rendered" }).click()
-  await expect(first(page)).toHaveText(FIRST, { timeout: 15_000 })
+  await shown(page)
   return { fake, id }
 }
 
@@ -186,4 +186,50 @@ test("```js and Enter in the rendered prose make a code block for the code: Ctrl
   await toSource(page)
   await expect(sourceText(page)).toContainText("```js")
   expect(await saved(page, fake, id)).toBe(NOTE.replace(FIRST, `${FIRST}\n\n\`\`\`js\nconst x = 1;\n\`\`\``))
+})
+
+test("a task's box ticks in Rendered, by click or Space: Source shows [x], it saves, and Ctrl+Z unticks it", async ({ page }) => {
+  const TASKS = "# Packing\n\n- [ ] Pack the charger\n- [x] Book the train\n"
+  const pack = frameOf(page).getByRole("checkbox", { name: "Pack the charger" })
+  const { fake, id } = await openNote(page, TASKS, () => expect(pack).toBeVisible({ timeout: 15_000 }))
+  await expect(pack).not.toBeChecked()
+  await expect(frameOf(page).getByRole("checkbox", { name: "Book the train" })).toBeChecked()
+
+  await pack.click()
+  await expect(pack).toBeChecked()
+  await toSource(page)
+  await expect(sourceText(page)).toContainText("- [x] Pack the charger")
+  const ticked = TASKS.replace("- [ ] Pack", "- [x] Pack")
+  expect(await saved(page, fake, id)).toBe(ticked)
+
+  // From the heading, Tab reaches the first box, and Space unticks it.
+  await toRendered(page)
+  await expect(pack).toBeChecked()
+  await frameOf(page).getByRole("heading", { name: "Packing" }).click()
+  await page.keyboard.press("Tab")
+  await expect(pack).toBeFocused()
+  await page.keyboard.press("Space")
+  await expect(pack).not.toBeChecked()
+  // Ctrl+Z from the box ticks it again, and once more brings the note back as it was.
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(pack).toBeChecked()
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(pack).not.toBeChecked()
+  expect(await saved(page, fake, id)).toBe(TASKS)
+})
+
+test("Enter after a task makes another, and [ ] typed at the start of an item gives it a box", async ({ page }) => {
+  const TASKS = "# Packing\n\n- [x] Book the train\n- Snacks\n"
+  const box = (name: string) => frameOf(page).getByRole("checkbox", { name })
+  const { fake, id } = await openNote(page, TASKS, () => expect(box("Book the train")).toBeVisible({ timeout: 15_000 }))
+  await typeAtEnd(page, frameOf(page).locator("p").filter({ hasText: "Book the train" }), "")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("Water")
+  await expect(box("Water")).not.toBeChecked()
+
+  await frameOf(page).locator("p").filter({ hasText: "Snacks" }).click()
+  await page.keyboard.press("Home")
+  await page.keyboard.type("[ ] ")
+  await expect(box("Snacks")).not.toBeChecked()
+  expect(await saved(page, fake, id)).toBe("# Packing\n\n- [x] Book the train\n- [ ] Water\n- [ ] Snacks\n")
 })
