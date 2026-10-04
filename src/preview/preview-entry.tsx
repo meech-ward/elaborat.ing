@@ -41,6 +41,7 @@ import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
+import { connectToParent, postToParent } from './parentPort';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import { rasterImageUses } from '../features/drawings/presentation.ts';
@@ -112,10 +113,6 @@ function subscribeResources(listener: () => void): () => void {
   return () => {
     resourceListeners.delete(listener);
   };
-}
-
-function postToParent(message: unknown): void {
-  window.parent.postMessage(message, "*");
 }
 
 // Charts and code highlighting load the first time a note shows them
@@ -664,7 +661,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
           () => {
             for (const listener of islandListeners) listener();
           },
-          undefined,
+          postToParent,
           { codeFences: true },
         ));
         setCodeBlockHooks({
@@ -770,13 +767,12 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   }
 }
 
-window.addEventListener("message", (event: MessageEvent) => {
-  // The embedder is the only window that may hold a reference to this frame.
-  // Anything else (sibling frames, opener, extensions) is ignored.
-  if (event.source !== window.parent) return;
+// Everything from the app arrives on the port it gave this document
+// (parentPort.ts): nothing else (sibling frames, opener, extensions) has it.
+function onParentMessage(event: MessageEvent): void {
   const checked = checkParentMessage({
     data: event.data,
-    source: event.source,
+    source: event.currentTarget,
     activeSession,
   });
   if (!checked.ok) return;
@@ -860,7 +856,7 @@ window.addEventListener("message", (event: MessageEvent) => {
     fluid: render.fluid,
     readOnly: render.readOnly,
   });
-});
+}
 
 const fluidComponents = {
   table: ReadingTable,
@@ -890,7 +886,7 @@ window.addEventListener("error", (event: ErrorEvent) => {
   });
 });
 
-postToParent({ kind: "ready", session: "pending" });
+connectToParent(onParentMessage);
 window.addEventListener("pagehide", () => fluidEditor?.destroy());
 
 /**

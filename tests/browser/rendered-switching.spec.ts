@@ -26,6 +26,10 @@ async function openNote(page: Page) {
         }
       }
     }).observe(document, { subtree: true, childList: true })
+    // In the frame: keep the port the page gives it, to speak for the frame.
+    window.addEventListener("message", (event) => {
+      if (event.data?.kind === "connect" && event.ports[0]) Object.assign(window, { pagePort: event.ports[0] })
+    })
   })
   const fake = await fakeSupabase(page)
   const remote = fake.server.remote(person.id)
@@ -75,7 +79,7 @@ test("an edit the frame made against an older revision is lost with a plain noti
   const frame = (await (await page.locator(FRAME).elementHandle())!.contentFrame())!
   // Remember the last document the frame was sent.
   await frame.evaluate(() => {
-    window.addEventListener("message", (event) => {
+    ;(window as unknown as { pagePort: MessagePort }).pagePort.addEventListener("message", (event) => {
       if (event.data?.kind === "render") Object.assign(window, { lastRender: event.data })
     })
   })
@@ -89,7 +93,7 @@ test("an edit the frame made against an older revision is lost with a plain noti
   // An edit the frame made before that change arrives only now, as a race would deliver it.
   await frame.evaluate(() => {
     const render = (window as unknown as { lastRender: { session: string; revision: number; fluid?: { epoch: number } } }).lastRender
-    window.parent.postMessage(
+    ;(window as unknown as { pagePort: MessagePort }).pagePort.postMessage(
       {
         kind: "fluid-transaction",
         session: render.session,
@@ -101,7 +105,6 @@ test("an edit the frame made against an older revision is lost with a plain noti
         after: { anchor: 1, head: 1 },
         group: "0:0",
       },
-      "*",
     )
   })
   await expect(page.getByText("Edit not applied: the note changed at the same time. Make the edit again.")).toBeVisible()

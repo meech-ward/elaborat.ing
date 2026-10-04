@@ -6,11 +6,13 @@
  * - Session and revision must match; stale revisions fail visibly.
  * - Malformed shapes are rejected.
  * - `ready` passes before the child knows the session (sender-gated).
+ * - The frame takes exactly one port, only from its embedder, only once.
  * - The sandbox constant never grants same-origin or privileged flags.
  */
 import { describe, expect, test } from 'bun:test';
 import {
   checkChildMessage,
+  checkConnectMessage,
   checkEditResource,
   checkParentMessage,
   checkPropEdit,
@@ -40,6 +42,24 @@ function proseEdit() {
     value: 'Goodbye',
   };
 }
+
+describe('checkConnectMessage', () => {
+  test('the frame takes one port from its embedder, once, with nothing else in the message', () => {
+    const port = { id: 'port' };
+    const valid = { data: { kind: 'connect' }, source: FRAME, parent: FRAME, ports: [port], connected: false };
+    expect(checkConnectMessage(valid)).toBe(port);
+    for (const invalid of [
+      { ...valid, source: OTHER },
+      { ...valid, source: null, parent: null },
+      { ...valid, connected: true },
+      { ...valid, ports: [] },
+      { ...valid, ports: [port, { id: 'second' }] },
+      { ...valid, data: { kind: 'connect', session: 'session-1234' } },
+      { ...valid, data: { kind: 'render' } },
+      { ...valid, data: null },
+    ]) expect(checkConnectMessage(invalid)).toBeNull();
+  });
+});
 
 describe('checkChildMessage', () => {
   test('queued edit ids and independent draft-pending state retain sender/session/revision guards', () => {

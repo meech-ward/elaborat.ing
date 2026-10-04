@@ -1,4 +1,5 @@
 import type { ChildMessage } from '../features/rendered/protocol';
+import { postToParent } from './parentPort';
 
 export type DraftRegion = { from: number; to: number; expected: string };
 export type DraftValue = { value: string; start: number; end: number; focused: boolean };
@@ -161,9 +162,9 @@ export class SourceDraftStore {
 
 let browserSession = '', browserRevision = -1;
 const store = new SourceDraftStore(
-  message => window.parent.postMessage(message, '*'),
+  message => postToParent(message),
   pending => {
-    if (browserRevision >= 0) window.parent.postMessage({ kind: 'source-draft-pending', session: browserSession, revision: browserRevision, pending }, '*');
+    if (browserRevision >= 0) postToParent({ kind: 'source-draft-pending', session: browserSession, revision: browserRevision, pending });
   },
 );
 const selector = '[data-authoring-from][data-authoring-to][data-authoring-expected][data-authoring-value]';

@@ -68,6 +68,46 @@ test("when the sandbox domain's page cannot load, the note renders in the srcdoc
   expect(errors).toEqual([])
 })
 
+// A page the frame navigates to that never finishes loading, so the frame
+// never loads a second time: it records what it is sent, and says ready as
+// the frame does.
+const AWAY = `${SANDBOX}/away`
+const awayPage = `<!doctype html><title>Away</title><script>
+window.received = []
+addEventListener("message", (event) => received.push(event.data && event.data.kind))
+parent.postMessage({ kind: "ready", session: "pending" }, "*")
+</script><img src="/never" alt="">`
+
+for (const mode of ["sandbox domain", "srcdoc"] as const) {
+  test(`a page the ${mode} frame navigates to is sent nothing and heard from never, even one that never finishes loading`, async ({ page }) => {
+    await page.route(AWAY, (route) => route.fulfill({ contentType: "text/html", body: awayPage }))
+    await page.route(`${SANDBOX}/never`, () => {})
+    const errors = await openHarness(page, mode === "srcdoc" ? "" : `?sandbox=${encodeURIComponent(SANDBOX)}`)
+    // The note's code leaves its frame when asked.
+    const note = `# Away\n\nStill here.\n\n{(() => { addEventListener("leave", () => { location.href = ${JSON.stringify(AWAY)} }); return null })()}\n`
+    const { session } = await load(page, note, "mdx", "Still here.")
+    await frameOf(page).locator("body").evaluate(() => dispatchEvent(new Event("leave")))
+    await expect.poll(() => page.frames().some((frame) => frame.url() === AWAY)).toBe(true)
+    const away = page.frames().find((frame) => frame.url() === AWAY)!
+    await expect.poll(() => away.evaluate(() => Array.isArray((window as unknown as { received?: unknown }).received))).toBe(true)
+
+    // The person edits the note, and the app has new pixels and colours to send.
+    await page.evaluate((text) => {
+      window.renderedHarness.edit(`${text}\nMore.\n`)
+      window.renderedHarness.setResources({ "flow.d2": '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"></svg>' })
+      window.renderedHarness.appearance("supabase-green", "dark")
+    }, note)
+    // The page speaks as the frame would, with the note's session.
+    const revision = await page.evaluate(() => window.renderedHarness.state().revision)
+    await away.evaluate(([session, revision]) => parent.postMessage({ kind: "render-error", session, revision, message: "Forged" }, "*"), [session, revision] as const)
+    await page.waitForTimeout(1_000)
+
+    expect(await away.evaluate(() => (window as unknown as { received: unknown[] }).received)).toEqual([])
+    expect((await page.evaluate(() => window.renderedHarness.state().error)) ?? "").not.toContain("Forged")
+    expect(errors).toEqual([])
+  })
+}
+
 test("a frame that navigates itself is replaced, and the preview stops when it keeps doing so", async ({ page }) => {
   const errors = await openHarness(page, `?sandbox=${encodeURIComponent(SANDBOX)}`)
   // The note's code reloads its frame every time it runs.

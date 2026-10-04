@@ -201,14 +201,15 @@ export class FluidEditor {
 
   /**
    * `send` delivers the editor's messages to whatever checks its edits: the
-   * parent page by default, or a checker in the same page (the chat card).
-   * With `codeFences`, Enter after a typed fence opening (```js) asks for a
-   * code block; the chat card's code blocks are not editable, so it has none.
+   * parent page over the frame's port, or a checker in the same page (the
+   * chat card). With `codeFences`, Enter after a typed fence opening (```js)
+   * asks for a code block; the chat card's code blocks are not editable, so
+   * it has none.
    */
   constructor(
     mount: HTMLElement,
     notifyIslands: () => void,
-    send: (message: object) => void = (message) => parent.postMessage(message, "*"),
+    send: (message: object) => void,
     { codeFences = false }: { codeFences?: boolean } = {},
   ) {
     this.notifyIslands = notifyIslands;

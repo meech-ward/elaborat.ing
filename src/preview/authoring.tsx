@@ -11,6 +11,7 @@ import type { RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
 import { isReadOnly } from './readOnly';
+import { postToParent as post } from './parentPort';
 
 let context: {
   session: string;
@@ -66,7 +67,6 @@ export function setAuthoringContext(
   context = { session, revision, metadata };
   for (const listener of listeners) listener();
 }
-const post = (message: unknown) => window.parent.postMessage(message, "*");
 
 function caretOffset(element: HTMLElement): number {
   const selection = window.getSelection();

@@ -73,6 +73,8 @@ function App() {
 
 const harness = {
   load: (text: string, format: DocumentSnapshot["format"]) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined }),
+  /** The person's edit in the Source view: the same note, so the same editor and frame. */
+  edit: (text: string) => publish({ snapshot: store.setText(text) }),
   source: () => state.snapshot.text,
   state: () => ({ revision: state.snapshot.revision, pending, error: lastError }),
   setResources: (resources: Record<string, string>) => publish({ resources }),

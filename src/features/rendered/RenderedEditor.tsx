@@ -19,7 +19,10 @@
  *   (`sandbox="allow-scripts"`): the frame's page on the sandbox domain when
  *   the build has one, else (and when that page cannot load) a
  *   self-contained `srcdoc` document. The parent never calls `eval`/`run`
- *   on document code. A frame that navigates itself away is replaced.
+ *   on document code. After the frame says ready, every message both ways
+ *   goes over a MessagePort given to the frame's first document, so a page
+ *   the frame navigates to hears and says nothing; a frame that navigates
+ *   itself away is replaced.
  * - Ordinary prose uses one persistent source-derived ProseMirror view.
  *   Vendor transactions are proposals, validated against parent-owned source
  *   mappings in full before one exact source/Monaco commit. Monaco owns undo.
@@ -71,6 +74,7 @@ import {
   PREVIEW_SANDBOX,
   staleChildMessage,
   type CommentMarksMessage,
+  type ConnectMessage,
   type FrameRect,
   type RenderMessage,
   type ResourcesMessage,
@@ -230,10 +234,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPendingChangeProp?.(pending || pendingOwners.current.draft);
   }, [onPendingChangeProp]);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // The port given to the frame's document when it said ready: every message
+  // to the frame goes on it, and only messages on it are the frame's.
+  const portRef = useRef<MessagePort | null>(null);
+  const onPortMessage = useRef<((event: MessageEvent) => void) | null>(null);
   const session = useMemo(() => newSessionToken(), []);
   // The frame's document: the sandbox domain's page, or the `srcdoc`. Each
-  // loads once and every render arrives via postMessage (reposted when the
-  // frame says ready). A new key is a new iframe.
+  // loads once and every render arrives on its port (sent again when the
+  // frame says ready and gets one). A new key is a new iframe.
   const pageUrl = useMemo(() => sandboxFrameUrl(sandboxOrigin, FRAME_PAGE_PATH), [sandboxOrigin]);
   const [frameDoc, setFrameDoc] = useState(() => ({ key: 0, hosted: pageUrl !== null && !sandboxFailed && navigator.onLine !== false, ready: false, stopped: false }));
   const srcdocModule = useModule(srcdocFrame, !frameDoc.hosted);
@@ -243,10 +251,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const readyAfterLoad = useRef(0);
   const lastReplaced = useRef(-Infinity);
   // A new frame in place of the current one: messages stop going to the old
-  // one at once (every post goes through frameRef), and the new one gets the
+  // one at once (every post goes on its port), and the new one gets the
   // current render when it says ready.
   const replaceFrame = useCallback((next: { hosted?: boolean; stopped?: boolean }) => {
     frameRef.current = null;
+    portRef.current?.close();
+    portRef.current = null;
     frameLoads.current = 0;
     frameReady.current = false;
     window.clearTimeout(readyAfterLoad.current);
@@ -290,6 +300,32 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // Frame modules sent to the frame since it last said ready: it asks for
   // each once, and again only after a failed load.
   const sentModules = useRef(new Set<string>());
+  // The handshake (docs/architecture.md, Component isolation): the frame's
+  // first `ready`, a window post, is answered with one port of a new channel,
+  // and every message after it, both ways, goes on that channel. A port stays
+  // with the document it was given to, so a page the frame navigates to,
+  // which has the same window, can neither hear the editor nor speak to it.
+  // A frame gets one port: a later `ready` from its window is not answered.
+  // The frame gets the current render on its port as soon as it has one.
+  useEffect(() => {
+    const onWindowMessage = (event: MessageEvent) => {
+      const frame = frameRef.current?.contentWindow;
+      if (event.source !== frame || frame == null || portRef.current) return;
+      const checked = checkChildMessage({ data: event.data, source: event.source, expectedSource: frame, session, revision: -1 });
+      if (!checked.ok || checked.message.kind !== "ready") return;
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (portEvent) => onPortMessage.current?.(portEvent);
+      portRef.current = channel.port1;
+      const connect: ConnectMessage = { kind: "connect" };
+      frame.postMessage(connect, "*", [channel.port2]);
+      frameReady.current = true;
+      setFrameDoc((current) => (current.ready ? current : { ...current, ready: true }));
+      sentModules.current.clear();
+      setReadyTick((tick) => tick + 1);
+    };
+    window.addEventListener("message", onWindowMessage);
+    return () => window.removeEventListener("message", onWindowMessage);
+  }, [session]);
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
   const [viewer, setViewer] = useState<{ path: string; svg: string } | null>(
@@ -318,10 +354,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       // The parent cannot read the opaque frame DOM, so it asks the frame
       // to return focus to the exact originating View action.
       if (viewerActive.current) {
-        frameRef.current?.contentWindow?.postMessage(
-          { kind: "resource-focus", session, path },
-          "*",
-        );
+        portRef.current?.postMessage({ kind: "resource-focus", session, path });
       }
     },
     [session],
@@ -341,7 +374,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const rejectPendingDraft = useCallback((reason: string) => {
     const draftId = pendingLocalEdit.current?.ack.draftId;
     if (draftId !== undefined)
-      frameRef.current?.contentWindow?.postMessage({ kind: 'source-draft-settled', session, revision: latestDocument.current.revision, draftId, outcome: 'rejected', reason: reason.slice(0, 2000) }, '*');
+      portRef.current?.postMessage({ kind: 'source-draft-settled', session, revision: latestDocument.current.revision, draftId, outcome: 'rejected', reason: reason.slice(0, 2000) });
     pendingLocalEdit.current = null;
     pendingOwners.current.draft = false;
     onPendingChangeProp?.(pendingOwners.current.fluid);
@@ -463,8 +496,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // announces readiness, so a post that raced frame load is never lost.
   useEffect(() => {
     if (!exposed) return;
-    const frame = frameRef.current?.contentWindow;
-    if (!frame) return;
+    const port = portRef.current;
+    if (!port) return;
     const message: RenderMessage = {
       kind: "render",
       session,
@@ -508,19 +541,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         editAck: exposed.editAck,
       },
     };
-    frame.postMessage(message, "*");
+    port.postMessage(message);
   }, [exposed, readOnly, readyTick, session]);
 
   useEffect(() => {
     if (exposed)
-      frameRef.current?.contentWindow?.postMessage(
-        {
-          kind: "authoring-paths",
-          session,
-          paths: availableResourcePaths ?? [],
-        },
-        "*",
-      );
+      portRef.current?.postMessage({
+        kind: "authoring-paths",
+        session,
+        paths: availableResourcePaths ?? [],
+      });
   }, [availableResourcePaths, exposed, readyTick, session]);
 
   // Resources follow the render (and every repost): the child keeps the
@@ -529,8 +559,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // posts only when the pixels actually change.
   useEffect(() => {
     if (!hasExposed || !resources || !authority.current) return;
-    const frame = frameRef.current?.contentWindow;
-    if (!frame) return;
+    const port = portRef.current;
+    if (!port) return;
     const message: ResourcesMessage = {
       kind: "resources",
       session,
@@ -540,23 +570,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         svg,
       })),
     };
-    frame.postMessage(message, "*");
+    port.postMessage(message);
   }, [hasExposed, readyTick, session, resources]);
 
   // Presentation updates do not re-evaluate MDX or replace in-progress edits.
   useEffect(() => {
-    if (exposed)
-      frameRef.current?.contentWindow?.postMessage(
-        { kind: "appearance", session, ...appearance },
-        "*",
-      );
+    if (exposed) portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
   }, [appearance, exposed, readyTick, session]);
   useEffect(() => {
-    if (exposed)
-      frameRef.current?.contentWindow?.postMessage(
-        { kind: "reading-preferences", session, preferences: reading },
-        "*",
-      );
+    if (exposed) portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading });
   }, [reading, exposed, readyTick, session]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
@@ -572,7 +594,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       return range ? [{ id: mark.id, from: range.from, to: range.to, active: mark.active }] : [];
     });
     const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks: marks.slice(0, 1000) };
-    frameRef.current?.contentWindow?.postMessage(message, "*");
+    portRef.current?.postMessage(message);
   }, [commentReports, commentMarks, commentSource, exposed, readyTick, session]);
 
   useEffect(() => {
@@ -580,12 +602,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     apiRef.current = {
       revealRange(from, to, focus) {
         const frame = frameRef.current;
+        const port = portRef.current;
         const current = authority.current;
         const range = current ? fluidRangeForSource(current, from, to) : null;
-        if (!frame?.contentWindow || !current || !range) return;
+        if (!frame || !port || !current || !range) return;
         // The frame can take the keyboard only once the page gives it to the frame.
         if (focus) frame.focus();
-        frame.contentWindow.postMessage({ kind: "comment-reveal", session, revision: current.revision, from: range.from, to: range.to, focus }, "*");
+        port.postMessage({ kind: "comment-reveal", session, revision: current.revision, from: range.from, to: range.to, focus });
       },
     };
     return () => {
@@ -608,20 +631,19 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       }
     };
     const onMessage = (event: MessageEvent) => {
-      // Unrelated windows (extensions, sibling frames, the opener) are
-      // ignored silently: a phantom "rejected frame" error for traffic that
-      // was never ours would be noise. Forged edits from the KNOWN frame
+      // Only the current frame's port: anything still arriving on a replaced
+      // frame's port is dropped silently. Forged edits from the KNOWN frame
       // still fail the checks below and are rejected visibly.
-      const expectedSource = frameRef.current?.contentWindow;
-      if (event.source !== expectedSource || expectedSource == null) return;
+      const port = portRef.current;
+      if (event.currentTarget !== port || port == null) return;
       const settle = (draftId: number | undefined, outcome: 'noop' | 'rejected', reason?: string) => {
         if (draftId === undefined) return;
-        expectedSource.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason }, '*');
+        port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason });
       };
       const checked = checkChildMessage({
         data: event.data,
-        source: event.source,
-        expectedSource,
+        source: event.currentTarget,
+        expectedSource: port,
         session,
         revision: authority.current?.revision ?? -1,
       });
@@ -667,15 +689,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       const message = checked.message;
-      // The frame announcing readiness gets the current render reposted so
-      // no compiled document is lost to the load race.
-      if (message.kind === "ready") {
-        frameReady.current = true;
-        setFrameDoc((current) => (current.ready ? current : { ...current, ready: true }));
-        sentModules.current.clear();
-        setReadyTick((tick) => tick + 1);
-        return;
-      }
+      // Ready is the handshake, a window post answered with this port (above).
+      if (message.kind === "ready") return;
       // Charts or code highlighting, the first time the note shows them.
       if (message.kind === "load-module") {
         const name = message.name;
@@ -688,7 +703,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             return { error: `This part of the preview could not load: ${error instanceof Error ? error.message : String(error)}`.slice(0, 2000) };
           },
         ).then((answer) => {
-          if (frameRef.current?.contentWindow === expectedSource) expectedSource.postMessage({ kind: "module", session, name, ...answer }, "*");
+          if (portRef.current === port) port.postMessage({ kind: "module", session, name, ...answer });
         });
         return;
       }
@@ -1129,8 +1144,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         settle(message.draftId, 'rejected', reason);
       }
     };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    onPortMessage.current = onMessage;
+    return () => {
+      onPortMessage.current = null;
+    };
   }, [
     allowedResourcePaths,
     availableResourcePaths,

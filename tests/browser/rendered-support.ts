@@ -15,7 +15,9 @@ declare global {
   interface Window {
     frameMessages: FrameMessage[]
     /** When enabled, the frame's edit transactions are held back from the editor. */
-    transactionGate: { enabled: boolean; held: MessageEvent[] }
+    transactionGate: { enabled: boolean; held: { port: MessagePort; data: unknown }[] }
+    /** In the frame: the port the page gave it, to hear what the page sends. */
+    pagePort?: MessagePort
   }
 }
 
@@ -29,23 +31,30 @@ export async function openHarness(page: Page, query = ""): Promise<string[]> {
   page.on("pageerror", (error) => errors.push(error.message))
   await page.addInitScript(() => {
     window.frameMessages = []
-    // Registered before any app code, so it runs before the editor's listener.
     window.transactionGate = { enabled: false, held: [] }
-    window.addEventListener(
-      "message",
-      (event) => {
-        if (!window.transactionGate.enabled || event.data?.kind !== "fluid-transaction") return
-        event.stopImmediatePropagation()
-        window.transactionGate.held.push(event)
-      },
-      true,
-    )
-    window.addEventListener("message", (event) => {
-      if (![...document.querySelectorAll("iframe")].some((frame) => frame.contentWindow === event.source)) return
-      const data = event.data
-      if (data && typeof data.kind === "string") {
-        window.frameMessages.push({ kind: data.kind, session: data.session, revision: data.revision, pending: data.pending })
+    // The frame speaks on the port the editor gives it: listen on every
+    // channel the page makes, ahead of the editor, which listens after.
+    const Channel = window.MessageChannel
+    window.MessageChannel = class extends Channel {
+      constructor() {
+        super()
+        const port = this.port1
+        port.addEventListener("message", (event) => {
+          const data = event.data
+          if (window.transactionGate.enabled && data?.kind === "fluid-transaction") {
+            event.stopImmediatePropagation()
+            window.transactionGate.held.push({ port, data })
+            return
+          }
+          if (data && typeof data.kind === "string") {
+            window.frameMessages.push({ kind: data.kind, session: data.session, revision: data.revision, pending: data.pending })
+          }
+        })
       }
+    }
+    // In the frame: keep the port the page gives it.
+    window.addEventListener("message", (event) => {
+      if (event.data?.kind === "connect" && event.ports[0]) window.pagePort = event.ports[0]
     })
   })
   await page.goto(`${RENDERED_URL}${query}`)
@@ -145,18 +154,7 @@ export async function releaseTransactions(page: Page) {
   return page.evaluate(() => {
     window.transactionGate.enabled = false
     const held = window.transactionGate.held.splice(0)
-    for (const event of held) {
-      // Chromium ignores an event dispatched a second time, so send a copy;
-      // Firefox cannot copy one whose source is an opaque frame, so it gets
-      // the original again.
-      let copy: MessageEvent | null = null
-      try {
-        copy = new MessageEvent("message", { data: event.data, origin: event.origin, source: event.source })
-      } catch {
-        copy = null
-      }
-      window.dispatchEvent(copy ?? event)
-    }
+    for (const { port, data } of held) port.dispatchEvent(new MessageEvent("message", { data }))
     return held.length
   })
 }

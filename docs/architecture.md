@@ -922,13 +922,19 @@ MDX's `run()` evaluates compiled code with `new Function`; no network
 opaque origin, so an error in them reports its message.
 
 The iframe has `sandbox="allow-scripts"` only, so the page's origin is opaque:
-nothing it stores is shared with another note or project. Messages use
-`postMessage` with target `*` both ways (an opaque origin cannot be named as
-a target) and each side checks `event.source`; the frame is given nothing a
-component in it could not already see. A frame that loads a second time has
-navigated itself (a note's code, or a link): the app stops posting to it and
-puts a new frame in its place, or stops the preview, with a notice, when it
-happens again within seconds.
+nothing it stores is shared with another note or project. The frame says it
+is ready with `postMessage` (target `*`: an opaque origin cannot be named as
+a target), and the app, checking `event.source`, answers that first ready,
+once, with a window post carrying one `MessageChannel` port and nothing else.
+Every message after that handshake, both ways, goes over the channel, so it
+is bound to the frame's first document: a port stays with the document it
+was transferred to, and a page the frame navigates to has the frame's window
+but not its port, so it is sent nothing and the app hears nothing from it,
+even when it never finishes loading. The frame is given nothing a component
+in it could not already see. A frame that loads a second time has navigated
+itself (a note's code, or a link): the app closes its port and puts a new
+frame in its place, or stops the preview, with a notice, when it happens
+again within seconds.
 
 The app's build names the domain in `VITE_SANDBOX_ORIGIN` (set in
 `deploy-app.yml`). Without it (local dev, the browser tests, a self-host that

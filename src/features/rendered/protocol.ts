@@ -5,8 +5,11 @@
  * the frame's page on the sandbox domain (worker/sandbox.ts gives it this
  * policy, with its own folder's scripts), or a self-contained `srcdoc`
  * document (inline bootstrap, no network).
- * Every message is checked for sender (event.source), session, revision and
- * Zod shape. Stale revisions are rejected visibly, never applied.
+ * The frame says `ready` with a window post and the parent answers with one
+ * MessagePort (`connect`); every other message, both ways, goes over that
+ * port. Every message is checked for sender (the port, or event.source for
+ * the handshake), session, revision and Zod shape. Stale revisions are
+ * rejected visibly, never applied.
  *
  * This module also owns the small context-aware prop-literal codec shared by
  * the parent validator and the child editors. It stays free of the MDX
@@ -387,6 +390,34 @@ export const parentMessageSchema = z.union([
 
 export type ParentMessage = z.infer<typeof parentMessageSchema>;
 
+/**
+ * Parent -> child, once, as a window post: the answer to the frame's first
+ * `ready`, carrying one MessagePort and nothing else. Every other message,
+ * both ways, goes over that port. A port stays with the document it was
+ * transferred to, so a page the frame navigates to (which the parent's
+ * reference to the frame's window cannot tell apart from the frame) can
+ * never receive or send on it, even one that never finishes loading.
+ */
+export const connectMessageSchema = z.strictObject({ kind: z.literal("connect") });
+export type ConnectMessage = z.infer<typeof connectMessageSchema>;
+
+/**
+ * In the child: the parent's port, when this is the parent's `connect`: from
+ * the embedding window, that exact shape, exactly one port, and only while
+ * the frame has none. Anything else is null.
+ */
+export function checkConnectMessage<Port>(args: {
+  data: unknown;
+  source: unknown;
+  parent: unknown;
+  ports: readonly Port[];
+  connected: boolean;
+}): Port | null {
+  if (args.connected || args.source == null || args.source !== args.parent) return null;
+  if (!connectMessageSchema.safeParse(args.data).success || args.ports.length !== 1) return null;
+  return args.ports[0] ?? null;
+}
+
 /** Where something is in the frame's viewport, in CSS pixels, for the parent to place a control by it. */
 const frameRectSchema = z.strictObject({
   top: z.number(),
@@ -642,8 +673,9 @@ export type CheckResult =
   { ok: true; message: ChildMessage } | { ok: false; error: string };
 
 /**
- * Validate a child message in the parent: sender must be the known frame,
- * session must match, revision must equal the current document revision
+ * Validate a child message in the parent: sender must be the known frame
+ * (its port, or its window for the `ready` handshake), session must match,
+ * revision must equal the current document revision
  * (stale renders can never overwrite a newer document), and the shape must
  * validate. Returns the parsed message or a visible error string.
  */
@@ -682,8 +714,8 @@ export function checkChildMessage(args: {
 }
 
 /**
- * Validate a parent message in the child: it must come from the embedding
- * window, match the active session once initialised, and validate by shape.
+ * Validate a parent message in the child: it must come on the parent's port
+ * (`source`), match the active session once initialised, and validate by shape.
  * The first accepted render message initialises the session. A resources
  * message never initialises a session: pixels without a document render
  * are ignored.

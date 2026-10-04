@@ -223,7 +223,7 @@ test.describe("MDX documents", () => {
       .evaluate(() => {
         const trace = ((window as unknown as { resets: number }).resets = 0)
         void trace
-        window.addEventListener("message", (event) => {
+        window.pagePort!.addEventListener("message", (event) => {
           if (event.data?.kind === "render" && event.data.fluid?.reset) (window as unknown as { resets: number }).resets++
         })
       })
