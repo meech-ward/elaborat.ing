@@ -297,7 +297,9 @@ person, never an agent), and `count_agent_changes` counts the changes above
 it for the project's button. Opening the view marks everything up to then
 seen; a comment's "Changed in version n" opens it at that change, loading
 the page that starts there rather than every page before it. Revert saves the previous
-version's content as a new version through the app's normal save, only over
+version's content as a new version through the app's normal save, and moves
+a file the agent moved back to its previous path (a move, with the old text
+when the agent changed that too), only over
 the agent's version: it waits until this device has that version, stops once
 the file changed again, and a change on the server not yet on the device
 stops at the usual conflict. The view is

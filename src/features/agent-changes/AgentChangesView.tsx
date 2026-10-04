@@ -41,12 +41,15 @@ function actionOf(change: AgentChange): AgentChangeAction {
   return "changed"
 }
 
-/** What Revert does: save the previous version's text again, delete the file, or nothing (the text is the same). */
+/** What Revert does: bring back the previous version's text and path, delete the file, or nothing (neither changed). */
 function revertAction(change: AgentChange): "restore" | "delete" | null {
   if (!change.previous || change.previous.deleted) return "delete"
-  if (!change.deleted && change.previous.same_content) return null
+  if (!change.deleted && change.previous.same_content && change.previous.path === change.path) return null
   return "restore"
 }
+
+/** Revert needs the previous version's text: the agent deleted the file or changed its text. */
+const restoresText = (change: AgentChange) => change.deleted || !change.previous?.same_content
 
 /** The change shows a diff: a text file the agent changed or created. */
 function showsDiff(change: AgentChange): boolean {
@@ -244,9 +247,9 @@ export function AgentChangesView({
     setReverting(key)
     const say = (text: string, done: boolean) => setResults((current) => new Map(current).set(key, { text, done }))
     try {
-      // The text Revert saves: the version before, from its diff when that loaded (none: Revert deletes the file).
+      // The text Revert saves: the version before, from its diff when that loaded (none: Revert deletes the file, or only moves it back).
       let content: string | null = null
-      if (action === "restore") {
+      if (action === "restore" && restoresText(change)) {
         const diff = diffs.get(key)
         content =
           diff?.status === "ready" ? diff.before : ((await store.remote.contents(store.projectId, change.file_id, change.version, true)).previous?.content ?? null)
@@ -257,17 +260,23 @@ export function AgentChangesView({
       const blocked = revertBlocked(change, local, false)
       if (blocked) return say(`Not reverted: ${blocked.toLowerCase()}.`, false)
       const before = change.previous?.version
-      if (content === null) {
+      // Where the file was before the agent's change.
+      const path = change.previous?.path ?? change.path
+      if (action === "delete") {
         // The agent created the file: reverting deletes it.
         if (!local?.revision) return say(`Not reverted: ${change.path} is not on this device.`, false)
         await workspace.save([{ kind: "delete", path: local.path, expectedRevision: local.revision }])
         say(`Reverted: ${local.path} is deleted, as it was before.`, true)
-      } else if (local?.revision) {
+      } else if (local?.revision && local.path !== path) {
+        // The agent moved the file: it moves back, with the version before's text when the agent changed that too.
+        if (listed.some((file) => file.path === path)) return say(`Not reverted: another file is at ${path} now.`, false)
+        await workspace.save([{ kind: "move", from: local.path, to: path, expectedRevision: local.revision, ...(content === null ? {} : { content }) }])
+        say(content === null ? `Reverted: the file is back at ${path}.` : `Reverted: the file is back at ${path}, with version ${before}'s text.`, true)
+      } else if (local?.revision && content !== null) {
         await workspace.write(local.path, { content, expectedRevision: local.revision })
         say(`Reverted: version ${before}'s text is saved as a new version.`, true)
-      } else {
+      } else if (content !== null) {
         // The agent deleted the file: it comes back where it was.
-        const path = change.previous?.path ?? change.path
         if (listed.some((file) => file.path === path)) return say(`Not reverted: another file is at ${path} now.`, false)
         await workspace.write(path, { content, expectedRevision: null })
         say(`Reverted: ${path} is back, with version ${before}'s text.`, true)

@@ -61,6 +61,31 @@ export class FakeAgentChanges {
     return file
   }
 
+  /** Move `from` to `to` as `user`'s agent, with `content` when the agent changes the text too, recorded as an agent change. */
+  async move(user: string, projectId: string, from: string, to: string, content?: string) {
+    const project = this.server.projects.get(projectId)!
+    const before = project.files.get(from)!
+    const result = await this.server
+      .remote(user)
+      .saveFiles(projectId, crypto.randomUUID(), [{ op: "move", path: from, to, base_version: before.version, ...(content === undefined ? {} : { content }) }])
+    if (result.status !== "saved") throw new Error(`The agent's move of ${from} was refused`)
+    const file = project.files.get(to)!
+    this.changes.push({
+      projectId,
+      file_id: file.id,
+      version: file.version,
+      path: to,
+      deleted: false,
+      content: file.content,
+      created_at: new Date().toISOString(),
+      author: user,
+      agent: "Claude",
+      previous: { version: before.version, path: before.path, deleted: false, content: before.content },
+      thread: null,
+    })
+    return file
+  }
+
   call(user: string, rpc: string, args: Args): unknown {
     if (this.server.offline) throw new RemoteError("network", "Failed to fetch")
     const projectId = String(args.project_id)

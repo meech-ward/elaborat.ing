@@ -101,6 +101,41 @@ test("Revert waits until this device has the agent's version, and stops once the
   expect(fake.server.content(id, "notes/plan.md")).toBe(BEFORE)
 })
 
+test("Revert moves a file the agent moved back to where it was, with the text before when the agent changed that too", async ({ page }) => {
+  const server = new FakeProjectServer()
+  const id = crypto.randomUUID()
+  const owner = server.remote(person.id)
+  await owner.createProject(id, "Plans")
+  await owner.saveFiles(id, crypto.randomUUID(), [
+    { op: "put", path: "notes/plan.md", content: BEFORE },
+    { op: "put", path: "todo.md", content: "- [ ] Ship\n" },
+  ])
+  const fake = await fakeSupabase(page, { server })
+  // The agent moves and edits one file (version 2), and only moves the other (version 3).
+  await fake.agentChanges.move(person.id, id, "notes/plan.md", "plans/next.md", AFTER)
+  await fake.agentChanges.move(person.id, id, "todo.md", "notes/todo.md")
+  await signedIn(page)
+  await page.goto(projectUrl(id))
+  await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+  const saves = () => fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).map((request) => request.postDataJSON().changes)
+
+  await page.getByRole("button", { name: "Agent changes, 2 new" }).click()
+  const edited = view(page).getByRole("article", { name: "Claude for person@example.com: plans/next.md changed" })
+  const moved = view(page).getByRole("article", { name: "Claude for person@example.com: notes/todo.md moved from todo.md" })
+
+  await edited.getByRole("button", { name: "Revert" }).click()
+  await expect(edited.getByRole("status")).toHaveText("Reverted: the file is back at notes/plan.md, with version 1's text.")
+  await expect.poll(() => fake.server.content(id, "notes/plan.md")).toBe(BEFORE)
+  expect(fake.server.content(id, "plans/next.md")).toBeUndefined()
+  // Through the normal save, as one move based on the agent's version.
+  expect(saves()).toEqual([[{ op: "move", path: "plans/next.md", to: "notes/plan.md", content: BEFORE, base_version: 2 }]])
+
+  await moved.getByRole("button", { name: "Revert" }).click()
+  await expect(moved.getByRole("status")).toHaveText("Reverted: the file is back at todo.md.")
+  await expect.poll(() => fake.server.content(id, "todo.md")).toBe("- [ ] Ship\n")
+  expect(saves().at(-1)).toEqual([{ op: "move", path: "notes/todo.md", to: "todo.md", base_version: 3 }])
+})
+
 test("the list comes without contents: a change's diff loads when it is shown", async ({ page }) => {
   const { fake, id } = await openProject(page)
   await fake.agentChanges.save(person.id, id, "notes/plan.md", "# Plan\n\nShip the comments panel first, by Thursday.\n")
