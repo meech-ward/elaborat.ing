@@ -5,7 +5,9 @@
   // Worker, so the app's own files stay plain static assets: the Worker
   // (worker/sandbox.ts) runs for every request here, serves only the frame's
   // files from ./dist-sandbox (written by `bun run build`) and 404s the rest.
-  // Deploy: wrangler deploy --config wrangler.sandbox.jsonc
+  // Deploy: bun scripts/keep-frame-versions.ts <this domain's origin>, which
+  // keeps the last few frame versions, then
+  // wrangler deploy --config wrangler.sandbox.jsonc
   "name": "elaborating-sandbox",
   "main": "worker/sandbox.ts",
   "compatibility_date": "2026-09-01",

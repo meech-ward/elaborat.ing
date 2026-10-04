@@ -272,9 +272,11 @@ serves only the frame's files from `dist-sandbox/` (`worker/sandbox.ts` adds
 the frame's Content Security Policy and 404s every other path). Set its
 `routes` to your sandbox domain (a second custom domain, on a zone in the same
 account) and `vars.FRAME_ANCESTORS` to your app's origin, then deploy it
-before the app:
+before the app. The first command keeps the last few versions of the frame
+that the domain serves now, for tabs still on an earlier version of the app:
 
 ```sh
+bun scripts/keep-frame-versions.ts https://<your sandbox domain>
 bunx wrangler deploy --config wrangler.sandbox.jsonc
 ```
 
@@ -358,7 +360,8 @@ What runs when:
 - **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand:
   builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your
   publishable key and `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain
-  (`wrangler.sandbox.jsonc`) when that is set, then runs `wrangler deploy`.
+  (`wrangler.sandbox.jsonc`, keeping its last few frame versions) when that
+  is set, then runs `wrangler deploy`.
   The workflow sets `VITE_SANDBOX_ORIGIN` to the hosted instance's sandbox
   domain: change it to yours, or empty it to keep the `srcdoc` frame and skip
   that deploy.

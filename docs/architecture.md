@@ -912,10 +912,11 @@ the frame's styles and fonts inline), that script as `frame.js`, and a file for
 each heavy part (below). The hash is of the files' contents, so a page never
 mixes versions and every file is cached for a year; the app's build names the
 folder. A second Worker (`wrangler.sandbox.jsonc`, `worker/sandbox.ts`, see
-Frontend hosting) serves that folder on the sandbox domain, and every other
-path there is not found. The page's Content Security Policy is a response
-header: scripts only from the page's own folder, plus `'unsafe-eval'`, since
-MDX's `run()` evaluates compiled code with `new Function`; no network
+Frontend hosting) serves that folder, and the last few before it, on the
+sandbox domain, and every other path there is not found. The page's Content
+Security Policy is a response header: scripts only from the page's own
+folder, plus `'unsafe-eval'`, since MDX's `run()` evaluates compiled code
+with `new Function`; no network
 (`connect-src 'none'`); images and fonts from `data:` only; inline styles; and
 `frame-ancestors https://elaborat.ing`, nothing else. Its files are sent with
 `X-Content-Type-Options: nosniff`, no cookies, and
@@ -953,10 +954,11 @@ all; the frame stays hidden behind a loading line until then, and later notes
 in that tab start with the `srcdoc`. The app is offline-first and its service
 worker cannot serve another origin's page, so this keeps notes rendering
 offline: the `srcdoc` and the parts it asks for are precached. A deploy
-replaces the sandbox domain's files, so a tab still on the previous version
-uses the `srcdoc` until it updates. A `srcdoc` document inherits the parent
-page's CSP, so any CSP added to `public/_headers` must allow the frame's
-inline script, `'unsafe-eval'` and `data:` fonts, or that frame goes blank.
+keeps the last five versions of the frame's page (Frontend hosting), so a tab
+on an older version than that uses the `srcdoc` until it updates. A `srcdoc`
+document inherits the parent page's CSP, so any CSP added to
+`public/_headers` must allow the frame's inline script, `'unsafe-eval'` and
+`data:` fonts, or that frame goes blank.
 
 **Decision: the frame's heavy parts load the first time a note shows them.**
 Charts (Recharts) and code highlighting (Shiki and its grammars) are most of
@@ -1078,6 +1080,18 @@ those requests are billed (on the free plan, refused past its limit). As a
 Worker of its own it runs first for every request on the sandbox domain only,
 and the app's files stay plain static assets. `deploy-app.yml` deploys it
 before the app, so the page the new app names is there when it goes live.
+
+**Decision: the sandbox domain keeps the last five frame versions.** A
+Workers deploy serves only the assets it uploads, so a tab still on the
+previous app version would find its frame folder gone. The build lists its
+folder and files in `dist-sandbox/frame/versions.json`, which the Worker
+serves. Before deploying, `scripts/keep-frame-versions.ts`
+(`vite-plugins/frame-versions.ts`) reads that list from the live domain and
+copies up to four earlier folders back into `dist-sandbox/`, newest first,
+each only when its files still hash to its folder's name (they are cached as
+never changing), then lists them after this build's. Five versions bound the
+assets. A version it cannot copy is left out with a warning, and the deploy
+goes ahead: those tabs use the `srcdoc` frame.
 
 The build only needs public values (the Supabase URL and publishable key, and
 the sandbox domain's origin).

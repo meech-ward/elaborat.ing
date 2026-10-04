@@ -4,11 +4,18 @@ import { handleSandbox, sandboxCsp } from "./sandbox";
 
 const HOST = "https://usercontent.test";
 const FOLDER = "/frame/0123456789abcdef/";
+/** A version before this build's, which the deploy kept. */
+const EARLIER = "/frame/1111222233334444/";
 const files: Record<string, { body: string; type: string }> = {
   [FOLDER]: { body: "<!doctype html><title>frame</title>", type: "text/html; charset=utf-8" },
   [`${FOLDER}frame.js`]: { body: "frame()", type: "application/javascript" },
   [`${FOLDER}charts.js`]: { body: "charts()", type: "application/javascript" },
   [`${FOLDER}highlighter.js`]: { body: "highlighter()", type: "application/javascript" },
+  [EARLIER]: { body: "<!doctype html><title>earlier frame</title>", type: "text/html; charset=utf-8" },
+  [`${EARLIER}frame.js`]: { body: "earlierFrame()", type: "application/javascript" },
+  [`${EARLIER}charts.js`]: { body: "earlierCharts()", type: "application/javascript" },
+  [`${EARLIER}highlighter.js`]: { body: "earlierHighlighter()", type: "application/javascript" },
+  "/frame/versions.json": { body: '{"versions":[]}', type: "application/json" },
   // In the assets, but not one of the frame's files.
   "/": { body: "app", type: "text/html" },
   [`${FOLDER}index.html`]: { body: "page", type: "text/html" },
@@ -94,9 +101,37 @@ describe("the sandbox domain", () => {
     expect((await get(FOLDER, { method: "POST", body: "x" })).status).toBe(404);
   });
 
+  test("an earlier version the deploy kept is served with the same headers as this build's, scripts from its own folder", async () => {
+    const { get } = sandbox();
+    for (const name of ["", "frame.js", "charts.js", "highlighter.js"]) {
+      const current = await get(`${FOLDER}${name}`, { headers: { Origin: "null" } });
+      const earlier = await get(`${EARLIER}${name}`, { headers: { Origin: "null" } });
+      expect(earlier.status, name).toBe(200);
+      expect(await earlier.text()).toBe(files[`${EARLIER}${name}`].body);
+      const policy = (response: Response) => directives(response.headers.get("Content-Security-Policy"));
+      expect(policy(earlier)["script-src"]).toBe(`${HOST}${EARLIER} 'unsafe-eval'`);
+      expect({ ...policy(earlier), "script-src": "" }).toEqual({ ...policy(current), "script-src": "" });
+      const rest = (response: Response) => [...response.headers].filter(([header]) => header !== "content-security-policy");
+      expect(rest(earlier)).toEqual(rest(current));
+    }
+  });
+
   test("a version this deploy does not have is not found", async () => {
     const { get } = sandbox();
     expect((await get("/frame/fedcba9876543210/")).status).toBe(404);
+    expect((await get("/frame/fedcba9876543210/frame.js")).status).toBe(404);
+  });
+
+  test("lists its versions for the next deploy, always revalidated", async () => {
+    const { get } = sandbox();
+    const response = await get("/frame/versions.json");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('{"versions":[]}');
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    expect(response.headers.get("Cache-Control")).toBe("no-cache");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(directives(response.headers.get("Content-Security-Policy"))["connect-src"]).toBe("'none'");
+    expect((await get("/frame/versions.json", { method: "POST", body: "x" })).status).toBe(404);
   });
 
   test("without a valid app origin, no page may frame it", async () => {

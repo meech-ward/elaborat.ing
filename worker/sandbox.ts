@@ -4,9 +4,11 @@
  * isolation). The page runs a note's code, so it lives on a registrable
  * domain of its own, away from the app's.
  *
- * Its files are this build's `frame/<hash>/` folder in dist-sandbox/
- * (vite-plugins/preview-frame.ts): the page, its script and its modules.
- * Every other path is not found. Every response carries the frame's policy:
+ * Its files are in dist-sandbox/: this build's `frame/<hash>/` folder
+ * (vite-plugins/preview-frame.ts), with the page, its script and its modules,
+ * the last few folders before it, and their list, frame/versions.json, which
+ * the next deploy reads to keep them (vite-plugins/frame-versions.ts). Every
+ * other path is not found. Every response carries the frame's policy:
  * scripts only from the page's own folder (plus eval, which MDX's `run()`
  * needs), no network, `data:` images and fonts, and framing only by the app
  * (`FRAME_ANCESTORS`). The files allow any origin, since the frame's own
@@ -21,6 +23,8 @@ export interface SandboxEnv {
 
 /** The frame's files: the page (its folder), its script and its modules. */
 const FRAME_FILE = /^\/frame\/([0-9a-f]{16})\/(?:|frame\.js|charts\.js|highlighter\.js)$/;
+/** The versions this deploy serves, newest first. */
+const VERSIONS = "/frame/versions.json";
 
 /**
  * The frame's policy for a page in `folder` (an absolute URL ending in `/`).
@@ -54,14 +58,16 @@ function ancestors(value: string | undefined): string {
 
 export async function handleSandbox(request: Request, env: SandboxEnv): Promise<Response> {
   const url = new URL(request.url);
-  const file = request.method === "GET" || request.method === "HEAD" ? FRAME_FILE.exec(url.pathname) : null;
+  const read = request.method === "GET" || request.method === "HEAD";
+  const file = read ? FRAME_FILE.exec(url.pathname) : null;
+  const list = read && url.pathname === VERSIONS;
   const folder = file ? `${url.origin}/frame/${file[1]}/` : `${url.origin}/frame/`;
   const headers = new Headers({
     "Content-Security-Policy": sandboxCsp(folder, ancestors(env.FRAME_ANCESTORS)),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
   });
-  if (!file) {
+  if (!file && !list) {
     headers.set("Content-Type", "text/plain; charset=utf-8");
     return new Response("Not found", { status: 404, headers });
   }
@@ -73,6 +79,11 @@ export async function handleSandbox(request: Request, env: SandboxEnv): Promise<
   for (const name of ["Content-Type", "ETag", "Last-Modified"]) {
     const value = response.headers.get(name);
     if (value) headers.set(name, value);
+  }
+  if (list) {
+    // The list changes with every deploy.
+    headers.set("Cache-Control", "no-cache");
+    return new Response(response.body, { status: response.status, headers });
   }
   // The folder is named after its contents, so a file never changes.
   headers.set("Cache-Control", "public, max-age=31536000, immutable");

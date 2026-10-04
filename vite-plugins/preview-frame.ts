@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
@@ -7,6 +6,7 @@ import react from "@vitejs/plugin-react"
 import { build, type Plugin } from "vite"
 import { FRAME_MODULES, FRAME_SHARED, type FrameModuleName } from "../src/preview/frameModuleList.ts"
 import type { frameHtml } from "../src/preview/frameHtml.ts"
+import { pageFolder, writeFrameVersions } from "./frame-versions.ts"
 
 // The rendered view evaluates document code only inside an opaque-origin
 // iframe (sandbox="allow-scripts", no network), so the frame's script and
@@ -145,13 +145,6 @@ function moduleFile(name: FrameModuleName, code: string): string {
   return `elaboratingFrameModule(${JSON.stringify(name)},function(require,module,exports){\n${code}\n});\n`
 }
 
-/** The folder for a set of frame files: `frame/` and 16 hex digits of their SHA-256. */
-function pageFolder(files: Record<string, string>): string {
-  const hash = createHash("sha256")
-  for (const name of Object.keys(files).sort()) hash.update(`${name}\0${files[name]}\0`)
-  return `frame/${hash.digest("hex").slice(0, 16)}/`
-}
-
 /**
  * Add the frame's package sections ("## name - version (license)") that the
  * app's notices do not already have.
@@ -213,8 +206,9 @@ export function previewFrame(options: { sandboxDir?: string } = {}): Plugin {
       page = null
       this.environment.hot.send({ type: "full-reload" })
     },
-    // The frame's page for a sandbox domain, in a folder of its own: only this
-    // build's version, so a deploy serves the frame the app it ships with names.
+    // The frame's page for a sandbox domain, in a folder of its own: this
+    // build's version, listed in frame/versions.json. A deploy adds the last
+    // few versions before it (vite-plugins/frame-versions.ts).
     async writeBundle() {
       if (!options.sandboxDir || !building || this.environment.name !== "client") return
       const { folder, files } = await sandboxPage()
@@ -222,6 +216,7 @@ export function previewFrame(options: { sandboxDir?: string } = {}): Plugin {
       const dir = path.join(options.sandboxDir, folder)
       mkdirSync(dir, { recursive: true })
       for (const [name, text] of Object.entries(files)) writeFileSync(path.join(dir, name), text)
+      writeFrameVersions(options.sandboxDir, [{ folder, files: Object.keys(files) }])
     },
     generateBundle: {
       order: "post",
