@@ -135,6 +135,25 @@ test("Ctrl+Z in the rendered prose undoes the same way, newest first, and Ctrl+S
   expect(await saved(page, fake, id)).toBe(NOTE.replace(FIRST, `${FIRST} ONE`))
 })
 
+test("with the code editor loaded and hidden, Ctrl+Z in the rendered prose puts the caret where each undone edit was", async ({ page }) => {
+  await openNote(page)
+  // Source loads once, then hides.
+  await toSource(page)
+  await toRendered(page)
+  await typeAtEnd(page, first(page), " ONE")
+  await typeAtEnd(page, second(page), " TWO")
+  await expect(second(page)).toHaveText(`${SECOND} TWO`)
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(second(page)).toHaveText(SECOND)
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(first(page)).toHaveText(FIRST)
+  // Typing goes where ONE was, not where the code editor's cursor is.
+  await page.keyboard.type(" AGAIN")
+  await expect(first(page)).toHaveText(`${FIRST} AGAIN`)
+  await expect(second(page)).toHaveText(SECOND)
+})
+
 test("a note opened in Rendered edits and undoes without loading the code editor, and Source takes its history over", async ({ page }) => {
   const { fake, id } = await openNote(page)
   // Opened again, the note shows Rendered, the view it was left in.

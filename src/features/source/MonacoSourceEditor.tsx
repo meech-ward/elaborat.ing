@@ -449,8 +449,23 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         // This model's own history. Monaco's "undo" command would instead
         // focus and undo whichever editor was last focused, which steals the
         // keyboard in Split and can reach another open file's editor.
-        if (!editor.getOption(monaco.editor.EditorOption.readOnly))
-          void (direction === "undo" ? model.undo() : model.redo());
+        let changes: monaco.editor.IModelContentChange[] = [];
+        const heard = model.onDidChangeContent((event) => {
+          changes = event.changes;
+        });
+        try {
+          if (!editor.getOption(monaco.editor.EditorOption.readOnly))
+            void (direction === "undo" ? model.undo() : model.redo());
+        } finally {
+          heard.dispose();
+        }
+        // The editor moves its cursor to the undone edit only when it has
+        // focus. Without it (undo from Rendered), the cursor goes after the
+        // first changed text, where the edit was.
+        if (changes.length > 0 && !editor.hasTextFocus()) {
+          const first = changes.reduce((a, b) => (b.rangeOffset < a.rangeOffset ? b : a));
+          editor.setPosition(model.getPositionAt(first.rangeOffset + first.text.length));
+        }
         const selection = editor.getSelection();
         return {
           text: fileText(model),
