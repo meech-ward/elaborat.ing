@@ -2,7 +2,7 @@
 // draft is to the length limit. Pure, so the rules are tested without React.
 
 /** The longest comment the database takes, in characters (code points). */
-export const COMMENT_MAX_LENGTH = 5000
+export const COMMENT_MAX_LENGTH = 100_000
 
 /** The share of the limit from which the composer shows the count. */
 const SHOW_FROM = 0.9

@@ -115,6 +115,9 @@ function ThreadStates() {
         <GuideLabel>Open in the file, replying</GuideLabel>
         <SampleThreadDemo thread={sampleThreads.steps} active defaultReplying />
         <GuideValue>The thread shown in the file takes a 1px accent-line border. Reply opens the composer; sending, Cancel or Escape closes it and gives focus back to Reply.</GuideValue>
+        <GuideLabel>Long comment</GuideLabel>
+        <SampleThreadDemo thread={sampleThreads.report} />
+        <GuideValue>FoldedText: past 12 lines a comment shows folded, with Show more; Show less folds it again. Shorter comments show whole, with no button.</GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Context lines</GuideLabel>
@@ -201,7 +204,7 @@ function ComposerAndMarkers() {
           <CommentComposer label="Comment near the limit" defaultValue={LONG_DRAFT} maxLength={220} onSubmit={noop} onCancel={noop} />
           <CommentComposer label="Comment over the limit" defaultValue={`${LONG_DRAFT} Thanks!`} maxLength={200} onSubmit={noop} onCancel={noop} />
         </div>
-        <GuideValue>The count shows from 90% of the limit, and the key leaves the button to make room; past it the count turns danger with the alert icon, and sending stops. Here the limit is about 200 to fit; comments take 5,000.</GuideValue>
+        <GuideValue>The count shows from 90% of the limit, and the key leaves the button to make room; past it the count turns danger with the alert icon, and sending stops. Here the limit is about 200 to fit; comments take 100,000.</GuideValue>
         <GuideLabel>Failed, and offline</GuideLabel>
         <div className="flex w-full max-w-[300px] flex-col gap-3">
           <FailingComposer />

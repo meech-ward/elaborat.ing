@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(196);
+select plan(197);
 
 -- People, by name. Alice owns the project; Bob is an editor, Carol a
 -- commenter, Dave a viewer and Gina a commenter, all accepted. Erin has a
@@ -748,26 +748,26 @@ select throws_ok(
 );
 select throws_ok(
   $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(90), pg_temp.file('a'), 1, pg_temp.anchor('document'), E' \n ') $$,
-  '22023', 'A comment is 1 to 5000 characters', 'A blank comment is refused'
+  '22023', 'A comment is 1 to 100000 characters', 'A blank comment is refused'
 );
 select throws_ok(
-  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(90), pg_temp.file('a'), 1, pg_temp.anchor('document'), repeat('x', 5001)) $$,
-  '22023', 'A comment is 1 to 5000 characters', 'A comment over 5000 characters is refused'
+  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(90), pg_temp.file('a'), 1, pg_temp.anchor('document'), repeat('x', 100001)) $$,
+  '22023', 'A comment is 1 to 100000 characters', 'A comment over 100000 characters is refused'
 );
 select throws_ok(
   $$ select public.reply_comment(pg_temp.t(3), pg_temp.r(90), '') $$,
-  '22023', 'A comment is 1 to 5000 characters', 'An empty reply is refused'
+  '22023', 'A comment is 1 to 100000 characters', 'An empty reply is refused'
 );
 select throws_ok(
   $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(90), pg_temp.file('other'), 1, pg_temp.anchor('document'), 'Hi') $$,
   '22023', 'No such file in this project', 'A file from another project is refused'
 );
 select lives_ok(
-  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 5000)) $$,
-  'A 5000-character comment is fine'
+  $$ select public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 100000)) $$,
+  'A 100000-character comment is fine'
 );
 select is(
-  public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 5000)) #> '{thread,id}',
+  public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 100000)) #> '{thread,id}',
   to_jsonb(pg_temp.t(7)),
   'Repeating an add returns the thread it made'
 );
@@ -867,7 +867,7 @@ select throws_ok(
   '55000', 'Project is archived', 'No new threads'
 );
 select is(
-  public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 5000)) #> '{thread,id}',
+  public.add_comment(pg_temp.project('P'), pg_temp.t(7), pg_temp.file('b'), 1, pg_temp.anchor('document'), repeat('x', 100000)) #> '{thread,id}',
   to_jsonb(pg_temp.t(7)),
   'but an add from before the archive, repeated, still returns its thread'
 );
@@ -1088,6 +1088,12 @@ select throws_ok(
   '54000', 'A file can have at most 1000 comment threads', 'A file takes at most 1000 threads, resolved or not'
 );
 reset role;
+select throws_ok(
+  $$ insert into public.comments (thread_id, project_id, author_id, body)
+     values (pg_temp.t(2), pg_temp.project('P'), pg_temp.id('alice'), repeat('x', 100001)) $$,
+  '23514', 'new row for relation "comments" violates check constraint "comments_body_valid"',
+  'The table refuses a comment over 100000 characters too'
+);
 insert into public.comments (thread_id, project_id, author_id, body)
 select pg_temp.t(2), pg_temp.project('P'), pg_temp.id('alice'), 'x'
 from generate_series(1, 10000 - (select count(*) from public.comments where project_id = pg_temp.project('P')));

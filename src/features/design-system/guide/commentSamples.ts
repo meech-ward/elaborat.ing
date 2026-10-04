@@ -47,6 +47,27 @@ const mine = (id: string, body: string, minutes: number, extra: Partial<CommentE
 
 export const QUOTE = "How a customer moves from sign-up to their first project"
 
+/** A long comment: a review pasted in whole, which shows folded. */
+const REPORT = [
+  "Review of the sign-up guide, section by section.",
+  "",
+  "Intro: clear, but it says three steps and there are four.",
+  "Sign up: the email link step needs a screenshot.",
+  "Email link: say how long the link lasts (one hour).",
+  "Project: mention that a template can be picked here.",
+  "Invite: link the members page.",
+  "Agents: the setup guide link is broken.",
+  "Pricing: the free plan line can go.",
+  "",
+  "Smaller things:",
+  "- Use the same name for the app everywhere.",
+  "- The arrows in the diagram point the wrong way after step 2.",
+  "- Two headings are both called Steps.",
+  "- The last paragraph repeats the intro.",
+  "",
+  "Happy to make these changes if that helps.",
+].join("\n")
+
 export const sampleThreads = {
   quote: {
     id: "quote",
@@ -131,6 +152,12 @@ export const sampleThreads = {
     comments: [theirs("t1", RAVI, "Tighten the intro to two sentences.", 25)],
     resolved: null,
     askAgent: true,
+  },
+  report: {
+    id: "report",
+    anchor: { kind: "document" },
+    comments: [theirs("r1", MEI, REPORT, 50)],
+    resolved: null,
   },
   gone: {
     id: "gone",

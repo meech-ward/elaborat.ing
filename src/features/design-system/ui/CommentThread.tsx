@@ -19,6 +19,7 @@ import {
   type CommentResolution,
   type CommentsSize,
 } from "./commentTypes"
+import { FoldedText } from "./FoldedText"
 import { IconButton } from "./IconButton"
 
 // A comment thread in the panel: what it is about (its context line), its
@@ -229,9 +230,10 @@ export function DeleteCommentDialog({
 /**
  * One comment: the Avatar (the picture, or the initial in accentSoft; an
  * empty figure for a deleted account), the author's name at 600, when (and
- * "edited"), then the words. An agent's comment is named for the agent and
- * its person ("Claude for Ada"), with the bot icon and the agent badge. A
- * linked version shows under the words. A deleted comment keeps its author
+ * "edited"), then the words, folded past 12 lines with Show more
+ * (FoldedText). An agent's comment is named for the agent and its person
+ * ("Claude for Ada"), with the bot icon and the agent badge. A linked
+ * version shows under the words. A deleted comment keeps its author
  * and time, and says "Comment deleted".
  * Its menu (Edit for its author, Delete for its author and the owner) shows
  * on hover and focus, and always on touch screens. Delete asks first.
@@ -318,9 +320,11 @@ export function CommentItem({
         ) : deleted ? (
           <p className={cn("leading-normal text-dim italic", touch ? "text-[15px]" : "text-[13px]")}>Comment deleted</p>
         ) : (
-          <p className={cn("leading-normal whitespace-pre-wrap text-body [overflow-wrap:anywhere]", touch ? "text-[15px]" : "text-[13px]")}>
-            {comment.body}
-          </p>
+          <FoldedText
+            text={comment.body ?? ""}
+            className={cn("leading-normal whitespace-pre-wrap text-body [overflow-wrap:anywhere]", touch ? "text-[15px]" : "text-[13px]")}
+            toggleClassName={touch ? "text-[14px]" : "text-xs"}
+          />
         )}
         {comment.version && !deleted && !editing ? (
           <p data-slot="comment-version" className={cn("mt-1 flex items-center gap-1.5 text-dim", touch ? "text-[13px]" : "text-xs")}>

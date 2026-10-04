@@ -9,10 +9,10 @@ describe("commentLength", () => {
   })
 
   test("shows the count from 90% of the limit, and refuses a draft over it", () => {
-    expect(commentLength("a".repeat(4499))).toMatchObject({ show: false, sendable: true })
-    expect(commentLength("a".repeat(4500))).toMatchObject({ show: true, over: false, sendable: true })
+    expect(commentLength("a".repeat(89_999))).toMatchObject({ show: false, sendable: true })
+    expect(commentLength("a".repeat(90_000))).toMatchObject({ show: true, over: false, sendable: true })
     expect(commentLength("a".repeat(COMMENT_MAX_LENGTH))).toMatchObject({ show: true, over: false, sendable: true })
-    expect(commentLength("a".repeat(COMMENT_MAX_LENGTH + 1))).toMatchObject({ count: 5001, show: true, over: true, sendable: false })
+    expect(commentLength("a".repeat(COMMENT_MAX_LENGTH + 1))).toMatchObject({ count: 100_001, show: true, over: true, sendable: false })
   })
 
   test("counts characters as the database does: an emoji is one", () => {

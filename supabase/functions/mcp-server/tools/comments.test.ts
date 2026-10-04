@@ -328,7 +328,7 @@ Deno.test('add_comment refuses mixed anchors before any call', async () => {
     assertEquals(errorText(result), message)
     assertEquals(calls, [])
   }
-  const invalid = [{ body: '' }, { body: 'x'.repeat(5001) }, { element_id: 'box', point: { x: 2, y: 0 } }]
+  const invalid = [{ body: '' }, { body: 'x'.repeat(100_001) }, { element_id: 'box', point: { x: 2, y: 0 } }]
   for (const args of invalid) {
     const { result, calls } = await callTool('add_comment', { project_id: PROJECT, path: 'sketch.excalidraw', body: 'Look', ...args })
     assert(result.isError, JSON.stringify(args))
@@ -561,6 +561,15 @@ Deno.test('reply_comment sends a new comment id', async () => {
   assertMatch(String(comment_id), UUID)
   assertEquals(rest, { thread_id: THREAD, body: 'Done' })
   assertEquals((result.structuredContent as { comment: { comment_id: string; body: string } }).comment.body, 'Done')
+})
+
+Deno.test('reply_comment takes a comment of 100,000 characters, and refuses a longer one', async () => {
+  const reply_comment = (args: Record<string, unknown>) => ({ data: { revision: 3, comment: comment(String(args.body), { id: args.comment_id }) }, error: null })
+  const long = await callTool('reply_comment', { thread_id: THREAD, body: 'x'.repeat(100_000) }, { reply_comment })
+  assertEquals(rpcCalls(long.calls).length, 1)
+  const over = await callTool('reply_comment', { thread_id: THREAD, body: 'x'.repeat(100_001) }, { reply_comment })
+  assert(over.result.isError)
+  assertEquals(over.calls, [])
 })
 
 Deno.test('resolve_comment resolves, or reopens with resolved false', async () => {

@@ -405,7 +405,8 @@ approach Hypothesis uses, rather than anything custom.
 **Decision: the database and agent side** (`supabase/schemas/comments.sql`,
 `src/features/comments/`, the MCP comment tools). The editor's comment panel
 (`src/features/comments/ui/`) shows a file's threads beside a note, drawing or
-diagram, with pins on the canvas for drawing and diagram elements.
+diagram, with pins on the canvas for drawing and diagram elements. A comment
+longer than 12 lines shows folded, with Show more.
 
 - **Two tables.** `comment_threads` holds a thread's anchor, its file and
   whether it is resolved; `comments` holds the opening comment and every
@@ -626,7 +627,7 @@ Limits that were there already, kept as they are:
 - **Per search:** a query of 1 to 500 characters and at most 30 passages.
 - **Comments** (errcode `54000` for the caps): at most 1,000 threads a file
   and 10,000 comments a project, resolved threads, deleted files' threads and
-  placeholders included. A comment is 1 to 5,000 characters, a quoted
+  placeholders included. A comment is 1 to 100,000 characters, a quoted
   selection at most 5,000, with 32 characters of context on each side, and an
   element's label at most 200.
 - **Per API read:** at most 1,000 rows (`max_rows` in `config.toml`).

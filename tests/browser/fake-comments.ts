@@ -43,7 +43,7 @@ type Comment = {
 
 type Args = Record<string, unknown>
 
-const MAX_BODY = 5000
+const MAX_BODY = 100_000
 const ANCHOR_KEYS: Record<string, string[]> = {
   document: ["kind"],
   text: ["kind", "quote", "position"],
@@ -188,7 +188,7 @@ export class FakeComments {
 
   private checkBody(body: unknown): string {
     if (typeof body !== "string" || body.length < 1 || body.length > MAX_BODY || !/\S/.test(body)) {
-      throw new RemoteError("invalid", "A comment is 1 to 5000 characters")
+      throw new RemoteError("invalid", "A comment is 1 to 100000 characters")
     }
     return body
   }

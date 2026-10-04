@@ -145,7 +145,7 @@ function presentComment(comment: RemoteComment) {
 }
 
 const threadId = z.uuid().describe('The thread id, from list_comments.')
-const body = z.string().min(1).max(5000).describe('The comment, 1 to 5000 characters.')
+const body = z.string().min(1).max(100_000).describe('The comment, 1 to 100,000 characters.')
 
 export function registerCommentTools(server: McpServer, { supabase }: ToolContext): void {
   const readFile = async (project: string, file: string): Promise<SavedFile | null> => {

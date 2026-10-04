@@ -187,11 +187,11 @@ create table public.comments (
   deleted_at timestamptz,
   file_version bigint,
   constraint comments_deleted_has_no_body check ((deleted_at is null) = (body is not null)),
-  -- Not `between 1 and 5000`: next to another `and`, Postgres stores that
+  -- Not `between 1 and 100000`: next to another `and`, Postgres stores that
   -- nested, but the migration generated from it is stored flat, so
   -- regenerating migrations would always report a change.
   constraint comments_body_valid
-    check (body is null or (char_length(body) >= 1 and char_length(body) <= 5000 and body ~ '\S')),
+    check (body is null or (char_length(body) >= 1 and char_length(body) <= 100000 and body ~ '\S')),
   constraint comments_agent_client_id_length check (agent_client_id is null or char_length(agent_client_id) <= 255),
   constraint comments_file_version_positive check (file_version is null or file_version > 0)
 );
@@ -278,7 +278,7 @@ $$;
 revoke all on function private.comment_project(uuid) from public, anon;
 grant execute on function private.comment_project(uuid) to authenticated;
 
--- A comment body: 1 to 5000 characters, not all blank.
+-- A comment body: 1 to 100000 characters, not all blank.
 create function private.check_comment_body(body text)
 returns void
 language plpgsql
@@ -287,8 +287,8 @@ set search_path = ''
 as $$
 begin
   if check_comment_body.body is null or char_length(check_comment_body.body) < 1
-    or char_length(check_comment_body.body) > 5000 or check_comment_body.body !~ '\S' then
-    raise exception 'A comment is 1 to 5000 characters' using errcode = '22023';
+    or char_length(check_comment_body.body) > 100000 or check_comment_body.body !~ '\S' then
+    raise exception 'A comment is 1 to 100000 characters' using errcode = '22023';
   end if;
 end;
 $$;

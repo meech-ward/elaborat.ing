@@ -19,7 +19,7 @@ function sendShortcut(apple: boolean) {
  * Where a comment is written: a new thread, a reply, or an edit. The shadcn
  * Textarea (the field's fill, radius 9, growing with its text), then Cancel
  * and the send button with its key, ⌘↵ or Ctrl ↵, which also sends from
- * the field; Escape cancels. The count shows from 90% of the limit (5,000)
+ * the field; Escape cancels. The count shows from 90% of the limit (100,000)
  * and turns to the danger colour, with the alert icon, past it, when
  * sending is refused; while it shows, the button drops its key chip.
  *

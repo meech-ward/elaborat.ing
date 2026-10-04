@@ -146,6 +146,38 @@ test("a whole note comment is added, replied to, resolved, reopened, edited and 
   expect(fake.comments.threads.length).toBe(0)
 })
 
+test("a pasted 100,000-character report sends, shows folded, and Show more opens it", async ({ page }) => {
+  const { fake } = await openNote(page, { comments: ["Short and whole."] })
+  await toggle(page).click()
+  await expect(panel(page).getByText("Short and whole.")).toBeVisible()
+  await expect(panel(page).getByRole("button", { name: "Show more" })).toHaveCount(0)
+
+  // Exactly the limit: lines of 25 characters, cut at 100,000.
+  const report = Array.from({ length: 3847 }, (_, n) => `Line ${String(n + 1).padStart(5, "0")} of the report.`).join("\n").slice(0, 100_000)
+  await panel(page).getByRole("button", { name: "Comment on the whole note" }).first().click()
+  const field = panel(page).getByRole("textbox", { name: "New comment" })
+  await field.fill(report)
+  await expect(panel(page).getByText("100,000 / 100,000")).toBeVisible()
+  await field.press("ControlOrMeta+Enter")
+  await expect.poll(() => fake.comments.comments.at(-1)?.body?.length).toBe(100_000)
+
+  // It shows its first 12 lines (13px at 1.5), with Show more.
+  const long = thread(page, "Comments on Whole note").filter({ hasText: "Line 00001 of the report." })
+  const words = long.getByRole("paragraph").filter({ hasText: "Line 00001 of the report." })
+  const more = long.getByRole("button", { name: "Show more" })
+  await expect(more).toHaveAttribute("aria-expanded", "false")
+  const folded = (await words.boundingBox())!.height
+  expect(folded).toBeLessThanOrEqual(12 * 19.5 + 1)
+  await more.click()
+  const less = long.getByRole("button", { name: "Show less" })
+  await expect(less).toHaveAttribute("aria-expanded", "true")
+  await expect.poll(async () => (await words.boundingBox())!.height).toBeGreaterThan(folded * 100)
+  // Show less folds it again, and brings its button back into view.
+  await less.click()
+  await expect(more).toBeInViewport()
+  await expect.poll(async () => (await words.boundingBox())!.height).toBe(folded)
+})
+
 test("an empty reply field closes when a comment in its thread is deleted; one with words stays", async ({ page }) => {
   const { fake, id } = await openNote(page)
   await toggle(page).click()
