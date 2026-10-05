@@ -79,6 +79,8 @@ for (const kind of kinds) {
     const opened = await tabs()
     await fromMenu(page, kind.item)
     const field = nameField(page, kind.noun)
+    // The field takes the keyboard once the menu has closed.
+    await expect(field).toBeFocused()
     await page.keyboard.type(kind.name)
     await page.keyboard.press("Enter")
     await expect(page.getByRole("alert").filter({ hasText: `${kind.path} already exists here. Choose another name.` })).toBeVisible()

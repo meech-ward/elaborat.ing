@@ -86,8 +86,10 @@ test("an edit in the rendered view saves to the same file", async ({ page }) => 
   await page.keyboard.press("End")
   await page.keyboard.type(" More.")
   await expect(frame.locator("p").filter({ hasText: /^First paragraph\. More\.$/ })).toBeVisible()
-  // The menu shows the actions as they were when it opened, so open it once the edit has arrived.
+  // The menu shows the actions as they were when it opened, so open it once
+  // the edit has finished arriving: Save is enabled then.
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled()
   await page.getByRole("button", { name: "File actions" }).click()
   await page.getByRole("menuitem", { name: "Save" }).click()
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph. More.\n")

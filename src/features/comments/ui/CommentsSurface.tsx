@@ -128,6 +128,8 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
   useEffect(() => {
     shown.current = { open, setOpen }
   })
+  // What had focus when the key showed the panel, until the panel has shown.
+  const focusFrom = useRef<{ from: Element | null } | null>(null)
   useEffect(() => {
     const apple = isApplePlatform()
     const onKey = (event: KeyboardEvent) => {
@@ -136,25 +138,27 @@ export function CommentsSurface({ compact, className }: { compact: boolean; clas
       event.preventDefault()
       const { open: wasOpen, setOpen: change } = shown.current
       const inside = document.activeElement?.closest(SURFACE)
+      focusFrom.current = wasOpen ? null : { from: document.activeElement }
       change(!wasOpen)
-      if (wasOpen) {
-        if (inside) document.querySelector<HTMLElement>(TOGGLE)?.focus()
-        return
-      }
-      // The panel takes the keyboard once it shows, after its chunk if the
-      // key came first, unless the person has moved focus on by then.
-      const from = document.activeElement
-      surfaceView.load().then(
-        () =>
-          afterRender(() => {
-            if (document.activeElement === from || document.activeElement === document.body) document.querySelector<HTMLElement>(SURFACE)?.focus()
-          }),
-        () => {},
-      )
+      if (wasOpen && inside) document.querySelector<HTMLElement>(TOGGLE)?.focus()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
+  // The panel takes the keyboard once it has shown, after its chunk if the
+  // key came first, unless the person has moved focus on by then.
+  useEffect(() => {
+    if (!open) {
+      focusFrom.current = null
+      return
+    }
+    const request = focusFrom.current
+    if (!module || !request) return
+    focusFrom.current = null
+    afterRender(() => {
+      if (document.activeElement === request.from || document.activeElement === document.body) document.querySelector<HTMLElement>(SURFACE)?.focus()
+    })
+  }, [open, module])
 
   if (module) {
     const { CommentsSurfaceView } = module

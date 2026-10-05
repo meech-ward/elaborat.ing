@@ -69,6 +69,8 @@ test("a forgotten password: the reset email is sent, and its link opens a page t
   await page.goto(new URL("sign-in", APP_URL).href)
   await page.getByRole("button", { name: "Use a password instead" }).click()
   await page.getByRole("link", { name: "Forgot your password?" }).click()
+  // Sign-in stays on screen until the reset page's code has arrived, and it has an Email field too.
+  await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible()
   await page.getByLabel("Email", { exact: true }).fill(person.email)
   await page.getByRole("button", { name: "Send reset email" }).click()
   await expect(page.getByRole("status")).toHaveText(`If ${person.email} has an account, we sent it a link to choose a new password. It works once, for one hour.`)
