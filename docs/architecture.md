@@ -116,7 +116,9 @@ supabase/
 project (`.github/workflows/deploy-supabase.yml`): `supabase functions deploy
 --use-api`, then `supabase db push`, then `supabase config diff` and `supabase
 config push`. It works on every plan, and self-hosters can run the same steps
-from their own fork.
+from their own fork. Like the app deploy, it runs only after CI passes on
+`main`, on the commit CI checked, so a failing build never ships half a
+release; every step is safe to repeat.
 
 - **No `supabase link`.** Linking reads the project's API keys, which needs a
   token that can see every secret key. Each command takes `--project-ref`

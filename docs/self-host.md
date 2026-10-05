@@ -352,9 +352,9 @@ What runs when:
 
 - **CI** (`ci.yml`) on every push: build, typecheck, lint, unit tests, browser
   tests, the migrations check and the Edge Function checks.
-- **Deploy Supabase** (`deploy-supabase.yml`) on a push to `main` that changes
-  `supabase/` or the workflow: functions, `db push`, then `config diff` and
-  `config push`. Run it by hand from the Actions tab for the first deploy; a
+- **Deploy Supabase** (`deploy-supabase.yml`) after CI passes on `main`, on
+  the commit CI checked: functions, `db push`, then `config diff` and
+  `config push` (each safe to repeat). Run it by hand from the Actions tab for the first deploy; a
   hand run pushes the config only when you tick "Push config.toml after
   showing the diff".
 - **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand:

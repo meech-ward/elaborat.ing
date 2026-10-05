@@ -5,13 +5,16 @@ name: Deploy Supabase
 # See docs/architecture.md, Deploys. Forks skip it until they set the
 # SUPABASE_PROJECT_ID variable.
 #
-# Runs on every push to main that changes supabase/ or this file, and by hand,
-# where pushing config is a choice: config push is not atomic, so a diff can be
-# read first.
+# Runs once CI has passed on main, on the commit CI checked (like Deploy app),
+# so a failing build never ships half a release; every step is safe to repeat
+# (functions redeploy, db push applies only new migrations, config push only
+# changes). Also by hand, where pushing config is a choice: config push is not
+# atomic, so a diff can be read first.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths: ["supabase/**", ".github/workflows/deploy-supabase.yml"]
   workflow_dispatch:
     inputs:
       push_config:
@@ -32,7 +35,7 @@ env:
 jobs:
   # Scoped token: Edge Functions Read-write and Connection Pooling Read.
   deploy:
-    if: vars.SUPABASE_PROJECT_ID != ''
+    if: vars.SUPABASE_PROJECT_ID != '' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_DEPLOY_TOKEN }}
@@ -47,6 +50,9 @@ jobs:
           test -n "$SUPABASE_DB_PASSWORD" || { echo "::error::SUPABASE_DB_PASSWORD is not set"; exit 1; }
           test -n "$ELABORATING_EMBED_SECRET_KEY" || { echo "::error::EMBED_SECRET_KEY is not set"; exit 1; }
       - uses: actions/checkout@v5
+        with:
+          # The commit CI passed on, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
@@ -81,19 +87,22 @@ jobs:
           test -n "$SES_SMTP_USER" || { echo "::error::SES_SMTP_USER is not set"; exit 1; }
           test -n "$SES_SMTP_PASSWORD" || { echo "::error::SES_SMTP_PASSWORD is not set"; exit 1; }
       - uses: actions/checkout@v5
+        with:
+          # The commit CI passed on, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
       - run: supabase config diff --project-ref "$SUPABASE_PROJECT_ID"
       # Without --yes, a run with no terminal skips everything and still passes.
-      - if: github.event_name == 'push' || inputs.push_config
+      - if: github.event_name == 'workflow_run' || inputs.push_config
         shell: bash
         run: |
           supabase config push --yes --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | tee push.log
           ! grep -q "credential value was not pushed" push.log
       # config push (CLI 2.118.0) does not send [auth.passkey] or [auth.webauthn],
       # so the same values from config.toml go through the Management API.
-      - if: github.event_name == 'push' || inputs.push_config
+      - if: github.event_name == 'workflow_run' || inputs.push_config
         name: Push passkey settings
         shell: bash
         run: |
