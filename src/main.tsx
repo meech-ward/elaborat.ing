@@ -10,8 +10,13 @@ import { loadEmbedRoot } from "./features/embed/load"
 import "./index.css"
 
 // /embed opened on its own, outside a panel: the same page on the site, and nothing starts here.
+// Only ever a page on this site: anywhere else, the site's home.
 const leaving = embedded && !framed()
-if (leaving) window.location.replace(`${sitePath(window.location.pathname)}${window.location.search}${window.location.hash}`)
+if (leaving) {
+  const { origin, pathname, search, hash } = window.location
+  const target = new URL(`${sitePath(pathname)}${search}${hash}`, origin)
+  window.location.replace(target.origin === origin ? target.href : "/")
+}
 
 configureExcalidrawAssets()
 

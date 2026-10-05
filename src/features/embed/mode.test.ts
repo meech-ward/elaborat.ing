@@ -54,6 +54,13 @@ describe("embed paths", () => {
     expect(sitePath("/sign-in")).toBe("/sign-in")
   })
 
+  test("stay on this site when the path after /embed starts with more slashes", () => {
+    expect(sitePath("/embed//evil.com")).toBe("/evil.com")
+    expect(sitePath("/embed///evil.com")).toBe("/evil.com")
+    expect(sitePath("/embed//evil.com/x")).toBe("/evil.com/x")
+    expect(new URL(sitePath("/embed//evil.com"), "https://site.test").origin).toBe("https://site.test")
+  })
+
   test("take light or dark from ?theme=, and nothing else", () => {
     expect(requestedScheme("?theme=dark")).toBe("dark")
     expect(requestedScheme("?x=1&theme=light")).toBe("light")

@@ -13,9 +13,12 @@ export function isEmbedPath(pathname: string): boolean {
   return pathname === EMBED_BASE || pathname.startsWith(`${EMBED_BASE}/`)
 }
 
-/** The same page on the site, outside the panel: /embed/projects/x is /projects/x. */
+/**
+ * The same page on the site, outside the panel: /embed/projects/x is /projects/x.
+ * Always one leading slash, so /embed//host stays a path on this site.
+ */
 export function sitePath(pathname: string): string {
-  return isEmbedPath(pathname) ? pathname.slice(EMBED_BASE.length) || "/" : pathname
+  return isEmbedPath(pathname) ? `/${pathname.slice(EMBED_BASE.length).replace(/^\/+/, "")}` : pathname
 }
 
 /** True when this page is the app in a panel. */
