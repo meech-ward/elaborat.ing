@@ -1,4 +1,5 @@
 import type { Page, Request, Route, WebSocketRoute } from "@playwright/test"
+import { randomBytes } from "node:crypto"
 import { accountName } from "../../src/features/auth/accountName.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
@@ -89,6 +90,8 @@ export type FakeSupabase = {
   signal(projectId: string, revision: number): void
   /** The Realtime topics the page has left, such as `realtime:project:<id>`. */
   left: string[]
+  /** A new pass for the app in a chat's panel, as the MCP server mints one for `person`; redeem_panel_pass takes it once. */
+  mintPanelPass(): string
 }
 
 const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "account-limit": 429, "path-taken": 409, invalid: 400, unavailable: 403 }
@@ -103,6 +106,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
   // The person's user metadata, which Settings changes (their name).
   let metadata: Record<string, unknown> = { ...person.user_metadata }
   const me = () => ({ ...person, user_metadata: metadata })
+  const panelPasses = new Set<string>()
   const fake: FakeSupabase = {
     server,
     comments: new FakeComments(server),
@@ -114,6 +118,11 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     offline: false,
     accountDeleted: false,
     left: [],
+    mintPanelPass() {
+      const pass = randomBytes(32).toString("hex")
+      panelPasses.add(pass)
+      return pass
+    },
     signal(projectId, revision) {
       for (const socket of sockets) {
         socket.send(JSON.stringify([null, null, `realtime:project:${projectId}`, "broadcast", { type: "broadcast", event: "changed", payload: { revision } }]))
@@ -283,6 +292,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     const rpc = /^\/rest\/v1\/rpc\/([a-z_]+)$/.exec(path)?.[1]
     if (rpc) {
       const body = request.postDataJSON() ?? {}
+      if (rpc === "redeem_panel_pass") return json(route, typeof body.pass === "string" && panelPasses.delete(body.pass))
       if (rpc === "list_projects") return answer(route, () => remote.listProjects())
       if (rpc === "create_project") return answer(route, () => remote.createProject(body.project_id, body.title))
       if (rpc === "rename_project") return answer(route, () => remote.renameProject(body.project_id, body.title))

@@ -54,9 +54,14 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
     if (hints.readOnlyHint) assertEquals(hints.destructiveHint, false, `${tool.name} reads only, yet destroys`)
   }
   for (const name of DESTRUCTIVE) assert(tools.some((tool) => tool.name === name), `${name} is not a tool`)
-  // open_panel only shows the app beside the chat.
+  // open_panel only shows the app beside the chat. The pass it mints for its
+  // view is a short-lived row of the server's own, not the person's data, so
+  // it stays read-only: a host may ask before running a tool that is not.
   const panel = tools.find((tool) => tool.name === 'open_panel')
   assertEquals(panel?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+  // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
+  const pass = tools.find((tool) => tool.name === 'panel_pass')
+  assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
 })
 
 Deno.test('whoami is the account profile: exactly id, name and email, as structured content and JSON text', async () => {

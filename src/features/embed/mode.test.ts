@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { projectHref } from "@/features/navigation/location"
-import { EMBED_BASE, isEmbedPath, requestedScheme, sitePath } from "./mode"
+import { EMBED_BASE, isEmbedPath, passFromHash, requestedScheme, sitePath } from "./mode"
 
 // The app in a chat's panel runs under /embed as the router's basepath: the
 // href the app reads (useLocation's) and the hrefs it navigates to stay
@@ -66,5 +66,15 @@ describe("embed paths", () => {
     expect(requestedScheme("?x=1&theme=light")).toBe("light")
     expect(requestedScheme("?theme=blue")).toBeNull()
     expect(requestedScheme("")).toBeNull()
+  })
+
+  test("take the panel's pass from the fragment: 64 lowercase hex characters, and nothing else", () => {
+    const pass = "0123456789abcdef".repeat(4)
+    expect(passFromHash(`#pass=${pass}`)).toBe(pass)
+    expect(passFromHash(`#x=1&pass=${pass}`)).toBe(pass)
+    expect(passFromHash(`#pass=${pass.toUpperCase()}`)).toBeNull()
+    expect(passFromHash(`#pass=${pass}0`)).toBeNull()
+    expect(passFromHash("#pass=")).toBeNull()
+    expect(passFromHash("")).toBeNull()
   })
 })

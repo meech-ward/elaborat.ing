@@ -13,13 +13,20 @@ import type { ToolContext } from './types.ts'
 // app in a panel (src/features/embed), which keeps a sign-in of its own and
 // updates through the app's own sync. The app's site decides who may frame it
 // (EMBED_FRAME_ANCESTORS in wrangler.jsonc); when it may not be framed here
-// the view says so, with the origins to allow and a link to the site.
+// the view says so, with the origins to allow and a link to the site. Each
+// page the view frames carries a one-time pass in its fragment (#pass=), minted
+// here as the person (mint_panel_pass), which the app redeems before it shows
+// any project: open_panel's result has one for the first page, and the view
+// asks panel_pass for each one after. A pass is only ever in `_meta`, which
+// reaches the view and not the model.
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v1.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v2.html'
 /** The result `_meta` key holding the app's page to frame, such as /embed/projects/<id>. `_meta` reaches the view, not the model. */
 export const PANEL_META_KEY = 'elaborat.ing/embed'
+/** The result `_meta` key holding a one-time pass for the page the view frames. */
+export const PANEL_PASS_KEY = 'elaborat.ing/pass'
 
 const APP_ORIGIN = 'https://elaborat.ing'
 
@@ -77,10 +84,15 @@ const SCRIPT = String.raw`
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var EMBED_PATH = new RegExp("^/embed(?:/projects/" + UUID + "(?:/[^?#]*)?)?$", "i");
   var APP_PATH = new RegExp("^/(?:projects/" + UUID + "(?:/[^?#]*)?)?$", "i");
+  var PASS = /^[0-9a-f]{64}$/;
   var frame = document.getElementById("app");
   var fallback = document.getElementById("fallback");
-  var nextId = 1, pending = {}, initialized = false, ready = false, readyTimer = null;
+  var nextId = 1, pending = {}, initialized = false, ready = false, readyTimer = null, serverTools = false;
   var theme = null, metaPath = null, deepPath = null, shown = null, blocked = false, inline = true, maxHeight = null;
+  // The result's pass, for the first page; spent passes; which page load is current; whether it asked for a new pass.
+  var metaPass = null, spent = {}, loads = 0, retried = false;
+  // Whether the tool's result has arrived, or the view stopped waiting for it.
+  var resultSeen = false, waitTimer = null;
 
   function post(message) { window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*"); }
   function request(method, params) {
@@ -89,6 +101,11 @@ const SCRIPT = String.raw`
     return new Promise(function (resolve, reject) { pending[id] = { resolve: resolve, reject: reject }; });
   }
   function notify(method, params) { post({ method: method, params: params || {} }); }
+  function callTool(name, args) {
+    var openai = window.openai;
+    if (serverTools || !openai || typeof openai.callTool !== "function") return request("tools/call", { name: name, arguments: args });
+    return openai.callTool(name, args);
+  }
 
   // Where this view sits: its own origin, then the pages around it. The app's
   // site lets the view frame it once these are its allowed ancestors.
@@ -111,22 +128,58 @@ const SCRIPT = String.raw`
     if (metaPath && metaPath !== "/embed") return metaPath;
     return deepPath || metaPath || "/embed";
   }
-  function show() {
+  // A pass for the next page: the result's, once, then a new one from panel_pass (null when there is none).
+  function takePass() {
+    if (metaPass) {
+      var pass = metaPass;
+      metaPass = null;
+      spent[pass] = true;
+      return Promise.resolve(pass);
+    }
+    return Promise.resolve().then(function () { return callTool("panel_pass", {}); }).then(function (result) {
+      var pass = result && result._meta && result._meta["elaborat.ing/pass"];
+      return typeof pass === "string" && PASS.test(pass) ? pass : null;
+    }, function () { return null; });
+  }
+  // Each page the view frames is a new frame, so even a page that differs only in its pass loads again.
+  function load(url) {
+    var next = frame.cloneNode(false);
+    next.src = url;
+    frame.parentNode.replaceChild(next, frame);
+    frame = next;
+  }
+  // again: the app asked for a new pass, so the same page opens again with one.
+  function show(again) {
     if (!initialized || blocked) return;
+    // The result names the page and carries its pass: wait a moment for it before framing anything.
+    if (!resultSeen) {
+      if (!waitTimer) waitTimer = setTimeout(function () { resultSeen = true; show(); }, 2000);
+      return;
+    }
     var path = target();
-    if (path === shown) return;
+    if (path === shown && !again) return;
+    if (path !== shown) retried = false;
     shown = path;
     ready = false;
-    frame.hidden = false;
-    fallback.hidden = true;
-    frame.src = APP + path + (theme ? "?theme=" + encodeURIComponent(theme) : "");
     clearTimeout(readyTimer);
-    readyTimer = setTimeout(function () { if (!ready) showFallback(); }, 10000);
+    var current = ++loads;
+    takePass().then(function (pass) {
+      if (current !== loads) return;
+      fallback.hidden = true;
+      load(APP + path + (theme ? "?theme=" + encodeURIComponent(theme) : "") + (pass ? "#pass=" + pass : ""));
+      frame.hidden = false;
+      readyTimer = setTimeout(function () { if (!ready) showFallback(); }, 10000);
+    });
   }
 
   function readMeta(meta) {
-    var value = meta && meta["elaborat.ing/embed"];
-    if (typeof value === "string" && EMBED_PATH.test(value)) { metaPath = value; show(); }
+    if (!meta || typeof meta !== "object") return;
+    var pass = meta["elaborat.ing/pass"];
+    if (typeof pass === "string" && PASS.test(pass) && !spent[pass]) metaPass = pass;
+    var value = meta["elaborat.ing/embed"];
+    if (typeof value === "string" && EMBED_PATH.test(value)) metaPath = value;
+    resultSeen = true;
+    show();
   }
   function readDeepLink(link) {
     var url = link && typeof link.url === "string" ? link.url : null;
@@ -170,6 +223,10 @@ const SCRIPT = String.raw`
         if (theme) frame.contentWindow.postMessage({ type: "elaborating-embed:theme", theme: theme }, APP);
       } else if (data.type === "elaborating-embed:open" && typeof data.url === "string" && data.url.indexOf(APP + "/") === 0) {
         openLink(data.url);
+      } else if (data.type === "elaborating-embed:pass" && !retried) {
+        // The page had no pass that works (one already used, say, when the chat shows the view again): one new one.
+        retried = true;
+        show(true);
       }
       return;
     }
@@ -181,7 +238,7 @@ const SCRIPT = String.raw`
       if (data.error) waiting.reject(data.error); else waiting.resolve(data.result);
       return;
     }
-    if (data.method === "ui/notifications/tool-result") readMeta(data.params && data.params._meta);
+    if (data.method === "ui/notifications/tool-result") readMeta((data.params && data.params._meta) || {});
     else if (data.method === "ui/notifications/host-context-changed") readContext(data.params);
     else if (data.id !== undefined) {
       if (data.method === "ping" || data.method === "ui/resource-teardown") post({ id: data.id, result: {} });
@@ -202,6 +259,7 @@ const SCRIPT = String.raw`
     protocolVersion: "2026-01-26",
   }).then(function (result) {
     result = result || {};
+    serverTools = !!(result.hostCapabilities && result.hostCapabilities.serverTools);
     notify("ui/notifications/initialized");
     initialized = true;
     readMeta(window.openai && window.openai.toolResponseMetadata);
@@ -241,6 +299,14 @@ export const PANEL_VIEW_HTML = `<!doctype html>
 `
 
 export function registerPanel(server: McpServer, { supabase }: ToolContext): void {
+  /** A new one-time pass for the app in the panel, minted as the person. */
+  const mintPass = async (): Promise<string> => {
+    const { data, error } = await supabase.rpc('mint_panel_pass')
+    if (error) throw error
+    if (typeof data !== 'string' || !/^[0-9a-f]{64}$/.test(data)) throw new Error('No pass for the panel')
+    return data
+  }
+
   server.registerResource(
     'panel_view',
     PANEL_VIEW_URI,
@@ -289,8 +355,29 @@ export function registerPanel(server: McpServer, { supabase }: ToolContext): voi
         return {
           content: [{ type: 'text', text: `Opened ${title} beside the chat.` }],
           structuredContent: { url },
-          _meta: { [PANEL_META_KEY]: appPath === '/' ? '/embed' : `/embed${appPath}` },
+          _meta: { [PANEL_META_KEY]: appPath === '/' ? '/embed' : `/embed${appPath}`, [PANEL_PASS_KEY]: await mintPass() },
         }
+      } catch (error) {
+        return runtimeErrorResult(error)
+      }
+    }
+  )
+
+  // For the view only (the model never sees it): a new pass each time the
+  // view frames a page after the first. It adds a short-lived row and changes
+  // nothing of the person's, so it is neither read-only nor destructive.
+  server.registerTool(
+    'panel_pass',
+    {
+      title: 'Panel pass',
+      description: 'Used by the Projects panel itself: a one-time pass that lets it open elaborat.ing. Not for use in a conversation.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
+    },
+    async () => {
+      try {
+        return { content: [{ type: 'text', text: 'A new pass for the panel.' }], _meta: { [PANEL_PASS_KEY]: await mintPass() } }
       } catch (error) {
         return runtimeErrorResult(error)
       }

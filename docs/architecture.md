@@ -665,11 +665,13 @@ the signed challenge and sends one sample event. Each step writes one JSON log
 line. The view declares the panel's widget domain (`openai/widgetDomain`
 `https://elaborat.ing`) and shows its own origin at the top, to check whether
 another server claiming that domain gets the panel's origin, which the panel's
-`frame-ancestors` will trust. `/embed-probe` reports its ancestors, storage,
-service worker and session, and offers sign-in with an emailed code. Its
-framing test is done: like every other page it now sends `X-Frame-Options:
-DENY`, and it posts nothing to other windows. The production server's tools
-are unchanged.
+`frame-ancestors` will trust. The panel no longer depends on the answer: a
+page framed there shows nothing of an account without a pass from this
+site's own MCP server (Frontend hosting). `/embed-probe` reports its
+ancestors, storage, service worker and session, and offers sign-in with an
+emailed code. Its framing test is done: like every other page it now sends
+`X-Frame-Options: DENY`, and it posts nothing to other windows. The
+production server's tools are unchanged.
 
 - **Tools mirror the app's operations:** list projects and invitations, list
   and read files, write one file or a batch with the expected versions, move,
@@ -860,9 +862,21 @@ are unchanged.
   under Details, its own origin and its ancestors: the line to set as
   `EMBED_FRAME_ANCESTORS` (Frontend hosting). The app in the panel keeps a
   sign-in of its own (the host partitions its storage under the chat's site)
-  and updates through the app's own Realtime sync when an agent saves. The
-  `EMBED_VIEW_ENABLED` function secret set to `false` removes the tool and
-  its view, leaving the tool list and resources as they were; it is on
+  and updates through the app's own Realtime sync when an agent saves. Each
+  page the view frames carries a one-time pass in its fragment
+  (`#pass=<64 hex characters>`, never the query string): `open_panel`'s
+  result has one in `_meta` (`elaborat.ing/pass`, which reaches the view and
+  not the model; never in `structuredContent` or the text), and the view asks
+  `panel_pass` for a new one for each page after that, or once when the app
+  says its pass did not work (a view shown again holds a used pass). The view
+  waits up to 2 seconds for the result before it frames anything, so the
+  first page uses the result's pass. `panel_pass` is for the view only
+  (`ui.visibility: ["app"]`) and has no view of its own; it adds a short-lived
+  row, so it is not read-only, and changes nothing of the person's, so it is
+  not destructive. `open_panel` stays read-only: it only opens the app, and a
+  host may ask before it runs a tool that is not. The
+  `EMBED_VIEW_ENABLED` function secret set to `false` removes both tools and
+  the view, leaving the tool list and resources as they were; it is on
   otherwise. `show_file` and every other tool are unchanged.
 - **Pin versions.** Keep the block's code as Supabase ships it (a `pipeline`
   of `withOAuthProtectedResource` and `withSupabase`), pin exact versions, and
@@ -1187,9 +1201,38 @@ wildcard, a path or anything else, the policy is `'none'`. frame-ancestors
 checks every ancestor, so the list holds the panel view's origin, the origins
 it shows as its ancestors, and `https://chatgpt.com`; the panel's view shows
 that line when it cannot open. Until it is set the browser refuses every
-framed `/embed`, so no signed-in page shows in any frame, and the app does no
-check of its own. The service worker never answers `/embed` (it is in
-`navigateFallbackDenylist`), and in the panel none registers.
+framed `/embed`, so no signed-in page shows in any frame. The service worker
+never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
+panel none registers.
+
+**Decision: the app in a panel also needs a pass only this site's server
+issues.** `frame-ancestors` is the first line of defence. The panel's
+origin comes from the widget domain the server declares, and the app does not
+rely on how a host assigns it. Inside a chat, the browser keeps this site's
+storage under the chat's site, so a session made in the panel is there for
+any frame of `/embed` under that site. So the app shows nothing of an account
+until it has a pass, the second line. The MCP server mints one with the
+person's own token (`mint_panel_pass`, `supabase/schemas/panel_passes.sql`):
+32 random bytes, kept only as a SHA-256 hash, good for 5 minutes and one use,
+at most 10 per person (minting drops expired and used ones, and the oldest
+past 10). The app reads `#pass=` when it starts and removes it from the
+address at once (`src/features/embed/mode.ts`). Signed in, it redeems the
+pass (`redeem_panel_pass`) before it reads any project: the database says
+true only for a pass that exists, has not expired or been used, and belongs
+to the caller, and only for the person's own session, not an agent's token,
+and marks it used; every other case is the same false. Without a pass that
+works, the panel shows only "Open this from elaborat.ing in your ChatGPT
+sidebar." with Open in elaborat.ing, never the projects or a workbench, and
+asks the view, once, for a new pass. Signed out, it shows the sign-in form
+(what is typed there never reaches the page around it) and redeems the pass
+right after sign-in. A pass is good for one page load: reloaded without one,
+the page shows the placeholder, and the view mints a new one when it shows
+the page again. Minting needs the person's token for this site, and a pass
+goes only to this server's own view, in `_meta`. A pass is for the account
+the chat connected, so a panel signed in to another account shows the
+placeholder. Any of the person's own sessions or connected agents can mint a
+pass for them, which opens nothing they cannot already read. Offline, a pass
+cannot be redeemed, so the panel shows no saved projects there.
 
 In the app, embed mode is decided once at start (`src/features/embed/mode.ts`):
 opened on its own, `/embed/...` goes to the same page on the site; framed,

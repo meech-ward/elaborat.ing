@@ -1,16 +1,22 @@
 import { expect, test, type Page } from "@playwright/test"
-import { fakeSupabase, otpCode, person, session } from "./fake-supabase.ts"
+import { fakeSupabase, otpCode, person, quiet, session, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL, HARNESS_URL } from "./urls.ts"
 
 // The app in a chat's panel: APP_URL/embed framed by a page on another
 // origin (the harness's), as a chat's view frames it, against the stand-in
-// Supabase. The page records the messages the app sends it.
+// Supabase. The page records the messages the app sends it. The view puts a
+// pass from the MCP server in the address (#pass=), which the app redeems
+// before it shows any project; `fake.mintPanelPass()` stands in for the server.
 
 test.describe.configure({ timeout: 60_000 })
 
 const APP = new URL(APP_URL).origin
 
 type Message = { origin: string; data: { type?: string; url?: string } }
+
+/** The project data the app reads: every database request except redeeming a pass. */
+const projectReads = (fake: FakeSupabase) =>
+  fake.requests.map((request) => new URL(request.url()).pathname).filter((path) => path.startsWith("/rest/v1/") && path !== "/rest/v1/rpc/redeem_panel_pass")
 
 /**
  * Open the panel's parent page, which frames `path` of the app. It is the
@@ -44,8 +50,8 @@ async function signedInPanel(page: Page) {
 }
 
 test("signed out, the panel signs in with an emailed code or a password, and offers no passkey or provider", async ({ page }) => {
-  await fakeSupabase(page, { passkeys: true, providers: { github: true, google: true } })
-  const app = await openPanel(page, "embed")
+  const fake = await fakeSupabase(page, { passkeys: true, providers: { github: true, google: true } })
+  const app = await openPanel(page, `embed#pass=${fake.mintPanelPass()}`)
 
   await expect(app.getByRole("heading", { name: "Sign in" })).toBeVisible()
   await expect(app.getByText("This panel keeps its own sign-in.")).toBeVisible()
@@ -67,6 +73,7 @@ test("signed out, the panel signs in with an emailed code or a password, and off
   await expect(app.getByText(`Check ${person.email} for a code and enter it here.`, { exact: false })).toBeVisible()
   await app.getByLabel("Code from the email").fill(otpCode)
   await app.getByRole("button", { name: "Sign in with the code" }).click()
+  // Signed in, the page redeems its pass and shows the projects.
   await expect(app.getByRole("heading", { name: "Your projects" })).toBeVisible()
 })
 
@@ -82,11 +89,13 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
     nativeDialogs.push(dialog.message())
     void dialog.dismiss().catch(() => {})
   })
-  const app = await openPanel(page, "embed?theme=dark")
+  const app = await openPanel(page, `embed?theme=dark#pass=${fake.mintPanelPass()}`)
   const html = page.frame({ url: (url) => url.origin === APP })!
 
   // ?theme=dark, then the view's theme message.
   await expect(app.getByRole("heading", { name: "Your projects" })).toBeVisible()
+  // The pass left the address as soon as the page read it.
+  expect(new URL(html.url()).hash).toBe("")
   expect(await html.evaluate(() => document.documentElement.dataset.scheme)).toBe("dark")
   expect(await html.evaluate(() => document.documentElement.hasAttribute("data-embed"))).toBe(true)
   // Project management is on the site: no import and no project menu here.
@@ -133,9 +142,51 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   expect(nativeDialogs).toEqual([])
 })
 
-test("opened on its own, /embed goes to the same page on the site", async ({ page }) => {
+const LOCKED = "Open this from elaborat.ing in your ChatGPT sidebar."
+
+test("signed in, without a pass that works the panel shows only a way to the site, and reads no project", async ({ page }) => {
+  const fake = await fakeSupabase(page)
+  await fake.server.remote(person.id).createProject(crypto.randomUUID(), "Launch plan")
+  await signedInPanel(page)
+
+  for (const path of ["embed", `embed#pass=${"0".repeat(64)}`, "embed#pass=not-a-pass"]) {
+    const app = await openPanel(page, path)
+    await expect(app.getByText(LOCKED)).toBeVisible()
+    await expect(app.getByRole("main").getByRole("link", { name: "Open in elaborat.ing" })).toHaveAttribute("href", `${APP}/`)
+    await expect(app.getByRole("heading", { name: "Your projects" })).toHaveCount(0)
+    await expect(app.getByText("Launch plan")).toHaveCount(0)
+    // It asks the view for a new pass.
+    await expect.poll(() => messages(page)).toContainEqual({ origin: APP, data: { type: "elaborating-embed:pass" } })
+  }
+  await quiet(fake)
+  expect(projectReads(fake)).toEqual([])
+})
+
+test("a pass opens the panel for that page load only", async ({ page }) => {
+  const fake = await fakeSupabase(page)
+  await fake.server.remote(person.id).createProject(crypto.randomUUID(), "Launch plan")
+  await signedInPanel(page)
+  const pass = fake.mintPanelPass()
+
+  const app = await openPanel(page, `embed#pass=${pass}`)
+  await expect(app.getByRole("link", { name: "Launch plan" })).toBeVisible()
+  expect(projectReads(fake).length).toBeGreaterThan(0)
+
+  // The same page loaded again has no pass: nothing of the account shows.
+  const html = page.frame({ url: (url) => url.origin === APP })!
+  await html.evaluate(() => location.reload())
+  await expect(app.getByText(LOCKED)).toBeVisible()
+  await expect(app.getByRole("link", { name: "Launch plan" })).toHaveCount(0)
+
+  // And a pass already used does not open it again.
+  const again = await openPanel(page, `embed#pass=${pass}`)
+  await expect(again.getByText(LOCKED)).toBeVisible()
+  await expect(again.getByRole("link", { name: "Launch plan" })).toHaveCount(0)
+})
+
+test("opened on its own, /embed goes to the same page on the site, without the pass", async ({ page }) => {
   await fakeSupabase(page)
   const id = crypto.randomUUID()
-  await page.goto(new URL(`embed/projects/${id}`, APP_URL).href)
+  await page.goto(new URL(`embed/projects/${id}#pass=${"a".repeat(64)}`, APP_URL).href)
   await expect(page).toHaveURL(new URL(`projects/${id}`, APP_URL).href)
 })

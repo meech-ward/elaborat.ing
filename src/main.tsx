@@ -10,7 +10,8 @@ import { loadEmbedRoot } from "./features/embed/load"
 import "./index.css"
 
 // /embed opened on its own, outside a panel: the same page on the site, and nothing starts here.
-// Only ever a page on this site: anywhere else, the site's home.
+// Only ever a page on this site: anywhere else, the site's home. A pass in the
+// fragment was already removed (mode.ts), so it never travels with it.
 const leaving = embedded && !framed()
 if (leaving) {
   const { origin, pathname, search, hash } = window.location

@@ -24,6 +24,26 @@ export function sitePath(pathname: string): string {
 /** True when this page is the app in a panel. */
 export const embedded: boolean = typeof window !== "undefined" && isEmbedPath(window.location.pathname)
 
+/** The pass in a fragment such as `#pass=<64 hex characters>`, or null. */
+export function passFromHash(hash: string): string | null {
+  const pass = new URLSearchParams(hash.replace(/^#/, "")).get("pass")
+  return pass && /^[0-9a-f]{64}$/.test(pass) ? pass : null
+}
+
+/**
+ * The pass the panel's view put in the fragment, read once at start and
+ * removed from the address right away. The app in the panel redeems it
+ * before it shows any project (EmbedRoot); it is good for this page load only.
+ */
+export const panelPass: string | null = embedded ? takePanelPass() : null
+
+function takePanelPass(): string | null {
+  const { hash, pathname, search } = window.location
+  if (!hash) return null
+  history.replaceState(history.state, "", `${pathname}${search}`)
+  return passFromHash(hash)
+}
+
 /** True when another page frames this one. */
 export function framed(): boolean {
   try {

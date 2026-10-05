@@ -9,19 +9,24 @@ import { useAppearance } from "@/features/appearance"
 import { signOut } from "@/features/auth/useAuth"
 import { AccountPill, AppBar, Banner, ConfirmActionHost } from "@/features/design-system"
 import { ProjectsHome, useProjectAccount } from "@/features/projects"
+import { loadClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
-import { framed } from "./mode"
+import { framed, panelPass } from "./mode"
 
 // The app in a chat's panel (docs/architecture.md, Frontend hosting): the
 // page around the routes when it runs under /embed. Only the projects and a
 // project's workbench show here; any other page opens on the site. The
-// panel keeps a sign-in of its own, and talks to the view that frames it:
+// panel keeps a sign-in of its own, and shows a project only after it has
+// redeemed the pass the view put in its address (#pass=, read in mode.ts),
+// as the signed-in person. It talks to the view that frames it:
 //   to the view    {type: "elaborating-embed:ready"} once it has started,
-//                  {type: "elaborating-embed:open", url} for a link to the site
+//                  {type: "elaborating-embed:open", url} for a link to the site,
+//                  {type: "elaborating-embed:pass"} when it has no pass that works
 //   from the view  {type: "elaborating-embed:theme", theme: "light" | "dark"}
 
 const READY = "elaborating-embed:ready"
 const OPEN = "elaborating-embed:open"
+const PASS = "elaborating-embed:pass"
 const THEME = "elaborating-embed:theme"
 
 /** The view's origin, where messages to it go, as the browser gives it (the referrer where ancestorOrigins is missing). */
@@ -79,6 +84,54 @@ function useView() {
       .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
       .catch(() => {})
   }, [])
+}
+
+/** The pass this page was opened with, until an account redeems it. */
+let unusedPass = panelPass
+const redemptions = new Map<string, Promise<boolean>>()
+let askedForPass = false
+
+/**
+ * Whether this page may show `userId`'s projects: true once that account has
+ * redeemed the page's pass. Asked once per account; on false the view is
+ * asked, once, for a new pass (it opens the page again with one).
+ */
+function redeemPass(userId: string): Promise<boolean> {
+  let redemption = redemptions.get(userId)
+  if (!redemption) {
+    const pass = unusedPass
+    const redeem = async () => {
+      if (!pass) return false
+      const { data, error } = await (await loadClient()).rpc("redeem_panel_pass", { pass })
+      return !error && data === true
+    }
+    redemption = redeem()
+      .catch(() => false)
+      .then((open) => {
+        if (open) unusedPass = null
+        else if (!askedForPass) askedForPass = tellView({ type: PASS })
+        return open
+      })
+    redemptions.set(userId, redemption)
+  }
+  return redemption
+}
+
+/** Whether the signed-in account may see its projects here: "checking", then "open" or "closed". */
+function usePass(userId: string | null): "checking" | "open" | "closed" {
+  const [result, setResult] = useState<{ userId: string; open: boolean } | null>(null)
+  useEffect(() => {
+    if (!userId) return
+    let current = true
+    void redeemPass(userId).then((open) => {
+      if (current) setResult({ userId, open })
+    })
+    return () => {
+      current = false
+    }
+  }, [userId])
+  if (!userId || result?.userId !== userId) return "checking"
+  return result.open ? "open" : "closed"
 }
 
 /** "Open in elaborat.ing": the same page on the site, in a new tab. */
@@ -161,6 +214,7 @@ function SignIn() {
 export function EmbedRoot() {
   useView()
   const account = useProjectAccount()
+  const pass = usePass(account.kind === "account" ? account.account.userId : null)
   const href = useLocation({ select: (location) => location.href })
   const path = href.replace(/[?#].*$/, "")
   const onProject = path.startsWith("/projects/")
@@ -190,13 +244,29 @@ export function EmbedRoot() {
     )
   } else if (account.kind === "signed-out") {
     page = <SignIn />
+  } else if (pass === "checking") {
+    page = (
+      <Message>
+        <p role="status" className="text-muted-foreground">
+          Checking your session...
+        </p>
+      </Message>
+    )
+  } else if (pass === "closed") {
+    // Opened without a pass this site's server gave the panel: nothing of the account shows.
+    page = (
+      <Message>
+        <p>Open this from elaborat.ing in your ChatGPT sidebar.</p>
+        <OpenOnSite url={url} className={buttonVariants()} />
+      </Message>
+    )
   } else {
     page = onProject ? <Outlet /> : <ProjectsHome />
   }
 
   return (
     <DottedPage className="flex h-dvh min-h-0 flex-col overflow-hidden">
-      <EmbedBar url={url} onProject={onProject && account.kind === "account"} email={account.kind === "account" ? account.account.email : undefined} />
+      <EmbedBar url={url} onProject={onProject && pass === "open"} email={account.kind === "account" ? account.account.email : undefined} />
       <div className="relative min-h-0 flex-1 overflow-y-auto">{page}</div>
       <ConfirmActionHost />
     </DottedPage>
