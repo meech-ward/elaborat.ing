@@ -95,14 +95,17 @@ async function typeHeldInRendered(page: Page) {
   return project
 }
 
-test("an edit in the rendered view saves to the same file, from a menu opened while the edit was finishing", async ({ page }) => {
+test("an edit in the rendered view saves to the same file, from a menu opened while the edit was finishing, whose Save and Duplicate wait for it", async ({ page }) => {
   const { fake, id } = await typeHeldInRendered(page)
   await page.getByRole("button", { name: "File actions" }).click()
   const save = page.getByRole("menuitem", { name: "Save" })
+  const duplicate = page.getByRole("menuitem", { name: "Duplicate" })
   await expect(save).toBeDisabled()
-  // The open menu follows the file: Save turns on once the edit has finished.
+  await expect(duplicate).toBeDisabled()
+  // The open menu follows the file: Save and Duplicate turn on once the edit has finished.
   await releaseTransactions(page)
   await expect(save).toBeEnabled()
+  await expect(duplicate).toBeEnabled()
   await save.click()
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph. More.\n")
 })
@@ -365,14 +368,18 @@ test("a tab's file actions open from ... on the active tab, and on right-click o
   await expect(menu).toHaveCount(0)
 })
 
-/** Whether a tab lies wholly inside the visible part of the tab strip. */
+/**
+ * Whether a tab lies wholly inside the visible part of the tab strip. Two
+ * pixels of slack: the strip measures tabs in whole pixels, and Firefox lays
+ * them out in fractions of one.
+ */
 const tabInView = (page: Page, name: string) =>
   page.getByRole("tablist", { name: "Open files" }).evaluate((list, name) => {
     const tab = [...list.querySelectorAll<HTMLElement>("[data-tab-value]")].find((node) => node.dataset.tabValue === name)
     if (!tab) return false
     const outer = list.getBoundingClientRect()
     const box = tab.getBoundingClientRect()
-    return box.left >= outer.left - 1 && box.right <= outer.right + 1
+    return box.left >= outer.left - 2 && box.right <= outer.right + 2
   }, name)
 
 test("twelve open tabs at 1280: +N lists the rest, and the active or focused tab stays in view", async ({ page }) => {

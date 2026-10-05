@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation } from "@tanstack/react-router"
+import { Link, Outlet, useLocation, useRouterState } from "@tanstack/react-router"
 import { ChevronLeft, ExternalLink } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { LoginForm } from "@/components/login-form"
@@ -218,6 +218,10 @@ export function EmbedRoot() {
   const href = useLocation({ select: (location) => location.href })
   const path = href.replace(/[?#].*$/, "")
   const onProject = path.startsWith("/projects/")
+  // Whether the router shows the project's page yet. Until its code has
+  // loaded the router still shows the home route, which is the site's home
+  // page, so the panel keeps its own projects list until then.
+  const projectShown = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/projects/$projectId") })
   const url = new URL(path, window.location.origin).href
 
   let page: ReactNode
@@ -261,7 +265,7 @@ export function EmbedRoot() {
       </Message>
     )
   } else {
-    page = onProject ? <Outlet /> : <ProjectsHome />
+    page = onProject && projectShown ? <Outlet /> : <ProjectsHome />
   }
 
   return (

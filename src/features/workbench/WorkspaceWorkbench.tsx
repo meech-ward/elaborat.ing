@@ -187,6 +187,8 @@ export function WorkspaceWorkbench({
   const [guestComments, setGuestComments] = useState(false);
   // Element that opened the command palette; Escape/focus return goes here.
   const paletteInvoker = useRef<HTMLElement | null>(null);
+  // A command already moved focus (a new file's name field): the palette gives none back.
+  const keepPaletteFocus = useRef(false);
   // The project panel, whose menu button the palette returns focus to when the menu opened it.
   const projectPanel = useRef<HTMLElement>(null);
   const openPalette = (invoker: HTMLElement | null) => {
@@ -845,6 +847,17 @@ export function WorkspaceWorkbench({
       )}
     </>
   );
+  // As from the New file menu: on a desktop the name field opens and takes
+  // the keyboard at once, while the palette is still closing, so letters
+  // typed straight away reach it. A phone's name dialog waits for it to close.
+  const newFromPalette = (kind: NewEntryKind) => {
+    if (narrow) {
+      afterClose.current = () => startCreate(kind);
+      return;
+    }
+    keepPaletteFocus.current = true;
+    startCreate(kind);
+  };
   // Cmd+K's commands, with the shortcuts that also run them. Files open from Cmd+P.
   const apple = isApplePlatform();
   const commands: QuickOpenCommand[] = [
@@ -858,10 +871,10 @@ export function WorkspaceWorkbench({
     ...(readOnly
       ? []
       : [
-          { label: "New note", run: () => { afterClose.current = () => startCreate("mdx"); } },
-          { label: "New drawing", run: () => { afterClose.current = () => startCreate("drawing"); } },
-          { label: "New diagram", run: () => { afterClose.current = () => startCreate("diagram"); } },
-          { label: "New folder", run: () => { afterClose.current = () => startCreate("folder"); } },
+          { label: "New note", run: () => newFromPalette("mdx") },
+          { label: "New drawing", run: () => newFromPalette("drawing") },
+          { label: "New diagram", run: () => newFromPalette("diagram") },
+          { label: "New folder", run: () => newFromPalette("folder") },
           ...(state.active ? [{ label: "Duplicate", shortcut: commandShortcut("d", apple), run: () => { if (state.active) void duplicateFile(state.active); } }] : []),
         ]),
   ];
@@ -1244,7 +1257,12 @@ export function WorkspaceWorkbench({
         files={paletteFiles}
         onOpen={(path) => void openFromNavigation(path)}
         commands={commands}
-        finalFocus={() => { if (afterClose.current === null) paletteInvoker.current?.focus({ preventScroll: true }); return false; }}
+        finalFocus={() => {
+          const keep = keepPaletteFocus.current;
+          keepPaletteFocus.current = false;
+          if (afterClose.current === null && !keep) paletteInvoker.current?.focus({ preventScroll: true });
+          return false;
+        }}
         // Beside the side panels, it sits a little right of centre, over the editor.
         className={sidebar && !focus && !narrow ? "sm:-translate-x-[40%]" : undefined}
       />

@@ -84,6 +84,13 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   await remote.createProject(id, "Launch plan")
   await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content: "# Plan\n\nHello from the panel.\n" }])
   await signedInPanel(page)
+  // Records whether the site's home page (its footer's links) ever shows in the panel.
+  await page.addInitScript((origin) => {
+    if (location.origin !== origin) return
+    new MutationObserver(() => {
+      if (document.querySelector('a[href$="/privacy"]')) (window as unknown as { sawSiteHome?: boolean }).sawSiteHome = true
+    }).observe(document, { childList: true, subtree: true })
+  }, APP)
   const nativeDialogs: string[] = []
   page.on("dialog", (dialog) => {
     nativeDialogs.push(dialog.message())
@@ -102,10 +109,21 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   await expect(app.getByRole("button", { name: /Import/ })).toHaveCount(0)
   await expect(app.getByRole("button", { name: "Actions for Launch plan" })).toHaveCount(0)
 
+  // The project page's code arrives late: the panel shows the loading state
+  // meanwhile, and never the site's home page.
+  let release = () => {}
+  const released = new Promise<void>((resolve) => (release = resolve))
+  await page.route(/\/assets\/projects\._projectId-[\w-]+\.js$/, async (route) => {
+    await released
+    await route.continue()
+  })
   await app.getByRole("link", { name: "Launch plan" }).click()
   await expect.poll(() => html.url()).toMatch(new RegExp(`^${APP}/embed/projects/${id}`))
+  await expect(app.getByRole("status", { name: "Loading the page" })).toBeVisible()
+  release()
   // A project opens its first note.
   await expect(app.getByRole("tab", { name: "notes/plan.md" })).toBeVisible({ timeout: 15_000 })
+  expect(await html.evaluate(() => (window as unknown as { sawSiteHome?: boolean }).sawSiteHome)).toBeUndefined()
   await expect(app.getByRole("link", { name: "Projects", exact: true })).toBeVisible()
 
   // The note renders, in the srcdoc frame.

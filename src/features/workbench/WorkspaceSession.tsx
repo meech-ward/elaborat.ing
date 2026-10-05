@@ -643,7 +643,8 @@ export function WorkspaceSession({
   // The file's actions: its tab's menu on a desktop, "..." on a phone.
   const fileActions: MenuEntry[] = [
     ...(readOnly ? [] : [{ label: "Save", disabled: saveDisabled, onSelect: save }]),
-    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, onSelect: onDuplicate }] : []),
+    // Off while a rendered edit is finishing, as Save is, so the copy has it.
+    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: renderedPending, onSelect: onDuplicate }] : []),
     // Read-only, the file follows its saved copy by itself.
     ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
     { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },

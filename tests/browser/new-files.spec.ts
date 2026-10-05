@@ -103,6 +103,20 @@ test("letters typed straight after choosing New note, while the menu closes, all
   await expect(nameField(page, "note")).toHaveValue("ideas.mdx")
 })
 
+test("letters typed straight after choosing New note in the palette, while it closes, all reach the name field", async ({ page }) => {
+  await openProject(page, { "a.md": "a\n" })
+  // A palette that takes a second to close, as one can on a busy machine.
+  await page.addStyleTag({ content: '[data-slot="dialog-content"] { transition: opacity 1s } [data-slot="dialog-content"][data-ending-style] { opacity: 0 }' })
+  await page.keyboard.press("ControlOrMeta+k")
+  await page.getByLabel("Search commands").first().fill("New note")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("ideas")
+  await expect(nameField(page, "note")).toHaveValue("ideas.mdx")
+  // The palette, once closed, leaves the keyboard there.
+  await expect(page.getByRole("dialog", { name: "Commands" })).toHaveCount(0)
+  await expect(nameField(page, "note")).toBeFocused()
+})
+
 test("a new folder from the palette is named in the selected folder, and Enter creates it", async ({ page }) => {
   const { fake, id } = await openProject(page, { "notes/a.md": "a\n" })
   await showExplorer(page)

@@ -146,7 +146,9 @@ test("a whole note comment is added, replied to, resolved, reopened, edited and 
   expect(fake.comments.threads.length).toBe(0)
 })
 
-test("a pasted 100,000-character report sends, shows folded, and Show more opens it", async ({ page }) => {
+test("a pasted 100,000-character report sends, shows folded, and Show more opens it", async ({ page, context, browserName }) => {
+  // Chromium lets the page write to the clipboard only with the permission; Firefox needs none.
+  if (browserName === "chromium") await context.grantPermissions(["clipboard-write"])
   const { fake } = await openNote(page, { comments: ["Short and whole."] })
   await toggle(page).click()
   await expect(panel(page).getByText("Short and whole.")).toBeVisible()
@@ -156,7 +158,9 @@ test("a pasted 100,000-character report sends, shows folded, and Show more opens
   const report = Array.from({ length: 3847 }, (_, n) => `Line ${String(n + 1).padStart(5, "0")} of the report.`).join("\n").slice(0, 100_000)
   await panel(page).getByRole("button", { name: "Comment on the whole note" }).first().click()
   const field = panel(page).getByRole("textbox", { name: "New comment" })
-  await field.fill(report)
+  // Pasted, as a person would: fill takes Chromium over 20 seconds for this many lines, a paste well under one.
+  await page.evaluate((text) => navigator.clipboard.writeText(text), report)
+  await field.press("ControlOrMeta+v")
   await expect(panel(page).getByText("100,000 / 100,000")).toBeVisible()
   await field.press("ControlOrMeta+Enter")
   await expect.poll(() => fake.comments.comments.at(-1)?.body?.length).toBe(100_000)
