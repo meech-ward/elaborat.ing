@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
 import { AppearanceProvider, type ColorMode } from "./features/appearance"
+import { PageLoading } from "./features/design-system"
 import { SettingsProvider } from "./features/settings/SettingsDialog"
 import { configureExcalidrawAssets } from "./features/drawings/assets.ts"
 import { EMBED_BASE, embedded, framed, requestedScheme, sitePath } from "./features/embed/mode"
@@ -29,8 +30,23 @@ for (const type of ["gesturestart", "gesturechange"]) {
   document.addEventListener(type, (event) => event.preventDefault(), { passive: false })
 }
 
+/** A page whose code is still downloading. In a panel it fills the space under the panel's bar. */
+function PendingPage() {
+  return <PageLoading className={embedded ? "min-h-full" : undefined} />
+}
+
 // In a panel the app runs under /embed, so its routes and links stay as they are.
-const router = createRouter({ routeTree, basepath: embedded ? EMBED_BASE : undefined })
+// A link to a page whose code has not loaded: the page being left takes no
+// input from the start (routes/__root.tsx), and the loading state replaces it
+// once the wait passes 100 ms, for at least 300 ms, so a page whose code has
+// loaded never flashes it and a slow one never flickers.
+const router = createRouter({
+  routeTree,
+  basepath: embedded ? EMBED_BASE : undefined,
+  defaultPendingComponent: PendingPage,
+  defaultPendingMs: 100,
+  defaultPendingMinMs: 300,
+})
 
 declare module "@tanstack/react-router" {
   interface Register {

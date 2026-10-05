@@ -10,6 +10,7 @@ import { ConfirmDialog } from "../ui/ConfirmAction"
 import { EmptyState } from "../ui/EmptyState"
 import { Hint } from "../ui/Hint"
 import { LoadingLine } from "../ui/LoadingLine"
+import { PageLoading } from "../ui/PageLoading"
 import { commandShortcut, isApplePlatform } from "../ui/shortcuts"
 import { DirtyDot, StatusDot } from "../ui/StatusDot"
 import "../ui/taskList.css"
@@ -18,7 +19,7 @@ import { GuideGroup, GuideLabel, GuideValue, useGuidePortal } from "./parts"
 
 // The Controls group: the button sizes and disabled states, keys, tooltips,
 // live menus, the empty state and the custom code notice built on it, the
-// other banner tones and status, the unsaved dot and loading lines. The approved sheet at the top of the page
+// other banner tones and status, the unsaved dot, loading lines and the page loading state. The approved sheet at the top of the page
 // has the buttons, the menu and the warn banner, callout and status; this
 // group has the rest. Three columns from lg up; one column on phones.
 
@@ -255,6 +256,9 @@ function FeedbackDemo() {
         <LoadingLine value={60} label="Uploading flow.excalidraw" />
         <p className="px-3 py-2.5 text-[13px] text-muted-foreground">Uploading flow.excalidraw, 60%</p>
       </div>
+
+      <GuideLabel>Page loading</GuideLabel>
+      <PageLoading className="min-h-32 rounded-panel border border-panel-border" />
     </>
   )
 }

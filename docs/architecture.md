@@ -1176,9 +1176,14 @@ shell: the dotted page and the app's mark, in the saved palette and light or
 dark (a few lines of inline script read the saved appearance before the first
 paint, and `palettes.css` colours it). `src/main.tsx` renders the app only
 once the first route's code has loaded, so the shell gives way to that page,
-never to a blank one. supabase-js loads after the first paint too: the session
-check starts it (`loadClient` in `src/lib/supabase/client.ts`), and code that
-runs only once someone is signed in uses `loadedClient`. Settings' sections,
+never to a blank one. Each page's code is a chunk of its own. A link to a page
+whose code has not loaded makes the page being left take no input at once,
+and if the code takes longer than 100 ms the router's pending component
+(`PageLoading`, the shell's dotted page and mark) replaces it for at least
+300 ms, so a page whose code has loaded never flashes it. supabase-js loads
+after the first paint too: the session check starts it (`loadClient` in
+`src/lib/supabase/client.ts`), and code that runs only once someone is signed
+in uses `loadedClient`. Settings' sections,
 the command palette's list, the comments panel, the members and move dialogs,
 the zip code, the home page's picture of the app and the style guide's
 component sections each load in chunks of their own, behind a loading line or
