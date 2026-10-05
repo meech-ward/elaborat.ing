@@ -665,13 +665,13 @@ the signed challenge and sends one sample event. Each step writes one JSON log
 line. The view declares the panel's widget domain (`openai/widgetDomain`
 `https://elaborat.ing`) and shows its own origin at the top, to check whether
 another server claiming that domain gets the panel's origin, which the panel's
-`frame-ancestors` will trust. The panel no longer depends on the answer: a
-page framed there shows nothing of an account without a pass from this
-site's own MCP server (Frontend hosting). `/embed-probe` reports its
-ancestors, storage, service worker and session, and offers sign-in with an
-emailed code. Its framing test is done: like every other page it now sends
-`X-Frame-Options: DENY`, and it posts nothing to other windows. The
-production server's tools are unchanged.
+`frame-ancestors` will trust. `EMBED_FRAME_ANCESTORS` waits for that answer
+(Frontend hosting): the panel's pass does not replace it, since a page on
+the view's origin can drive a live view and take its passes. `/embed-probe`
+reports its ancestors, storage, service worker and session, and offers
+sign-in with an emailed code. Its framing test is done: like every other page
+it now sends `X-Frame-Options: DENY`, and it posts nothing to other windows.
+The production server's tools are unchanged.
 
 - **Tools mirror the app's operations:** list projects and invitations, list
   and read files, write one file or a batch with the expected versions, move,
@@ -1201,17 +1201,24 @@ wildcard, a path or anything else, the policy is `'none'`. frame-ancestors
 checks every ancestor, so the list holds the panel view's origin, the origins
 it shows as its ancestors, and `https://chatgpt.com`; the panel's view shows
 that line when it cannot open. Until it is set the browser refuses every
-framed `/embed`, so no signed-in page shows in any frame. The service worker
+framed `/embed`, so no signed-in page shows in any frame. Set it only once
+the host probe (Agents) shows that another server declaring the panel's
+widget domain does not get the panel's origin. The service worker
 never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
 panel none registers.
 
 **Decision: the app in a panel also needs a pass only this site's server
-issues.** `frame-ancestors` is the first line of defence. The panel's
-origin comes from the widget domain the server declares, and the app does not
-rely on how a host assigns it. Inside a chat, the browser keeps this site's
-storage under the chat's site, so a session made in the panel is there for
-any frame of `/embed` under that site. So the app shows nothing of an account
-until it has a pass, the second line. The MCP server mints one with the
+issues.** `frame-ancestors` is the first line of defence. It trusts the
+panel's origin, which comes from the widget domain the server declares.
+Inside a chat, the browser keeps this site's storage under the chat's site,
+so a session made in the panel is there for any frame of `/embed` under that
+site. So the app shows nothing of an account until it has a pass, the second
+line. The pass holds off another server that gets the panel's origin only
+while no view of this site is open in the same tab: a page on the view's
+origin can script a live view, take the pass in its result or ask
+`panel_pass` for one, and frame `/embed` with it. So the pass does not
+replace the host probe, and `EMBED_FRAME_ANCESTORS` still waits for it
+(above). The MCP server mints a pass with the
 person's own token (`mint_panel_pass`, `supabase/schemas/panel_passes.sql`):
 32 random bytes, kept only as a SHA-256 hash, good for 5 minutes and one use,
 at most 10 per person (minting drops expired and used ones, and the oldest

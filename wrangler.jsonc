@@ -25,7 +25,9 @@
   // origin, the origins it shows as its ancestors, and the chat's site, such
   // as "https://<view origin> https://chatgpt.com". The panel shows the line
   // to copy when it cannot open. Unset, or with a wildcard, a path or anything
-  // else that is not an origin, nothing may frame it.
+  // else that is not an origin, nothing may frame it. Set it only once the
+  // host probe shows that another server declaring the panel's widget domain
+  // does not get the panel's origin (docs/architecture.md, Frontend hosting).
   // MCP_PROBE_UPSTREAM: temporary host capability probe, remove after testing.
   "vars": {
     "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server",
