@@ -16,9 +16,9 @@
  * `EMBED_FRAME_ANCESTORS`, and by nothing while it is unset.
  *
  * Temporary host capability probe, remove after testing: `/mcp-probe` passes
- * to the probe function in `MCP_PROBE_UPSTREAM`, and `/embed-probe` may be
- * framed by ChatGPT's origins (EMBED_PROBE_FRAME_ANCESTORS).
- * Every other page keeps `X-Frame-Options: DENY` from public/_headers.
+ * to the probe function in `MCP_PROBE_UPSTREAM`.
+ * Every other page, `/embed-probe` included, keeps `X-Frame-Options: DENY`
+ * from public/_headers.
  */
 
 import { frameAncestors } from "./frameAncestors.ts";
@@ -75,16 +75,12 @@ async function framable(request: Request, env: Env, ancestors: string): Promise<
 
 // Temporary host capability probe, remove after testing.
 const PROBE_PREFIX = "/mcp-probe";
-const EMBED_PROBE = "/embed-probe";
-/** Who may frame /embed-probe: ChatGPT, and the origins it serves plugin views from. */
-export const EMBED_PROBE_FRAME_ANCESTORS = "https://chatgpt.com https://*.chatgpt.com https://*.oaiusercontent.com";
 
 export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === OPENAI_CHALLENGE_PATH) return openAiChallenge(env);
   const read = request.method === "GET" || request.method === "HEAD";
   if (read && embedPage(url.pathname)) return framable(request, env, frameAncestors(env.EMBED_FRAME_ANCESTORS));
-  if (url.pathname === EMBED_PROBE || url.pathname === `${EMBED_PROBE}/`) return framable(request, env, EMBED_PROBE_FRAME_ANCESTORS);
   const probeUpstream = env.MCP_PROBE_UPSTREAM?.replace(/\/+$/, "");
   if (probeUpstream && (url.pathname === PROBE_PREFIX || url.pathname.startsWith(`${PROBE_PREFIX}/`))) {
     return fetcher(new Request(`${probeUpstream}${url.pathname.slice(PROBE_PREFIX.length)}${url.search}`, request));

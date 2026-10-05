@@ -12,8 +12,8 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // /mcp-probe and /embed-probe: temporary host capability probe, remove after testing.
-    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/mcp-probe", "/mcp-probe/*", "/embed-probe", "/embed-probe/"]
+    // /mcp-probe: temporary host capability probe, remove after testing.
+    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/mcp-probe", "/mcp-probe/*"]
   },
   // The hosted instance's MCP server. Self-hosters: your project's
   // https://<ref>.supabase.co/functions/v1/mcp-server, or remove it.

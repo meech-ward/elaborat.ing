@@ -6,20 +6,31 @@
 // tool-result and host-context notifications) and tries each capability once:
 // WebAssembly, a Worker from a blob, a nested srcdoc frame, new Function, a
 // font from the app's site, a link through the host, and elaborat.ing's
-// /embed-probe page in a frame, which reports back with postMessage.
+// /embed-probe page in a frame, which the site now refuses (X-Frame-Options
+// DENY), so that row reads as blocked.
+//
+// It declares the same widget domain as the panel and the card
+// (mcp-server/tools/panel.ts) and shows its own origin at the top, to test
+// whether another server that claims the domain gets the panel's origin.
 // https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
 
-export const PROBE_VIEW_URI = 'ui://elaborating-probe/host-probe-v1.html'
+/** Change the URI when the HTML or its `_meta` changes: hosts cache the view by it. */
+export const PROBE_VIEW_URI = 'ui://elaborating-probe/host-probe-v2.html'
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const APP_ORIGIN = 'https://elaborat.ing'
 /** A font the app's site serves with CORS (public/chat-card). */
 export const PROBE_FONT_URL = `${APP_ORIGIN}/chat-card/space-grotesk-latin-BkCJBHb8.woff2`
 export const EMBED_PROBE_URL = `${APP_ORIGIN}/embed-probe`
 
-/** The view's policy: fonts from the app's site, and the app's pages in a frame. */
+/**
+ * The view's policy: fonts from the app's site, and the app's pages in a
+ * frame. Its widget domain is the one the panel and the card declare, set the
+ * same way (`openai/widgetDomain`, no `ui.domain`).
+ */
 export const PROBE_VIEW_META = {
   ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [APP_ORIGIN], frameDomains: [APP_ORIGIN] } },
   'openai/widgetCSP': { connect_domains: [], resource_domains: [APP_ORIGIN], frame_domains: [APP_ORIGIN], redirect_domains: [APP_ORIGIN] },
+  'openai/widgetDomain': APP_ORIGIN,
   'openai/ui': { availableDisplayModes: ['inline', 'fullscreen'] },
 }
 
@@ -39,6 +50,9 @@ button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid
 textarea { width: 100%; height: 180px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 iframe.embed { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 8px; }
 h2 { font-size: 14px; margin: 16px 0 6px; }
+.origin { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.origin strong { display: block; font-size: 24px; line-height: 1.25; overflow-wrap: anywhere; }
+.origin p { margin: 4px 0 0; }
 `
 
 const SCRIPT = String.raw`
@@ -136,6 +150,7 @@ const SCRIPT = String.raw`
   });
 
   // The frame itself.
+  document.getElementById("own-origin").textContent = location.origin;
   set("view origin", location.origin);
   set("referrer", document.referrer ? new URL(document.referrer).origin : "(none)");
   set("ancestor origins", location.ancestorOrigins ? Array.prototype.join.call(location.ancestorOrigins, ", ") || "(none)" : "not supported by this browser");
@@ -247,6 +262,10 @@ export const PROBE_VIEW_HTML = `<!doctype html>
 <body data-font="${PROBE_FONT_URL}" data-embed="${EMBED_PROBE_URL}">
 <h1>Host probe</h1>
 <p>A temporary test of what this chat allows. Copy the report below and send it back.</p>
+<div class="origin">
+<strong id="own-origin"></strong>
+<p>If this matches the panel's origin, another app could claim it.</p>
+</div>
 <div class="row">
 <button id="open" type="button">Open elaborat.ing</button>
 <button id="fullscreen" type="button">Fullscreen</button>

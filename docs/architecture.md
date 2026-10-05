@@ -662,11 +662,14 @@ Worker) with no sign-in and no data: one tool, `probe_host`, with global and
 thread entrypoints, whose view reports what a chat host allows, and one MCP
 Events event, `comment.created`, whose subscribe verifies the callback with
 the signed challenge and sends one sample event. Each step writes one JSON log
-line. `/embed-probe` is the only page other sites may frame: the Worker sends
-it with a `frame-ancestors` policy for ChatGPT instead of `X-Frame-Options:
-DENY`, and it reports its ancestors, storage, service worker and session, and
-offers sign-in with an emailed code. The production server's tools are
-unchanged.
+line. The view declares the panel's widget domain (`openai/widgetDomain`
+`https://elaborat.ing`) and shows its own origin at the top, to check whether
+another server claiming that domain gets the panel's origin, which the panel's
+`frame-ancestors` will trust. `/embed-probe` reports its ancestors, storage,
+service worker and session, and offers sign-in with an emailed code. Its
+framing test is done: like every other page it now sends `X-Frame-Options:
+DENY`, and it posts nothing to other windows. The production server's tools
+are unchanged.
 
 - **Tools mirror the app's operations:** list projects and invitations, list
   and read files, write one file or a batch with the expected versions, move,

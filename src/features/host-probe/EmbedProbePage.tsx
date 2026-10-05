@@ -1,14 +1,11 @@
 // Temporary host capability probe, remove after testing (with its route,
-// src/routes/embed-probe.tsx, and the /embed-probe parts of worker/index.ts,
-// wrangler.jsonc and vite.config.ts).
+// src/routes/embed-probe.tsx, and the /embed-probe part of vite.config.ts).
 //
-// The one page of the app that other sites may frame: the Worker sends it with
-// a frame-ancestors policy for ChatGPT in place of X-Frame-Options DENY. It
-// reports what the app would have inside a chat's frame: who frames it, which
-// storage works and is still there after a reload, whether the service worker
-// runs, whether the person's session is visible, and whether signing in with
-// an emailed code works in the frame. The probe tool's view frames it and
-// reads the summary it posts to its parent (never an email or a token).
+// It reports what the app has in this browser: who frames it, which storage
+// works and is still there after a reload, whether the service worker runs,
+// whether the person's session is visible, and whether signing in with an
+// emailed code works. Like every other page it may not be framed
+// (X-Frame-Options DENY), and it posts nothing to other windows.
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -162,19 +159,19 @@ function useChecks(): [Checks, (name: string, check: Check) => void] {
   return [checks, update]
 }
 
-/** The session line; the email shows on the page but is never posted to the frame's parent. */
-function sessionCheck(auth: ReturnType<typeof useAuth>): { shown: Check; posted: string } {
+/** The session line, shown on this page only. */
+function sessionCheck(auth: ReturnType<typeof useAuth>): Check {
   switch (auth.status) {
     case "ready":
-      return { shown: ok(`signed in${auth.email ? ` as ${auth.email}` : ""}`), posted: "signed in" }
+      return ok(`signed in${auth.email ? ` as ${auth.email}` : ""}`)
     case "signed-out":
-      return { shown: plain("not signed in"), posted: "not signed in" }
+      return plain("not signed in")
     case "loading":
-      return { shown: plain("checking"), posted: "checking" }
+      return plain("checking")
     case "error":
-      return { shown: bad(auth.message), posted: `error: ${auth.message}` }
+      return bad(auth.message)
     default:
-      return { shown: bad("this copy has no Supabase project"), posted: "no Supabase project" }
+      return bad("this copy has no Supabase project")
   }
 }
 
@@ -227,14 +224,8 @@ export function EmbedProbePage() {
   const [copied, setCopied] = useState<string | null>(null)
   const report = useRef<HTMLTextAreaElement>(null)
   const session = sessionCheck(auth)
-  const rows: [string, Check][] = [...Object.entries(checks), ["session", session.shown]]
+  const rows: [string, Check][] = [...Object.entries(checks), ["session", session]]
   const text = [`elaborat.ing embed probe, ${new Date().toISOString().slice(0, 16)}`, ...rows.map(([name, check]) => `${name}: ${check.value}`)].join("\n")
-
-  // The summary for the probe tool's view, without the email.
-  const posted = JSON.stringify({ ...Object.fromEntries(Object.entries(checks).map(([name, check]) => [name, check.value])), session: session.posted })
-  useEffect(() => {
-    if (framed()) window.parent.postMessage({ type: "elaborating-embed-probe", report: JSON.parse(posted) }, "*")
-  }, [posted])
 
   const copy = async () => {
     try {

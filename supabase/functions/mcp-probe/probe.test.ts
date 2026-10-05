@@ -102,6 +102,10 @@ Deno.test('probe_host has global and thread entrypoints, accepts {} and points a
   const [content] = view.result!.contents
   assertStringIncludes(content.text, 'https://elaborat.ing/embed-probe')
   assertEquals(content._meta.ui.csp.frameDomains, ['https://elaborat.ing'])
+  // The panel's widget domain, declared the same way (mcp-server/tools/panel.ts).
+  assertEquals(content._meta['openai/widgetDomain'], 'https://elaborat.ing')
+  assertEquals(content._meta.ui.domain, undefined)
+  assertStringIncludes(content.text, "If this matches the panel's origin, another app could claim it.")
 })
 
 Deno.test('events/list has comment.created with its schemas', async () => {
