@@ -392,10 +392,13 @@ export function WorkspaceSession({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active, apple, isNote, switchMode, views]);
 
+  // A save asked for while a rendered edit finishes, run once it has (as a view switch is).
+  const pendingWrite = useRef<{ target: string; expectedRevision: string | null; verb: string } | null>(null);
   const doWrite = useCallback(
     async (target: string, expectedRevision: string | null, verb: string) => {
       if (frozen.current) return;
       if (renderedPendingRef.current) {
+        pendingWrite.current = { target, expectedRevision, verb };
         setNotice("Finishing edit…");
         return;
       }
@@ -459,6 +462,12 @@ export function WorkspaceSession({
     },
     [client, refreshList, store],
   );
+  useEffect(() => {
+    const write = pendingWrite.current;
+    if (renderedPending || !write) return;
+    pendingWrite.current = null;
+    void doWrite(write.target, write.expectedRevision, write.verb);
+  }, [doWrite, renderedPending]);
 
   const doReload = useCallback(
     async (file: OpenFile) => {

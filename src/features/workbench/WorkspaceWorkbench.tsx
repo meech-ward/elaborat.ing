@@ -909,10 +909,21 @@ export function WorkspaceWorkbench({
       }}
     />
   );
+  // On a desktop the name field opens and takes the keyboard at once, while
+  // the menu is still closing, so letters typed straight away reach it. A
+  // phone's name dialog waits for the menu to close.
+  const newFromMenu = (kind: NewEntryKind) => {
+    if (narrow) {
+      afterMenu(() => startCreate(kind));
+      return;
+    }
+    keepMenuFocus.current = true;
+    startCreate(kind);
+  };
   const newFileEntries: MenuEntry[] = [
-    { label: "New note", onSelect: () => afterMenu(() => startCreate("mdx")) },
-    { label: "New drawing", onSelect: () => afterMenu(() => startCreate("drawing")) },
-    { label: "New diagram", onSelect: () => afterMenu(() => startCreate("diagram")) },
+    { label: "New note", onSelect: () => newFromMenu("mdx") },
+    { label: "New drawing", onSelect: () => newFromMenu("drawing") },
+    { label: "New diagram", onSelect: () => newFromMenu("diagram") },
   ];
   const agentCount = useConnectedAgentCount(!local && !embedded && auth.status === "ready");
   const person: PanelPerson | null = auth.status === "ready" ? personOf(auth.user, auth.email) : null;

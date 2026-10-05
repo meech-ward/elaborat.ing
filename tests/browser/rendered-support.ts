@@ -29,6 +29,16 @@ export const paragraph = (page: Page, text: string | RegExp) => frameOf(page).lo
 export async function openHarness(page: Page, query = ""): Promise<string[]> {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
+  await recordFrameMessages(page)
+  await page.goto(`${RENDERED_URL}${query}`)
+  return errors
+}
+
+/**
+ * From the next page load on, record every message a note frame sends the
+ * page, and let `window.transactionGate` hold its edits back.
+ */
+export async function recordFrameMessages(page: Page) {
   await page.addInitScript(() => {
     window.frameMessages = []
     window.transactionGate = { enabled: false, held: [] }
@@ -57,8 +67,6 @@ export async function openHarness(page: Page, query = ""): Promise<string[]> {
       if (event.data?.kind === "connect" && event.ports[0]) window.pagePort = event.ports[0]
     })
   })
-  await page.goto(`${RENDERED_URL}${query}`)
-  return errors
 }
 
 /** Load a note and wait until the frame has rendered it. */

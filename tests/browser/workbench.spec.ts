@@ -1,6 +1,7 @@
 import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
+import { recordFrameMessages, releaseTransactions } from "./rendered-support.ts"
 import { APP_URL } from "./urls.ts"
 import { showView } from "./views.ts"
 
@@ -77,22 +78,45 @@ test("typing in the source view saves on this device and reaches the server", as
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\nTyped here.")
 })
 
-test("an edit in the rendered view saves to the same file", async ({ page }) => {
-  const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
+/** Open a.md's rendered view and type at the end of its paragraph, with the edit held back from the source until `releaseTransactions`. */
+async function typeHeldInRendered(page: Page) {
+  await recordFrameMessages(page)
+  const project = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
   await page.getByRole("button", { name: "Rendered" }).click()
   const frame = page.frameLocator('iframe[title="Isolated document preview"]')
-  const paragraph = frame.locator("p").filter({ hasText: /^First paragraph\.$/ })
-  await paragraph.click()
+  await frame.locator("p").filter({ hasText: /^First paragraph\.$/ }).click()
   await page.keyboard.press("End")
+  await page.evaluate(() => {
+    window.transactionGate.enabled = true
+  })
   await page.keyboard.type(" More.")
+  await page.waitForFunction(() => window.transactionGate.held.length > 0)
   await expect(frame.locator("p").filter({ hasText: /^First paragraph\. More\.$/ })).toBeVisible()
-  // The menu shows the actions as they were when it opened, so open it once
-  // the edit has finished arriving: Save is enabled then.
-  await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled()
+  return project
+}
+
+test("an edit in the rendered view saves to the same file, from a menu opened while the edit was finishing", async ({ page }) => {
+  const { fake, id } = await typeHeldInRendered(page)
   await page.getByRole("button", { name: "File actions" }).click()
-  await page.getByRole("menuitem", { name: "Save" }).click()
+  const save = page.getByRole("menuitem", { name: "Save" })
+  await expect(save).toBeDisabled()
+  // The open menu follows the file: Save turns on once the edit has finished.
+  await releaseTransactions(page)
+  await expect(save).toBeEnabled()
+  await save.click()
   await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph. More.\n")
+})
+
+test("Save pressed while a rendered edit is finishing saves it once the edit has finished", async ({ page }) => {
+  const { fake, id } = await typeHeldInRendered(page)
+  await page.keyboard.press("ControlOrMeta+s")
+  // The frame passes the shortcut up while the edit is still held back.
+  await page.waitForFunction(() => window.frameMessages.some((message) => message.kind === "shortcut"))
+  expect(serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph.\n")
+  await releaseTransactions(page)
+  await expect.poll(() => serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph. More.\n")
+  await expect(page.getByRole("tab", { name: "a.md", exact: true })).toBeVisible()
+  await expect(page.getByText("Finishing edit…")).toHaveCount(0)
 })
 
 test("unsaved edits survive a reload, and are not sent to the server", async ({ page }) => {

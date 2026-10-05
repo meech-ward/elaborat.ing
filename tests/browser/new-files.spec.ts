@@ -79,8 +79,6 @@ for (const kind of kinds) {
     const opened = await tabs()
     await fromMenu(page, kind.item)
     const field = nameField(page, kind.noun)
-    // The field takes the keyboard once the menu has closed.
-    await expect(field).toBeFocused()
     await page.keyboard.type(kind.name)
     await page.keyboard.press("Enter")
     await expect(page.getByRole("alert").filter({ hasText: `${kind.path} already exists here. Choose another name.` })).toBeVisible()
@@ -95,6 +93,15 @@ for (const kind of kinds) {
     expect(serverPaths(fake, id)).toEqual(["a.md", kind.path].sort())
   })
 }
+
+test("letters typed straight after choosing New note, while the menu closes, all reach the name field", async ({ page }) => {
+  await openProject(page, { "a.md": "a\n" })
+  // A menu that takes a second to close, as one can on a busy machine.
+  await page.addStyleTag({ content: '[role="menu"] { transition: opacity 1s } [role="menu"][data-ending-style] { opacity: 0 }' })
+  await fromMenu(page, "New note")
+  await page.keyboard.type("ideas")
+  await expect(nameField(page, "note")).toHaveValue("ideas.mdx")
+})
 
 test("a new folder from the palette is named in the selected folder, and Enter creates it", async ({ page }) => {
   const { fake, id } = await openProject(page, { "notes/a.md": "a\n" })

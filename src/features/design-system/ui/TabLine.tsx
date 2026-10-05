@@ -43,7 +43,8 @@ type TabExtras = Omit<ComponentProps<typeof EditorTab>, "value" | "name" | "badg
  * (a long press on touch screens), and from "..." at the active tab's right
  * end, shown while the pointer is over the tab or the keyboard is on it (and
  * always on touch screens); the tab then grows to make room for it. A tab may hold nothing interactive, so "..." is
- * the next stop after the tab list. The entries are read when a menu opens.
+ * the next stop after the tab list. A menu reads its entries when it opens,
+ * and again whenever `actions` is a new function.
  *
  * TabLine is only the tab list: tab panels, if any, belong to the caller.
  * `withinTabs` leaves out TabLine's own Tabs root, for a caller whose Tabs
@@ -68,7 +69,7 @@ export function TabLine({
   value: string | null
   onValueChange: (value: string) => void
   onClose?: (value: string) => void
-  /** A tab's menu entries, read when its menu opens. */
+  /** A tab's menu entries, read while its menu is open; a new function shows new entries. */
   actions?: (value: string) => readonly MenuEntry[]
   /** The name of the "..." button and of the menus. */
   actionsLabel?: string
