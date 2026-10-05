@@ -46,9 +46,19 @@ jobs:
       - run: bun run check:bundle
 
   # Browser tests run the production builds in Chromium and Firefox.
-  # Playwright runs on Node; Bun installs and builds.
-  browser:
+  # Playwright runs on Node; Bun installs and builds. Each browser's tests are
+  # split across two jobs that run in parallel. Each job builds the bundles
+  # itself: the builds take under a minute, and one build job handing them on
+  # would only add its own run and the transfer before any test starts.
+  browser-shard:
+    name: browser (${{ matrix.project }} ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    strategy:
+      # Every shard runs to the end, so one run reports every failure.
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -63,14 +73,22 @@ jobs:
       - run: bun run build:harness
       # The app's next version, for the update journey in offline.spec.ts.
       - run: bun run build:next-version
-      - run: npx playwright install --with-deps chromium firefox
-      - run: npx playwright test
+      - run: npx playwright install --with-deps ${{ matrix.project }}
+      - run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-traces
+          name: playwright-traces-${{ matrix.project }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
+
+  # One result for the browser tests, passing only when every shard passed.
+  browser:
+    needs: browser-shard
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.browser-shard.result }}" = success
 
   # Migrations are generated from supabase/schemas/ and committed. Regenerate
   # them and fail if that writes anything, so the two never drift apart.
