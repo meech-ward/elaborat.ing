@@ -13,8 +13,10 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
-# One deploy at a time; a newer commit waits and then goes out last.
+# One deploy at a time. Each one deploys the newest commit CI has passed on
+# main, not the commit that triggered it (see the first step).
 concurrency:
   group: app-deploy
   cancel-in-progress: false
@@ -35,6 +37,25 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # CI runs on main can finish out of order, so the run that triggered
+      # this one may be older than the newest green commit. Deploy the newest
+      # commit CI has passed on main (the list is newest first, in push order),
+      # so whichever deploy runs last ships it and an older commit never
+      # replaces a newer one. A hand run deploys it too. The triggering run
+      # counts in case the list does not show it yet.
+      - name: Find the newest commit CI passed on main
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          newest=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[] | "\(.run_number) \(.head_sha)"')
+          read -r number sha <<< "$newest"
+          if [ -n "$TRIGGER_NUMBER" ] && [ "$TRIGGER_NUMBER" -gt "${number:-0}" ]; then number=$TRIGGER_NUMBER; sha=$TRIGGER_SHA; fi
+          test -n "$sha" || { echo "::error::CI has not passed on main yet. Push to main and let CI pass first."; exit 1; }
+          echo "::notice::Deploying $sha (CI run $number), the newest commit CI passed on main. Triggered by ${TRIGGER_SHA:-a hand run on $GITHUB_SHA}."
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Check that the settings are there
         run: |
           test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || { echo "::error::Set SUPABASE_PUBLISHABLE_KEY (the project's publishable key) as a repository variable or repository secret, not an environment one"; exit 1; }
@@ -42,8 +63,7 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not set"; exit 1; }
       - uses: actions/checkout@v5
         with:
-          # The commit CI passed on, not whatever main is now.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.commit.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2

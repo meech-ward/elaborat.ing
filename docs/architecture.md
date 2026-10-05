@@ -117,8 +117,10 @@ project (`.github/workflows/deploy-supabase.yml`): `supabase functions deploy
 --use-api`, then `supabase db push`, then `supabase config diff` and `supabase
 config push`. It works on every plan, and self-hosters can run the same steps
 from their own fork. Like the app deploy, it runs only after CI passes on
-`main`, on the commit CI checked, so a failing build never ships half a
-release; every step is safe to repeat.
+`main`, and deploys the newest commit CI has passed there, not the one that
+triggered it: CI runs can finish out of order, so whichever deploy runs last
+ships the newest green commit and an older one never replaces it. A failing
+build never ships half a release; every step is safe to repeat.
 
 - **No `supabase link`.** Linking reads the project's API keys, which needs a
   token that can see every secret key. Each command takes `--project-ref`
@@ -136,9 +138,9 @@ release; every step is safe to repeat.
   repository variable.
 - **Not Supabase's GitHub integration.** On production it ignores Auth config
   unless the project ref is written into `config.toml`.
-- **When it runs:** on every push to `main` that changes `supabase/` or the
-  workflow, and by hand. `config push` is not atomic (Auth is written before
-  Storage), so a hand run shows the diff and pushes only when asked. Every
+- **When it runs:** after every CI pass on `main`, and by hand (a hand run
+  deploys the newest green commit too). `config push` is not atomic (Auth is
+  written before Storage), so a hand run shows the diff and pushes only when asked. Every
   push checks that no credential was left out.
 - **Known diff line:** `auth.sms.twilio.enabled` stays in the diff, because
   `config push` cannot turn off the active SMS provider. Phone sign-in is off,
@@ -1125,7 +1127,8 @@ goes ahead: those tabs use the `srcdoc` frame.
 The build only needs public values (the Supabase URL and publishable key, and
 the sandbox domain's origin).
 Self-hosters can deploy the same static build to any host.
-`.github/workflows/deploy-app.yml` deploys it after CI passes on `main`, with
+`.github/workflows/deploy-app.yml` deploys it after CI passes on `main` (the
+newest commit CI has passed there, as under Deploys), with
 the `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` repository variables
 and the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 

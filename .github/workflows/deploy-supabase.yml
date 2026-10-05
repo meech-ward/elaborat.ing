@@ -5,8 +5,9 @@ name: Deploy Supabase
 # See docs/architecture.md, Deploys. Forks skip it until they set the
 # SUPABASE_PROJECT_ID variable.
 #
-# Runs once CI has passed on main, on the commit CI checked (like Deploy app),
-# so a failing build never ships half a release; every step is safe to repeat
+# Runs once CI has passed on main, on the newest commit CI has passed there
+# (like Deploy app), so a failing build never ships half a release and an older
+# commit never replaces a newer one; every step is safe to repeat
 # (functions redeploy, db push applies only new migrations, config push only
 # changes). Also by hand, where pushing config is a choice: config push is not
 # atomic, so a diff can be read first.
@@ -24,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: supabase-deploy
@@ -37,12 +39,33 @@ jobs:
   deploy:
     if: vars.SUPABASE_PROJECT_ID != '' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_DEPLOY_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ELABORATING_PROJECT_URL: https://${{ vars.SUPABASE_PROJECT_ID }}.supabase.co
       ELABORATING_EMBED_SECRET_KEY: ${{ secrets.EMBED_SECRET_KEY }}
     steps:
+      # CI runs on main can finish out of order, so the run that triggered
+      # this one may be older than the newest green commit. Deploy the newest
+      # commit CI has passed on main (the list is newest first, in push order),
+      # so whichever deploy runs last ships it and an older commit never
+      # replaces a newer one. A hand run deploys it too. The triggering run
+      # counts in case the list does not show it yet.
+      - name: Find the newest commit CI passed on main
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          newest=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[] | "\(.run_number) \(.head_sha)"')
+          read -r number sha <<< "$newest"
+          if [ -n "$TRIGGER_NUMBER" ] && [ "$TRIGGER_NUMBER" -gt "${number:-0}" ]; then number=$TRIGGER_NUMBER; sha=$TRIGGER_SHA; fi
+          test -n "$sha" || { echo "::error::CI has not passed on main yet. Push to main and let CI pass first."; exit 1; }
+          echo "::notice::Deploying $sha (CI run $number), the newest commit CI passed on main. Triggered by ${TRIGGER_SHA:-a hand run on $GITHUB_SHA}."
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       # An unset [db.vault] value is skipped without a word, so check first.
       - name: Check that the secrets are set
         run: |
@@ -51,8 +74,7 @@ jobs:
           test -n "$ELABORATING_EMBED_SECRET_KEY" || { echo "::error::EMBED_SECRET_KEY is not set"; exit 1; }
       - uses: actions/checkout@v5
         with:
-          # The commit CI passed on, not whatever main is now.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.commit.outputs.sha }}
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
@@ -88,8 +110,8 @@ jobs:
           test -n "$SES_SMTP_PASSWORD" || { echo "::error::SES_SMTP_PASSWORD is not set"; exit 1; }
       - uses: actions/checkout@v5
         with:
-          # The commit CI passed on, not whatever main is now.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # The commit the deploy job deployed.
+          ref: ${{ needs.deploy.outputs.sha }}
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0

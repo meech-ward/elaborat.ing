@@ -353,18 +353,24 @@ What runs when:
 - **CI** (`ci.yml`) on every push: build, typecheck, lint, unit tests, browser
   tests, the migrations check and the Edge Function checks.
 - **Deploy Supabase** (`deploy-supabase.yml`) after CI passes on `main`, on
-  the commit CI checked: functions, `db push`, then `config diff` and
-  `config push` (each safe to repeat). Run it by hand from the Actions tab for the first deploy; a
-  hand run pushes the config only when you tick "Push config.toml after
-  showing the diff".
-- **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand:
-  builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your
-  publishable key and `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain
-  (`wrangler.sandbox.jsonc`, keeping its last few frame versions) when that
-  is set, then runs `wrangler deploy`.
+  the newest commit CI has passed there: functions, `db push`, then
+  `config diff` and `config push` (each safe to repeat). Run it by hand from
+  the Actions tab for the first deploy; a hand run pushes the config only when
+  you tick "Push config.toml after showing the diff".
+- **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand, on
+  the newest commit CI has passed there: builds with
+  `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your publishable key and
+  `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain (`wrangler.sandbox.jsonc`,
+  keeping its last few frame versions) when that is set, then runs
+  `wrangler deploy`.
   The workflow sets `VITE_SANDBOX_ORIGIN` to the hosted instance's sandbox
   domain: change it to yours, or empty it to keep the `srcdoc` frame and skip
   that deploy.
+
+CI runs can finish out of order, so a deploy takes the newest green commit
+rather than the one that started it, and an older commit never replaces a
+newer one. Hand runs do the same, so CI must have passed on `main` once
+before the first deploy.
 
 A Vault secret changes only when `db push` applies a migration. To rotate
 `EMBED_SECRET_KEY`, update the secret and either commit an empty migration or
