@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows } from 'jsr:@std/assert@1.0.19'
 import LZString from 'npm:lz-string@1.5.0'
 
-import { drawingSvg, MAX_ELEMENTS, parseDrawing } from './drawingSvg.ts'
+import { drawElement, drawingSvg, MAX_ELEMENTS, parseDrawing } from './drawingSvg.ts'
 
 // The server-side drawing of an Excalidraw scene for the file view.
 
@@ -58,6 +58,18 @@ Deno.test('a scene with a rectangle, an ellipse, an arrow and text draws as one 
   assertStringIncludes(svg, 'y="37.5"')
   // Drawn with the element's seed, so the same scene draws the same way.
   assertEquals(svgOf(SIMPLE_SCENE), svg)
+})
+
+Deno.test("each element's part, drawn alone, is the drawing's: the chat card's live view draws with them", () => {
+  const elements = parseDrawing(JSON.stringify(SIMPLE_SCENE))
+  const types = new Map(elements.map((element) => [element.id, element.type]))
+  const parts = elements.map((element) => drawElement(element, types))
+  assert(parts.every((part) => part !== null))
+  const body = parts.map((part) => part!.part).join('')
+  assertEquals(/^<svg [^>]*>([\s\S]*)<\/svg>$/.exec(svgOf(SIMPLE_SCENE))?.[1], body)
+  // Each box is where its element is in the scene: the rectangle's, then the arrow's.
+  assertEquals(parts[0]!.box, [0, 0, 120, 60])
+  assertEquals(parts[2]!.box, [120, 30, 200, 30])
 })
 
 Deno.test('the SVG takes nothing from the file that could run or load', () => {

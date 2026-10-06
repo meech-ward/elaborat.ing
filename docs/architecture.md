@@ -780,9 +780,9 @@ The production server's tools are unchanged.
     checks signatures with the Standard Webhooks library.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
-  into the app. The `show_file` tool (`tools/fileView.ts`) and the
-  `preview_component` tool (`tools/componentPreview.ts`) share one
-  `ui://` view. `show_file` renders a note's Markdown (raw HTML
+  into the app. The `show_file` tool (`tools/fileView.ts`), the
+  `preview_component` tool (`tools/componentPreview.ts`) and `create_and_show`
+  (below) share one `ui://` view. `show_file` renders a note's Markdown (raw HTML
   and other MDX shown as text, except a `<Callout>` written as one block,
   which becomes a callout; sanitized) and draws drawings and diagrams, shown on
   their own or embedded in a note with `<Drawing>` and `<Diagram>`, each with an
@@ -806,6 +806,31 @@ The production server's tools are unchanged.
   screen where it offers that (`ui/request-display-mode`, or ChatGPT's
   `window.openai.requestDisplayMode`); the card offers inline and full
   screen, and asks to go back inline when editing ends.
+- **Decision: a new file is shown as it is written.** `create_and_show`
+  (`tools/fileView.ts`) creates a new note, drawing or diagram and returns
+  show_file's result. It saves with no version, which the database refuses
+  where a file exists, so it only adds and is not destructive; any other
+  file type is refused. It carries the card, so while the agent is still
+  writing the call the host can send the card the input so far
+  (`ui/notifications/tool-input-partial`; Claude does, ChatGPT's docs do not
+  mention it), at most one a frame. The card goes live and loads its `live`
+  module, which reads the content as it comes, with the server's own
+  renderers (`drawElement` and `renderNote`, imported from the function's
+  files; the card build resolves their `npm:` imports to the app's packages
+  and stops if package.json pins another version): a drawing's elements
+  drawn in one after another, each line along its length, hachure scribbled
+  in, solid fills faded in and text written left to right, in a fixed-height
+  view that eases out to hold them; a note rendered at most ten times a
+  second, new blocks fading in under a caret; a diagram's D2 source as text.
+  When the result comes, what is left draws within 400 ms and the saved
+  card takes its place; an error leaves nothing of the unsaved file, only
+  the problem. A host that sends no partial input gets the same drawing in
+  from the final input within 1.2 s, only while the tool runs: an input
+  that comes with its result (a conversation opened again) shows the saved
+  card at once. Where the module does not load, the card shows its
+  skeleton; with reduced motion nothing animates. `write_file` and
+  `save_files` keep no view, so ordinary saves stay plain, and the app and
+  the panel update when the save lands, as for any save.
 - **The card is built from the component library.** `src/chat-card` is a
   small React app on the library's components and the Supabase Green
   palette, light or dark as the host says; its states are on `/style-guide`.

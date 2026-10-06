@@ -1,6 +1,7 @@
 /**
  * What the chat card shows, as one state and the events that change it. The
- * card loads (the tool is running), shows a problem, or shows a file. A
+ * card loads (the tool is running), shows a new file live while the agent
+ * writes it (create_and_show), shows a problem, or shows a file. A
  * shown note is read, edited, or held in conflict after a save found a newer
  * version; `busy` covers the editor starting, a save and a reload.
  */
@@ -11,8 +12,13 @@ export type CardBannerTone = "warn" | "danger" | "info"
 export type CardBanner = { tone: CardBannerTone; text: string }
 export type CardStatus = { kind: "none" } | { kind: "saving" } | { kind: "saved"; version: number }
 
+/** What a live card shows being made. */
+export type LiveKind = "note" | "drawing" | "diagram"
+
 export type CardState =
   | { phase: "loading"; path: string | null }
+  /** A new file shown as it is written, until it is saved. */
+  | { phase: "live"; path: string; kind: LiveKind }
   | { phase: "problem"; message: string; tone: CardBannerTone }
   | {
       phase: "shown"
@@ -28,6 +34,8 @@ export type CardState =
 export type CardEvent =
   /** The host's tool input or result, or its cancel. Ignored while the note is being edited. */
   | { type: "input"; path: string }
+  /** A new file's content has started to come in: from loading, the card goes live. */
+  | { type: "live"; path: string; kind: LiveKind }
   | { type: "result"; file: CardFile }
   | { type: "problem"; message: string; tone: CardBannerTone }
   | { type: "start-edit" }
@@ -74,6 +82,8 @@ export function cardReducer(state: CardState, event: CardEvent): CardState {
   switch (event.type) {
     case "input":
       return state.phase === "loading" ? { phase: "loading", path: event.path } : state
+    case "live":
+      return state.phase === "loading" ? { phase: "live", path: event.path, kind: event.kind } : state
     case "result":
       return editing(state) ? state : shownRead(event.file)
     case "problem":

@@ -19,7 +19,7 @@ const baseVersion = z
   .int()
   .positive()
   .describe('The file version you last read. Saving fails with a conflict if the file changed since.')
-const mutationId = z
+export const mutationId = z
   .uuid()
   .optional()
   .describe('Optional id for this change. Repeat it when retrying, so the change is never applied twice.')

@@ -3,6 +3,7 @@ import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
+import { FILE_VIEW_URI } from './fileView.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { profileName } from './whoami.ts'
 
@@ -59,6 +60,10 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // it stays read-only: a host may ask before running a tool that is not.
   const panel = tools.find((tool) => tool.name === 'open_panel')
   assertEquals(panel?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+  // create_and_show only adds a file: the database refuses it where one exists. Its view is the file view.
+  const create = tools.find((tool) => tool.name === 'create_and_show')
+  assertEquals(create?.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
+  assertEquals(create?._meta, { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } })
   // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
   const pass = tools.find((tool) => tool.name === 'panel_pass')
   assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })

@@ -156,7 +156,7 @@ Deno.test('the card script makes no requests, runs no code from strings, and sta
   }
   // The modules it imports when needed, and its fonts, are the app's own, from the origin the view declares.
   const modules = new Set([...CARD_SCRIPT.matchAll(/["'`](https:\/\/[^"'`]+\.(?:js|css|woff2))["'`]/g)].map((match) => match[1]))
-  assertEquals(modules.size, 7)
+  assertEquals(modules.size, 8)
   for (const url of modules) assert(url.startsWith('https://elaborat.ing/chat-card/'), url)
   // What hosts load for the view: the card and its stylesheet. Its fonts, the editor and the
   // component previews are files it loads when it needs them.
@@ -256,6 +256,47 @@ const SCENE = JSON.stringify({
     { id: 'r', type: 'rectangle', x: 0, y: 0, width: 120, height: 60, strokeColor: '#1e1e1e', backgroundColor: 'transparent', strokeWidth: 2, roughness: 1, seed: 3 },
     { id: 't', type: 'text', x: 10, y: 18, width: 100, height: 25, text: 'Hello', fontSize: 20, fontFamily: 5, textAlign: 'center', strokeColor: '#1e1e1e' },
   ],
+})
+
+function createAndShow(path: string, content: string, files: Row[]) {
+  return withClient(files, async (client, queries) => ({
+    result: (await client.callTool({ name: 'create_and_show', arguments: { project_id: PROJECT, path, content } })) as CallToolResult,
+    shown: (await client.callTool({ name: 'show_file', arguments: { project_id: PROJECT, path } })) as CallToolResult,
+    files,
+    queries,
+  }))
+}
+
+Deno.test('create_and_show creates a new note or drawing and shows it as show_file does', async () => {
+  for (const [path, content] of [['notes/plan.mdx', '# Plan\n\nShip it.'], ['art/flow.excalidraw', SCENE]]) {
+    const { result, shown, queries } = await createAndShow(path, content, [])
+    // One save with no version, which the database refuses where a file exists.
+    const saves = queries.flat().filter((step) => step[0] === 'rpc')
+    assertEquals(saves.length, 1)
+    assertEquals(saves[0][1], 'save_files')
+    assertEquals((saves[0][2] as { changes: unknown }).changes, [{ op: 'put', path, content }])
+    assertFalse(result.isError)
+    assertEquals(result.structuredContent, shown.structuredContent)
+    assertEquals(result._meta, shown._meta)
+    const url = `https://elaborat.ing/projects/${PROJECT}/${path}`
+    assertEquals(result.content, [{ type: 'text', text: `Created ${path} (version 1) and showed it to the user. Open it in elaborat.ing: ${url}` }])
+  }
+})
+
+Deno.test('create_and_show changes nothing at a path that has a file, and makes only notes, drawings and diagrams', async () => {
+  const { result, files } = await createAndShow('notes/plan.md', '# New', [file('notes/plan.md', '# Old')])
+  assert(result.isError)
+  assertEquals(result.content, [
+    { type: 'text', text: 'A file already exists at notes/plan.md. Nothing was saved. To change it, read it and use write_file with base_version.' },
+  ])
+  assertEquals(files, [file('notes/plan.md', '# Old')])
+
+  for (const path of ['data/rows.json', 'components/chart.tsx', 'notes/plan.md.bak']) {
+    const { result, queries } = await createAndShow(path, '{}', [])
+    assert(result.isError)
+    assertEquals(result.content, [{ type: 'text', text: 'Use write_file for this file.' }])
+    assertFalse(queries.flat().some((step) => step[0] === 'rpc'), path)
+  }
 })
 
 Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays text, imports go', () => {

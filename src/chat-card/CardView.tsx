@@ -68,6 +68,8 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   editNote?: string | null
   /** The note editor, shown while editing and in a conflict. */
   editor?: ReactNode
+  /** A new file as it is written, while the card is live. */
+  live?: ReactNode
   /** The components' preview: a note's in place of its HTML once drawn, or a component file's. */
   preview?: CardPreview | null
   onEdit?: () => void
@@ -82,23 +84,30 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  * dotted canvas); problems in banners; and Edit, Save, Load latest and
  * Cancel with the save status under it.
  */
-export function CardView({ state, canEdit, editNote = null, editor, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
+export function CardView({ state, canEdit, editNote = null, editor, live, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
   return (
     <section
       data-slot="chat-card"
-      aria-busy={state.phase === "loading" || undefined}
+      aria-busy={state.phase === "loading" || state.phase === "live" || undefined}
       className={cn("flex min-w-0 flex-col overflow-hidden rounded-panel border border-border bg-panel text-foreground", className)}
       {...props}
     >
       <CardHeader state={state} />
-      <CardBody state={state} editor={editor} preview={preview} />
+      <CardBody state={state} editor={editor} live={live} preview={preview} />
       {shown?.banner && (
         <div className="px-4 pb-3 max-[500px]:px-3">
           <Banner tone={shown.banner.tone}>{shown.banner.text}</Banner>
         </div>
       )}
       {shown && <CardFooter state={shown} canEdit={canEdit} editNote={editNote} onEdit={onEdit} onSave={onSave} onCancel={onCancel} onReload={onReload} />}
+      {state.phase === "live" && (
+        <footer className="border-t border-border px-4 py-3 max-[500px]:px-3">
+          <p role="status" className="truncate text-[13px] leading-snug text-muted-foreground">
+            {state.kind === "drawing" ? "Drawing" : "Writing"} {state.path}
+          </p>
+        </footer>
+      )}
     </section>
   )
 }
@@ -106,12 +115,12 @@ export function CardView({ state, canEdit, editNote = null, editor, preview = nu
 /** The file's kind letter, name and path, its version, and Open in elaborat.ing. */
 function CardHeader({ state }: { state: CardState }) {
   const file = state.phase === "shown" ? state.file : null
-  const path = file?.path ?? (state.phase === "loading" ? state.path : null)
+  const path = file?.path ?? (state.phase === "loading" || state.phase === "live" ? state.path : null)
   const name = state.phase === "problem" ? "This file could not be shown" : path ? path.split("/").pop() || path : "Loading file"
   return (
     <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 max-[500px]:px-3">
       <div className="flex min-w-0 flex-1 basis-[200px] items-start gap-2">
-        {path && <KindBadge kind={badgeKind(file?.kind ?? "file")} className="leading-5" />}
+        {path && <KindBadge kind={badgeKind(file?.kind ?? (state.phase === "live" ? state.kind : "file"))} className="leading-5" />}
         <div className="min-w-0">
           <p className="truncate text-sm leading-5 font-semibold">{name}</p>
           {path && <p className="truncate font-mono text-xs leading-[18px] text-dim">{path}</p>}
@@ -160,7 +169,7 @@ function AskingBanner({ file, preview, column = false }: { file: CardFile; previ
 }
 
 /** Three lines of text on their way. */
-function LoadingLines() {
+export function LoadingLines() {
   return (
     <div aria-hidden="true" className="flex flex-col gap-2.5 px-6 py-5 max-[500px]:px-4">
       <Skeleton className="h-2.5 rounded-pill" />
@@ -220,8 +229,9 @@ function PreviewSlot({ preview, column = false }: { preview: CardPreview; column
   )
 }
 
-function CardBody({ state, editor, preview }: { state: CardState; editor?: ReactNode; preview: CardPreview | null }) {
+function CardBody({ state, editor, live, preview }: { state: CardState; editor?: ReactNode; live?: ReactNode; preview: CardPreview | null }) {
   if (state.phase === "loading") return <LoadingLines />
+  if (state.phase === "live") return live ?? <LoadingLines />
   if (state.phase === "problem") {
     return (
       <div className="p-4 max-[500px]:p-3">

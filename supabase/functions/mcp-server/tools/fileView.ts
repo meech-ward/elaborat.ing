@@ -1,4 +1,4 @@
-import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
+import type { CallToolResult, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { z } from 'npm:zod@4.4.3'
 
@@ -6,7 +6,7 @@ import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
-import { path, projectId, VIEW_CALLABLE } from './projects.ts'
+import { mutationId, path, projectId, VIEW_CALLABLE } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
@@ -17,11 +17,17 @@ import type { ToolContext } from './types.ts'
 // on read_file, because agents read files all the time to work on them; a
 // view on every read would fill the chat. OpenAI's guidance says the same:
 // keep data tools plain and put the view on a render tool.
+//
+// create_and_show is the one other tool with the view: it creates a new note,
+// drawing or diagram and shows it, and the view draws it while the agent is
+// still writing it (the host's partial tool input). It only creates, so it
+// is not destructive, and the database refuses a put without a version on a
+// path that exists. Changing a file stays with write_file, which has no view.
 // https://modelcontextprotocol.io/docs/extensions/apps
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v20.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v21.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -43,6 +49,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v17.html',
   'ui://elaborating/file-view-v18.html',
   'ui://elaborating/file-view-v19.html',
+  'ui://elaborating/file-view-v20.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -66,6 +73,9 @@ export const FILE_VIEW_META = {
   'openai/widgetCSP': { connect_domains: [], resource_domains: [APP_ORIGIN] },
   'openai/widgetDomain': APP_ORIGIN,
 }
+
+/** The files create_and_show makes: notes, drawings and diagrams. */
+const SHOWN_AS_MADE = /\.(md|mdx|excalidraw|d2)$/i
 
 /** Characters of a note rendered in the view; the rest is a click away. */
 const PREVIEW_LIMIT = 40_000
@@ -200,7 +210,72 @@ function preview(content: string): { source: string; truncated: boolean } {
   return { source: content.slice(0, cut > 0 ? cut : PREVIEW_LIMIT), truncated: true }
 }
 
-export function registerFileView(server: McpServer, { supabase, userClaims }: ToolContext): void {
+/**
+ * show_file's result for one file: the card's view of it, with the note's
+ * HTML and source, the drawings drawn, and a component preview's sources.
+ * `created`: create_and_show just made it, which the model's text says.
+ */
+export async function showFilePayload(
+  { supabase, userClaims }: ToolContext,
+  project_id: string,
+  path: string,
+  { created = false }: { created?: boolean } = {}
+): Promise<CallToolResult> {
+  try {
+    const { data, error } = await supabase
+      .from('project_files')
+      .select('path, content, version, updated_at')
+      .eq('project_id', project_id)
+      .eq('path', path)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
+    const kind = fileKind(data.path)
+    const url = fileUrl(project_id, data.path)
+    const content = String(data.content ?? '')
+    const note = kind === 'note' ? preview(content) : null
+    const rendered = note ? renderNote(note.source) : null
+    const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
+    const { embeds, svgs } = refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {} }
+    // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
+    const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
+    const modules = previewed ? await componentSources(supabase, project_id, content) : null
+    // Only a previewed note's custom components ask first, naming who last changed the files they come from.
+    const shared = modules ? await sharedWithUser(supabase, project_id, userClaims?.id) : false
+    const editors = shared && modules ? await componentEditors(supabase, project_id, [data.path, ...Object.keys(modules)], userClaims?.id) : null
+    return {
+      content: [
+        { type: 'text', text: `${created ? 'Created' : 'Showing'} ${data.path} (version ${data.version})${created ? ' and showed it' : ''} to the user. Open it in elaborat.ing: ${url}` },
+      ],
+      structuredContent: {
+        project_id,
+        path: data.path,
+        kind,
+        version: data.version,
+        updated_at: data.updated_at ?? null,
+        url,
+        truncated: note?.truncated ?? false,
+        embeds,
+        ...(modules ? { shared } : {}),
+      },
+      ...(rendered || Object.keys(svgs).length > 0
+        ? {
+            _meta: {
+              ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
+              ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
+              // The whole note, for editing in the view; a note too long to show whole is not edited there.
+              ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
+              ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),
+            },
+          }
+        : {}),
+    }
+  } catch (error) {
+    return runtimeErrorResult(error)
+  }
+}
+
+export function registerFileView(server: McpServer, context: ToolContext): void {
   for (const [index, uri] of [FILE_VIEW_URI, ...OLD_FILE_VIEW_URIS].entries()) {
     server.registerResource(
       index === 0 ? 'file_view' : `file_view_${index}`,
@@ -209,7 +284,7 @@ export function registerFileView(server: McpServer, { supabase, userClaims }: To
         title: 'File view',
         description:
           'A view of one file with a link to open it in elaborat.ing; notes can be edited in it, and components are previewed. ' +
-          'Used by show_file and preview_component.',
+          'Used by show_file, preview_component and create_and_show.',
         mimeType: MCP_APP_MIME_TYPE,
       },
       () => ({
@@ -240,56 +315,42 @@ export function registerFileView(server: McpServer, { supabase, userClaims }: To
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ...VIEW_CALLABLE, ui: { ...VIEW_CALLABLE.ui, resourceUri: FILE_VIEW_URI } },
     },
-    async ({ project_id, path }) => {
+    ({ project_id, path }) => showFilePayload(context, project_id, path)
+  )
+
+  server.registerTool(
+    'create_and_show',
+    {
+      title: 'Create and show',
+      description:
+        'Create a new note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
+        'which draws it while you write it where the chat allows that. It only creates: a file already at the path is not changed. ' +
+        'Use it when the user should watch a new note, drawing or diagram being made. ' +
+        'To change a file, read it and use write_file with base_version.',
+      inputSchema: z.object({
+        project_id: projectId,
+        path,
+        content: z.string().describe('The complete content of the new file.'),
+        mutation_id: mutationId,
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // The model's tool only: the view never calls it.
+      _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
+    },
+    async ({ project_id, path, content, mutation_id }) => {
+      if (!SHOWN_AS_MADE.test(path)) return errorResult('Use write_file for this file.')
       try {
-        const { data, error } = await supabase
-          .from('project_files')
-          .select('path, content, version, updated_at')
-          .eq('project_id', project_id)
-          .eq('path', path)
-          .maybeSingle()
+        // A put without base_version only creates: the database refuses it where a file exists.
+        const { data, error } = await context.supabase.rpc('save_files', {
+          project_id,
+          mutation_id: mutation_id ?? crypto.randomUUID(),
+          changes: [{ op: 'put', path, content }],
+        })
         if (error) throw error
-        if (!data) return errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
-        const kind = fileKind(data.path)
-        const url = fileUrl(project_id, data.path)
-        const content = String(data.content ?? '')
-        const note = kind === 'note' ? preview(content) : null
-        const rendered = note ? renderNote(note.source) : null
-        const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
-        const { embeds, svgs } = refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {} }
-        // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
-        const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
-        const modules = previewed ? await componentSources(supabase, project_id, content) : null
-        // Only a previewed note's custom components ask first, naming who last changed the files they come from.
-        const shared = modules ? await sharedWithUser(supabase, project_id, userClaims?.id) : false
-        const editors = shared && modules ? await componentEditors(supabase, project_id, [data.path, ...Object.keys(modules)], userClaims?.id) : null
-        return {
-          content: [
-            { type: 'text', text: `Showing ${data.path} (version ${data.version}) to the user. Open it in elaborat.ing: ${url}` },
-          ],
-          structuredContent: {
-            project_id,
-            path: data.path,
-            kind,
-            version: data.version,
-            updated_at: data.updated_at ?? null,
-            url,
-            truncated: note?.truncated ?? false,
-            embeds,
-            ...(modules ? { shared } : {}),
-          },
-          ...(rendered || Object.keys(svgs).length > 0
-            ? {
-                _meta: {
-                  ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
-                  ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
-                  // The whole note, for editing in the view; a note too long to show whole is not edited there.
-                  ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
-                  ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),
-                },
-              }
-            : {}),
+        if (data?.status === 'conflict') {
+          return errorResult(`A file already exists at ${path}. Nothing was saved. To change it, read it and use write_file with base_version.`)
         }
+        return await showFilePayload(context, project_id, path, { created: true })
       } catch (error) {
         return runtimeErrorResult(error)
       }

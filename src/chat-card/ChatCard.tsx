@@ -17,15 +17,25 @@
  *
  * Edit asks the host to show the card full screen, where it can, and the
  * card asks to go back inline when editing ends.
+ *
+ * create_and_show's card is live while the agent writes the new file: the
+ * host's partial input draws in (the live module, loaded then), and the
+ * saved card takes its place when the result comes. A host that sends no
+ * partial input gets the same drawing in, quickly, from the input, while the
+ * tool is still running.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
 import { z } from "zod/mini"
+import { DottedPage } from "@/components/panel"
+import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
-import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE } from "./cardState"
-import { CardView, EditorFrame, EmbedFigure, type CardPreview } from "./CardView"
+import { CARD_NOTE_CLASS } from "./cardNote"
+import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
+import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
 import { addCardFonts } from "./fonts"
+import type { LiveHandle } from "./live/mount"
 import { blockModules, loadModule, ModuleNotLoaded, modulesAllowed } from "./modules"
 import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
 import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
@@ -55,8 +65,54 @@ function previewNote(path: string, outcome: PreviewOutcome): string | null {
   return `The preview of ${path} in the elaborat.ing card showed errors from its components. ${errors}`
 }
 
+/** A new file create_and_show is writing, from its input: what it is and its content so far; null for any other input. */
+function liveDraft(args: unknown): { path: string; kind: LiveKind; content: string } | null {
+  const { path, content } = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>
+  if (typeof path !== "string" || typeof content !== "string") return null
+  const kind: LiveKind | null = /\.excalidraw(\.md)?$/i.test(path) ? "drawing" : /\.d2$/i.test(path) ? "diagram" : /\.mdx?$/i.test(path) ? "note" : null
+  return kind && { path, kind, content }
+}
+
+/**
+ * Carries a live file's content to its view, which may not have loaded yet:
+ * the latest content waits for it. `final`: the whole input is in.
+ */
+type LiveFeed = {
+  content: string | null
+  final: boolean
+  view: LiveHandle | null
+  push(content: string, final: boolean): void
+  attach(view: LiveHandle | null): void
+}
+
+function liveFeed(): LiveFeed {
+  const feed: LiveFeed = {
+    content: null,
+    final: false,
+    view: null,
+    push(content, final) {
+      feed.content = content
+      feed.final ||= final
+      feed.view?.update(content, final)
+    },
+    attach(view) {
+      feed.view = view
+      if (view && feed.content !== null) view.update(feed.content, feed.final)
+    },
+  }
+  return feed
+}
+
+/** How long input that came with no partial input waits for the result: a result that comes with it shows the saved card at once. */
+const LIVE_GRACE_MS = 100
+
 export function ChatCard({ host }: { host: HostBridge }) {
   const [state, dispatch] = useReducer(cardReducer, INITIAL_CARD_STATE)
+  const [feed] = useState(liveFeed)
+  // The host said it does not allow the modules: a live card would only show its skeleton.
+  const modulesBlocked = useRef(false)
+  // The input came with no partial input before it: the card goes live if the result does not come at once.
+  const graceTimer = useRef(0)
   const [canCallTools, setCanCallTools] = useState(false)
   // The editor could not load from elaborat.ing, or the host said it would not allow it.
   const [editorBlocked, setEditorBlocked] = useState(false)
@@ -78,22 +134,44 @@ export function ChatCard({ host }: { host: HostBridge }) {
     () =>
       host.subscribe((event) => {
         switch (event.type) {
+          case "tool-input-partial": {
+            const draft = modulesBlocked.current ? null : liveDraft(event.args)
+            if (!draft) return
+            feed.push(draft.content, false)
+            return dispatch({ type: "live", path: draft.path, kind: draft.kind })
+          }
           case "tool-input": {
             const input = inputSchema.safeParse(event.args)
             if (input.success) dispatch({ type: "input", path: input.data.path })
+            const draft = modulesBlocked.current ? null : liveDraft(event.args)
+            if (!draft) return
+            if (feed.content !== null) return feed.push(draft.content, true)
+            // No partial input: the input draws in quickly, unless the result comes with it (a conversation opened again).
+            window.clearTimeout(graceTimer.current)
+            graceTimer.current = window.setTimeout(() => {
+              feed.push(draft.content, true)
+              dispatch({ type: "live", path: draft.path, kind: draft.kind })
+            }, LIVE_GRACE_MS)
             return
           }
           case "tool-result": {
+            window.clearTimeout(graceTimer.current)
             lastResult.current = event.result
             const shown = parseShowResult(event.result, host.openaiMeta())
-            dispatch(shown.ok ? { type: "result", file: shown.file } : { type: "problem", message: shown.message, tone: "danger" })
+            if (!shown.ok) return dispatch({ type: "problem", message: shown.message, tone: "danger" })
+            // A live view that has drawn finishes drawing quickly first, then the saved card takes its place.
+            const view = feed.view
+            if (!view) return dispatch({ type: "result", file: shown.file })
+            void view.finish().then(() => dispatch({ type: "result", file: shown.file }))
             return
           }
           case "tool-cancelled":
+            window.clearTimeout(graceTimer.current)
             return dispatch({ type: "problem", message: "The tool call was cancelled.", tone: "info" })
           case "ready":
             // The fonts and modules come from the origin the view declares, unless the host said it does not allow it.
             if (modulesAllowed(event.resourceDomains) === false) {
+              modulesBlocked.current = true
               blockModules()
               setEditorBlocked(true)
             } else {
@@ -108,7 +186,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
           }
         }
       }),
-    [host],
+    [host, feed],
   )
 
   const shown = state.phase === "shown" ? state : null
@@ -221,6 +299,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
         state={state}
         canEdit={canCallTools && !editorBlocked}
         editNote={canCallTools && editorBlocked ? CARD_TEXT.editorNotLoaded : null}
+        live={state.phase === "live" ? <LiveView kind={state.kind} path={state.path} feed={feed} /> : undefined}
         editor={
           shown && shown.mode !== "read" && shown.file.source !== null ? (
             <NoteEditor
@@ -259,6 +338,64 @@ export function ChatCard({ host }: { host: HostBridge }) {
         onReload={() => shown && void reload(shown.file, null)}
       />
     </main>
+  )
+}
+
+/**
+ * A new file as it is written: the live module (loaded the first time)
+ * draws into the card's own frame for it, at a fixed height so the card does
+ * not resize as it grows: a drawing on the dotted canvas, a note in the
+ * note's type, a diagram's source as the module sets it. Where the module does not
+ * load, the card shows its skeleton.
+ */
+function LiveView({ kind, path, feed }: { kind: LiveKind; path: string; feed: LiveFeed }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [failed, setFailed] = useState(false)
+  const start = useEffectEvent((element: HTMLElement) =>
+    loadModule("live").then(({ mountLive }) =>
+      mountLive(element, { kind, path, reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches }),
+    ),
+  )
+  useEffect(() => {
+    const element = box.current
+    if (!element) return
+    let stopped = false
+    let running: LiveHandle | null = null
+    start(element).then(
+      (view) => {
+        if (stopped) return view.destroy()
+        running = view
+        feed.attach(view)
+      },
+      () => {
+        if (!stopped) setFailed(true)
+      },
+    )
+    return () => {
+      stopped = true
+      feed.attach(null)
+      running?.destroy()
+    }
+  }, [feed])
+
+  if (failed) return <LoadingLines />
+  if (kind === "drawing") {
+    return (
+      <DottedPage className="min-h-0 p-4 max-[500px]:p-3">
+        <div ref={box} className="card-art relative h-[340px] max-[500px]:h-[280px]" />
+      </DottedPage>
+    )
+  }
+  return (
+    <div ref={box} className="relative">
+      <div data-live-viewport className="h-[340px] overflow-hidden max-[500px]:h-[280px]">
+        {kind === "note" && (
+          <NoteProse className={CARD_NOTE_CLASS}>
+            <div data-live-content className="contents" />
+          </NoteProse>
+        )}
+      </div>
+    </div>
   )
 }
 

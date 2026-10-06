@@ -315,6 +315,48 @@ function elementSvg(element: Element, types: Map<unknown, unknown>, diagram: boo
 
 export type DrawingSvg = { svg: string } | { problem: 'empty' | 'too_big' }
 
+/** The box an element covers in the scene, turned with it: [minX, minY, maxX, maxY]. */
+export type Box = [number, number, number, number]
+
+/**
+ * One element as drawn in the scene: its `<g>`, placed and turned, and the
+ * box it covers there; null when it draws nothing. `types` maps the scene's
+ * element ids to their types (a text on an arrow gets a backing). The chat
+ * card's live view draws with this too, so what it draws is what the saved
+ * card shows.
+ */
+export function drawElement(element: Element, types: Map<unknown, unknown>, diagram = false): { part: string; box: Box } | null {
+  const drawn = elementSvg(element, types, diagram)
+  if (!drawn) return null
+  const x = num(element.x)
+  const y = num(element.y)
+  const angle = num(element.angle)
+  const [bx1, by1, bx2, by2] = drawn.box
+  const center: Point = [(bx1 + bx2) / 2, (by1 + by2) / 2]
+  const box: Box = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const corner of [[bx1, by1], [bx2, by1], [bx2, by2], [bx1, by2]] as Point[]) {
+    const [cx, cy] = rotate(corner, center, angle)
+    box[0] = Math.min(box[0], x + cx)
+    box[1] = Math.min(box[1], y + cy)
+    box[2] = Math.max(box[2], x + cx)
+    box[3] = Math.max(box[3], y + cy)
+  }
+  const turn = angle ? ` rotate(${fmt((angle * 180) / Math.PI)} ${fmt(center[0])} ${fmt(center[1])})` : ''
+  const opacity = num(element.opacity, 100)
+  const fade = opacity < 100 ? ` opacity="${fmt(Math.max(0, opacity) / 100)}"` : ''
+  return { part: `<g transform="translate(${fmt(x)} ${fmt(y)})${turn}"${fade}>${drawn.body}</g>`, box }
+}
+
+/** The SVG around drawn parts that cover `box`, with a margin. */
+function svgAround(parts: string, [minX, minY, maxX, maxY]: Box): string {
+  const [vx, vy] = [minX - PADDING, minY - PADDING]
+  const [vw, vh] = [maxX - minX + PADDING * 2, maxY - minY + PADDING * 2]
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fmt(vx)} ${fmt(vy)} ${fmt(vw)} ${fmt(vh)}" ` +
+    `width="${fmt(vw)}" height="${fmt(vh)}">${parts}</svg>`
+  )
+}
+
 /**
  * The scene as one SVG on a transparent background, or why it is not drawn.
  * A diagram's canvas (`diagram`) gets its generated shapes filled.
@@ -323,37 +365,19 @@ export function drawingSvg(elements: Element[], maxChars = MAX_SVG_CHARS, { diag
   if (elements.length > MAX_ELEMENTS) return { problem: 'too_big' }
   const types = new Map(elements.map((element) => [element.id, element.type]))
   const parts: string[] = []
-  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity]
+  const bounds: Box = [Infinity, Infinity, -Infinity, -Infinity]
   let size = 0
   for (const element of elements) {
-    const drawn = elementSvg(element, types, diagram)
+    const drawn = drawElement(element, types, diagram)
     if (!drawn) continue
-    const x = num(element.x)
-    const y = num(element.y)
-    const angle = num(element.angle)
-    const [bx1, by1, bx2, by2] = drawn.box
-    const center: Point = [(bx1 + bx2) / 2, (by1 + by2) / 2]
-    for (const corner of [[bx1, by1], [bx2, by1], [bx2, by2], [bx1, by2]] as Point[]) {
-      const [cx, cy] = rotate(corner, center, angle)
-      minX = Math.min(minX, x + cx)
-      minY = Math.min(minY, y + cy)
-      maxX = Math.max(maxX, x + cx)
-      maxY = Math.max(maxY, y + cy)
-    }
-    const turn = angle ? ` rotate(${fmt((angle * 180) / Math.PI)} ${fmt(center[0])} ${fmt(center[1])})` : ''
-    const opacity = num(element.opacity, 100)
-    const fade = opacity < 100 ? ` opacity="${fmt(Math.max(0, opacity) / 100)}"` : ''
-    const part = `<g transform="translate(${fmt(x)} ${fmt(y)})${turn}"${fade}>${drawn.body}</g>`
-    size += part.length
+    bounds[0] = Math.min(bounds[0], drawn.box[0])
+    bounds[1] = Math.min(bounds[1], drawn.box[1])
+    bounds[2] = Math.max(bounds[2], drawn.box[2])
+    bounds[3] = Math.max(bounds[3], drawn.box[3])
+    size += drawn.part.length
     if (size > maxChars) return { problem: 'too_big' }
-    parts.push(part)
+    parts.push(drawn.part)
   }
   if (parts.length === 0) return { problem: 'empty' }
-  const [vx, vy] = [minX - PADDING, minY - PADDING]
-  const [vw, vh] = [maxX - minX + PADDING * 2, maxY - minY + PADDING * 2]
-  return {
-    svg:
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fmt(vx)} ${fmt(vy)} ${fmt(vw)} ${fmt(vh)}" ` +
-      `width="${fmt(vw)}" height="${fmt(vh)}">${parts.join('')}</svg>`,
-  }
+  return { svg: svgAround(parts.join(''), bounds) }
 }

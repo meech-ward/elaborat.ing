@@ -116,8 +116,8 @@ describe("the modules the card loads from elaborat.ing", () => {
 
   test("every file the view names is committed, with every file it imports, in the current build", () => {
     const builds = JSON.parse(readFileSync(new globalThis.URL("builds.json", modules), "utf8")) as { current: string[] }
-    // The editor, the compiler, the frame's runtime and stylesheet, and three fonts.
-    expect(addresses.length).toBe(7)
+    // The editor, the live view, the compiler, the frame's runtime and stylesheet, and three fonts.
+    expect(addresses.length).toBe(8)
     const seen = new Set<string>()
     const visit = (name: string) => {
       if (seen.has(name)) return

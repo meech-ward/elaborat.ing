@@ -85,8 +85,10 @@ type Policy = "declared" | "default" | "default-said"
 /**
  * `chatgpt`: the host puts window.openai in the frame, as ChatGPT does.
  * `modes`: the display modes the host offers (`availableDisplayModes`).
+ * `manual`: the host sends nothing once the view is ready; the test sends
+ * the tool's input and result with `send`.
  */
-type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy; chatgpt?: boolean; modes?: string[] }
+type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy; chatgpt?: boolean; modes?: string[]; manual?: boolean }
 
 const MODULES = path.join(import.meta.dirname, "..", "..", "public", "chat-card")
 
@@ -142,6 +144,7 @@ async function openHost(page: Page, host: Host) {
       const frame = document.querySelector("iframe")!
       const reply = (id: unknown, result: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", id, result }, "*")
       const send = (method: string, params: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", method, params }, "*")
+      state.send = send
       window.addEventListener("message", (event) => {
         if (event.source !== frame.contentWindow) return
         const message = event.data as { id?: unknown; method?: string; params?: { name: string; arguments: unknown } }
@@ -159,6 +162,8 @@ async function openHost(page: Page, host: Host) {
           reply(message.id, { mode })
           send("ui/notifications/host-context-changed", { displayMode: mode })
         } else if (message.method === "ui/notifications/initialized") {
+          state.ready = true
+          if (host.manual) return
           send("ui/notifications/tool-input", { arguments: { project_id: "p", path: "notes/plan.mdx" } })
           send("ui/notifications/tool-result", host.result)
         } else if (message.method === "tools/call") {
@@ -666,3 +671,158 @@ for (const policy of ["default", "default-said"] as const) {
     expect(asked(page)).toEqual([])
   })
 }
+
+// create_and_show: a new file shown while the agent writes it. The stand-in
+// host sends the input so far, cut anywhere, as Claude does, then the input
+// and the result; a host that sends no partial input gets the input alone.
+
+const FLOW = "art/flow.excalidraw"
+const FLOW_URL = `https://elaborat.ing/projects/${PROJECT}/${FLOW}`
+const shape = { angle: 0, strokeColor: "#1e1e1e", backgroundColor: "transparent", fillStyle: "hachure", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100, roundness: null }
+/** A drawing as an agent writes it: shapes, their labels, then the arrows. */
+const FLOW_SCENE = JSON.stringify(
+  {
+    type: "excalidraw",
+    version: 2,
+    elements: [
+      { ...shape, id: "a", type: "rectangle", x: 0, y: 0, width: 160, height: 70, seed: 1, backgroundColor: "#a5d8ff" },
+      { ...shape, id: "a-label", type: "text", x: 30, y: 22, width: 100, height: 25, seed: 2, text: 'Write "it"', fontSize: 20, fontFamily: 5, textAlign: "center", containerId: "a" },
+      { ...shape, id: "b", type: "ellipse", x: 280, y: -10, width: 150, height: 90, seed: 3 },
+      { ...shape, id: "b-label", type: "text", x: 320, y: 22, width: 70, height: 25, seed: 4, text: "Ship } it", fontSize: 20, fontFamily: 5, textAlign: "center", containerId: "b" },
+      { ...shape, id: "c", type: "diamond", x: 120, y: 160, width: 120, height: 90, seed: 5, backgroundColor: "#ffec99", fillStyle: "solid" },
+      { ...shape, id: "ab", type: "arrow", x: 160, y: 35, width: 120, height: 0, seed: 6, points: [[0, 0], [120, 0]], endArrowhead: "arrow" },
+      { ...shape, id: "bc", type: "arrow", x: 330, y: 80, width: 100, height: 110, seed: 7, points: [[0, 0], [-90, 110]], endArrowhead: "arrow", strokeStyle: "dashed" },
+    ],
+    appState: { viewBackgroundColor: "#ffffff" },
+  },
+  null,
+  2,
+)
+const PLAN = ["# Launch plan", "", "Ship it *soon*, with care.", "", "- first item", "- second item", "", '<Drawing src="art/flow.excalidraw" />', "", "## Next", "", "Tell the team."].join("\n")
+
+/** create_and_show's result: show_file's, for the new file. */
+function created(path: string, kind: "note" | "drawing", meta: Record<string, unknown>) {
+  const url = `https://elaborat.ing/projects/${PROJECT}/${path}`
+  return {
+    content: [{ type: "text", text: `Created ${path} (version 1) and showed it to the user.` }],
+    structuredContent: { project_id: PROJECT, path, kind, version: 1, updated_at: null, url, truncated: false, embeds: kind === "drawing" ? [{ kind, path, url, status: "drawn" }] : [] },
+    _meta: meta,
+  }
+}
+const FLOW_RESULT = created(FLOW, "drawing", { "elaborat.ing/svg": { [FLOW]: SVG } })
+
+const send = (page: Page, method: string, params: unknown) =>
+  page.evaluate(({ method, params }) => (window as unknown as { send: (method: string, params: unknown) => void }).send(method, params), { method, params })
+const input = (path: string, content: string) => ({ arguments: { project_id: PROJECT, path, content } })
+
+/** Waits for the view to be ready, then sends the file in pieces cut at the given offsets, a little apart. */
+async function writeIn(page: Page, path: string, content: string, cuts: number[], each?: () => Promise<void>) {
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  for (const cut of [...cuts, content.length]) {
+    await send(page, "ui/notifications/tool-input-partial", input(path, content.slice(0, cut)))
+    await page.waitForTimeout(80)
+    await each?.()
+  }
+}
+
+/** Offsets that cut the file anywhere: inside strings, escapes, numbers and keys. */
+const cutsOf = (content: string, pieces: number) => Array.from({ length: pieces }, (_, index) => Math.floor(((index + 1) * content.length) / (pieces + 1)) + ((index * 7) % 13))
+const liveShapes = (page: Page) => cardFrame(page).evaluate(() => document.querySelectorAll(".live-svg > g").length)
+
+test("a new drawing draws in as the agent writes it, then the saved card takes its place", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  const counts: number[] = []
+  await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 9), async () => {
+    counts.push(await liveShapes(page))
+  })
+  // Shapes only ever come in, never go.
+  expect(counts).toEqual([...counts].sort((a, b) => a - b))
+  await expect.poll(() => liveShapes(page)).toBe(7)
+  expect(counts.at(-1)).toBeGreaterThan(0)
+  await expect(card.getByRole("status").filter({ hasText: `Drawing ${FLOW}` })).toBeVisible()
+  await expect(card.locator('[data-slot="chat-card"]')).toHaveAttribute("aria-busy", "true")
+  expect(asked(page)).toContain("live")
+
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await send(page, "ui/notifications/tool-result", FLOW_RESULT)
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+  await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toHaveAttribute("href", FLOW_URL)
+  await expect(card.locator(".live-svg")).toHaveCount(0)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  expect(await violations(page)).toEqual([])
+})
+
+test("a new note writes in, its heading before it is saved, then the saved card takes its place", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "dark", result: null, manual: true })
+  await writeIn(page, "notes/launch.mdx", PLAN, cutsOf(PLAN, 6))
+  await expect(card.locator("[data-live-content] h1")).toHaveText("Launch plan")
+  await expect(card.locator("[data-live-content] .live-embed")).toHaveText(`Drawing ${FLOW}`)
+  await expect(card.getByRole("status").filter({ hasText: "Writing notes/launch.mdx" })).toBeVisible()
+
+  await send(page, "ui/notifications/tool-input", input("notes/launch.mdx", PLAN))
+  await send(page, "ui/notifications/tool-result", created("notes/launch.mdx", "note", { "elaborat.ing/html": "<h1>Launch plan</h1><p>As saved.</p>", "elaborat.ing/source": PLAN }))
+  await expect(card.getByText("As saved.")).toBeVisible()
+  await expect(card.locator("[data-live-content]")).toHaveCount(0)
+})
+
+test("input and result that come together, as in a conversation opened again, show the saved card at once", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await page.evaluate(
+    ({ input, result }) => {
+      const { send } = window as unknown as { send: (method: string, params: unknown) => void }
+      send("ui/notifications/tool-input", input)
+      send("ui/notifications/tool-result", result)
+    },
+    { input: input(FLOW, FLOW_SCENE), result: FLOW_RESULT },
+  )
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+  await page.waitForTimeout(300)
+  // It never went live: the live view was not even loaded.
+  expect(asked(page)).not.toContain("live")
+})
+
+test("with no partial input, the input draws in while the tool runs", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await expect.poll(() => liveShapes(page)).toBe(7)
+  await send(page, "ui/notifications/tool-result", FLOW_RESULT)
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+})
+
+test("where the host does not allow the live view, the card shows its skeleton, then the saved card", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true, policy: "default-said" })
+  await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 3))
+  await expect(card.locator('[data-slot="chat-card"]')).toHaveAttribute("aria-busy", "true")
+  await expect(card.locator('[data-slot="skeleton"]').first()).toBeVisible()
+  await expect(card.locator(".live-svg")).toHaveCount(0)
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await send(page, "ui/notifications/tool-result", FLOW_RESULT)
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+  expect(asked(page)).toEqual([])
+  expect(await violations(page)).toEqual([])
+})
+
+test("a drawing that could not be saved leaves nothing of it on screen, only why", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 4))
+  await expect.poll(() => liveShapes(page)).toBeGreaterThan(0)
+  const message = `A file already exists at ${FLOW}. Nothing was saved. To change it, read it and use write_file with base_version.`
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await send(page, "ui/notifications/tool-result", { isError: true, content: [{ type: "text", text: message }] })
+  await expect(card.getByText(message)).toBeVisible()
+  await expect(card.locator(".live-svg")).toHaveCount(0)
+  await expect(card.getByText("This file could not be shown")).toBeVisible()
+})
+
+test("with reduced motion, a new drawing's shapes appear as they come, with nothing animated", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 5))
+  await expect.poll(() => liveShapes(page)).toBe(7)
+  expect(await cardFrame(page).evaluate(() => document.getAnimations().length)).toBe(0)
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await send(page, "ui/notifications/tool-result", FLOW_RESULT)
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+})

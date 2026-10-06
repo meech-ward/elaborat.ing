@@ -54,6 +54,10 @@ const SERVER_INSTRUCTIONS =
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file; ' +
   'to show the user a component you are writing, use preview_component. ' +
+  'To make a new note, drawing or diagram the user should watch being made, use create_and_show. ' +
+  'Create a drawing before the note that embeds it. ' +
+  'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. ' +
+  'To change a file, use write_file. ' +
   'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
   'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'
 

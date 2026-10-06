@@ -16,6 +16,8 @@ export const PROTOCOL_VERSION = "2026-01-26"
 
 /** What the host tells the card, in the order it happens. */
 export type HostEvent =
+  /** The tool's input so far, while the agent is still writing it: at most one a frame, and none after the input. */
+  | { type: "tool-input-partial"; args: unknown }
   | { type: "tool-input"; args: unknown }
   | { type: "tool-result"; result: unknown }
   | { type: "tool-cancelled" }
@@ -183,6 +185,32 @@ function watchSize(notify: (method: string, params: Record<string, unknown>) => 
   observer.observe(document.body)
 }
 
+/**
+ * Passes on the host's partial tool input at most once a frame: each one
+ * holds the whole input so far, so only the latest counts. Once the input
+ * itself has come (`close`), none.
+ */
+export function partialRelay(emit: (args: unknown) => void, schedule: (run: () => void) => void = (run) => requestAnimationFrame(run)) {
+  let latest: unknown
+  let waiting = false
+  let closed = false
+  return {
+    partial(args: unknown) {
+      if (closed) return
+      latest = args
+      if (waiting) return
+      waiting = true
+      schedule(() => {
+        waiting = false
+        if (!closed) emit(latest)
+      })
+    },
+    close() {
+      closed = true
+    },
+  }
+}
+
 /** Connects to the host that frames this page and sends ui/initialize. One per page. */
 export function connectHost(appVersion: string): HostBridge {
   const pending = new Map<string | number, { resolve(value: unknown): void; reject(reason: unknown): void }>()
@@ -209,6 +237,7 @@ export function connectHost(appVersion: string): HostBridge {
     if (listeners.size === 0) waiting.push(event)
     for (const listener of listeners) listener(event)
   }
+  const partials = partialRelay((args) => emit({ type: "tool-input-partial", args }))
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return
@@ -224,7 +253,10 @@ export function connectHost(appVersion: string): HostBridge {
       return
     }
     switch (message.method) {
+      case "ui/notifications/tool-input-partial":
+        return partials.partial(argumentsSchema.parse(message.params ?? {}).arguments)
       case "ui/notifications/tool-input":
+        partials.close()
         return emit({ type: "tool-input", args: argumentsSchema.parse(message.params ?? {}).arguments })
       case "ui/notifications/tool-result":
         return emit({ type: "tool-result", result: message.params })

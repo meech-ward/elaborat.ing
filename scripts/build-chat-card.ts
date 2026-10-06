@@ -9,6 +9,8 @@
 //
 // - the app's fonts, which the card adds once the host has answered
 // - editor: the note editor, when Edit is pressed (src/chat-card/lazy/editor.ts)
+// - live: a new note, drawing or diagram shown while the agent writes it
+//   (src/chat-card/lazy/live.ts), drawn with the MCP server's own renderers
 // - compile: the component compiler, for a note with components or a component file
 // - frame: the component preview frame's runtime and stylesheet, which the
 //   frame itself loads; it loads the charts' library only for a note with a chart
@@ -35,7 +37,7 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { visualizer } from "rollup-plugin-visualizer"
-import { build, normalizePath, type PluginOption } from "vite"
+import { build, normalizePath, type Plugin, type PluginOption } from "vite"
 import { COLOR_TOKEN_KEYS } from "../src/features/appearance/paletteCss"
 import { DEFAULT_THEME, getAppearanceTokens, tokenProperty, type ColorScheme } from "../src/features/appearance/tokens"
 import { beforeDarkFilter } from "../src/features/drawings/presentation"
@@ -45,6 +47,7 @@ const SRC = normalizePath(path.join(REPO, "src")) + "/"
 const ENTRY = path.join(REPO, "src/chat-card/main.tsx")
 const MODULE_ENTRIES = {
   editor: path.join(REPO, "src/chat-card/lazy/editor.ts"),
+  live: path.join(REPO, "src/chat-card/lazy/live.ts"),
   compile: path.join(REPO, "src/chat-card/lazy/compile.ts"),
   frame: path.join(REPO, "src/chat-card/preview/runtime.tsx"),
 }
@@ -86,6 +89,28 @@ const fonts = FONTS.map((font) => {
   return { ...font, bytes, fileName: `${font.name}-${hashOf(bytes)}.woff2` }
 })
 
+/**
+ * The MCP server's modules, which the live view shares, import their
+ * packages as Deno does (`npm:<package>@<version>[/<file>]`). Each resolves
+ * to the app's own copy, which package.json must pin to the same version, so
+ * the card and the server cannot draw differently.
+ */
+const pinned: Record<string, string> = (() => {
+  const manifest = JSON.parse(readFileSync(path.join(REPO, "package.json"), "utf8"))
+  return { ...manifest.dependencies, ...manifest.devDependencies }
+})()
+const npmSpecifiers: Plugin = {
+  name: "npm-specifiers",
+  enforce: "pre",
+  resolveId(source, importer, options) {
+    const match = /^npm:((?:@[^/@]+\/)?[^/@]+)@([^/]+)(\/.*)?$/.exec(source)
+    if (!match) return null
+    const [, name, version, file = ""] = match
+    if (pinned[name] !== version) throw new Error(`${source} needs ${name} ${version} in package.json, which has ${pinned[name] ?? "none"}.`)
+    return this.resolve(name + file, importer, { ...options, skipSelf: true })
+  },
+}
+
 type OutputChunk = { type: "chunk"; fileName: string; code: string; isEntry: boolean; name: string; imports: string[]; dynamicImports: string[] }
 type OutputAsset = { type: "asset"; fileName: string; source: string | Uint8Array }
 type Output = { output: Array<OutputChunk | OutputAsset> }
@@ -123,7 +148,7 @@ async function run(entry: string | Record<string, string>, name: string, format:
     logLevel: "warn",
     define: { "process.env.NODE_ENV": JSON.stringify("production"), ...define },
     resolve: { alias: { "@": path.join(REPO, "src") } },
-    plugins: [react(), tailwindcss(), ...visualize(name)],
+    plugins: [npmSpecifiers, react(), tailwindcss(), ...visualize(name)],
     build: {
       write: false,
       minify: true,
@@ -181,6 +206,7 @@ const entryFile = (name: keyof typeof MODULE_ENTRIES) => {
 }
 const addresses = {
   editor: MODULES_URL + entryFile("editor"),
+  live: MODULES_URL + entryFile("live"),
   compile: MODULES_URL + entryFile("compile"),
   frame: MODULES_URL + entryFile("frame"),
   frameStyle: MODULES_URL + frameStyle,
@@ -256,6 +282,7 @@ const lines: Array<[string, string | Uint8Array]> = [
   ["The view (inline script and style)", code + css],
   ["Its fonts (woff2)", loads(fonts.map((font) => font.fileName))],
   ["Edit: the editor", loads(graph(entryFile("editor")))],
+  ["Live: a file shown as it is written", loads(graph(entryFile("live")))],
   ["Components: compiler", loads(graph(entryFile("compile")))],
   ["Components: the frame", loads([...frameFiles, frameStyle])],
   ["A chart in the note", loads(new Set(charts.flatMap((file) => [...graph(file)]).filter((file) => !frameFiles.has(file))))],
