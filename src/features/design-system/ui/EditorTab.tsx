@@ -19,6 +19,10 @@ type TabProps = Omit<ComponentProps<typeof TabsTrigger>, "value" | "children" | 
  * focused tab. A tab may hold nothing interactive, so the mark is a pointer
  * target only. (KindBadge keeps an empty slot for other files, so every tab
  * has room for it.)
+ *
+ * `--tab-cover` (a length) ends the badge, name and unsaved dot that much
+ * before their usual end, for a control laid over the tab's right end: the
+ * name fades out before it, and the tab keeps its width.
  */
 export function EditorTab({
   value,
@@ -57,14 +61,22 @@ export function EditorTab({
       className={cn(
         // --tab-fill is the tab's fill under the pointer or when active; the
         // close mark takes it so it hides the badge under it.
-        "group/tab relative flex h-8 max-w-60 shrink-0 cursor-default items-center gap-[7px] rounded-button px-2.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none select-none [--tab-fill:color-mix(in_oklab,var(--seg)_60%,var(--panel))] hover:bg-(--tab-fill) hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring data-active:bg-seg data-active:font-semibold data-active:text-foreground data-active:[--tab-fill:var(--seg)] pointer-coarse:h-10",
+        "group/tab relative flex h-8 max-w-60 shrink-0 cursor-default items-center rounded-button px-2.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none select-none [--tab-fill:color-mix(in_oklab,var(--seg)_60%,var(--panel))] hover:bg-(--tab-fill) hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring data-active:bg-seg data-active:font-semibold data-active:text-foreground data-active:[--tab-fill:var(--seg)] pointer-coarse:h-10",
         className,
       )}
       {...props}
     >
-      {badge}
-      <span className="min-w-0 truncate">{name}</span>
-      {dirty && <DirtyDot label={label ? undefined : "Unsaved changes"} />}
+      {/* A max width in % leaves the tab's own width alone. */}
+      <span className="flex min-w-0 max-w-[calc(100%-var(--tab-cover))] items-center gap-[7px]">
+        {badge}
+        <span
+          data-slot="tab-name"
+          className="min-w-0 truncate [mask-image:linear-gradient(to_left,transparent,#000_min(var(--tab-cover),16px))]"
+        >
+          {name}
+        </span>
+        {dirty && <DirtyDot label={label ? undefined : "Unsaved changes"} />}
+      </span>
       {onClose && (
         <span
           aria-hidden="true"

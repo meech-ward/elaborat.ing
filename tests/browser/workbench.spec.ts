@@ -346,15 +346,38 @@ test("clicking a tab's close mark closes it", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
 })
 
+/**
+ * A tab's width, the room after its name to the tab's end, and the room
+ * between the end of its name and the left edge of "...".
+ */
+const tabBeside = (page: Page, name: string) =>
+  page.getByRole("tab", { name }).evaluate((tab) => {
+    const box = tab.getBoundingClientRect()
+    const shown = tab.querySelector('[data-slot="tab-name"]')!.getBoundingClientRect()
+    const button = document.querySelector("[data-tab-actions]")!.getBoundingClientRect()
+    return { width: box.width, end: box.right - shown.right, room: button.left - shown.right }
+  })
+
 test("a tab's file actions open from ... on the active tab, and on right-click on any tab", async ({ page }) => {
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await openFromExplorer(page, "b.md")
   const items = ["Save", "Duplicate", "Reload", "Export", "Format"]
   const menu = page.getByRole("menu", { name: "File actions" })
-  // "..." sits on the active tab, shown under the pointer and with keyboard focus.
+  const more = page.getByRole("button", { name: "File actions" })
+  // "..." sits over the active tab's end, shown under the pointer and with
+  // keyboard focus. The tab is sized to its name and keeps its width, and its
+  // name ends before "...".
+  await expect(more).toHaveCSS("opacity", "0")
+  const { width, end } = await tabBeside(page, "b.md")
+  expect(end).toBeCloseTo(10, 0)
   await page.getByRole("tab", { name: "b.md" }).hover()
-  await page.getByRole("button", { name: "File actions" }).click()
+  await expect(more).toHaveCSS("opacity", "1")
+  expect((await tabBeside(page, "b.md")).width).toBe(width)
+  expect((await tabBeside(page, "b.md")).room).toBeGreaterThanOrEqual(0)
+  await more.click()
   for (const name of items) await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  expect((await tabBeside(page, "b.md")).width).toBe(width)
+  expect((await tabBeside(page, "b.md")).room).toBeGreaterThanOrEqual(0)
   await expect(menu.getByRole("menuitem")).toHaveCount(items.length)
   await page.keyboard.press("Escape")
   await expect(menu).toHaveCount(0)

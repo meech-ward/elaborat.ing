@@ -42,7 +42,8 @@ type TabExtras = Omit<ComponentProps<typeof EditorTab>, "value" | "name" | "badg
  * With `actions`, each tab has a menu of its file's actions: on right-click
  * (a long press on touch screens), and from "..." at the active tab's right
  * end, shown while the pointer is over the tab or the keyboard is on it (and
- * always on touch screens); the active tab keeps room for it at its end. A tab may hold nothing interactive, so "..." is
+ * always on touch screens); the tab keeps its width, and its name fades out
+ * before "..." (touch screens make room for it). A tab may hold nothing interactive, so "..." is
  * the next stop after the tab list. A menu reads its entries when it opens,
  * and again whenever `actions` is a new function.
  *
@@ -191,10 +192,12 @@ export function TabLine({
         style={offset ? { ...extras.style, transform: `translateX(${offset}px)` } : extras.style}
         className={cn(
           "data-clipped:pointer-events-none data-clipped:opacity-0 data-dragging:opacity-0",
-          // The active tab keeps room for "..." at its end, so it never
-          // covers the name (a long one ends in an ellipsis before it), and
-          // never moves away from the pointer as it shows.
-          actions && "data-active:pr-[34px]",
+          // "..." shows over the active tab's end, and the name and unsaved
+          // dot end 5 before it (the name fading out), so it never covers
+          // them; the tab keeps its width, so "..." never moves as it shows.
+          // Touch screens always show it: there the active tab makes room.
+          actions &&
+            "not-pointer-coarse:data-active:[&:hover]:[--tab-cover:24px] not-pointer-coarse:data-active:focus-visible:[--tab-cover:24px] not-pointer-coarse:data-active:group-has-[[data-tab-actions]:is(:hover,:focus-visible,[data-popup-open])]/tabline:[--tab-cover:24px] data-active:pointer-coarse:pr-[34px]",
           drag?.slide && "transition-transform duration-160 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none",
           extras.className,
         )}
