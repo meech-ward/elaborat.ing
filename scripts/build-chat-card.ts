@@ -11,6 +11,7 @@
 // - editor: the note editor, when Edit is pressed (src/chat-card/lazy/editor.ts)
 // - live: a new note, drawing or diagram shown while the agent writes it
 //   (src/chat-card/lazy/live.ts), drawn with the MCP server's own renderers
+// - highlight: the app's code highlighter, after a note with a code block shows
 // - compile: the component compiler, for a note with components or a component file
 // - frame: the component preview frame's runtime and stylesheet, which the
 //   frame itself loads; it loads the charts' library only for a note with a chart
@@ -49,6 +50,7 @@ const MODULE_ENTRIES = {
   editor: path.join(REPO, "src/chat-card/lazy/editor.ts"),
   live: path.join(REPO, "src/chat-card/lazy/live.ts"),
   compile: path.join(REPO, "src/chat-card/lazy/compile.ts"),
+  highlight: path.join(REPO, "src/chat-card/lazy/highlight.ts"),
   frame: path.join(REPO, "src/chat-card/preview/runtime.tsx"),
 }
 const OUT = path.join(REPO, "supabase/functions/mcp-server/tools/cardEditorScript.ts")
@@ -208,6 +210,7 @@ const addresses = {
   editor: MODULES_URL + entryFile("editor"),
   live: MODULES_URL + entryFile("live"),
   compile: MODULES_URL + entryFile("compile"),
+  highlight: MODULES_URL + entryFile("highlight"),
   frame: MODULES_URL + entryFile("frame"),
   frameStyle: MODULES_URL + frameStyle,
 }
@@ -283,6 +286,7 @@ const lines: Array<[string, string | Uint8Array]> = [
   ["Its fonts (woff2)", loads(fonts.map((font) => font.fileName))],
   ["Edit: the editor", loads(graph(entryFile("editor")))],
   ["Live: a file shown as it is written", loads(graph(entryFile("live")))],
+  ["Code: the highlighter", loads(graph(entryFile("highlight")))],
   ["Components: compiler", loads(graph(entryFile("compile")))],
   ["Components: the frame", loads([...frameFiles, frameStyle])],
   ["A chart in the note", loads(new Set(charts.flatMap((file) => [...graph(file)]).filter((file) => !frameFiles.has(file))))],

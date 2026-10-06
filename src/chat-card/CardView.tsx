@@ -6,21 +6,21 @@
 // bundle the whole style guide.
 import "./card.css"
 import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert } from "lucide-react"
-import { useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { DottedPage } from "@/components/panel"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Banner, BannerAction, Callout } from "@/features/design-system/ui/Banner"
 import { KindBadge } from "@/features/design-system/ui/KindBadge"
-import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import { StatusDot } from "@/features/design-system/ui/StatusDot"
 import { cn } from "@/lib/utils"
-import { badgeKind, CARD_NOTE_CLASS, EmbedArt, EmbedFigure } from "./cardNote"
+import { badgeKind, CardNote, EmbedArt, EmbedFigure, READING_CLASS } from "./cardNote"
 import type { CardState } from "./cardState"
+import { codeToHighlight, highlightBlock, readingMarkup, type Highlighter } from "./readingMarkup"
 import { EMBED_NOTES, FILE_NOTES, svgFor, type CardEmbed, type CardFile } from "./toolResult"
 
-export { CARD_NOTE_CLASS, EmbedFigure } from "./cardNote"
+export { CardNote, EmbedFigure, READING_CLASS } from "./cardNote"
 
 /**
  * The preview of a note's components, or of a component file, in its own
@@ -72,6 +72,8 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   live?: ReactNode
   /** The components' preview: a note's in place of its HTML once drawn, or a component file's. */
   preview?: CardPreview | null
+  /** Loads the highlighter for a note's code blocks, which show plain until it has (and where it does not load). */
+  highlighter?: () => Promise<Highlighter>
   onEdit?: () => void
   onSave?: () => void
   onCancel?: () => void
@@ -84,7 +86,7 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  * dotted canvas); problems in banners; and Edit, Save, Load latest and
  * Cancel with the save status under it.
  */
-export function CardView({ state, canEdit, editNote = null, editor, live, preview = null, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
+export function CardView({ state, canEdit, editNote = null, editor, live, preview = null, highlighter, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
   return (
     <section
@@ -94,7 +96,7 @@ export function CardView({ state, canEdit, editNote = null, editor, live, previe
       {...props}
     >
       <CardHeader state={state} />
-      <CardBody state={state} editor={editor} live={live} preview={preview} />
+      <CardBody state={state} editor={editor} live={live} preview={preview} highlighter={highlighter} />
       {shown?.banner && (
         <div className="px-4 pb-3 max-[500px]:px-3">
           <Banner tone={shown.banner.tone}>{shown.banner.text}</Banner>
@@ -229,7 +231,19 @@ function PreviewSlot({ preview, column = false }: { preview: CardPreview; column
   )
 }
 
-function CardBody({ state, editor, live, preview }: { state: CardState; editor?: ReactNode; live?: ReactNode; preview: CardPreview | null }) {
+function CardBody({
+  state,
+  editor,
+  live,
+  preview,
+  highlighter,
+}: {
+  state: CardState
+  editor?: ReactNode
+  live?: ReactNode
+  preview: CardPreview | null
+  highlighter?: () => Promise<Highlighter>
+}) {
   if (state.phase === "loading") return <LoadingLines />
   if (state.phase === "live") return live ?? <LoadingLines />
   if (state.phase === "problem") {
@@ -253,7 +267,7 @@ function CardBody({ state, editor, live, preview }: { state: CardState; editor?:
     return (
       <>
         {preview?.status === "asking" && <AskingBanner file={file} preview={preview} column />}
-        {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} />}
+        {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} highlighter={highlighter} />}
         {preview && preview.status !== "failed" && <PreviewSlot preview={preview} column />}
         {preview?.status === "failed" && (
           // In the note's column, under its text.
@@ -287,11 +301,11 @@ function CardBody({ state, editor, live, preview }: { state: CardState; editor?:
   return <p className="px-4 py-4 text-[13px] leading-snug text-muted-foreground">{file.kind === "note" ? FILE_NOTES.file : FILE_NOTES[file.kind]}</p>
 }
 
-/** The note editor's frame: the note's type in an accent border, so editing reads as editing. */
+/** The note editor's frame: the note's page in an accent border, so editing reads as editing. The editor's root has the note's type. */
 export function EditorFrame({ children }: { children: ReactNode }) {
   return (
     <div className="card-editor rounded-tile border border-primary">
-      <NoteProse className={cn(CARD_NOTE_CLASS, "max-[500px]:px-3")}>{children}</NoteProse>
+      <CardNote className="max-[500px]:px-3">{children}</CardNote>
     </div>
   )
 }
@@ -301,8 +315,9 @@ type Slot = { host: HTMLElement; node: ReactNode }
 /**
  * The server's sanitized HTML for a note, parsed once, with each embed's
  * figure and each callout replaced by a slot the library's components render
- * into. Only the server's own markup is read: a figure's data-embed index
- * and a callout's tone.
+ * into, and its task items, code blocks and tables in the app's markup
+ * (readingMarkup.ts). Only the server's own markup is read: a figure's
+ * data-embed index and a callout's tone.
  */
 function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<string, string>) {
   const holder = document.createElement("div")
@@ -315,32 +330,62 @@ function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<stri
       continue
     }
     const host = document.createElement("div")
-    host.className = "min-w-0"
+    host.className = "not-prose min-w-0"
     figure.replaceWith(host)
     slots.push({ host, node: <EmbedFigure embed={embed} svgs={svgs} /> })
   }
   for (const aside of holder.querySelectorAll<HTMLElement>("aside.callout")) {
     const host = document.createElement("div")
+    host.className = "not-prose"
     const tone = aside.dataset.tone === "warn" || aside.dataset.tone === "error" ? aside.dataset.tone : "info"
     const content = aside.innerHTML
     aside.replaceWith(host)
     slots.push({ host, node: <NoteCallout tone={tone} html={content} /> })
   }
+  readingMarkup(holder)
   return { nodes: [...holder.childNodes], slots }
 }
 
-/** A rendered note from the server's HTML, with its drawings and callouts from the library. */
-export function NoteHtml({ html, embeds, svgs }: { html: string; embeds: CardFile["embeds"]; svgs: Record<string, string> }) {
+/**
+ * A rendered note from the server's HTML, with its drawings and callouts
+ * from the library, in the app's rendered type. Its code blocks are
+ * highlighted once the highlighter has loaded, after the note shows.
+ */
+export function NoteHtml({
+  html,
+  embeds,
+  svgs,
+  highlighter,
+}: {
+  html: string
+  embeds: CardFile["embeds"]
+  svgs: Record<string, string>
+  highlighter?: () => Promise<Highlighter>
+}) {
   const container = useRef<HTMLDivElement>(null)
   const prepared = useMemo(() => prepareNote(html, embeds, svgs), [html, embeds, svgs])
   useLayoutEffect(() => {
     container.current?.replaceChildren(...prepared.nodes)
   }, [prepared])
+  useEffect(() => {
+    const blocks = container.current ? codeToHighlight(container.current) : []
+    if (!highlighter || blocks.length === 0) return
+    let stopped = false
+    highlighter().then(
+      (highlight) => {
+        if (!stopped) for (const block of blocks) highlightBlock(block, highlight)
+      },
+      () => {},
+    )
+    return () => {
+      stopped = true
+    }
+  }, [prepared, highlighter])
   return (
-    <NoteProse className={CARD_NOTE_CLASS}>
-      <div ref={container} className="contents" />
+    <CardNote>
+      <div ref={container} className={READING_CLASS} />
       {prepared.slots.map((slot, index) => createPortal(slot.node, slot.host, String(index)))}
-    </NoteProse>
+    </CardNote>
   )
 }
 
@@ -354,7 +399,11 @@ const CALLOUT_TONES = {
 function NoteCallout({ tone, html }: { tone: keyof typeof CALLOUT_TONES; html: string }) {
   const { icon: Icon, className } = CALLOUT_TONES[tone]
   return (
-    <Callout data-tone={tone} className={className} icon={<Icon aria-hidden="true" className="max-[500px]:hidden" />}>
+    <Callout
+      data-tone={tone}
+      className={cn("gap-x-3 text-[15px] leading-[1.55] [&>svg]:translate-y-[3px]", className)}
+      icon={<Icon aria-hidden="true" className="max-[500px]:hidden" />}
+    >
       <div className="card-callout" dangerouslySetInnerHTML={{ __html: html }} />
     </Callout>
   )

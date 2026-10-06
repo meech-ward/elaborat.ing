@@ -28,16 +28,16 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardE
 import { createPortal } from "react-dom"
 import { z } from "zod/mini"
 import { DottedPage } from "@/components/panel"
-import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
-import { CARD_NOTE_CLASS } from "./cardNote"
+import { CardNote, READING_CLASS } from "./cardNote"
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
 import { addCardFonts } from "./fonts"
 import type { LiveHandle } from "./live/mount"
 import { blockModules, loadModule, ModuleNotLoaded, modulesAllowed } from "./modules"
 import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
+import { codeBlock, highlightBlock, type Highlighter } from "./readingMarkup"
 import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
 const inputSchema = z.object({ path: z.string() })
@@ -105,6 +105,13 @@ function liveFeed(): LiveFeed {
 
 /** How long input that came with no partial input waits for the result: a result that comes with it shows the saved card at once. */
 const LIVE_GRACE_MS = 100
+
+/**
+ * The app's highlighter for a note's code blocks, loaded the first time a
+ * shown note has a code block with a language, after the note shows. Where
+ * it does not load, the code stays plain.
+ */
+const highlighter = (): Promise<Highlighter> => loadModule("highlight").then((module) => module.highlightCode)
 
 export function ChatCard({ host }: { host: HostBridge }) {
   const [state, dispatch] = useReducer(cardReducer, INITIAL_CARD_STATE)
@@ -330,6 +337,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
           ) : undefined
         }
         preview={preview}
+        highlighter={highlighter}
         onEdit={() => {
           setPreviewed(null)
           if (host.canFullscreen()) {
@@ -395,9 +403,9 @@ function LiveView({ kind, path, feed }: { kind: LiveKind; path: string; feed: Li
     <div ref={box} className="relative">
       <div data-live-viewport className="h-[340px] overflow-hidden max-[500px]:h-[280px]">
         {kind === "note" && (
-          <NoteProse className={CARD_NOTE_CLASS}>
-            <div data-live-content className="contents" />
-          </NoteProse>
+          <CardNote>
+            <div data-live-content className={READING_CLASS} />
+          </CardNote>
         )}
       </div>
     </div>
@@ -436,6 +444,7 @@ function NoteEditor({
       const found = file.embeds.find((entry) => entry?.path === ref.path)
       if (!found) return null
       const host = document.createElement("div")
+      host.className = "not-prose"
       const id = next++
       setIslands((list) => [...list.filter((island) => island.host.isConnected), { id, host, embed: found }])
       return host
@@ -446,6 +455,11 @@ function NoteEditor({
         text: file.source ?? "",
         format: file.path.toLowerCase().endsWith(".mdx") ? "mdx" : "md",
         embed,
+        code: (text, language) => {
+          const block = codeBlock(text, language)
+          if (language) highlighter().then((highlight) => highlightBlock(block, highlight), () => {})
+          return block
+        },
         notice: (text) => onNotice(text),
         change: (dirty) => onChange(dirty),
       }),

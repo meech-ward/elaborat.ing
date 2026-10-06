@@ -156,10 +156,10 @@ Deno.test('the card script makes no requests, runs no code from strings, and sta
   }
   // The modules it imports when needed, and its fonts, are the app's own, from the origin the view declares.
   const modules = new Set([...CARD_SCRIPT.matchAll(/["'`](https:\/\/[^"'`]+\.(?:js|css|woff2))["'`]/g)].map((match) => match[1]))
-  assertEquals(modules.size, 8)
+  assertEquals(modules.size, 9)
   for (const url of modules) assert(url.startsWith('https://elaborat.ing/chat-card/'), url)
-  // What hosts load for the view: the card and its stylesheet. Its fonts, the editor and the
-  // component previews are files it loads when it needs them.
+  // What hosts load for the view: the card and its stylesheet. Its fonts, the editor, the code
+  // highlighter and the component previews are files it loads when it needs them.
   assert(FILE_VIEW_HTML.length < 500_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 

@@ -1,0 +1,182 @@
+/* A note's type in the app's rendered view, which the chat card shares
+   (src/chat-card/card.css): Typography's prose in the app's tokens
+   (.preview-prose), in C5's reading column (.reading-document). A note as
+   C5 draws it: a 680px column of 15.5px body text at 1.6 in the body
+   colour, h1 32/700, h2 21/600, every block 14px apart; on a phone 16px
+   text, h1 30. The reader's width and text size preferences
+   (appearance/reading.ts) set the variables; the page around the note sets
+   its text size from them (reading.css, card.css). Components and the
+   frame's controls are `not-prose`, which these rules leave alone. */
+:root {
+  --reading-width: 680px;
+  --reading-font-size: 15.5px;
+  --reading-mobile-font-size: 16px;
+  --reading-scale: 1;
+  --reading-mobile-scale: 1;
+}
+
+/* Typography remains in document flow. Components and authoring controls use
+ * `not-prose`, which the Typography plugin excludes from descendant selectors. */
+.preview-prose {
+  /* Typography's 1rem must not replace the reader's body-size preference. */
+  font-size: inherit;
+  line-height: inherit;
+  --tw-prose-body: var(--body);
+  --tw-prose-headings: var(--text);
+  --tw-prose-lead: var(--muted);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--text);
+  --tw-prose-counters: var(--body);
+  --tw-prose-bullets: var(--panel-border);
+  --tw-prose-hr: var(--panel-border);
+  --tw-prose-quotes: var(--text);
+  --tw-prose-quote-borders: var(--accent);
+  --tw-prose-captions: var(--muted);
+  --tw-prose-code: var(--text);
+  --tw-prose-pre-code: var(--text);
+  --tw-prose-pre-bg: var(--seg);
+  --tw-prose-th-borders: var(--panel-border);
+  --tw-prose-td-borders: var(--panel-border);
+}
+
+/* Document typography details, translated to the editor's theme tokens
+ * (.reading-document, below, sets the sizes and the spacing between blocks). These rules
+ * remain inside document flow and leave `not-prose` component roots,
+ * authoring controls, and embedded Drawing/Diagram pixels untouched. */
+.preview-prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  scroll-margin-top: 1rem;
+}
+.preview-prose :where(h3):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  margin-bottom: 0.8em;
+}
+.preview-prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+.preview-prose :where(pre):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  background: var(--seg);
+  border-radius: 0.3rem;
+  padding: 0.1em 0.35em;
+  /* The library's code type is regular weight, as in the chat card; Typography's is 600. */
+  font-weight: inherit;
+}
+/* The chip marks inline code, so Typography's literal backticks go. */
+.preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+.preview-prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
+.preview-prose .reading-table {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.preview-prose .reading-table > table {
+  margin-block: 0;
+}
+.preview-prose .reading-table th {
+  background: var(--seg);
+}
+
+.reading-document {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      min(var(--reading-width), 100%)
+    ) minmax(0, 1fr);
+}
+.reading-document > * {
+  grid-column: 2;
+  min-width: 0;
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+.reading-document > :last-child {
+  margin-bottom: 0;
+}
+.reading-document h1 {
+  font-size: calc(32px * var(--reading-scale));
+  line-height: 1.15;
+  font-weight: 700;
+}
+.reading-document h2 {
+  font-size: calc(21px * var(--reading-scale));
+  line-height: 1.3;
+  font-weight: 600;
+}
+.reading-document > h2 {
+  margin-top: 6px;
+}
+.reading-document :is(ol, ul) {
+  padding-inline-start: 22px;
+}
+.reading-document li {
+  margin-block: 0;
+  padding-inline-start: 0;
+}
+.reading-document img {
+  max-width: 100%;
+  height: auto;
+}
+.reading-table {
+  max-width: 100%;
+  overflow: auto;
+}
+.reading-table > table {
+  min-width: 100%;
+}
+.reading-document > p {
+  overflow-wrap: anywhere;
+}
+/* The rendered view's frame has no preflight, so these set what the
+   browser's own styles would otherwise: a rule is a line across the column
+   (the browser's centres itself and shrinks to a dot in the grid), a quote
+   has no side margins, and a table's rows are ruled (Typography sets the
+   lines' widths and colours, not their style, and they need collapsed
+   borders). */
+.reading-document hr {
+  margin-inline: 0;
+  border-style: solid;
+  border-width: 1px 0 0;
+}
+.reading-document blockquote {
+  margin-inline: 0;
+}
+.reading-table > table {
+  border-collapse: collapse;
+}
+.reading-table :is(thead, tbody tr) {
+  border-bottom-style: solid;
+}
+.reading-table tfoot {
+  border-top-style: solid;
+}
+/* List items require a paragraph wrapper; collapse only its outer
+   edges. Internal multi-paragraph gaps and root paragraph spacing stay. */
+.ProseMirror li > p:only-child,
+.reading-document li > p:only-child {
+  margin-block: 0;
+}
+.ProseMirror li > p:first-child,
+.reading-document li > p:first-child {
+  margin-block-start: 0;
+}
+.ProseMirror li > p:last-child,
+.reading-document li > p:last-child {
+  margin-block-end: 0;
+}
+@media (max-width: 500px) {
+  .reading-document h1 {
+    font-size: calc(30px * var(--reading-mobile-scale));
+  }
+  .reading-document h2 {
+    font-size: calc(21px * var(--reading-mobile-scale));
+  }
+  .reading-document li {
+    line-height: 1.8;
+  }
+}

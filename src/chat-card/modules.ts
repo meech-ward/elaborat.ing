@@ -1,7 +1,8 @@
 /**
  * The chat card's code that only some cards need, loaded when it is needed:
  * the note editor (on Edit), the live view (for a new file shown while it is
- * written), the component compiler (for a note with
+ * written), the code highlighter (for a note with a code block), the
+ * component compiler (for a note with
  * components, or a component file) and the component preview frame's
  * runtime, which the frame loads itself and which loads the charts' library
  * only for a note with a chart. `bun run build:chat-card` builds them as ES
@@ -16,12 +17,13 @@
  */
 import type * as Compile from "./lazy/compile"
 import type * as Editor from "./lazy/editor"
+import type * as Highlight from "./lazy/highlight"
 import type * as Live from "./lazy/live"
 
 /** The modules' addresses, which scripts/build-chat-card.ts sets. */
-declare const CARD_MODULES: { editor: string; live: string; compile: string; frame: string; frameStyle: string }
+declare const CARD_MODULES: { editor: string; live: string; compile: string; highlight: string; frame: string; frameStyle: string }
 
-type Modules = { editor: typeof Editor; live: typeof Live; compile: typeof Compile }
+type Modules = { editor: typeof Editor; live: typeof Live; compile: typeof Compile; highlight: typeof Highlight }
 
 let known: typeof CARD_MODULES | undefined
 /** The addresses, read once: the build writes them where CARD_MODULES is named. */

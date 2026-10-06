@@ -26,9 +26,8 @@ import { createRoot } from "react-dom/client"
 import * as jsxRuntime from "react/jsx-runtime"
 import { Banner } from "@/features/design-system/ui/Banner"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
-import { NoteProse } from "@/features/design-system/ui/NoteProse"
 import { trustedReact } from "@/preview/trustedReact"
-import { CARD_NOTE_CLASS, EmbedFigure } from "../cardNote"
+import { CardNote, EmbedFigure, READING_CLASS } from "../cardNote"
 import type { CardEmbed } from "../embedText"
 import { addFonts } from "../fontFaces"
 import { componentCaption } from "./caption"
@@ -217,9 +216,11 @@ async function start(plan: PreviewPlan, registry: Registry) {
     }
     root.render(
       <Root>
-        <NoteProse className={CARD_NOTE_CLASS}>
-          <Content components={components} />
-        </NoteProse>
+        <CardNote>
+          <div className={READING_CLASS}>
+            <Content components={components} />
+          </div>
+        </CardNote>
         <Drawn />
       </Root>,
     )

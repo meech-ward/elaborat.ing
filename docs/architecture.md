@@ -834,21 +834,27 @@ The production server's tools are unchanged.
 - **The card is built from the component library.** `src/chat-card` is a
   small React app on the library's components and the Supabase Green
   palette, light or dark as the host says; its states are on `/style-guide`.
-  Its text is in the app's fonts, except in ChatGPT, whose guidelines ask
-  plugins for the system's fonts: there it uses the host's font variables,
+  A note reads as in the app's rendered view: the card's stylesheet carries
+  the view's reading styles (`src/preview/noteType.css`, Typography's prose
+  in the app's tokens), and the server's HTML is put in the view's markup
+  for list items, task items, code blocks and tables
+  (`src/chat-card/readingMarkup.ts`). Its text is in the app's fonts,
+  except in ChatGPT, whose guidelines ask plugins for the system's fonts: there it uses the host's font variables,
   or the system's, and loads only Excalifont, which drawings are written in.
   `bun run build:chat-card` builds it into `tools/cardEditorScript.ts`, a
   script and stylesheet the view inlines, committed because the functions
   deploy without building the app. Rebuild it after changing the card or the
   modules it uses, and give the view a new `ui://` URI. Zod runs jitless.
 - **Decision: the view is a small shell, and the rest loads when it is
-  needed.** The inline script (about 330 kB, 100 kB gzip) shows the file
+  needed.** The inline script (about 355 kB, 106 kB gzip) shows the file
   from the server's HTML and drawings with no network requests. The same
   build writes the rest to `public/chat-card/`, which every app deploy
   serves at `https://elaborat.ing/chat-card/` with CORS
   (`public/_headers`): the app's fonts (Space Grotesk, JetBrains Mono and
   Excalifont's Latin subset), added once the host has answered; the note
-  editor as an ES module the card imports when Edit is pressed; the
+  editor as an ES module the card imports when Edit is pressed; the app's
+  code highlighter, after a note with a code block shows (where it does not
+  load, the code stays plain); the
   component compiler and the preview frame's runtime, for a note with
   components or a component file; and the charts' library, which the frame
   imports only for a note with a chart. The view declares that origin in

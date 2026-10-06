@@ -4,7 +4,7 @@
 // the note's type, and its drawings and diagrams in the library's embed box.
 // Nothing here parses results, so the frame's bundle carries no schema library.
 import "./card.css"
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react"
+import { useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties } from "react"
 import { Banner } from "@/features/design-system/ui/Banner"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { KindBadge, type FileKind as BadgeKind } from "@/features/design-system/ui/KindBadge"
@@ -14,11 +14,17 @@ import { EMBED_NOTES, KIND_NAMES, svgFor, type CardEmbed, type FileKind } from "
 
 export const badgeKind = (kind: FileKind): BadgeKind => (kind === "file" ? "text" : kind === "component" ? "note" : kind)
 
-/** The note's type, as the app's rendered note: NoteProse, at the phone's sizes on a phone. */
-export const CARD_NOTE_CLASS = cn(
-  "card-note px-6 py-5 max-[500px]:px-4 max-[500px]:py-4",
-  "max-[500px]:[&_h1]:text-[30px] max-[500px]:[&_li]:text-base max-[500px]:[&_li]:leading-[1.8] max-[500px]:[&_p]:text-base",
-)
+/**
+ * The note's type: the app's rendered view's (src/preview/noteType.css, in
+ * card.css), on the element whose children are the note's blocks. The
+ * rendered editor puts it on its own root (fluidEditor.ts).
+ */
+export const READING_CLASS = "reading-document preview-prose prose max-w-none"
+
+/** A note's page: the reader's text size (card.css), inside the card's padding. */
+export function CardNote({ className, ...props }: ComponentProps<"article">) {
+  return <article className={cn("card-note px-6 py-5 text-foreground max-[500px]:px-4 max-[500px]:py-4", className)} {...props} />
+}
 
 /**
  * The server's SVG of a drawing, which escapes everything it takes from the
@@ -74,6 +80,7 @@ export function EmbedFigure({ embed, svgs }: { embed: CardEmbed; svgs: Record<st
   const svg = svgFor(embed, svgs)
   return (
     <EmbedBox
+      className="not-prose"
       floatingCaption={Boolean(svg)}
       message={svg ? undefined : EMBED_NOTES[embed.status]}
       caption={

@@ -17,6 +17,7 @@
 import { drawElement, MAX_ELEMENTS, MAX_SVG_CHARS, type Box } from "../../../supabase/functions/mcp-server/tools/drawingSvg.ts"
 import { renderNote } from "../../../supabase/functions/mcp-server/tools/markdown.ts"
 import { drawingScanner, noteTail, type SceneElement } from "./partial"
+import { readingMarkup } from "../readingMarkup"
 
 export type LiveKind = "note" | "drawing" | "diagram"
 export type LiveOptions = { kind: LiveKind; path: string; reducedMotion: boolean }
@@ -396,6 +397,8 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
       box.textContent = embed ? `${embed.kind === "diagram" ? "Diagram" : "Drawing"} ${embed.path}` : ""
       figure.replaceWith(box)
     }
+    // Task items, code blocks and tables in the app's markup, as the saved card shows them.
+    readingMarkup(holder)
     caret.remove()
     const blocks = [...holder.children]
     const current = [...content.children]

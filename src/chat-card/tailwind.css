@@ -10,8 +10,6 @@
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "../features/appearance/radii.css";
 @import "../features/appearance/tailwindTheme.css";
-/* A task list item's box in the note editor (the library's look). */
-@import "../features/design-system/ui/taskList.css";
 @import "./base.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -24,6 +22,5 @@
 @source "../features/design-system/ui/Banner.tsx";
 @source "../features/design-system/ui/EmbedBox.tsx";
 @source "../features/design-system/ui/KindBadge.tsx";
-@source "../features/design-system/ui/NoteProse.tsx";
 @source "../features/design-system/ui/StatusDot.tsx";
 

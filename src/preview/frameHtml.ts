@@ -12,6 +12,7 @@
  */
 import { DEFAULT_APPEARANCE, getAppearanceTokens, tokenProperty } from "../features/appearance/tokens";
 import previewTailwindCss from "./tailwind.css?inline";
+import noteTypeCss from "./noteType.css?raw";
 import readingCss from "./reading.css?raw";
 import fluidCss from "./fluid.css?raw";
 import prosemirrorCss from "prosemirror-view/style/prosemirror.css?raw";
@@ -53,7 +54,7 @@ export function frameHtml({ fontCss, script, csp }: FrameHtmlOptions): string {
     // Insert block and its dialog are drawn in reading.css.
     "<style>[data-placeholder]:empty::before{content:attr(data-placeholder);color:var(--muted);pointer-events:none}[data-authoring-block]:empty{min-width:8em}</style>\n" +
     `<style>${previewTailwindCss}</style>\n` +
-    `<style>${readingCss}</style>\n` +
+    `<style>${noteTypeCss}\n${readingCss}</style>\n` +
     `<style>${prosemirrorCss}\n${fluidCss}</style>\n` +
     "  </head>\n" +
     "  <body>\n" +

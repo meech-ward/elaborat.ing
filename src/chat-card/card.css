@@ -1,109 +1,52 @@
-/* The chat card's rules for markup it does not render itself: the note's
-   HTML from the server (NoteProse sets its headings, paragraphs and ordered
-   lists; these add the rest, as the app's rendered note draws them), the
-   server's SVG drawings, and the note editor. The library's components in
-   the note ([data-slot] inside .card-note) keep their own styles; the card
-   itself is one too, so the guard looks only inside the note. Its :where()
-   keeps these rules' weight, so the editor's spacing below still wins. */
+/* The chat card's rules for markup it does not render itself: the note,
+   the server's SVG drawings, and the note editor.
 
-.card-note :where(ul):not(:where(.card-note) [data-slot] *) {
-  margin: 0;
-  padding-left: 22px;
-  list-style: disc;
+   A note reads as it does in the app's rendered view: in the same type
+   (src/preview/noteType.css, Typography's prose in the app's tokens, in
+   the reading column) and the same markup for lists, task items, code
+   blocks and tables (readingMarkup.ts). This file is a Tailwind root of its
+   own for Typography's `.prose` (and max-w-none) and nothing else, so the
+   card, its component preview's frame and the style guide's card all carry
+   it. The library's components in a note are `not-prose` and keep their own
+   styles, and the card's controls are outside the note. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "../preview/noteType.css";
+@import "../features/rendered/codeFence.css";
+/* A task item's box (the library's look). */
+@import "../features/design-system/ui/taskList.css";
+@plugin "@tailwindcss/typography";
+/* max-w-none after prose, as in the frame's build, so the note fills the column. */
+@source inline("prose max-w-none");
+
+/* What the rendered view's page gives a note (frameHtml.ts, reading.css):
+   the reader's text size, the body colour for paragraphs and list items,
+   and the heading and code fonts. */
+.card-note {
+  font-size: var(--reading-font-size);
+  line-height: 1.6;
 }
-.card-note :where(li > ul, li > ol) {
-  margin-top: 4px;
+@media (max-width: 500px) {
+  .card-note {
+    font-size: var(--reading-mobile-font-size);
+  }
 }
-.card-note :where(li > p):not(:where(.card-note) [data-slot] *) {
-  margin: 0;
+@layer base {
+  .card-note :where(p, li) {
+    color: var(--body);
+  }
+  .card-note :where(h1, h2, h3) {
+    font-family: var(--heading-font);
+  }
+  .card-note :where(h1) {
+    letter-spacing: var(--heading-tracking);
+  }
+  .card-note :where(pre, code, kbd) {
+    font-family: var(--code-font);
+  }
 }
-.card-note :where(li):has(> input[type="checkbox"]) {
-  list-style: none;
-}
-.card-note input[type="checkbox"] {
-  margin: 0 6px 0 0;
-  accent-color: var(--accent);
-  vertical-align: -1px;
-}
-.card-note :where(h3, h4, h5, h6):not(:where(.card-note) [data-slot] *) {
-  margin: 4px 0 0;
-  font-weight: 600;
-  line-height: 1.3;
-}
-.card-note :where(h3):not(:where(.card-note) [data-slot] *) {
-  font-size: 17px;
-}
-.card-note :where(h4, h5, h6):not(:where(.card-note) [data-slot] *) {
-  font-size: 15.5px;
-}
-.card-note :where(h1, h2, h3, h4, h5, h6):not(:where(.card-note) [data-slot] *) {
-  font-family: var(--heading-font, var(--ui-font));
-}
-.card-note :where(h1):not(:where(.card-note) [data-slot] *) {
-  letter-spacing: var(--heading-tracking, -0.5px);
-}
-.card-note :where(a):not(:where(.card-note) [data-slot] *) {
-  color: var(--accent-soft-text);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
-}
-.card-note :where(strong, b):not(:where(.card-note) [data-slot] *) {
-  font-weight: 600;
-  color: var(--text);
-}
-.card-note :where(blockquote):not(:where(.card-note) [data-slot] *) {
-  margin: 0;
-  padding-left: 18px;
-  border-left: 2px solid var(--accent);
-  color: var(--muted);
-}
-.card-note :where(blockquote p):not(:where(.card-note) [data-slot] *) {
-  color: inherit;
-}
-.card-note :where(:not(pre) > code):not(:where(.card-note) [data-slot] *) {
-  padding: 0.1em 0.35em;
-  border-radius: 0.3rem;
-  background: var(--seg);
-  font-family: var(--code-font);
-  font-size: 0.88em;
-}
-.card-note :where(pre):not(:where(.card-note) [data-slot] *) {
-  margin: 0;
-  overflow-x: auto;
-  padding: 12px 16px;
-  border: 1px solid var(--panel-border);
-  border-radius: 0.75rem;
-  background: var(--seg);
-  box-shadow: 0 1px 2px var(--shadow);
-  color: var(--text);
-  font: 13px/1.6 var(--code-font);
-}
-.card-note :where(hr):not(:where(.card-note) [data-slot] *) {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--panel-border);
-}
-.card-note :where(table):not(:where(.card-note) [data-slot] *) {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.card-note :where(th, td):not(:where(.card-note) [data-slot] *) {
-  padding: 6px 12px;
-  border: 1px solid var(--panel-border);
-  text-align: left;
-}
-.card-note :where(th):not(:where(.card-note) [data-slot] *) {
-  background: var(--seg);
-  font-weight: 600;
-}
-.card-note :where(del) {
-  color: var(--muted);
-}
-.card-note :where(p, li, h1, h2, h3, h4, h5, h6) {
+/* A long word or link wraps, rather than running out of the card. */
+.card-note :where(li, h1, h2, h3, h4, h5, h6) {
   overflow-wrap: anywhere;
 }
 
@@ -194,7 +137,7 @@
   fill: #fefefe;
 }
 
-/* The note editor: ProseMirror in the note's type, 14 between blocks. */
+/* The note editor: ProseMirror in the note's type (its root is the reading column, as in the app). */
 .card-editor .ProseMirror {
   min-height: 3em;
   outline: none;
@@ -203,20 +146,8 @@
   font-variant-ligatures: none;
   caret-color: var(--accent);
 }
-.card-editor .ProseMirror > * {
-  margin-block: 0;
-}
-.card-editor .ProseMirror > * + * {
-  margin-top: 14px;
-}
-.card-editor .ProseMirror > h2 {
-  margin-top: 20px;
-}
 .card-editor .ProseMirror li {
   position: relative;
-}
-.card-editor .ProseMirror li > p {
-  margin: 0;
 }
 .card-editor .ProseMirror-hideselection *::selection {
   background: transparent;

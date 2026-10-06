@@ -2,8 +2,8 @@
  * The app's built-in components as the component preview's frame provides
  * them to a note: the same ones the app's preview frame gives
  * (src/preview/preview-entry.tsx), without its editing controls. Code blocks
- * show as plain code, as the rest of the card shows them, which keeps the
- * highlighter's grammars out of the card. Charts are the app's, which the
+ * show as plain code in the note's type, which keeps the highlighter's
+ * grammars out of the frame. Charts are the app's, which the
  * frame loads only for a note with a chart (runtime.tsx); until then, or
  * where they do not load, a chart shows as a box with its description that
  * says charts show in elaborat.ing. Drawing and Diagram come from the frame,

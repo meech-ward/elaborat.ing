@@ -23,8 +23,8 @@ the reviewer's account needs no codes or links.
 | Prompt | Expected |
 | --- | --- |
 | **Submit.** Show me the welcome note from my elaborat.ing project. | `list_projects`, then `show_file` on `welcome.mdx`. The card shows the note with its drawing and diagram, and Open in elaborat.ing. |
-| **Submit.** In elaborat.ing, add a note called `meeting.mdx` to my welcome project with three action items from today's standup, then show it. | `write_file` with a new `.mdx` (no `base_version`), then `show_file`. |
-| **Submit.** Draw a simple drawing in elaborat.ing of three boxes, Browser, Worker and Database, joined by arrows, and show it to me. | `write_file` with a new `.excalidraw` scene, then `show_file`, which draws it. |
+| **Submit.** In elaborat.ing, add a note called `meeting.mdx` to my welcome project with three action items from today's standup, then show it. | `create_and_show` with a new `.mdx`, or `write_file` with a new `.mdx` (no `base_version`) and then `show_file`; either passes. The card shows the note. |
+| **Submit.** Draw a simple drawing in elaborat.ing of three boxes, Browser, Worker and Database, joined by arrows, and show it to me. | `create_and_show` with a new `.excalidraw` scene, or `write_file` with it and then `show_file`; either passes. The card draws it. |
 | What's in my elaborat.ing projects? | `list_projects`, then `list_files` for one or more. No card. |
 | Edit the welcome note in elaborat.ing: change the first heading to "Hello". | `read_file`, then `write_file` with the `base_version` it read. |
 | Add a D2 diagram of a sign-up flow to my elaborat.ing project. | `write_file` with a new `.d2` file. Shown with `show_file`, the card says to open it in elaborat.ing to draw it, since the app lays diagrams out. |

@@ -1,70 +1,12 @@
-/* A note as C5 draws it: a 680px column of 15.5px body text at 1.6 in the
-   body colour, h1 32/700, h2 21/600, every block 14px apart; on a phone
-   16px text, h1 30. The reader's width and text size preferences
-   (appearance/reading.ts) set the variables. */
-:root {
-  --reading-width: 680px;
-  --reading-font-size: 15.5px;
-  --reading-mobile-font-size: 16px;
-  --reading-scale: 1;
-  --reading-mobile-scale: 1;
-}
+/* The rendered view's page, around the note's type (noteType.css, which
+   the chat card shares): the body at the reader's text size, 16px on a
+   phone, and the controls the frame adds to a note. */
 body {
   font-size: var(--reading-font-size);
   line-height: 1.6;
 }
 #root {
   max-width: none;
-}
-.reading-document {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(
-      0,
-      min(var(--reading-width), 100%)
-    ) minmax(0, 1fr);
-}
-.reading-document > * {
-  grid-column: 2;
-  min-width: 0;
-  margin-top: 0;
-  margin-bottom: 14px;
-}
-.reading-document > :last-child {
-  margin-bottom: 0;
-}
-.reading-document h1 {
-  font-size: calc(32px * var(--reading-scale));
-  line-height: 1.15;
-  font-weight: 700;
-}
-.reading-document h2 {
-  font-size: calc(21px * var(--reading-scale));
-  line-height: 1.3;
-  font-weight: 600;
-}
-.reading-document > h2 {
-  margin-top: 6px;
-}
-.reading-document :is(ol, ul) {
-  padding-inline-start: 22px;
-}
-.reading-document li {
-  margin-block: 0;
-  padding-inline-start: 0;
-}
-.reading-document img {
-  max-width: 100%;
-  height: auto;
-}
-.reading-table {
-  max-width: 100%;
-  overflow: auto;
-}
-.reading-table > table {
-  min-width: 100%;
-}
-.reading-document > p {
-  overflow-wrap: anywhere;
 }
 :root[data-wide-media="true"]
   .reading-document
@@ -435,15 +377,6 @@ figure[data-resource][data-pixels="false"] > figcaption {
 @media (max-width: 500px) {
   body {
     font-size: var(--reading-mobile-font-size);
-  }
-  .reading-document h1 {
-    font-size: calc(30px * var(--reading-mobile-scale));
-  }
-  .reading-document h2 {
-    font-size: calc(21px * var(--reading-mobile-scale));
-  }
-  .reading-document li {
-    line-height: 1.8;
   }
   figure[data-resource] {
     min-height: 130px;

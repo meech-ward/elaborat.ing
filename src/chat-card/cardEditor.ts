@@ -7,7 +7,9 @@
  * prepareFluidTransaction turning it into an exact source patch. So only the
  * edited text changes; every other byte of the note stays as it was. Embeds,
  * code, tables and other MDX are islands the editor cannot change: embeds show
- * the drawing the server drew, and the rest shows as it is written.
+ * the drawing the server drew, code blocks and tables show as the app's
+ * rendered view shows them (readingMarkup.ts), and the rest shows as it is
+ * written.
  *
  * ChatCard.tsx starts it when Edit is pressed; `bun run build:chat-card`
  * builds it into the card's script with the rest of the card (main.tsx).
@@ -22,6 +24,7 @@ import {
 } from '../features/rendered/fluidProjection'
 import type { DocumentFormat } from '../features/document'
 import { FluidEditor } from '../preview/fluidEditor'
+import { readingTable } from './readingMarkup'
 
 /** A drawing or diagram a note embeds, as the server reads it (tools/markdown.ts). */
 export type EmbedRef = { kind: 'drawing' | 'diagram'; path: string }
@@ -32,6 +35,8 @@ export type CardEditorOptions = {
   format: DocumentFormat
   /** The drawn embed for a `<Drawing>` or `<Diagram>` tag, or null to show the tag as written. */
   embed: (ref: EmbedRef) => HTMLElement | null
+  /** A fenced code block, from its code and language ('' for none). */
+  code: (text: string, language: string) => HTMLElement
   /** A short message about the last edit, or null to clear it. */
   notice: (message: string | null) => void
   /** Called after each accepted edit, with whether the note differs from where it started. */
@@ -63,8 +68,22 @@ type Ast = { type: string; value?: string; alt?: string | null; children?: Ast[]
 const textOf = (ast: Ast): string =>
   ast.type === 'text' || ast.type === 'inlineCode' ? (ast.value ?? '') : (ast.children ?? []).map(textOf).join('')
 
+const PHRASING: Record<string, string> = { inlineCode: 'code', strong: 'strong', emphasis: 'em', delete: 'del', link: 'a' }
+
+/** A table cell's words, with their inline code, emphasis and links (a link that goes nowhere: the cell cannot be edited). */
+function phrasing(ast: Ast): Node[] {
+  return (ast.children ?? []).map((child) => {
+    const tag = PHRASING[child.type]
+    if (!tag) return document.createTextNode(textOf(child))
+    const element = document.createElement(tag)
+    if (child.type === 'inlineCode') element.textContent = child.value ?? ''
+    else element.append(...phrasing(child))
+    return element
+  })
+}
+
 /** An island's content: its drawing, its code or table, or its source as written. */
-function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string, inline: boolean, embed: CardEditorOptions['embed']) {
+function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string, inline: boolean, { embed, code }: Pick<CardEditorOptions, 'embed' | 'code'>) {
   const ref = parseEmbedTag(source)
   const drawn = ref ? embed(ref) : null
   if (drawn) {
@@ -73,26 +92,24 @@ function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string
   }
   // Compiling the note turns the island's code node into a component, so a
   // fenced block is found from its source.
-  const fence = /^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n?[ \t]*\1[`~]*[ \t]*$/.exec(source)
+  const fence = /^(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)\n?[ \t]*\1[`~]*[ \t]*$/.exec(source)
   if (fence) {
-    const pre = document.createElement('pre')
-    const code = document.createElement('code')
-    code.textContent = fence[2]
-    pre.append(code)
-    element.replaceChildren(pre)
+    element.replaceChildren(code(fence[3], fence[2].trim().split(/\s+/)[0]))
     return
   }
   if (ast?.type === 'table') {
     const table = document.createElement('table')
+    const head = table.createTHead()
+    const body = table.createTBody()
     for (const [index, row] of (ast.children ?? []).entries()) {
-      const tr = table.insertRow()
+      const tr = (index === 0 ? head : body).insertRow()
       for (const cell of row.children ?? []) {
         const td = document.createElement(index === 0 ? 'th' : 'td')
-        td.textContent = textOf(cell)
+        td.append(...phrasing(cell))
         tr.append(td)
       }
     }
-    element.replaceChildren(table)
+    element.replaceChildren(readingTable(table))
     return
   }
   if (ast?.type === 'image') {
@@ -100,7 +117,7 @@ function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string
     return
   }
   const written = document.createElement(inline ? 'code' : 'pre')
-  written.className = 'island-source'
+  written.className = 'island-source not-prose'
   written.textContent = source
   element.replaceChildren(written)
 }
@@ -127,7 +144,7 @@ const SESSION = 'chat-card'
 
 /** Shows the note in `mount` as an editable rendered document. */
 export async function startCardEditor(options: CardEditorOptions): Promise<CardEditor> {
-  const { mount, format, embed, notice, change } = options
+  const { mount, format, embed, code, notice, change } = options
   const original = options.text
   const environment = { source: original, catalog: COMPONENT_CATALOG, modules: [], key: '', code: [] }
   const project = (text: string) => projectFluidSource(text, format, { ...environment, source: text })
@@ -157,7 +174,7 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
       const island = projection.islands.find((entry) => entry.id === id)
       if (!island) continue
       element.dataset.filled = id
-      renderIsland(element, asts.get(id), projection.text.slice(island.from, island.to), island.inline, embed)
+      renderIsland(element, asts.get(id), projection.text.slice(island.from, island.to), island.inline, { embed, code })
     }
   }
 

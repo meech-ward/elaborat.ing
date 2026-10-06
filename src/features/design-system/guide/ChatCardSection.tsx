@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react"
-import { CARD_TEXT, CardView, componentCaption, EditorFrame, EmbedFigure, type CardFile, type CardPreview, type CardState } from "@/chat-card"
+import { CARD_TEXT, CardView, componentCaption, EditorFrame, EmbedFigure, READING_CLASS, type CardFile, type CardPreview, type CardState } from "@/chat-card"
 import { EmbedBox } from "../ui/EmbedBox"
 import { getPaletteColors, useAppearance } from "@/features/appearance"
 import { beforeDarkFilter } from "@/features/drawings"
@@ -74,11 +74,11 @@ const shown = (file: CardFile, rest: Partial<Extract<CardState, { phase: "shown"
 function EditingSample() {
   return (
     <EditorFrame>
-      <div className="ProseMirror">
+      <div className={`ProseMirror ${READING_CLASS}`}>
         <h1>Customer model</h1>
         <p>How a customer moves from sign-up to their first project, and where agents help today.</p>
         <div data-fluid-object="">
-          <pre className="island-source">{'<Callout tone="note">\n  Agents act as the signed-in person in every project they can open.\n</Callout>'}</pre>
+          <pre className="island-source not-prose">{'<Callout tone="note">\n  Agents act as the signed-in person in every project they can open.\n</Callout>'}</pre>
         </div>
         <ol>
           <li>Sign up with an email link.</li>
