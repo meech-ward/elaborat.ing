@@ -7,7 +7,7 @@
     "editor-BqM1-fFr.js",
     "excalifont-latin-5EI7MY4R.woff2",
     "frame-DJqe3pbQ.js",
-    "frame-PVAVa8e3.css",
+    "frame-cs1vSx0N.css",
     "jetbrains-mono-latin-GL5FJyS_.woff2",
     "lib-Ceg4HkvZ.js",
     "live-BKWsWqbk.js",
@@ -17,17 +17,20 @@
     "utils-BvlWcjul.js"
   ],
   "previous": [
-    "chartCatalog-Tpcuv2_V.js",
-    "compile-D_lkQQch.js",
-    "componentModules-CVr1Xb25.js",
-    "documentCharts-5K_k10RZ.js",
-    "editor-DuS86sYB.js",
+    "chartCatalog-TVDdiaAy.js",
+    "compile-CutglLUt.js",
+    "componentModules-BVhPp3xy.js",
+    "documentCharts-BXHLu4hd.js",
+    "editor-BqM1-fFr.js",
     "excalifont-latin-5EI7MY4R.woff2",
-    "frame-CLyAlAJ8.js",
+    "frame-DJqe3pbQ.js",
     "frame-PVAVa8e3.css",
     "jetbrains-mono-latin-GL5FJyS_.woff2",
+    "lib-Ceg4HkvZ.js",
+    "live-BKWsWqbk.js",
     "protocol-DzpV84W1.js",
+    "rolldown-runtime-hePW80VL.js",
     "space-grotesk-latin-BkCJBHb8.woff2",
-    "utils-WDHXApqq.js"
+    "utils-BvlWcjul.js"
   ]
 }

@@ -28,6 +28,8 @@ the reviewer's account needs no codes or links.
 | What's in my elaborat.ing projects? | `list_projects`, then `list_files` for one or more. No card. |
 | Edit the welcome note in elaborat.ing: change the first heading to "Hello". | `read_file`, then `write_file` with the `base_version` it read. |
 | Add a D2 diagram of a sign-up flow to my elaborat.ing project. | `write_file` with a new `.d2` file. Shown with `show_file`, the card says to open it in elaborat.ing to draw it, since the app lays diagrams out. |
+| Sketch our deploy pipeline as a drawing in elaborat.ing so I can watch it being drawn. | `create_and_show` with a new `.excalidraw` scene, each shape followed by its label, arrows after. The card draws it in as it is written, where the chat allows that, then shows the saved drawing. |
+| In elaborat.ing, write a note about our sign-up flow with a D2 diagram of it, and let me watch it come together. | `create_and_show` for the new `.d2` first, then `create_and_show` for the `.mdx` note that embeds it. Each card shows its file being written, then saved. |
 | Preview a component in elaborat.ing that shows a number with a label. | `preview_component` with a draft `source`. Nothing is saved. |
 | Which elaborat.ing account am I connected with? | `whoami`: the account's id, name and email. |
 | Watch this project for review comments. | `list_projects`, then, where the host supports MCP Events, a subscription to `comment.created` for that project (`events/subscribe`, not a tool). Each event is a thread the person asked an agent about; the agent reads it with `list_comments` and `read_file` before acting. Where the host cannot subscribe, the agent says so and offers to check now with `list_comments` and `ask_agent`. |

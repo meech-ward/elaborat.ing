@@ -159,10 +159,15 @@ export function ChatCard({ host }: { host: HostBridge }) {
             lastResult.current = event.result
             const shown = parseShowResult(event.result, host.openaiMeta())
             if (!shown.ok) return dispatch({ type: "problem", message: shown.message, tone: "danger" })
-            // A live view that has drawn finishes drawing quickly first, then the saved card takes its place.
+            // A live view that has drawn finishes drawing quickly first, then the saved card takes its place:
+            // read again then, with _meta that ChatGPT's globals may have brought meanwhile, unless a newer result came.
             const view = feed.view
             if (!view) return dispatch({ type: "result", file: shown.file })
-            void view.finish().then(() => dispatch({ type: "result", file: shown.file }))
+            void view.finish().then(() => {
+              if (lastResult.current !== event.result) return
+              const latest = parseShowResult(event.result, host.openaiMeta())
+              if (latest.ok) dispatch({ type: "result", file: latest.file })
+            })
             return
           }
           case "tool-cancelled":

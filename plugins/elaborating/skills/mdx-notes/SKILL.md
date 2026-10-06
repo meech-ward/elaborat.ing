@@ -19,6 +19,9 @@ The user's instructions win over this skill when they differ.
 - Save files that belong together, such as a note and the component file it
   imports, in one `save_files` call.
 - Use `show_file` when the user wants to see the note.
+- To make a new note the user should watch being written, use
+  `create_and_show` instead of `write_file`. Create any drawing or diagram it
+  embeds first.
 
 ## Built-in components
 

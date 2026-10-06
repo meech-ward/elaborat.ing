@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "elaborating",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Write notes in MDX, D2 diagrams and drawings in elaborat.ing, and work through the comments people leave on them.",
   "author": {
     "name": "elaborat.ing",

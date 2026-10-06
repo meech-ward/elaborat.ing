@@ -22,6 +22,8 @@ The user's instructions win over this skill when they differ.
   together.
 - Embed it in a note with `<Diagram src="diagrams/sign-in.d2" />`. The file
   must exist, so create it first or in the same `save_files` call.
+- To make a new diagram the user should watch being written, use
+  `create_and_show`, before the note that embeds it.
 - `show_file` draws a diagram from its canvas. A new diagram has no canvas
   until it is opened in the app, and after a source change the card may say
   it is out of date. Give the user the link to open it.

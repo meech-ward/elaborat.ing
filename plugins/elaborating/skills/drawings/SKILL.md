@@ -19,6 +19,9 @@ The user's instructions win over this skill when they differ.
   `write_file` and the `base_version` you read.
 - Embed it in a note with `<Drawing src="drawings/idea.excalidraw" />`, and
   show it with `show_file`.
+- To make a new drawing the user should watch being drawn, use
+  `create_and_show`. Put `elements` before `appState`, and write each shape,
+  then its label, then its arrows. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.
 
 ## The scene

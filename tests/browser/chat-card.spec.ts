@@ -791,6 +791,28 @@ test("with no partial input, the input draws in while the tool runs", async ({ p
   await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
 })
 
+test("in ChatGPT, a result whose _meta comes late in the globals keeps its drawing once the live view has settled", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true, chatgpt: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  // The result comes without _meta, and the globals bring it just after, while the drawing is still drawing in.
+  await cardFrame(page).evaluate((meta) => {
+    window.addEventListener("message", (event) => {
+      if ((event.data as { method?: string } | null)?.method !== "ui/notifications/tool-result") return
+      ;(window as unknown as { openai: Record<string, unknown> }).openai.toolResponseMetadata = meta
+      window.dispatchEvent(new Event("openai:set_globals"))
+    })
+  }, FLOW_RESULT._meta)
+  await send(page, "ui/notifications/tool-input-partial", input(FLOW, FLOW_SCENE))
+  await expect.poll(() => liveShapes(page), { intervals: [20] }).toBeGreaterThan(0)
+  await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
+  await send(page, "ui/notifications/tool-result", { content: FLOW_RESULT.content, structuredContent: FLOW_RESULT.structuredContent })
+  const drawing = card.getByRole("img", { name: `Drawing ${FLOW}` })
+  await expect(drawing).toBeVisible()
+  // Past the live view's settle (at most 600 ms), the drawing is still there.
+  await page.waitForTimeout(1000)
+  expect(await drawing.isVisible()).toBe(true)
+})
+
 test("where the host does not allow the live view, the card shows its skeleton, then the saved card", async ({ page }) => {
   const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true, policy: "default-said" })
   await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 3))
