@@ -86,6 +86,10 @@ Open http://127.0.0.1:5173 (not localhost: ChatGPT sends you back to
 and Continue with ChatGPT. Its changes show in the file as unsaved edits for
 you to save or discard.
 
+From a fresh clone, `bun run try:chatgpt` does all of that in one step: it
+installs, writes `.env.local` with the hosted project's public values if you
+have none, starts the dev server and opens it in your browser.
+
 ## License
 
 [MIT](LICENSE)

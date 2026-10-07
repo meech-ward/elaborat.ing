@@ -20,6 +20,7 @@
     "palette-css": "bun scripts/palette-css.ts",
     "package:plugin": "bun scripts/package-plugin.ts",
     "test:browser": "playwright test",
+    "try:chatgpt": "sh scripts/try-chatgpt.sh",
     "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
