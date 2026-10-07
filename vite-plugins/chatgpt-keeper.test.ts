@@ -73,12 +73,18 @@ function fakeOpenAI(options: { scope?: string; nonce?: (sent: string) => string;
 
 function memoryStore(initial: Credentials | null = null) {
   let saved = initial
-  const store: CredentialStore & { current: () => Credentials | null } = {
+  const writes: Credentials[] = []
+  const store: CredentialStore & { current: () => Credentials | null; writes: Credentials[]; remove: () => void } = {
     read: async () => saved,
     write: async (credentials) => {
       saved = structuredClone(credentials)
+      writes.push(saved)
     },
     current: () => saved,
+    writes,
+    remove: () => {
+      saved = null
+    },
   }
   return store
 }
@@ -345,6 +351,44 @@ describe("tokens", () => {
     expect(store.current()).toMatchObject({ tokens: null, client_id: ISSUED, ext_agent_host_id: connected().ext_agent_host_id })
   })
 
+  test("a refresh running when the person disconnects revokes its new token instead of saving it", async () => {
+    const fake = fakeOpenAI()
+    let refreshing = () => {}
+    let release = () => {}
+    const started = new Promise<void>((resolve) => (refreshing = resolve))
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow: typeof fake.fetcher = async (input, init) => {
+      if (String(input) === TOKEN_URL) {
+        refreshing()
+        await gate
+      }
+      return fake.fetcher(input, init)
+    }
+    const store = memoryStore(connected())
+    const keeper = new PlanKeeper({ store, fetch: slow })
+    const turn = keeper.accessToken()
+    await started
+    const disconnected = keeper.disconnect()
+    release()
+    await expect(turn).rejects.toMatchObject({ code: "not_connected" })
+    expect(await disconnected).toEqual({ revoked: true })
+    expect(fake.requests.filter((entry) => entry.url === TOKEN_URL)).toHaveLength(1)
+    expect(store.writes.some((saved) => saved.tokens !== null)).toBe(false)
+    expect(store.current()).toMatchObject({ tokens: null, reconnect: false })
+    const revoked = fake.requests.filter((entry) => entry.url === REVOKE_URL).map((entry) => entry.form!.get("token"))
+    expect(revoked).toContain("refresh-1")
+    await expect(keeper.accessToken()).rejects.toMatchObject({ code: "not_connected" })
+  })
+
+  test("deleting the saved credentials disconnects without a restart", async () => {
+    const store = memoryStore(connected({ expires_at: Date.now() + 3_600_000 }))
+    const keeper = new PlanKeeper({ store, fetch: fakeOpenAI().fetcher })
+    expect(await keeper.accessToken()).toBe("access-old")
+    store.remove()
+    await expect(keeper.accessToken()).rejects.toMatchObject({ code: "not_connected" })
+    expect(await keeper.status()).toMatchObject({ connected: false, problem: null })
+  })
+
   test("the status the app gets never holds a token", async () => {
     const fake = fakeOpenAI()
     const handle = keeperHandler(new PlanKeeper({ store: memoryStore(connected({ id_token: "id-token-secret" })), fetch: fake.fetcher }), { origin: () => ORIGIN })
@@ -366,6 +410,17 @@ describe("the keeper's guards", () => {
     expect((await handle(request("/chatgpt/start", { type: "text/plain" })))!.status).toBe(415)
     expect((await handle(request("/chatgpt/start", { type: "application/x-www-form-urlencoded" })))!.status).toBe(415)
     expect(await handle(request("/projects"))).toBeNull()
+  })
+
+  test("without chatgpt.tokens.use.direct, responses and models are refused and nothing goes to OpenAI", async () => {
+    const fake = fakeOpenAI()
+    const keeper = new PlanKeeper({ store: memoryStore(connected({ scopes: ["email", "offline_access", "openid", "profile", "resource.invoke"] })), fetch: fake.fetcher })
+    const handle = keeperHandler(keeper, { origin: () => ORIGIN })
+    const response = (await handle(request("/chatgpt/responses", { body: { model: "gpt-sample", input: [{ role: "user", content: "Hi" }] } })))!
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ error: "reconnect" })
+    await expect(keeper.models()).rejects.toMatchObject({ planError: { error: "reconnect" } })
+    expect(fake.requests).toEqual([])
   })
 
   test("with --host the keeper is off: it warns once and refuses every request, even with a copied Origin and Host", async () => {

@@ -59,6 +59,8 @@ export class PlanFailure extends Error {
 /** The access token is refreshed this long before it expires. */
 const REFRESH_EARLY_MS = 60_000
 const MODELS_MS = 10 * 60_000
+/** Plan use needs the chatgpt.tokens.use.direct scope; without it, connecting again with consent turns it on. */
+const PLAN_OFF: PlanError = { error: 'reconnect', message: 'Reconnect ChatGPT and allow plan use to continue.' }
 
 export const STATUS_FOR: Record<PlanErrorCode, number> = { not_eligible: 403, usage_limit: 429, unavailable: 503, reconnect: 401, error: 502 }
 
@@ -73,8 +75,11 @@ function planErrorOf(error: unknown): PlanError {
 }
 
 export class PlanKeeper {
-  private credentials: Credentials | null = null
   private pending: Promise<string> | null = null
+  /** Credential changes (a refresh, a sign-in's save, a disconnect) run one at a time, in this order. */
+  private queue: Promise<unknown> = Promise.resolve()
+  /** Goes up on each disconnect: a refresh asked for before it drops its new tokens. */
+  private generation = 0
   private modelCache: { models: PlanModel[]; at: number } | null = null
   private readonly transactions: TransactionStore
   private readonly fetcher: Fetch
@@ -86,11 +91,13 @@ export class PlanKeeper {
     this.fetcher = options.fetch ?? ((input, init) => fetch(input, init))
   }
 
-  /** The saved credentials; the first time, a new host id, saved before any sign-in. */
+  /**
+   * The saved credentials, read each time so a deleted file means not
+   * connected; the first time, a new host id, saved before any sign-in.
+   */
   private async load(): Promise<Credentials> {
-    if (this.credentials) return this.credentials
     const saved = await this.options.store.read()
-    if (saved) return (this.credentials = saved)
+    if (saved) return saved
     const created: Credentials = { ext_agent_host_id: newHostId(), client_id: null, email: null, subject: null, reconnect: false, tokens: null }
     await this.save(created)
     return created
@@ -98,7 +105,12 @@ export class PlanKeeper {
 
   private async save(credentials: Credentials) {
     await this.options.store.write(credentials)
-    this.credentials = credentials
+  }
+
+  private serial<T>(change: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(change)
+    this.queue = run.catch(() => {})
+    return run
   }
 
   /** The URL that starts a sign-in, which comes back to `redirectUri` and then to `returnTo`. */
@@ -115,44 +127,57 @@ export class PlanKeeper {
     const tokens = await exchangeCode(this.fetcher, callback, this.now())
     if (!tokens.id_token) throw new OAuthError('invalid_id_token', 'The token response had no ID token.')
     const identity = await verifyIdToken(this.fetcher, tokens.id_token, { clientId: callback.clientId, nonce: callback.transaction.nonce }, this.now())
-    const credentials = await this.load()
-    if (callback.transaction.clientId !== DYNAMIC_CLIENT && credentials.subject && credentials.subject !== identity.sub) {
-      throw new OAuthError('authorization_failed', 'That is a different ChatGPT account from the one connected before.')
-    }
-    await this.save({ ...credentials, client_id: callback.clientId, email: identity.email, subject: identity.sub, reconnect: false, tokens })
+    // After any refresh already running, so its save cannot replace this sign-in.
+    await this.serial(async () => {
+      const credentials = await this.load()
+      if (callback.transaction.clientId !== DYNAMIC_CLIENT && credentials.subject && credentials.subject !== identity.sub) {
+        throw new OAuthError('authorization_failed', 'That is a different ChatGPT account from the one connected before.')
+      }
+      await this.save({ ...credentials, client_id: callback.clientId, email: identity.email, subject: identity.sub, reconnect: false, tokens })
+    })
     this.modelCache = null
     return { returnTo: callback.transaction.returnTo, plan: planAllowed(tokens.scopes) }
   }
 
   /**
-   * A usable access token, refreshed when it is about to expire (not before
-   * earliest_refresh_at). Callers at the same time share one refresh, and
-   * the rotated refresh token is saved before the new access token is used.
+   * A usable access token for plan use, refreshed when it is about to expire
+   * (not before earliest_refresh_at). Callers at the same time share one
+   * refresh, and the rotated refresh token is saved before the new access
+   * token is used. Without the plan scope it is refused before any request.
    */
   accessToken(): Promise<string> {
-    this.pending ??= this.currentToken().finally(() => {
+    const generation = this.generation
+    this.pending ??= this.serial(() => this.currentToken(generation)).finally(() => {
       this.pending = null
     })
     return this.pending
   }
 
-  private async currentToken(): Promise<string> {
+  private async currentToken(generation: number): Promise<string> {
     const credentials = await this.load()
     const tokens = credentials.tokens
     if (!tokens || !credentials.client_id) throw new OAuthError(credentials.reconnect ? 'reconnect' : 'not_connected', 'ChatGPT is not connected.')
+    if (!planAllowed(tokens.scopes)) throw new PlanFailure(PLAN_OFF)
     const now = this.now()
     const fresh = now < tokens.expires_at - REFRESH_EARLY_MS
     const tooEarly = tokens.earliest_refresh_at !== null && now < tokens.earliest_refresh_at && now < tokens.expires_at
     if (fresh || tooEarly) return tokens.access_token
+    let next: TokenSet
     try {
-      const next = await refreshTokens(this.fetcher, { clientId: credentials.client_id, tokens }, now)
-      await this.save({ ...credentials, tokens: next })
-      return next.access_token
+      next = await refreshTokens(this.fetcher, { clientId: credentials.client_id, tokens }, now)
     } catch (error) {
       // A refresh token refused for good (reused, expired, revoked): connect again.
-      if (error instanceof OAuthError && error.terminal) await this.save({ ...credentials, tokens: null, reconnect: true })
+      if (error instanceof OAuthError && error.terminal && generation === this.generation) await this.save({ ...credentials, tokens: null, reconnect: true })
       throw error
     }
+    if (generation !== this.generation) {
+      // Disconnected while this refresh ran: end the new session instead of keeping it.
+      await revokeToken(this.fetcher, { clientId: credentials.client_id, refreshToken: next.refresh_token })
+      throw new OAuthError('not_connected', 'ChatGPT is not connected.')
+    }
+    await this.save({ ...credentials, tokens: next })
+    if (!planAllowed(next.scopes)) throw new PlanFailure(PLAN_OFF)
+    return next.access_token
   }
 
   /** The account's models with visibility "list", kept for ten minutes. */
@@ -212,13 +237,20 @@ export class PlanKeeper {
     return new Response(upstream.body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
   }
 
-  /** Revokes the renewable session and forgets the tokens; the client and host ids stay for the next sign-in. */
+  /**
+   * Revokes the renewable session and forgets the tokens; the client and host
+   * ids stay for the next sign-in. A refresh already running finishes first
+   * and revokes its new tokens instead of saving them.
+   */
   async disconnect(): Promise<{ revoked: boolean }> {
-    const credentials = await this.load()
-    const revoked = credentials.tokens && credentials.client_id ? await revokeToken(this.fetcher, { clientId: credentials.client_id, refreshToken: credentials.tokens.refresh_token }) : true
-    await this.save({ ...credentials, tokens: null, reconnect: false })
-    this.modelCache = null
-    return { revoked }
+    this.generation++
+    return this.serial(async () => {
+      const credentials = await this.load()
+      const revoked = credentials.tokens && credentials.client_id ? await revokeToken(this.fetcher, { clientId: credentials.client_id, refreshToken: credentials.tokens.refresh_token }) : true
+      await this.save({ ...credentials, tokens: null, reconnect: false })
+      this.modelCache = null
+      return { revoked }
+    })
   }
 }
 

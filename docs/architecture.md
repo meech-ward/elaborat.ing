@@ -1006,11 +1006,13 @@ client.
   `supabase/functions/_shared/chatgpt/` is the shared core (plain TypeScript
   with fetch and Web Crypto): the sign-in transaction (state, PKCE S256 and
   nonce, used once, ten minutes), the code exchange with the ID token checked
-  (signature, issuer, audience, expiry, nonce), the plan-scope check,
-  refreshes made one at a time with the rotated token saved, revoke on
-  disconnect, and the Responses request (`store: false`, `stream: true`, the
-  app's instructions and tools pinned; only `model` from the person's list and
-  `input` come from the browser, within a size limit).
+  (signature, issuer, audience, expiry, nonce), the plan-scope check (no
+  request goes to OpenAI without it), refreshes made one at a time with the
+  rotated token saved, revoke on disconnect (a refresh still running then
+  revokes its new token instead of saving it), and the Responses request
+  (`store: false`, `stream: true`, the app's instructions and tools pinned;
+  only `model` from the person's list and `input` come from the browser,
+  within a size limit).
 - **The local keeper** is a dev-only Vite plugin
   (`vite-plugins/chatgpt-keeper.ts`, `apply: "serve"`) on 127.0.0.1. It serves
   `/chatgpt/{start,status,responses,disconnect}` and `/auth/callback`, with
