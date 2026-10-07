@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
+import type { AddressInfo } from "node:net"
 import { homedir } from "node:os"
 import path from "node:path"
 import { loadEnv, type Plugin, type ViteDevServer } from "vite"
@@ -39,10 +40,18 @@ export function chatgptKeeper(): Plugin {
       if (!enabled) return
       const keeper = new PlanKeeper({ store: fileCredentialStore(credentialPath()) })
       const handle = keeperHandler(keeper, { origin: () => originOf(server) })
+      server.httpServer?.once("listening", () => {
+        if (!isLoopbackAddress(server.httpServer?.address())) server.config.logger.warn(`ChatGPT keeper is off: the dev server is not bound to 127.0.0.1. ${OPEN_TO_OTHERS}`)
+      })
       server.middlewares.use((req, res, next) => {
         const pathname = (req.url ?? "").split("?")[0]
         if (!pathname.startsWith("/chatgpt/") && pathname !== "/auth/callback") return next()
-        void serve(req, res, handle, originOf(server)).catch((error: unknown) => {
+        // The Origin check in the handler is a header any program can send,
+        // so the keeper only answers this computer, at 127.0.0.1:<port>.
+        const origin = originOf(server)
+        if (!isLoopbackAddress(server.httpServer?.address())) return refuse(res, OPEN_TO_OTHERS)
+        if (!isLoopbackRequest(req, origin)) return refuse(res, `Open elaborat.ing at ${origin} on this computer to use your ChatGPT plan.`)
+        void serve(req, res, handle, origin).catch((error: unknown) => {
           if (!res.headersSent) res.statusCode = 500
           res.end()
           server.config.logger.error(`ChatGPT keeper: ${error instanceof Error ? error.message : String(error)}`)
@@ -94,6 +103,23 @@ export function fileCredentialStore(file: string): CredentialStore {
       await rename(temporary, file)
     },
   }
+}
+
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
+const OPEN_TO_OTHERS = "Start the dev server without --host to use your ChatGPT plan."
+
+/** Whether the dev server listens on this computer only (not with --host, which opens it to other devices). */
+export function isLoopbackAddress(address: AddressInfo | string | null | undefined): boolean {
+  return typeof address === "object" && address !== null && LOOPBACK.has(address.address)
+}
+
+/** Whether a request comes from this computer, addressed to the keeper's own 127.0.0.1:<port>. */
+export function isLoopbackRequest(req: Pick<IncomingMessage, "socket" | "headers">, origin: string): boolean {
+  return LOOPBACK.has(req.socket.remoteAddress ?? "") && req.headers.host === new URL(origin).host
+}
+
+function refuse(res: ServerResponse, message: string) {
+  res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" }).end(JSON.stringify({ error: "error", message }))
 }
 
 function originOf(server: ViteDevServer): string {

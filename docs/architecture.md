@@ -1019,8 +1019,10 @@ client.
   redirect. It keeps the issued client id, the host id and the tokens in
   `$XDG_CONFIG_HOME/elaborating/chatgpt.json` (0600, in a 0700 folder),
   outside the repository, and refuses requests from any other origin and any
-  POST that is not JSON. Locally, ChatGPT is a plan connection only, never
-  the sign-in.
+  POST that is not JSON. It answers this computer only (a loopback peer, with
+  the Host `127.0.0.1:<port>`), and is off when the dev server is open to other
+  devices (`--host`). Locally, ChatGPT is a plan connection only, never the
+  sign-in.
 - **Loading rule:** the button and Settings' "Use your ChatGPT plan" card are
   the only parts in existing chunks; the panel, the loop and the readers load
   when it first opens, and the live view's renderers when a write starts.

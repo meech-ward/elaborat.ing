@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, statSync } from "node:fs"
+import { EventEmitter } from "node:events"
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { Readable } from "node:stream"
+import type { ConfigEnv, UserConfig, ViteDevServer } from "vite"
 import { keeperHandler, PlanKeeper, type CredentialStore, type Credentials } from "../supabase/functions/_shared/chatgpt/keeper.ts"
 import { DYNAMIC_CLIENT, JWKS_URL, PLAN_SCOPE, REVOKE_URL, TOKEN_URL, base64url, pkceChallenge, type TokenSet } from "../supabase/functions/_shared/chatgpt/oauth.ts"
 import { buildResponsesRequest, MODELS_URL, RESPONSES_URL } from "../supabase/functions/_shared/chatgpt/responses.ts"
 import { TOOL_NAMESPACE } from "../supabase/functions/_shared/chatgpt/tools.ts"
-import { credentialPath, fileCredentialStore } from "./chatgpt-keeper.ts"
+import { chatgptKeeper, credentialPath, fileCredentialStore } from "./chatgpt-keeper.ts"
 
 // The local token keeper and the shared core it runs: the sign-in
 // transaction, the code exchange and ID token checks, refresh and revoke,
@@ -106,6 +109,82 @@ function request(pathname: string, init: { method?: string; origin?: string | nu
   if (init.type !== null) headers.set("content-type", init.type ?? "application/json")
   const method = init.method ?? "POST"
   return new Request(`${ORIGIN}${pathname}`, { method, headers, body: method === "GET" ? undefined : JSON.stringify(init.body ?? {}) })
+}
+
+/** What the keeper's middleware writes back. */
+class NodeResponse extends EventEmitter {
+  statusCode = 200
+  headersSent = false
+  body = ""
+  private finish = () => {}
+  readonly done = new Promise<void>((resolve) => (this.finish = resolve))
+  writeHead(status: number) {
+    this.statusCode = status
+    this.headersSent = true
+    return this
+  }
+  write(chunk: Uint8Array | string) {
+    this.body += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString()
+    return true
+  }
+  end(chunk?: string) {
+    if (chunk) this.write(chunk)
+    this.finish()
+    return this
+  }
+}
+
+type Middleware = (req: unknown, res: NodeResponse, next: () => void) => void
+
+/**
+ * The keeper's plugin in a dev server listening on `address`, with its
+ * credential file in a folder of its own. `send` makes a request from the
+ * peer address `from`, with the app's Origin and Host unless told otherwise.
+ */
+function devServer(address: string) {
+  const dir = mkdtempSync(path.join(tmpdir(), "elaborating-keeper-"))
+  const before = { plan: process.env.VITE_CHATGPT_PLAN, config: process.env.XDG_CONFIG_HOME }
+  const httpServer = Object.assign(new EventEmitter(), { address: () => ({ address, family: address.includes(":") ? "IPv6" : "IPv4", port: 5173 }) })
+  const warnings: string[] = []
+  let middleware: Middleware | undefined
+  process.env.VITE_CHATGPT_PLAN = "1"
+  process.env.XDG_CONFIG_HOME = dir
+  try {
+    const plugin = chatgptKeeper()
+    ;(plugin.config as (config: UserConfig, env: ConfigEnv) => unknown)({ root: dir }, { mode: "development", command: "serve" })
+    const server = {
+      httpServer,
+      middlewares: { use: (handler: Middleware) => (middleware = handler) },
+      config: { logger: { warn: (message: string) => warnings.push(message), error: () => {} }, server: {} },
+    }
+    ;(plugin.configureServer as (server: ViteDevServer) => unknown)(server as unknown as ViteDevServer)
+  } finally {
+    for (const [name, value] of [["VITE_CHATGPT_PLAN", before.plan], ["XDG_CONFIG_HOME", before.config]] as const) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+  httpServer.emit("listening")
+  return {
+    warnings,
+    keeperReached: () => existsSync(path.join(dir, "elaborating", "chatgpt.json")),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    async send(init: { from: string; pathname?: string; method?: string; host?: string }) {
+      const method = init.method ?? "POST"
+      const req = Object.assign(Readable.from(method === "GET" ? [] : [Buffer.from("{}")]), {
+        url: init.pathname ?? "/chatgpt/status",
+        method,
+        headers: { host: init.host ?? "127.0.0.1:5173", origin: ORIGIN, "content-type": "application/json" },
+        socket: { remoteAddress: init.from },
+      })
+      const res = new NodeResponse()
+      middleware!(req, res, () => {
+        throw new Error("The keeper passed its own path on.")
+      })
+      await res.done
+      return res
+    },
+  }
 }
 
 /** Starts a sign-in through the handler and returns the authorization URL's parameters. */
@@ -287,6 +366,41 @@ describe("the keeper's guards", () => {
     expect((await handle(request("/chatgpt/start", { type: "text/plain" })))!.status).toBe(415)
     expect((await handle(request("/chatgpt/start", { type: "application/x-www-form-urlencoded" })))!.status).toBe(415)
     expect(await handle(request("/projects"))).toBeNull()
+  })
+
+  test("with --host the keeper is off: it warns once and refuses every request, even with a copied Origin and Host", async () => {
+    const dev = devServer("0.0.0.0")
+    try {
+      expect(dev.warnings).toHaveLength(1)
+      expect(dev.warnings[0]).toContain("not bound to 127.0.0.1")
+      for (const from of ["192.168.1.20", "127.0.0.1"]) {
+        for (const pathname of ["/chatgpt/status", "/chatgpt/responses", "/chatgpt/disconnect", "/chatgpt/start"]) {
+          expect((await dev.send({ from, pathname })).statusCode).toBe(403)
+        }
+      }
+      expect((await dev.send({ from: "192.168.1.20", pathname: "/auth/callback?code=c&state=s", method: "GET" })).statusCode).toBe(403)
+      expect(dev.keeperReached()).toBe(false)
+    } finally {
+      dev.cleanup()
+    }
+  })
+
+  test("on 127.0.0.1 it answers this computer only, at its own host name", async () => {
+    const dev = devServer("127.0.0.1")
+    try {
+      expect(dev.warnings).toHaveLength(0)
+      // Another device (the server is bound to all addresses some other way), and a page whose name points at 127.0.0.1.
+      expect((await dev.send({ from: "192.168.1.20" })).statusCode).toBe(403)
+      expect((await dev.send({ from: "127.0.0.1", host: "elsewhere.example:5173" })).statusCode).toBe(403)
+      expect(dev.keeperReached()).toBe(false)
+      const ok = await dev.send({ from: "127.0.0.1" })
+      expect(ok.statusCode).toBe(200)
+      expect(JSON.parse(ok.body)).toMatchObject({ connected: false })
+      expect((await dev.send({ from: "::ffff:127.0.0.1" })).statusCode).toBe(200)
+      expect(dev.keeperReached()).toBe(true)
+    } finally {
+      dev.cleanup()
+    }
   })
 
   test("the credential file is readable by its owner only, in a folder only they can open", async () => {
