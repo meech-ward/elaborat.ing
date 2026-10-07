@@ -72,7 +72,7 @@ function sharedWithFrame(): Plugin {
 }
 
 /** The frame's script (`module` undefined), or one of its modules. */
-async function buildFrame(module?: FrameModuleName): Promise<FrameBuild> {
+export async function buildFrame(module?: FrameModuleName): Promise<FrameBuild> {
   const result = (await build({
     configFile: false,
     root: REPO,
@@ -80,6 +80,11 @@ async function buildFrame(module?: FrameModuleName): Promise<FrameBuild> {
     logLevel: "warn",
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     resolve: { alias: { "@": path.join(REPO, "src") } },
+    // The frame is a production build wherever it is built. Inside the dev
+    // server, NODE_ENV is "development" for the whole process, and without
+    // this the JSX would call jsxDEV, which React's production runtime
+    // (bundled here) does not have.
+    oxc: { jsx: { development: false } },
     plugins: [react(), ...(module ? [sharedWithFrame()] : [])],
     build: {
       write: false,
