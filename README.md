@@ -70,6 +70,22 @@ bun run dev
 
 Contributors and coding agents: start with [AGENTS.md](AGENTS.md).
 
+### The assistant on your ChatGPT plan
+
+A local run can have an assistant that writes notes, drawings and diagrams in
+the open project on your own ChatGPT plan (Plus or Pro). The dev server keeps
+your ChatGPT tokens in `~/.config/elaborating/chatgpt.json` (or under
+`$XDG_CONFIG_HOME`), never in the browser.
+
+```bash
+VITE_CHATGPT_PLAN=1 bun run dev
+```
+
+Open http://127.0.0.1:5173 (not localhost: ChatGPT sends you back to
+127.0.0.1), open a project, choose the assistant button beside the comments,
+and Continue with ChatGPT. Its changes show in the file as unsaved edits for
+you to save or discard.
+
 ## License
 
 [MIT](LICENSE)

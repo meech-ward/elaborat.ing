@@ -119,3 +119,21 @@ export { AgentChangesButton, CountBadge } from "./ui/AgentChangesButton"
 // The diff editor itself (TextDiff) stays out: DiffBlock imports it when a diff shows.
 export { DiffBlock, type DiffBlockProps } from "./ui/DiffBlock"
 // --- end Agent changes ---
+
+// --- Assistant (guide/AssistantSection.tsx) ---
+export { AssistantButton } from "./ui/AssistantButton"
+export {
+  AssistantPanel,
+  AssistantSheet,
+  CHATGPT_USAGE_URL,
+  ChatGPTPlanLabel,
+  type AssistantBodyProps,
+  type AssistantEntry,
+  type AssistantModel,
+  type AssistantPanelProps,
+  type AssistantSheetProps,
+  type AssistantStatus,
+} from "./ui/AssistantPanel"
+export { ChatGPTButton, chatGptButtonVariants, type ChatGPTButtonProps } from "./ui/ChatGPTButton"
+export { ChatGPTMark } from "./ui/ChatGPTMark"
+// --- end Assistant ---

@@ -6,10 +6,12 @@ import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { bundleVisualizer } from "./vite-plugins/bundle-visualizer.ts"
+import { chatgptKeeper, chatgptPlanFlag } from "./vite-plugins/chatgpt-keeper.ts"
 import { d2Engine } from "./vite-plugins/d2-engine.ts"
 import { excalidrawSubsetWorker } from "./vite-plugins/excalidraw-subset-worker.ts"
 import { monacoLanguageServices } from "./vite-plugins/monaco-language-services.ts"
 import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
+import { npmSpecifiers } from "./vite-plugins/npm-specifiers.ts"
 import { previewFrame } from "./vite-plugins/preview-frame.ts"
 import { thirdPartyNotices } from "./vite-plugins/third-party-notices.ts"
 
@@ -113,6 +115,13 @@ function chunkFileName(chunk: Rolldown.PreRenderedChunk): string {
 // in docs/architecture.md).
 export default defineConfig({
   plugins: [
+    // The assistant's live view draws with the MCP server's renderers, which
+    // import packages as Deno does (see the plugin).
+    npmSpecifiers(import.meta.dirname),
+    // The assistant on a ChatGPT plan: VITE_CHATGPT_PLAN as a build constant,
+    // and in `vite` with it set, the local token keeper.
+    chatgptPlanFlag(),
+    chatgptKeeper(),
     nativeFontAssets(),
     excalidrawSubsetWorker(),
     // D2 runs from its own wasm file in a worker (see the plugin).

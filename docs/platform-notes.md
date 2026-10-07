@@ -156,9 +156,18 @@ Realtime's own source in `supabase/realtime`.
 - **Custom OAuth/OIDC providers:** any provider with an issuer URL, up to 3 on
   Free, set up in the dashboard or the Auth Admin API only.
   [Custom providers](https://supabase.com/docs/guides/auth/custom-oauth-providers)
-- **Sign in with ChatGPT** is a partner-only beta. Supabase's own announcement is
-  about signing in to supabase.com.
+- **Sign in with ChatGPT** on a website is a limited trial for selected
+  partners, joined through OpenAI's interest form; each gets an issued client.
+  Supabase's own announcement is about signing in to supabase.com.
+  [OpenAI](https://developers.openai.com/siwc/website),
   [Blog](https://supabase.com/blog/sign-in-with-chatgpt-beta)
+- **ChatGPT plan usage** lets an app send Responses API requests on the
+  person's ChatGPT plan (Plus or Pro). Open-source apps run locally register
+  themselves (`dynamic_agent_client`, a loopback `http://127.0.0.1:<port>/auth/callback`
+  redirect, no secret); a hosted app needs OpenAI's approval first. Requests
+  must set `store: false` and `stream: true`, and function tools go in a
+  namespace; hosted MCP tools are not supported.
+  [OpenAI](https://developers.openai.com/siwc/token-sharing-open-source)
 - **There is no Sign in with Claude** for third-party apps, and Anthropic's terms
   don't allow apps to offer Claude.ai login.
   [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)

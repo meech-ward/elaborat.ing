@@ -52,6 +52,8 @@ import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
 import { AgentChangesEntry, AgentChangesSurface } from "@/features/agent-changes";
+import { AssistantToggle, AssistantUiProvider, LazyAssistant, type AssistantHost } from "@/features/assistant";
+import { makeAssistantHost, type AssistantHostState } from "./assistantHost";
 import { NewEntryField } from "./NewEntryField";
 import { duplicatePath, nameStemLength, newEntryNoun, newFilePath, newFolderError, proposedName, type NewEntryKind } from "./newEntries";
 import { nativePathFor, readDiagramCompanion } from "./diagramFiles";
@@ -185,6 +187,25 @@ export function WorkspaceWorkbench({
   const comments = useProjectComments();
   const commentsUi = useCommentsUi();
   const [guestComments, setGuestComments] = useState(false);
+  // The assistant (VITE_CHATGPT_PLAN, not in a chat's panel): it sits where the
+  // comments do, and only one of the two is open at a time. Opening the
+  // comments closes it.
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const commentsOpen = local ? guestComments : commentsUi.panelOpen;
+  const [seenCommentsOpen, setSeenCommentsOpen] = useState(commentsOpen);
+  if (commentsOpen !== seenCommentsOpen) {
+    setSeenCommentsOpen(commentsOpen);
+    if (commentsOpen) setAssistantOpen(false);
+  }
+  const openAssistant = (open: boolean) => {
+    setAssistantOpen(open);
+    if (!open) return;
+    if (comments) comments.controller.setPanelOpen(false);
+    else setGuestComments(false);
+  };
+  // The editor area, which the assistant's live view covers while it writes a file.
+  const sessionsArea = useRef<HTMLDivElement>(null);
   // Element that opened the command palette; Escape/focus return goes here.
   const paletteInvoker = useRef<HTMLElement | null>(null);
   // A command already moved focus (a new file's name field): the palette gives none back.
@@ -555,6 +576,35 @@ export function WorkspaceWorkbench({
     },
     [addDraft, client, refreshList, takenNames],
   );
+  // What the assistant's host reads when the assistant asks: the latest of each.
+  const assistantState = useRef<AssistantHostState | null>(null);
+  useLayoutEffect(() => {
+    if (!import.meta.env.VITE_CHATGPT_PLAN) return;
+    assistantState.current = {
+      files,
+      readOnly,
+      comments,
+      takenNames,
+      openPath,
+      refreshList,
+      tabs: () => stateRef.current.tabs,
+      sessions: () => leaveSessions.current,
+      land: (file) => {
+        interacted.current = true;
+        dispatch({ type: "assistant-edit", file });
+        if (restoreDone.current) setPersistReady(true);
+      },
+      liveContainer: () => sessionsArea.current,
+      reveal: () => {
+        if (narrow) setSidebar(false);
+      },
+    };
+  });
+  const [assistantHost, setAssistantHost] = useState<AssistantHost | null>(null);
+  useEffect(() => {
+    // Made once the workbench has rendered: the host reads its latest state through the ref above.
+    if (import.meta.env.VITE_CHATGPT_PLAN && !embedded) setAssistantHost(makeAssistantHost(projectId, client, () => assistantState.current!));
+  }, [projectId, client]);
   const validateNew = (target: { kind: NewEntryKind; dir: string }) => (name: string) => {
     if (target.kind === "folder") return newFolderError(target.dir, name, takenNames());
     const checked = newFilePath(target.kind, target.dir, name, takenNames());
@@ -1020,6 +1070,7 @@ export function WorkspaceWorkbench({
           : null
       }
     >
+    <AssistantUiProvider value={import.meta.env.VITE_CHATGPT_PLAN && assistantHost ? { open: assistantOpen, busy: assistantBusy, setOpen: openAssistant } : null}>
     <SidebarProvider open={sidebar} onOpenChange={setSidebar} className="wb-sidebar-provider">
     <div
       className="wb-app"
@@ -1090,6 +1141,7 @@ export function WorkspaceWorkbench({
               />
               {!narrow && <div className="contents" ref={setTablineSlot} />}
               {!narrow && state.active && !hideSessions && <CommentsToggle />}
+              {import.meta.env.VITE_CHATGPT_PLAN && assistantHost && !narrow && !hideSessions && <AssistantToggle />}
               {!narrow && (
                 <IconButton label={focus ? "Exit full screen" : "Focus"} shortcut={focusKey.label} keyShortcuts={focusKey.aria} onClick={() => setFocus((v) => !v)}>
                   {focus ? <Minimize2 /> : <Maximize2 />}
@@ -1127,7 +1179,7 @@ export function WorkspaceWorkbench({
                   minSize="35%"
                   className="wb-sessions-panel"
                 >
-                  <div className="wb-sessions">
+                  <div className={import.meta.env.VITE_CHATGPT_PLAN ? "wb-sessions relative" : "wb-sessions"} ref={sessionsArea}>
                     {state.tabs.map((tab) => (
                       <TabsContent
                         key={`${tab.path}:${tab.generation ?? 0}`}
@@ -1232,8 +1284,21 @@ export function WorkspaceWorkbench({
         {!narrow && !hideSessions && state.active && (
           <CommentsSurface compact={false} className={cn("relative z-[1] ml-4", focus && "mt-[60px] h-[calc(100%-60px)]")} />
         )}
+        {import.meta.env.VITE_CHATGPT_PLAN && assistantHost && !narrow && (
+          <LazyAssistant
+            host={assistantHost}
+            compact={false}
+            open={assistantOpen && !hideSessions}
+            onOpenChange={openAssistant}
+            onBusyChange={setAssistantBusy}
+            className={cn("relative z-[1] ml-4", focus && "mt-[60px] h-[calc(100%-60px)]")}
+          />
+        )}
       </div>
       {narrow && !hideSessions && state.active && <CommentsSurface compact />}
+      {import.meta.env.VITE_CHATGPT_PLAN && assistantHost && narrow && (
+        <LazyAssistant host={assistantHost} compact open={assistantOpen && !hideSessions} onOpenChange={openAssistant} onBusyChange={setAssistantBusy} />
+      )}
       {filesScreen && (
         <section aria-label="Files and projects" data-files-screen="" className="absolute inset-0 z-40 overflow-y-auto overscroll-contain">
         <DottedPage className="flex min-h-full flex-col gap-2.5 pt-[calc(12px+env(safe-area-inset-top))] pr-[calc(12px+env(safe-area-inset-right))] pb-[calc(12px+env(safe-area-inset-bottom))] pl-[calc(12px+env(safe-area-inset-left))]">
@@ -1293,6 +1358,7 @@ export function WorkspaceWorkbench({
 
     </div>
     </SidebarProvider>
+    </AssistantUiProvider>
     </CommentsGuestProvider>
   );
 }

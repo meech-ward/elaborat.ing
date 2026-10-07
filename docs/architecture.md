@@ -533,10 +533,13 @@ longer than 12 lines shows folded, with Show more.
   sign-in and password reset; nothing turns it on yet (`[auth.captcha]` in
   `config.toml` is commented out, and the sign-in pages send no CAPTCHA
   token). Phone codes wait for it.
-- **Not possible today:** "Sign in with ChatGPT" is a partner-only beta, and
-  there is no "Sign in with Claude"; Anthropic doesn't allow apps to offer
-  Claude.ai login. If OpenAI opens its sign-in to all apps, it can be added as a
-  custom OIDC provider. None of this affects agents: Claude and ChatGPT connect
+- **Not possible today:** signing in to elaborat.ing with ChatGPT. "Sign in
+  with ChatGPT" on a website is a limited trial OpenAI opens to selected
+  partners, with an issued client; once elaborat.ing has one, it can be added
+  as a custom OIDC provider. Using a person's ChatGPT plan is separate, and
+  works on a local run today (see [the assistant](#the-assistant-chatgpt-plan)).
+  There is no "Sign in with Claude"; Anthropic doesn't allow apps to offer
+  Claude.ai login. None of this affects agents: Claude and ChatGPT connect
   through the OAuth server below, where elaborat.ing is the one issuing access.
 
 **Decision:** the sign-in, sign-up, password reset and OAuth consent pages
@@ -970,6 +973,57 @@ The production server's tools are unchanged.
     so an agent drafting a component hears about it on its next turn.
   - **Limits:** a runaway component can still freeze the card, as in the
     app.
+
+## The assistant (ChatGPT plan)
+
+**Decision:** the app pays for no inference; the assistant uses the person's
+own ChatGPT plan (Plus or Pro), through OpenAI's Sign in with ChatGPT plan
+usage. For now it is a local-run feature: a build with `VITE_CHATGPT_PLAN` set
+shows it, and the hosted site leaves the variable unset, so nothing of it is
+in its bundle. A hosted version waits for OpenAI's approval and an issued
+client.
+
+- **Where it runs.** The agent loop runs in the browser, as the person: it
+  POSTs `{ model, input }` to `/chatgpt/responses`, reads the server-sent
+  events with a small reader (no OpenAI SDK), runs each function call through
+  the workbench's own operations with the person's session, and sends every
+  output item back (its encrypted reasoning too) until the model answers
+  without a call. At most 25 calls a turn; Stop aborts it. The chat lives in
+  memory per project; New chat clears it.
+- **Four tools, in one `elaborating` namespace**
+  (`supabase/functions/_shared/chatgpt/tools.ts`): `list_files`, `read_file`
+  (what the editor holds, unsaved edits included), `write_file` (the complete
+  content; a new path is created the way New file does) and `list_comments`
+  (read only). Any other name is refused and does nothing. The instructions
+  reuse the MCP server's file-format text (`_shared/fileFormats.ts`).
+- **The assistant never saves.** A write lands in the file's tab as an
+  unsaved edit, the same as typing; the person saves or discards it, which is
+  the confirmation, and the saves are theirs (no agent marker). Over the
+  person's own unsaved edits it asks first. While a write streams, the chat
+  card's live view (`src/chat-card/live/mount.ts`, unchanged) covers the
+  editor: a note renders, a drawing sketches in, a diagram's code writes in.
+- **The browser never holds an OpenAI token.** A token keeper does:
+  `supabase/functions/_shared/chatgpt/` is the shared core (plain TypeScript
+  with fetch and Web Crypto): the sign-in transaction (state, PKCE S256 and
+  nonce, used once, ten minutes), the code exchange with the ID token checked
+  (signature, issuer, audience, expiry, nonce), the plan-scope check,
+  refreshes made one at a time with the rotated token saved, revoke on
+  disconnect, and the Responses request (`store: false`, `stream: true`, the
+  app's instructions and tools pinned; only `model` from the person's list and
+  `input` come from the browser, within a size limit).
+- **The local keeper** is a dev-only Vite plugin
+  (`vite-plugins/chatgpt-keeper.ts`, `apply: "serve"`) on 127.0.0.1. It serves
+  `/chatgpt/{start,status,responses,disconnect}` and `/auth/callback`, with
+  OpenAI's open-source flow: `dynamic_agent_client`, the app's name as
+  `agent_name_hint`, a kept `ext_agent_host_id` and the exact loopback
+  redirect. It keeps the issued client id, the host id and the tokens in
+  `$XDG_CONFIG_HOME/elaborating/chatgpt.json` (0600, in a 0700 folder),
+  outside the repository, and refuses requests from any other origin and any
+  POST that is not JSON. Locally, ChatGPT is a plan connection only, never
+  the sign-in.
+- **Loading rule:** the button and Settings' "Use your ChatGPT plan" card are
+  the only parts in existing chunks; the panel, the loop and the readers load
+  when it first opens, and the live view's renderers when a write starts.
 
 ## Component isolation
 

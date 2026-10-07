@@ -1,7 +1,7 @@
 /**
  * Settings' sections, in a chunk of their own that loads the first time
- * Settings opens (SettingsDialog.tsx): Appearance and Reading, and signed in,
- * Account and Passkeys.
+ * Settings opens (SettingsDialog.tsx): Appearance and Reading, Use your
+ * ChatGPT plan (with VITE_CHATGPT_PLAN), and signed in, Account and Passkeys.
  */
 import { useId, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useAppearance } from "@/features/appearance"
+import { PlanSettings } from "@/features/assistant/PlanSettings"
 import { readingPreferencesSchema } from "@/features/appearance/reading"
 import { ColorModeToggle, PaletteSelect } from "@/features/design-system"
 import { AccountSection } from "./AccountSection"
@@ -19,6 +20,7 @@ export function SettingsSections({ onDeleted }: { onDeleted: () => void }) {
     <>
       <AppearanceSection />
       <ReadingSection />
+      {import.meta.env.VITE_CHATGPT_PLAN && <PlanSettings />}
       <AccountSection onDeleted={onDeleted} />
       <PasskeysSection />
     </>

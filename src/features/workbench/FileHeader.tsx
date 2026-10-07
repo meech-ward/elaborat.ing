@@ -16,6 +16,7 @@ import {
   type ViewNames,
 } from "@/features/design-system";
 import { CommentsToggle } from "@/features/comments";
+import { AssistantToggle } from "@/features/assistant";
 import { TablineActions, useDesktopFrame, useFileActions } from "./tabline";
 
 export type FileHeaderView = {
@@ -84,6 +85,7 @@ export function FileHeader({
   return (
     <PhoneHeader back={navigation}>
       <CommentsToggle size="touch" />
+      {import.meta.env.VITE_CHATGPT_PLAN && <AssistantToggle size="touch" />}
       <ActionMenu
         entries={actions}
         choice={choice}

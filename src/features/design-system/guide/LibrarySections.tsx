@@ -1,4 +1,5 @@
 import { AgentChangesSection } from "./AgentChangesSection"
+import { AssistantSection } from "./AssistantSection"
 import { CanvasSection } from "./CanvasSection"
 import { ChatCardSection } from "./ChatCardSection"
 import { CommentsSection } from "./CommentsSection"
@@ -35,6 +36,9 @@ export function LibrarySections() {
       </GuideCard>
       <GuideCard title="Agent changes" className="gap-7">
         <AgentChangesSection />
+      </GuideCard>
+      <GuideCard title="Assistant" className="gap-7 max-sm:overflow-visible">
+        <AssistantSection />
       </GuideCard>
       <GuideCard title="Pages outside a project" className="gap-7">
         <HomeSection />

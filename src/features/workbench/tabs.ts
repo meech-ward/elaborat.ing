@@ -24,7 +24,8 @@ export type TabAction =
   | { type: "close"; path: string; discard: boolean }
   | { type: "move-reconciled"; files: Array<TabFile & { from: string }> }
   | { type: "renamed"; from: string; to: string; content: string; revision: string }
-  | { type: "draft-renamed"; from: string; to: string; content: string };
+  | { type: "draft-renamed"; from: string; to: string; content: string }
+  | { type: "assistant-edit"; file: TabFile };
 export function tabTransition(state: TabState, action: TabAction): TabState {
   switch (action.type) {
     case "reorder": {
@@ -146,6 +147,18 @@ export function tabTransition(state: TabState, action: TabAction): TabState {
             : t,
         ),
         active: state.active === action.from ? action.to : state.active,
+      };
+    }
+    case "assistant-edit": {
+      // The assistant's version of a file, as an unsaved edit over its saved
+      // copy: the file's tab opens (or its session remounts with it) and
+      // comes forward. The session reports it dirty, as after typing.
+      const existing = state.tabs.find((t) => t.path === action.file.path);
+      const tab: OpenTab = { ...action.file, dirty: existing?.dirty ?? false, generation: (existing?.generation ?? 0) + 1 };
+      return {
+        ...state,
+        active: action.file.path,
+        tabs: existing ? state.tabs.map((t) => (t === existing ? tab : t)) : [...state.tabs, tab],
       };
     }
     case "close": {

@@ -39,6 +39,10 @@ Developer first, friendly for everyone.
   revision-checked, and conflicts are recovered visibly, never overwritten.
 - **Search** across every project a user can read, keyword and semantic
   (hybrid search).
+- **An assistant on your own ChatGPT plan** (local runs for now). It writes
+  notes, drawings and diagrams in the open project, and shows each change in
+  the file for you to save or discard. The app pays for no inference; the
+  assistant uses the person's own ChatGPT plan (Plus or Pro).
 - **Agents over MCP.** A user connects Claude, ChatGPT or any MCP client to
   their account with OAuth. The agent then works on their documents and
   diagrams as them, in the same back-and-forth a person would have with a
@@ -83,9 +87,11 @@ Developer first, friendly for everyone.
 ## Accounts
 
 - **Sign-in:** email and password, magic link, one-time code, passkeys, GitHub,
-  Google, and phone codes. "Sign in with ChatGPT" gets added if OpenAI opens it
-  to all apps. There is no "Sign in with Claude" for other apps. Connecting an
-  agent is separate from signing in, and works with any sign-in method.
+  Google, and phone codes. "Sign in with ChatGPT" gets added once OpenAI gives
+  elaborat.ing a client (a limited trial for selected partners). There is no
+  "Sign in with Claude" for other apps. Connecting an agent, and using your
+  ChatGPT plan for the assistant, are separate from signing in, and work with
+  any sign-in method.
 - **Hosted limits are generous and exist only to stop abuse.** Nobody should
   notice them in normal use.
 

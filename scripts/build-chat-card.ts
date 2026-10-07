@@ -38,7 +38,8 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { visualizer } from "rollup-plugin-visualizer"
-import { build, normalizePath, type Plugin, type PluginOption } from "vite"
+import { build, normalizePath, type PluginOption } from "vite"
+import { npmSpecifiers as npmSpecifierPlugin } from "../vite-plugins/npm-specifiers"
 import { COLOR_TOKEN_KEYS } from "../src/features/appearance/paletteCss"
 import { DEFAULT_THEME, getAppearanceTokens, tokenProperty, type ColorScheme } from "../src/features/appearance/tokens"
 import { beforeDarkFilter } from "../src/features/drawings/presentation"
@@ -91,27 +92,9 @@ const fonts = FONTS.map((font) => {
   return { ...font, bytes, fileName: `${font.name}-${hashOf(bytes)}.woff2` }
 })
 
-/**
- * The MCP server's modules, which the live view shares, import their
- * packages as Deno does (`npm:<package>@<version>[/<file>]`). Each resolves
- * to the app's own copy, which package.json must pin to the same version, so
- * the card and the server cannot draw differently.
- */
-const pinned: Record<string, string> = (() => {
-  const manifest = JSON.parse(readFileSync(path.join(REPO, "package.json"), "utf8"))
-  return { ...manifest.dependencies, ...manifest.devDependencies }
-})()
-const npmSpecifiers: Plugin = {
-  name: "npm-specifiers",
-  enforce: "pre",
-  resolveId(source, importer, options) {
-    const match = /^npm:((?:@[^/@]+\/)?[^/@]+)@([^/]+)(\/.*)?$/.exec(source)
-    if (!match) return null
-    const [, name, version, file = ""] = match
-    if (pinned[name] !== version) throw new Error(`${source} needs ${name} ${version} in package.json, which has ${pinned[name] ?? "none"}.`)
-    return this.resolve(name + file, importer, { ...options, skipSelf: true })
-  },
-}
+// The MCP server's modules, which the live view shares, import their packages
+// as Deno does; each resolves to the app's own pinned copy.
+const npmSpecifiers = npmSpecifierPlugin(REPO)
 
 type OutputChunk = { type: "chunk"; fileName: string; code: string; isEntry: boolean; name: string; imports: string[]; dynamicImports: string[] }
 type OutputAsset = { type: "asset"; fileName: string; source: string | Uint8Array }

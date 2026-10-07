@@ -10,6 +10,7 @@ import {
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { postToCallback } from '../_shared/callbacks.ts'
+import { FILE_FORMAT_INSTRUCTIONS } from '../_shared/fileFormats.ts'
 import { EVENT_CAPABILITIES, type EventsContext, registerEvents } from './events.ts'
 import { registerTools, type ToolContext } from './tools/index.ts'
 import { embedViewEnabled } from './tools/panel.ts'
@@ -47,16 +48,11 @@ const SERVER_INSTRUCTIONS =
   `${SERVER_DESCRIPTION} ` +
   'Every tool acts as the signed-in user, with their access: only the projects they own or that are shared with them. ' +
   "Read a tool's description and annotations before calling it: some tools change files. " +
-  // How elaborat.ing files are written, so what agents create renders in the app.
-  'Projects hold notes, drawings and diagrams. Write new notes as MDX (.mdx): Markdown plus components. ' +
-  'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
-  "using the file's path in the project; the file must exist, so create it first. " +
-  'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
-  'Existing .md notes are plain Markdown: keep them as they are unless asked. To show a file to the user, use show_file; ' +
-  'to show the user a component you are writing, use preview_component. ' +
+  // How elaborat.ing files are written, so what agents create renders in the
+  // app; the in-app assistant's instructions use the same text.
+  FILE_FORMAT_INSTRUCTIONS +
+  'To show a file to the user, use show_file; to show the user a component you are writing, use preview_component. ' +
   'To make a new note, drawing or diagram the user should watch being made, use create_and_show. ' +
-  'Create a drawing before the note that embeds it. ' +
-  'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. ' +
   'To change a file, use write_file. ' +
   'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
   'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'
