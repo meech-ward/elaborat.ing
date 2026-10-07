@@ -7,7 +7,7 @@ import { FILE_VIEW_META } from './fileView.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { PANEL_META_KEY, PANEL_PASS_KEY, PANEL_VIEW_URI } from './panel.ts'
 
-// open_panel, panel_pass and the view, on a real McpServer through a real MCP
+// open_panel, panel_pass, panel_origins and the view, on a real McpServer through a real MCP
 // client, with a stand-in Supabase client that answers the project's title
 // (as RLS would: only for a project the person can open) and mints a new
 // pass for each call of mint_panel_pass (or fails, with `mintFails`).
@@ -81,11 +81,85 @@ Deno.test('open_panel opens from the sidebar and a conversation panel, and its v
     })
     // One widget origin for the card and the panel, so the site allows one view origin per chat.
     assertEquals(view._meta['openai/widgetDomain'], FILE_VIEW_META['openai/widgetDomain'])
-    assertStringIncludes(view.text, "elaborat.ing can't open in this panel.")
+    assertStringIncludes(view.text, "elaborat.ing isn't switched on for this panel yet.")
+    assertStringIncludes(view.text, 'Open in elaborat.ing')
+    assertStringIncludes(view.text, '<summary>Details</summary>Origins to allow:<code id="origins">')
     // The view puts each page's pass in its fragment, never its query, and asks panel_pass for a new one.
     assertStringIncludes(view.text, '"#pass=" + pass')
     assertStringIncludes(view.text, 'callTool("panel_pass", {})')
     assert(!/[?&]pass=/.test(view.text), 'no pass in a query string')
+    // It reports its origins to the server when it shows the fallback, and when the app opened.
+    assertStringIncludes(view.text, 'callTool("panel_origins", ok ? { origins: line, ok: true } : { origins: line })')
+    assertStringIncludes(view.text, 'if (!reportedBlocked) { reportedBlocked = true; reportOrigins(false); }')
+    assertStringIncludes(view.text, 'if (!reportedOk) { reportedOk = true; reportOrigins(true); }')
+  })
+})
+
+/** Runs `use` with console.log captured: the lines it printed. */
+async function withLog<T>(use: () => Promise<T>): Promise<{ lines: string[]; value: T }> {
+  const lines: string[] = []
+  const original = console.log
+  console.log = (...args: unknown[]) => lines.push(args.map(String).join(' '))
+  try {
+    return { lines, value: await use() }
+  } finally {
+    console.log = original
+  }
+}
+
+Deno.test('panel_origins is for the view only, and logs one line with the caller and the origins', async () => {
+  await withClient(async (client, queries) => {
+    const tool = (await client.listTools()).tools.find((entry) => entry.name === 'panel_origins')
+    assert(tool, 'panel_origins is listed')
+    assertEquals(tool._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
+    assertEquals(tool.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+
+    const origins = 'https://a1b2c3.web-sandbox.example https://chat.example'
+    const { lines, value: result } = await withLog(
+      () => client.callTool({ name: 'panel_origins', arguments: { origins } }) as Promise<CallToolResult>
+    )
+    assert(!result.isError, JSON.stringify(result))
+    assertEquals(lines.map((line) => JSON.parse(line)), [{ event: 'panel_origins', user: 'me', origins }])
+    assertEquals(result._meta, undefined)
+    assertEquals(result.structuredContent, undefined)
+    assertEquals(text(result), 'Noted.')
+
+    const ok = await withLog(() => client.callTool({ name: 'panel_origins', arguments: { origins, ok: true } }) as Promise<CallToolResult>)
+    assert(!ok.value.isError, JSON.stringify(ok.value))
+    assertEquals(ok.lines.map((line) => JSON.parse(line)), [{ event: 'panel_ok', user: 'me', origins }])
+    assertEquals(queries, [], 'it reads and writes nothing in Supabase')
+  })
+})
+
+Deno.test('panel_origins takes only https origins, one space apart, at most ten, and logs nothing otherwise', async () => {
+  await withClient(async (client) => {
+    const ten = Array.from({ length: 10 }, (_, index) => `https://host${index}.example`).join(' ')
+    const fine = await withLog(() => client.callTool({ name: 'panel_origins', arguments: { origins: ten } }) as Promise<CallToolResult>)
+    assert(!fine.value.isError, JSON.stringify(fine.value))
+    assertEquals(fine.lines.length, 1)
+
+    const bad = [
+      '',
+      ' ',
+      'http://chat.example',
+      'https://chat.example/',
+      'https://chat.example/path',
+      'https://chat.example?q=1',
+      'https://chat.example#x',
+      'https://user:pw@chat.example',
+      'https://chat.example  https://other.example',
+      'chat.example',
+      'javascript:alert(1)',
+      `${ten} https://host10.example`,
+    ]
+    for (const origins of bad) {
+      const { lines, value } = await withLog(() => client.callTool({ name: 'panel_origins', arguments: { origins } }) as Promise<CallToolResult>)
+      assert(value.isError, `accepted ${JSON.stringify(origins)}`)
+      assertEquals(lines, [], `logged ${JSON.stringify(origins)}`)
+    }
+    const missing = await withLog(() => client.callTool({ name: 'panel_origins', arguments: {} }) as Promise<CallToolResult>)
+    assert(missing.value.isError, 'accepted no origins')
+    assertEquals(missing.lines, [])
   })
 })
 
@@ -127,7 +201,7 @@ Deno.test('with EMBED_VIEW_ENABLED false the tools and resources are as they wer
     }), embedView)
   const on = await listed(true)
   const off = await listed(false)
-  const panelTools = ['open_panel', 'panel_pass']
+  const panelTools = ['open_panel', 'panel_pass', 'panel_origins']
   assertEquals(off.tools.map((tool) => tool.name).sort(), on.tools.map((tool) => tool.name).filter((name) => !panelTools.includes(name)).sort())
   assertEquals(off.tools, on.tools.filter((tool) => !panelTools.includes(tool.name)))
   assertEquals(off.resources, on.resources.filter((uri) => uri !== PANEL_VIEW_URI))

@@ -67,6 +67,10 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
   const pass = tools.find((tool) => tool.name === 'panel_pass')
   assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  // panel_origins logs where the panel's view sits, and stores nothing.
+  const origins = tools.find((tool) => tool.name === 'panel_origins')
+  assertEquals(origins?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(origins?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
 })
 
 Deno.test('whoami is the account profile: exactly id, name and email, as structured content and JSON text', async () => {

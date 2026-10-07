@@ -13,7 +13,10 @@ import type { ToolContext } from './types.ts'
 // app in a panel (src/features/embed), which keeps a sign-in of its own and
 // updates through the app's own sync. The app's site decides who may frame it
 // (EMBED_FRAME_ANCESTORS in wrangler.jsonc); when it may not be framed here
-// the view says so, with the origins to allow and a link to the site. Each
+// the view says so, with the origins to allow and a link to the site, and
+// reports those origins to this server (panel_origins), which logs them, so
+// nobody has to copy the line by hand; it reports them once more when the app
+// did open, so the log holds the origin either way. Each
 // page the view frames carries a one-time pass in its fragment (#pass=), minted
 // here as the person (mint_panel_pass), which the app redeems before it shows
 // any project: open_panel's result has one for the first page, and the view
@@ -22,7 +25,7 @@ import type { ToolContext } from './types.ts'
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v2.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v3.html'
 /** The result `_meta` key holding the app's page to frame, such as /embed/projects/<id>. `_meta` reaches the view, not the model. */
 export const PANEL_META_KEY = 'elaborat.ing/embed'
 /** The result `_meta` key holding a one-time pass for the page the view frames. */
@@ -63,6 +66,28 @@ export function embedViewEnabled(): boolean {
 
 const encodePath = (filePath: string) => filePath.split('/').map(encodeURIComponent).join('/')
 
+/** At most this many origins in one panel_origins report: the view's own and the pages around it. */
+export const PANEL_ORIGINS_MAX = 10
+
+/** Whether `value` is exactly one https origin: scheme and host, no path, query, fragment or credentials. */
+function isHttpsOrigin(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.origin === value
+  } catch {
+    return false
+  }
+}
+
+/** The view's origins line as the view sends it: https origins, one space apart, at most PANEL_ORIGINS_MAX. */
+const originsLine = z
+  .string()
+  .max(PANEL_ORIGINS_MAX * 260)
+  .refine((value) => {
+    const list = value.split(' ')
+    return list.length <= PANEL_ORIGINS_MAX && list.every(isHttpsOrigin)
+  }, { message: `origins must be https origins (scheme and host only) separated by single spaces, at most ${PANEL_ORIGINS_MAX} of them.` })
+
 const STYLE = `
 :root { color-scheme: light dark; --fg: #1d2127; --muted: #5d6573; --bg: #ffffff; --line: #d9dde3; }
 :root[data-theme="dark"] { --fg: #e8eaee; --muted: #a2a9b6; --bg: #16191f; --line: #333944; }
@@ -93,6 +118,8 @@ const SCRIPT = String.raw`
   var metaPass = null, spent = {}, loads = 0, retried = false;
   // Whether the tool's result has arrived, or the view stopped waiting for it.
   var resultSeen = false, waitTimer = null;
+  // Whether the view has told the server its origins: once for the fallback, once for the app opening.
+  var reportedBlocked = false, reportedOk = false;
 
   function post(message) { window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*"); }
   function request(method, params) {
@@ -117,10 +144,17 @@ const SCRIPT = String.raw`
     return list.filter(function (origin, index) { return origin && origin !== "null" && list.indexOf(origin) === index; }).join(" ");
   }
 
+  // Tell the server where the view sits, so its log holds the origins to allow (ok: the app opened here).
+  function reportOrigins(ok) {
+    var line = origins();
+    if (!line) return;
+    Promise.resolve().then(function () { return callTool("panel_origins", ok ? { origins: line, ok: true } : { origins: line }); }).catch(function () {});
+  }
   function showFallback() {
     document.getElementById("origins").textContent = origins();
     fallback.hidden = false;
     frame.hidden = true;
+    if (!reportedBlocked) { reportedBlocked = true; reportOrigins(false); }
   }
 
   // The page to frame: the tool's, unless it is only the projects; then the host's deep link; then the projects.
@@ -221,6 +255,7 @@ const SCRIPT = String.raw`
         frame.hidden = false;
         fallback.hidden = true;
         if (theme) frame.contentWindow.postMessage({ type: "elaborating-embed:theme", theme: theme }, APP);
+        if (!reportedOk) { reportedOk = true; reportOrigins(true); }
       } else if (data.type === "elaborating-embed:open" && typeof data.url === "string" && data.url.indexOf(APP + "/") === 0) {
         openLink(data.url);
       } else if (data.type === "elaborating-embed:pass" && !retried) {
@@ -289,7 +324,7 @@ export const PANEL_VIEW_HTML = `<!doctype html>
 <body>
 <iframe id="app" title="elaborat.ing" hidden></iframe>
 <div id="fallback" hidden>
-<p>elaborat.ing can't open in this panel.</p>
+<p>elaborat.ing isn't switched on for this panel yet.</p>
 <button id="open" type="button">Open in elaborat.ing</button>
 <details><summary>Details</summary>Origins to allow:<code id="origins"></code></details>
 </div>
@@ -298,7 +333,7 @@ export const PANEL_VIEW_HTML = `<!doctype html>
 </html>
 `
 
-export function registerPanel(server: McpServer, { supabase }: ToolContext): void {
+export function registerPanel(server: McpServer, { supabase, userClaims }: ToolContext): void {
   /** A new one-time pass for the app in the panel, minted as the person. */
   const mintPass = async (): Promise<string> => {
     const { data, error } = await supabase.rpc('mint_panel_pass')
@@ -381,6 +416,26 @@ export function registerPanel(server: McpServer, { supabase }: ToolContext): voi
       } catch (error) {
         return runtimeErrorResult(error)
       }
+    }
+  )
+
+  // For the view only: where it sits, as one log line of this function and
+  // nothing else, so the origins to allow can be read from the logs instead of
+  // copied from the panel. `ok` means the app did open there. Nothing is
+  // stored, so it is not destructive; it is not read-only, since it logs.
+  server.registerTool(
+    'panel_origins',
+    {
+      title: 'Panel origins',
+      description:
+        'Used by the Projects panel itself: reports the origins the panel sits in, so the site can allow them. Not for use in a conversation.',
+      inputSchema: z.object({ origins: originsLine, ok: z.boolean().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
+    },
+    ({ origins, ok }) => {
+      console.log(JSON.stringify({ event: ok ? 'panel_ok' : 'panel_origins', user: userClaims.id, origins }))
+      return { content: [{ type: 'text', text: 'Noted.' }] }
     }
   )
 }

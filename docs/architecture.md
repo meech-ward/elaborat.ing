@@ -892,9 +892,15 @@ The production server's tools are unchanged.
   `https://elaborat.ing/...` links through `ui/open-link`. When the host's
   `sandbox.csp.frameDomains` lacks the app's origin (Claude restricts frame
   domains), or the app has not said it is ready within 10 seconds, the view
-  says "elaborat.ing can't open in this panel." with Open in elaborat.ing and,
-  under Details, its own origin and its ancestors: the line to set as
-  `EMBED_FRAME_ANCESTORS` (Frontend hosting). The app in the panel keeps a
+  says "elaborat.ing isn't switched on for this panel yet." with Open in
+  elaborat.ing and, under Details, its own origin and its ancestors: the line
+  to set as `EMBED_FRAME_ANCESTORS` (Frontend hosting). It also sends that
+  line to `panel_origins` once (and once more, with `ok: true`, when the app
+  did open), a view-only tool that validates it (https origins, one space
+  apart, at most ten) and writes one log line of the function,
+  `{"event":"panel_origins"|"panel_ok","user":<caller>,"origins":...}`, and
+  stores nothing, so the line can be read from the function's logs instead
+  of copied from the panel. The app in the panel keeps a
   sign-in of its own (the host partitions its storage under the chat's site)
   and updates through the app's own Realtime sync when an agent saves. Each
   page the view frames carries a one-time pass in its fragment
