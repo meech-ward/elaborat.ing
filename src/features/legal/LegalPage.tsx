@@ -11,10 +11,18 @@ import { LegalLinks } from "./LegalLinks"
 
 /**
  * The public repository of this copy's code: the terms link its license, and
- * the pages send questions to its issues. A copy run by someone else points
+ * the pages send bug reports to its issues. A copy run by someone else points
  * this at its own repository (see docs/self-host.md).
  */
 export const SOURCE_REPOSITORY = "https://github.com/meech-ward/elaborat.ing"
+
+/**
+ * Who runs this copy, as the privacy, terms and support pages name them, and
+ * the address for privacy questions, support and account requests. A copy run
+ * by someone else changes both (see docs/self-host.md).
+ */
+export const PUBLISHER = "Not Just Software Inc."
+export const CONTACT_EMAIL = "sam@notjust.software"
 
 /** A date a page shows as "Last updated": for the page's code, and in the reader's words. */
 export type UpdatedDate = { iso: string; text: string }
@@ -26,6 +34,11 @@ export function OutLink({ href, children }: { href: string; children: ReactNode 
       {children}
     </a>
   )
+}
+
+/** The contact address, as a mail link. */
+export function ContactEmail() {
+  return <OutLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</OutLink>
 }
 
 /**

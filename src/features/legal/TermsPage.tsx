@@ -1,19 +1,22 @@
-import { LegalPage, OutLink, SOURCE_REPOSITORY } from "./LegalPage"
+import { ContactEmail, LegalPage, OutLink, PUBLISHER, SOURCE_REPOSITORY } from "./LegalPage"
 
-// Generic text for the hosted copy, meant to be read by the person who runs
-// it before relying on it (docs/self-host.md says so).
+// Generic text for the hosted copy, meant to be read by whoever runs a copy
+// before relying on it (docs/self-host.md says so).
 
 /** The terms of using the hosted copy. */
 export function TermsPage() {
   return (
-    <LegalPage title="Terms" updated={{ iso: "2026-09-28", text: "September 28, 2026" }}>
-      <p>These terms cover using the copy of elaborat.ing at elaborat.ing. By using it, you agree to them.</p>
+    <LegalPage title="Terms" updated={{ iso: "2026-10-06", text: "October 6, 2026" }}>
+      <p>
+        These terms cover using the copy of elaborat.ing at elaborat.ing, which is run by {PUBLISHER}, a company in Canada. By using it, you agree to
+        them.
+      </p>
 
       <h2>Provided as is</h2>
       <p>
-        elaborat.ing is an open-source app run by one person. It is provided as is, without warranties of any kind: it may have bugs, be unavailable,
-        change or stop, and it could lose data. Keep your own copy of anything important (any project downloads as a .zip). As far as the law allows, the
-        person who runs it is not liable for any loss that comes from using it.
+        elaborat.ing is an open-source app. It is provided as is, without warranties of any kind: it may have bugs, be unavailable, change or stop,
+        and it could lose data. Keep your own copy of anything important (any project downloads as a .zip). As far as the law allows, {PUBLISHER} is
+        not liable for any loss that comes from using it.
       </p>
 
       <h2>Acceptable use</h2>
@@ -47,7 +50,8 @@ export function TermsPage() {
 
       <h2>Contact</h2>
       <p>
-        Questions: open an issue on the <OutLink href={`${SOURCE_REPOSITORY}/issues`}>GitHub repository</OutLink>.
+        Questions about these terms or your account: email {PUBLISHER} at <ContactEmail />. Bugs and questions about the app can also go to the{" "}
+        <OutLink href={`${SOURCE_REPOSITORY}/issues`}>GitHub repository</OutLink>, where issues are public.
       </p>
     </LegalPage>
   )

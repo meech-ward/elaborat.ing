@@ -24,7 +24,10 @@ prompt, replace its screenshot, or remove `screenshots`, which are optional.
 **Self-hosting?** Point `mcp.json` at your own `<site>/mcp`, and the four
 links in `plugin.json` (`websiteURL`, `supportURL`, `privacyPolicyURL`,
 `termsOfServiceURL`) at your own pages. The links must be HTTPS and must
-identify the same publisher as the submission.
+identify the same publisher as the submission: the support, privacy and terms
+pages name the publisher and its contact address (`PUBLISHER` and
+`CONTACT_EMAIL` in `src/features/legal/LegalPage.tsx`, with `developerName`
+and `author` in `plugin.json` to match), so change them to yours.
 
 ## 1. Verify the publisher
 

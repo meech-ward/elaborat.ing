@@ -1,15 +1,15 @@
-import { LegalPage, OutLink, SOURCE_REPOSITORY } from "./LegalPage"
+import { ContactEmail, LegalPage, OutLink, PUBLISHER, SOURCE_REPOSITORY } from "./LegalPage"
 
-// Generic text for the hosted copy, meant to be read by the person who runs
-// it before relying on it (docs/self-host.md says so).
+// Generic text for the hosted copy, meant to be read by whoever runs a copy
+// before relying on it (docs/self-host.md says so).
 
 /** What the hosted copy keeps about people, where, and how they take it with them or remove it. */
 export function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated={{ iso: "2026-09-30", text: "September 30, 2026" }}>
+    <LegalPage title="Privacy" updated={{ iso: "2026-10-06", text: "October 6, 2026" }}>
       <p>
-        elaborat.ing is an open-source app run by one person, not a company. This page says what the copy at elaborat.ing keeps about you, where it
-        keeps it, and how to take it with you or remove it.
+        elaborat.ing is an open-source app. The copy at elaborat.ing is run by {PUBLISHER}, a company in Canada. This page says what that copy keeps
+        about you, where it keeps it, and how to take it with you or remove it.
       </p>
 
       <h2>What is stored</h2>
@@ -50,8 +50,8 @@ export function PrivacyPage() {
 
       <h2>What is never done with it</h2>
       <p>
-        Your data is not sold, and there are no ads or advertising trackers. The person who runs the app can reach the database, and looks at your data
-        only to fix a problem, when you ask for help, or when the law requires it.
+        Your data is not sold, and there are no ads or advertising trackers. {PUBLISHER} can reach the database, and looks at your data only to fix a
+        problem, when you ask for help, or when the law requires it.
       </p>
 
       <h2>Cookies and browser storage</h2>
@@ -65,6 +65,9 @@ export function PrivacyPage() {
         <li>Any project downloads as a .zip of its files: choose Download project in its menu.</li>
         <li>Delete a project from its menu, or your whole account in Settings, under Account. Deleting your account deletes the projects you own (you can hand a shared one to another member first); your comments on other projects stay, shown as from a deleted account.</li>
         <li>Disconnect an agent on the Connected agents page.</li>
+        <li>
+          For anything about your data you cannot do in the app, email <ContactEmail /> from your account's address.
+        </li>
       </ul>
 
       <h2>How long it is kept</h2>
@@ -80,7 +83,8 @@ export function PrivacyPage() {
 
       <h2>Contact</h2>
       <p>
-        Questions or requests: open an issue on the <OutLink href={`${SOURCE_REPOSITORY}/issues`}>GitHub repository</OutLink>.
+        Privacy questions and requests about your data: email {PUBLISHER} at <ContactEmail />. Bugs and questions about the app can also go to the{" "}
+        <OutLink href={`${SOURCE_REPOSITORY}/issues`}>GitHub repository</OutLink>, where issues are public.
       </p>
     </LegalPage>
   )
