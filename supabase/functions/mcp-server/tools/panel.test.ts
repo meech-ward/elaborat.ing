@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { FILE_VIEW_META } from './fileView.ts'
 import { registerTools, type ToolContext } from './index.ts'
-import { PANEL_META_KEY, PANEL_PASS_KEY, PANEL_VIEW_URI } from './panel.ts'
+import { OLD_PANEL_VIEW_URIS, PANEL_META_KEY, PANEL_PASS_KEY, PANEL_VIEW_URI } from './panel.ts'
 
 // open_panel, panel_pass, panel_origins and the view, on a real McpServer through a real MCP
 // client, with a stand-in Supabase client that answers the project's title
@@ -70,6 +70,12 @@ Deno.test('open_panel opens from the sidebar and a conversation panel, and its v
     assertStringIncludes(svg, 'stroke="currentColor"')
 
     const { contents } = await client.readResource({ uri: PANEL_VIEW_URI })
+    for (const old of OLD_PANEL_VIEW_URIS) {
+      const { contents: earlier } = await client.readResource({ uri: old })
+      const [earlierView] = earlier as { uri: string; text: string }[]
+      assertEquals(earlierView.uri, old)
+      assertStringIncludes(earlierView.text, 'panel_origins')
+    }
     const [view] = contents as { uri: string; mimeType: string; text: string; _meta: Record<string, unknown> & { ui: Record<string, unknown> } }[]
     assertEquals(view.mimeType, 'text/html;profile=mcp-app')
     assertEquals(view._meta.ui.csp, { connectDomains: [], resourceDomains: [], frameDomains: ['https://elaborat.ing'] })
@@ -204,7 +210,7 @@ Deno.test('with EMBED_VIEW_ENABLED false the tools and resources are as they wer
   const panelTools = ['open_panel', 'panel_pass', 'panel_origins']
   assertEquals(off.tools.map((tool) => tool.name).sort(), on.tools.map((tool) => tool.name).filter((name) => !panelTools.includes(name)).sort())
   assertEquals(off.tools, on.tools.filter((tool) => !panelTools.includes(tool.name)))
-  assertEquals(off.resources, on.resources.filter((uri) => uri !== PANEL_VIEW_URI))
+  assertEquals(off.resources, on.resources.filter((uri) => uri !== PANEL_VIEW_URI && !OLD_PANEL_VIEW_URIS.includes(uri)))
   assert(on.resources.includes(PANEL_VIEW_URI))
   assert(off.tools.every((tool) => !(tool._meta && 'openai/ui' in tool._meta)), 'no entrypoints without the panel')
 })

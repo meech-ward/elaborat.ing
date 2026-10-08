@@ -26,6 +26,13 @@ import type { ToolContext } from './types.ts'
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
 export const PANEL_VIEW_URI = 'ui://elaborating/panel-v3.html'
+/**
+ * Earlier names of the panel view. A host keeps the tool list it last read, so
+ * it asks for the name that list carries until it refreshes; serving the
+ * earlier names too means a rename never shows "App unavailable" meanwhile.
+ * The content is always the current view.
+ */
+export const OLD_PANEL_VIEW_URIS = ['ui://elaborating/panel-v2.html', 'ui://elaborating/panel-v1.html']
 /** The result `_meta` key holding the app's page to frame, such as /embed/projects/<id>. `_meta` reaches the view, not the model. */
 export const PANEL_META_KEY = 'elaborat.ing/embed'
 /** The result `_meta` key holding a one-time pass for the page the view frames. */
@@ -342,16 +349,18 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
     return data
   }
 
-  server.registerResource(
-    'panel_view',
-    PANEL_VIEW_URI,
-    {
-      title: 'elaborat.ing',
-      description: "The user's elaborat.ing projects beside the chat: the app itself, in a frame. Used by open_panel.",
-      mimeType: MCP_APP_MIME_TYPE,
-    },
-    () => ({ contents: [{ uri: PANEL_VIEW_URI, mimeType: MCP_APP_MIME_TYPE, text: PANEL_VIEW_HTML, _meta: PANEL_VIEW_META }] })
-  )
+  for (const [index, uri] of [PANEL_VIEW_URI, ...OLD_PANEL_VIEW_URIS].entries()) {
+    server.registerResource(
+      index === 0 ? 'panel_view' : `panel_view_${index}`,
+      uri,
+      {
+        title: 'elaborat.ing',
+        description: "The user's elaborat.ing projects beside the chat: the app itself, in a frame. Used by open_panel.",
+        mimeType: MCP_APP_MIME_TYPE,
+      },
+      () => ({ contents: [{ uri, mimeType: MCP_APP_MIME_TYPE, text: PANEL_VIEW_HTML, _meta: PANEL_VIEW_META }] })
+    )
+  }
 
   server.registerTool(
     'open_panel',
