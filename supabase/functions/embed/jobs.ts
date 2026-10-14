@@ -28,10 +28,20 @@ export type PassageRow = {
 export interface PassageStore {
   /** The file, or null when it no longer exists (its passages went with it). */
   file(fileId: string): Promise<FileRow | null>
+  /** The file's current passages, with their embeddings. */
+  passages(fileId: string): Promise<Array<Pick<PassageRow, 'headings' | 'content' | 'embedding'>>>
+  /** The embeddings kept for the file since its passages were last replaced, by input hash. */
+  kept(fileId: string): Promise<Map<string, number[]>>
   /**
-   * Replace the file's passages and finish the job, in one transaction. When
-   * the file has changed since `file.version`, write nothing: a newer job for
-   * that change is already queued.
+   * Keep a new embedding for the file straight away, outside any job's
+   * transaction, so a job stopped partway loses none. `inputHash` is the
+   * SHA-256, in hex, of what the model read (`embeddingInput`).
+   */
+  keep(fileId: string, inputHash: string, embedding: number[]): Promise<void>
+  /**
+   * Replace the file's passages, drop its kept embeddings and finish the job,
+   * in one transaction. When the file has changed since `file.version`, write
+   * nothing: a newer job for that change is already queued.
    */
   replace(file: FileRow, rows: PassageRow[], jobId: number): Promise<void>
   /** Finish a job with nothing to write. */
@@ -46,6 +56,28 @@ export function embeddingInput(headings: string[], text: string): string {
   return headings.length ? `${headings.join(' > ')}\n\n${text}` : text
 }
 
+/** The SHA-256 of `text`, in hex: the key a kept embedding is stored under. */
+async function inputHash(text: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * The embeddings the file already has, by input hash: its current passages',
+ * so an edit embeds only the passages it changed, and the ones kept since,
+ * so a job that stopped partway carries on where it stopped.
+ */
+async function knownEmbeddings(store: PassageStore, fileId: string): Promise<Map<string, number[]>> {
+  const known = await store.kept(fileId)
+  for (const passage of await store.passages(fileId)) {
+    // Headings are joined with " > " and none is empty (passages.ts), so the
+    // joined string gives back the input the passage was embedded from.
+    const input = embeddingInput(passage.headings ? [passage.headings] : [], passage.content)
+    known.set(await inputHash(input), passage.embedding)
+  }
+  return known
+}
+
 export async function processJob(job: Job, store: PassageStore, embed: Embed): Promise<void> {
   const file = await store.file(job.fileId)
   if (!file) {
@@ -55,14 +87,23 @@ export async function processJob(job: Job, store: PassageStore, embed: Embed): P
   // A file that is not a note, diagram or drawing (after a rename, say) gets no passages.
   const rows: PassageRow[] = []
   const passages = file.diagramCanvas ? [] : extractPassages(file.path, file.content)
+  const known = await knownEmbeddings(store, file.id)
   for (const [ordinal, passage] of passages.entries()) {
+    const input = embeddingInput(passage.headings, passage.text)
+    const hash = await inputHash(input)
+    let embedding = known.get(hash)
+    if (!embedding) {
+      embedding = await embed(input)
+      await store.keep(file.id, hash, embedding)
+      known.set(hash, embedding)
+    }
     rows.push({
       ordinal,
       headings: passage.headings.join(' > '),
       content: passage.text,
       startOffset: passage.start,
       endOffset: passage.end,
-      embedding: await embed(embeddingInput(passage.headings, passage.text)),
+      embedding,
     })
   }
   await store.replace(file, rows, job.jobId)

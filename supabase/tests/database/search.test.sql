@@ -6,10 +6,12 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(34);
 
 select table_privs_are('public', 'file_passages', 'anon', array[]::text[], 'Anonymous users cannot touch passages');
 select table_privs_are('public', 'file_passages', 'authenticated', array['SELECT'], 'Signed-in users can only read passages');
+select table_privs_are('private', 'passage_embeddings', 'anon', array[]::text[], 'Anonymous users cannot touch kept embeddings');
+select table_privs_are('private', 'passage_embeddings', 'authenticated', array[]::text[], 'Signed-in users cannot touch kept embeddings');
 select policies_are('public', 'file_passages', array['People can read passages in their projects'], 'One policy: people read passages in their projects');
 select function_privs_are(
   'public', 'hybrid_search', array['text', 'extensions.vector', 'integer', 'double precision', 'double precision', 'integer', 'uuid'],
@@ -169,8 +171,28 @@ select is_empty(
   'An invitation not yet accepted finds nothing'
 );
 
+-- The embed function keeps each embedding as it makes it, until it writes the
+-- file's passages.
+reset role;
+create temporary table kept_file as
+select id from public.project_files where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and path = 'sauce.md';
+insert into private.passage_embeddings (file_id, input_hash, embedding)
+select id, repeat('0', 64), pg_temp.unit(1) from kept_file;
+select is(
+  (select count(*) from private.passage_embeddings where file_id in (select id from kept_file)),
+  1::bigint,
+  'An embedding is kept for Alice''s note'
+);
+set local role authenticated;
+
 -- Deleting a file removes its passages.
 set local request.jwt.claims to '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+select throws_ok(
+  $$select * from private.passage_embeddings$$,
+  '42501',
+  null,
+  'Alice cannot read the embeddings kept for her own note'
+);
 select is(
   public.save_files('aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-1111-4000-8000-000000000002',
     format('[{"op":"delete","path":"sauce.md","base_version":%s}]',
@@ -183,6 +205,12 @@ select results_eq(
   $$select path from public.hybrid_search('tomato sauce', pg_temp.unit(1), 10)$$,
   array['quick.md', 'garden.mdx'],
   'Its passages are gone from her results'
+);
+reset role;
+select is(
+  (select count(*) from private.passage_embeddings where file_id in (select id from kept_file)),
+  0::bigint,
+  'and so are the embeddings kept for it'
 );
 
 set local role anon;

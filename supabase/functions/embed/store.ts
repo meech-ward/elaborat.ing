@@ -19,11 +19,31 @@ export function postgresStore(sql: postgres.Sql): PassageStore {
         ? { id: row.id, projectId: row.project_id, path: row.path, content: row.content, version: row.version, diagramCanvas: row.diagram_canvas }
         : null
     },
+    async passages(fileId) {
+      const rows = await sql<Array<{ headings: string; content: string; embedding: string }>>`
+        select headings, content, embedding::text as embedding from public.file_passages where file_id = ${fileId}
+      `
+      return rows.map((row) => ({ headings: row.headings, content: row.content, embedding: JSON.parse(row.embedding) }))
+    },
+    async kept(fileId) {
+      const rows = await sql<Array<{ input_hash: string; embedding: string }>>`
+        select input_hash, embedding::text as embedding from private.passage_embeddings where file_id = ${fileId}
+      `
+      return new Map(rows.map((row) => [row.input_hash, JSON.parse(row.embedding)]))
+    },
+    async keep(fileId, inputHash, embedding) {
+      await sql`
+        insert into private.passage_embeddings (file_id, input_hash, embedding)
+        values (${fileId}, ${inputHash}, ${JSON.stringify(embedding)}::extensions.vector)
+        on conflict do nothing
+      `
+    },
     async replace(file: FileRow, rows: PassageRow[], jobId: number) {
       await sql.begin(async (tx) => {
         const [current] = await tx`select version::text as version from public.project_files where id = ${file.id} for share`
         if (current?.version === file.version) {
           await tx`delete from public.file_passages where file_id = ${file.id}`
+          await tx`delete from private.passage_embeddings where file_id = ${file.id}`
           for (const row of rows) {
             await tx`
               insert into public.file_passages

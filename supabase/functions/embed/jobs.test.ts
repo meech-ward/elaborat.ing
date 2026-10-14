@@ -5,10 +5,22 @@ import { embeddingInput, type FileRow, type Job, type PassageRow, type PassageSt
 function fakeStore(files: FileRow[]) {
   const replaced: Array<{ fileId: string; version: string; rows: PassageRow[]; jobId: number }> = []
   const finished: number[] = []
+  // Each file's current passages, and the embeddings kept for it since.
+  const passages = new Map<string, PassageRow[]>()
+  const kept = new Map<string, Map<string, number[]>>()
   const store: PassageStore = {
     file: async (fileId) => files.find((file) => file.id === fileId) ?? null,
+    passages: async (fileId) => passages.get(fileId) ?? [],
+    kept: async (fileId) => new Map(kept.get(fileId)),
+    keep: async (fileId, inputHash, embedding) => {
+      const forFile = kept.get(fileId) ?? new Map<string, number[]>()
+      if (!forFile.has(inputHash)) forFile.set(inputHash, embedding)
+      kept.set(fileId, forFile)
+    },
     replace: async (file, rows, jobId) => {
       replaced.push({ fileId: file.id, version: file.version, rows, jobId })
+      passages.set(file.id, rows)
+      kept.delete(file.id)
     },
     finish: async (jobId) => {
       finished.push(jobId)
@@ -115,4 +127,74 @@ Deno.test("a diagram's generated canvas gets no passages: its words are the diag
   await processJobs([job(9, canvas.id)], store, embed)
   // Replaced with nothing, so passages written before are removed.
   assertEquals(replaced.map((write) => [write.fileId, write.rows.length]), [[canvas.id, 0]])
+})
+
+// Four passages whose embedding inputs differ in length, so each fake embedding is its own.
+const recipes: FileRow = {
+  ...note,
+  id: '00000000-0000-4000-8000-000000000003',
+  path: 'notes/recipes.md',
+  content: 'Family recipes.\n\n# Sauce\n\nSlow simmered tomato sauce.\n\n## Serving\n\nWith pasta.\n\n# Bread\n\nA crusty loaf.\n',
+  version: '1',
+}
+
+Deno.test('a job stopped partway carries on where it stopped: the retry embeds only what is left', async () => {
+  inputs.length = 0
+  const { store, replaced } = fakeStore([recipes])
+  // The worker stops (its CPU limit, say) after two embeddings.
+  let made = 0
+  const stopping = async (text: string) => {
+    if (made === 2) throw new Error('cpu')
+    made++
+    return await embed(text)
+  }
+  const stopped = await processJobs([job(5, recipes.id)], store, stopping)
+  assertEquals(stopped.failed, [{ ...job(5, recipes.id), error: 'cpu' }])
+  assertEquals(replaced, [])
+  assertEquals(inputs, ['Family recipes.', 'Sauce\n\nSlow simmered tomato sauce.'])
+
+  inputs.length = 0
+  const retried = await processJobs([job(5, recipes.id)], store, embed)
+  assertEquals(retried.completed, [job(5, recipes.id)])
+  assertEquals(inputs, ['Sauce > Serving\n\nWith pasta.', 'Bread\n\nA crusty loaf.'])
+  assertEquals(
+    replaced.map((write) => write.rows.map((row) => [row.ordinal, row.headings, row.content, row.embedding])),
+    [[
+      [0, '', 'Family recipes.', [15, 0, 1]],
+      [1, 'Sauce', 'Slow simmered tomato sauce.', [34, 0, 1]],
+      [2, 'Sauce > Serving', 'With pasta.', [28, 0, 1]],
+      [3, 'Bread', 'A crusty loaf.', [21, 0, 1]],
+    ]],
+  )
+})
+
+Deno.test('an edit to one passage embeds only that passage', async () => {
+  inputs.length = 0
+  const files = [recipes]
+  const { store, replaced } = fakeStore(files)
+  await processJobs([job(6, recipes.id)], store, embed)
+  assertEquals(inputs.length, 4)
+
+  inputs.length = 0
+  files[0] = { ...recipes, content: recipes.content.replace('With pasta.', 'With pasta and basil.'), version: '2' }
+  const outcome = await processJobs([job(7, recipes.id)], store, embed)
+  assertEquals(outcome.completed, [job(7, recipes.id)])
+  assertEquals(inputs, ['Sauce > Serving\n\nWith pasta and basil.'])
+  assertEquals(
+    replaced.map((write) => [write.version, write.rows.map((row) => [row.ordinal, row.headings, row.content, row.embedding])]),
+    [
+      ['1', [
+        [0, '', 'Family recipes.', [15, 0, 1]],
+        [1, 'Sauce', 'Slow simmered tomato sauce.', [34, 0, 1]],
+        [2, 'Sauce > Serving', 'With pasta.', [28, 0, 1]],
+        [3, 'Bread', 'A crusty loaf.', [21, 0, 1]],
+      ]],
+      ['2', [
+        [0, '', 'Family recipes.', [15, 0, 1]],
+        [1, 'Sauce', 'Slow simmered tomato sauce.', [34, 0, 1]],
+        [2, 'Sauce > Serving', 'With pasta and basil.', [38, 0, 1]],
+        [3, 'Bread', 'A crusty loaf.', [21, 0, 1]],
+      ]],
+    ],
+  )
 })

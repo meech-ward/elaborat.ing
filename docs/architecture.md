@@ -374,7 +374,12 @@ schema is `supabase/schemas/search.sql`.
   connection, embeds its passages, and in one transaction replaces the file's
   passages and deletes the job. If the file changed after it was read, it writes
   nothing, because a newer job is already queued. Jobs that fail come back when
-  their visibility timeout ends, so they retry.
+  their visibility timeout ends, so they retry. Each new embedding is kept as
+  soon as it is made (`private.passage_embeddings`, cleared when the passages
+  are written), and a passage whose input the file already has an embedding
+  for, in its current passages or kept, is not embedded again. So an edit
+  embeds only the passages it changed, and a long file that needs more than
+  one request's 2 s of CPU finishes over several tries instead of starting over.
 - **Embedding model:** Supabase's built-in `gte-small`, run inside Edge
   Functions with no API key and no extra cost, on any Supabase Cloud project.
 - **Function auth:** `embed` is called by the database, not a user, so it sets

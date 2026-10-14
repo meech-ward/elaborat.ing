@@ -47,6 +47,22 @@ create policy "People can read passages in their projects"
   to authenticated
   using (project_id in (select private.readable_project_ids()));
 
+-- Embeddings the `embed` function made for a file since its passages were last
+-- written, keyed by the SHA-256 (hex) of what the model read. Each is kept as
+-- soon as it is made, so a job stopped partway (by the function's CPU limit,
+-- say) carries on where it stopped when it comes back. Writing the file's
+-- passages clears them. Only the function reads or writes them.
+create table private.passage_embeddings (
+  file_id uuid not null references public.project_files (id) on delete cascade,
+  input_hash text not null,
+  embedding extensions.vector(384) not null,
+  primary key (file_id, input_hash)
+);
+
+alter table private.passage_embeddings enable row level security;
+
+revoke all on table private.passage_embeddings from anon, authenticated;
+
 -- Notes, diagrams and drawings whose passages are out of date. A rename can make a file
 -- searchable or not, so paths count as well as content. The `embed` function
 -- decides what the file needs from its current row.
