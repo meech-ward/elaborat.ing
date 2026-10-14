@@ -34,9 +34,10 @@ exactly the same database functions, as the user.
 - **Infrastructure as code.** Every setting that has a file-based home lives in
   a file in this repo. The few that don't are listed under
   [manual steps](#manual-steps) until the platform adds one.
-- **Test against the cloud.** Database, auth and function changes are verified
-  on a hosted Supabase project. There is no local `supabase start` stack in the
-  workflow.
+- **Test on a throwaway stack, then the cloud.** Database tests run on a
+  throwaway local stack built from the migrations, so they never touch real
+  data. Auth and function changes are then checked on the hosted project once
+  the deploy workflow has applied them.
 - **An app, not a page; the shell first.** The app is separate from the data:
   no server-side rendering, and it should feel like a desktop or mobile app.
   The first download is only the shell: the page frame, its CSS and its
@@ -101,9 +102,10 @@ supabase/
   `config.toml` under `[db.vault]` with `env()` values. `db push` writes them
   to Vault only when it applies a migration, so rotating one means updating
   its GitHub secret and committing an empty migration.
-- **`config.toml` holds the hosted project's values.** There is no local stack,
-  so the file describes the real project: site URL, redirect URLs, email
-  confirmation and so on. Self-hosters change these for their own copy.
+- **`config.toml` holds the hosted project's values.** The file describes the
+  real project: site URL, redirect URLs, email confirmation and so on. The
+  throwaway test stack starts from the same file. Self-hosters change these for
+  their own copy.
 - **Generating migrations needs a throwaway Postgres.** The sync command builds
   shadow databases locally, which needs Docker (an experimental Docker-free
   runtime exists but is undocumented and unverified). That happens on a
@@ -1536,9 +1538,9 @@ are called through a real MCP client, so input validation is tested too.
 **Decision:** database tests use pgTAP, Supabase's documented approach, in
 `supabase/tests/`. They set the role and JWT claims to act as different users,
 and prove grants, isolation between users, the save protocol and the agent
-rules. They run against the hosted project inside a transaction that is rolled
-back. The canonical runner is `supabase test db` pointed at the project; until
-CI runs them, the maintainer runs them before each schema change lands.
+rules. They run on a throwaway local stack built from the migrations:
+`supabase db start`, then `supabase test db`. Until CI runs them, whoever
+changes the schema runs them before the change lands.
 
 **Decision:** browser tests use Playwright with axe, in Chromium and Firefox,
 against production builds: the app, and a test-only harness page
@@ -1547,4 +1549,5 @@ plugins. Each accessibility check has a positive control that plants a known
 violation, so a check that can no longer fail is caught. CI runs them on every
 pull request.
 
-Database, auth and function changes are verified on a hosted project.
+Database changes are verified on that throwaway stack, then auth and function
+changes on the hosted project after they deploy.
