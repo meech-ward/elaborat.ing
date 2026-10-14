@@ -382,6 +382,12 @@ schema is `supabase/schemas/search.sql`.
   for, in its current passages or kept, is not embedded again. So an edit
   embeds only the passages it changed, and a long file that needs more than
   one request's 2 s of CPU finishes over several tries instead of starting over.
+  When the runtime is about to stop a request (`beforeunload`, reason "cpu"),
+  the request starts no more embeddings, and if it kept a new one it makes its
+  unfinished jobs visible again after 2 seconds (`pgmq.set_vt`), so the next
+  try comes within seconds. A stop that kept nothing new, a job that failed on
+  its own, a worker killed outright at the hard CPU limit and a failed
+  `set_vt` all leave jobs to the 5-minute visibility timeout.
 - **Embedding model:** Supabase's built-in `gte-small`, run inside Edge
   Functions with no API key and no extra cost, on any Supabase Cloud project.
 - **Function auth:** `embed` is called by the database, not a user, so it sets

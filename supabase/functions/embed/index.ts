@@ -5,7 +5,7 @@ import { withSupabase } from 'npm:@supabase/server@1.6.0'
 import { z } from 'npm:zod@4.4.3'
 
 import { lazyEmbedder, type ModelSession } from '../_shared/embedder.ts'
-import { JobSchema, processJobs } from './jobs.ts'
+import { JobSchema, processBatch } from './jobs.ts'
 import { postgresStore } from './store.ts'
 
 // Called by the database, not a person: pg_cron sends batches of queued files
@@ -31,18 +31,11 @@ export default {
     const jobs = z.array(JobSchema).safeParse(await req.json().catch(() => null))
     if (!jobs.success) return new Response(`invalid request body: ${jobs.error.message}`, { status: 400 })
 
-    const pending = [...jobs.data]
-    const outcome = await Promise.race([
-      processJobs(pending, store, embed),
-      // If the worker is stopped (its wall clock limit, say), unfinished jobs
-      // return to the queue when their visibility timeout ends.
-      new Promise<never>((_, reject) =>
-        addEventListener('beforeunload', (event) => reject(new Error((event as CustomEvent).detail?.reason ?? 'worker stopped')))
-      ),
-    ]).catch((error: unknown) => ({
-      completed: [],
-      failed: pending.map((job) => ({ ...job, error: error instanceof Error ? error.message : String(error) })),
-    }))
+    // The runtime fires `beforeunload` just before it stops the worker, with
+    // the reason: "cpu" when the request has used most of its CPU time.
+    const stopping = new AbortController()
+    addEventListener('beforeunload', (event) => stopping.abort((event as CustomEvent).detail?.reason ?? 'worker stopped'))
+    const outcome = await processBatch(jobs.data, store, embed, stopping.signal)
 
     console.log('finished processing jobs:', { completed: outcome.completed.length, failed: outcome.failed.length })
     return Response.json(outcome, {

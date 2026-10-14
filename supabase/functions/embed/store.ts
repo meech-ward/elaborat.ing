@@ -59,5 +59,8 @@ export function postgresStore(sql: postgres.Sql): PassageStore {
     async finish(jobId) {
       await sql`select pgmq.delete(${QUEUE}, ${jobId}::bigint)`
     },
+    async retryIn(jobIds, seconds) {
+      await sql`select pgmq.set_vt(${QUEUE}, id, ${seconds}::integer) from unnest(${jobIds}::bigint[]) as id`
+    },
   }
 }

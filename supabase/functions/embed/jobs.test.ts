@@ -1,10 +1,20 @@
 import { assertEquals } from 'jsr:@std/assert@1.0.19'
-import { embeddingInput, type FileRow, type Job, type PassageRow, type PassageStore, processJobs } from './jobs.ts'
+import {
+  embeddingInput,
+  type FileRow,
+  type Job,
+  type PassageRow,
+  type PassageStore,
+  processBatch,
+  processJobs,
+  RETRY_AFTER_PROGRESS_SECONDS,
+} from './jobs.ts'
 
 /** An in-memory store that records what the jobs did. */
 function fakeStore(files: FileRow[]) {
   const replaced: Array<{ fileId: string; version: string; rows: PassageRow[]; jobId: number }> = []
   const finished: number[] = []
+  const retried: Array<{ jobIds: number[]; seconds: number }> = []
   // Each file's current passages, and the embeddings kept for it since.
   const passages = new Map<string, PassageRow[]>()
   const kept = new Map<string, Map<string, number[]>>()
@@ -25,8 +35,11 @@ function fakeStore(files: FileRow[]) {
     finish: async (jobId) => {
       finished.push(jobId)
     },
+    retryIn: async (jobIds, seconds) => {
+      retried.push({ jobIds, seconds })
+    },
   }
-  return { store, replaced, finished }
+  return { store, replaced, finished, retried }
 }
 
 const note: FileRow = {
@@ -197,4 +210,94 @@ Deno.test('an edit to one passage embeds only that passage', async () => {
       ]],
     ],
   )
+})
+
+/**
+ * The worker stops during the `at`th embedding asked for, as the runtime stops
+ * one that has used its CPU time: `stopping` aborts, and that embedding never
+ * comes back.
+ */
+function stopsAt(at: number, embed: (text: string) => Promise<number[]>) {
+  const controller = new AbortController()
+  let asked = 0
+  return {
+    stopping: controller.signal,
+    embed: async (text: string) => {
+      if (++asked < at) return await embed(text)
+      controller.abort('cpu')
+      return await new Promise<number[]>(() => {})
+    },
+  }
+}
+
+const small: FileRow = { ...note, id: '00000000-0000-4000-8000-000000000004', path: 'b.md', content: '# B\n\nText.\n' }
+
+Deno.test('a stop after the request kept a new embedding brings its unfinished jobs back within seconds', async () => {
+  const { store, replaced, retried } = fakeStore([small, recipes, note])
+  // The small note takes one embedding; the worker stops during recipes' second.
+  const { stopping, embed: stoppingEmbed } = stopsAt(3, embed)
+  const outcome = await processBatch([job(10, small.id), job(11, recipes.id), job(12, note.id)], store, stoppingEmbed, stopping)
+  assertEquals(outcome, {
+    completed: [job(10, small.id)],
+    failed: [{ ...job(11, recipes.id), error: 'cpu' }, { ...job(12, note.id), error: 'cpu' }],
+  })
+  assertEquals(replaced.map((write) => write.fileId), [small.id])
+  assertEquals(retried, [{ jobIds: [11, 12], seconds: RETRY_AFTER_PROGRESS_SECONDS }])
+})
+
+Deno.test('a stop before the request kept any new embedding leaves its jobs to their visibility timeout', async () => {
+  const { store, retried } = fakeStore([recipes, note])
+  // On a host where not even one embedding fits, the worker stops during the first.
+  const { stopping, embed: stoppingEmbed } = stopsAt(1, embed)
+  const outcome = await processBatch([job(13, recipes.id), job(14, note.id)], store, stoppingEmbed, stopping)
+  assertEquals(outcome.failed, [{ ...job(13, recipes.id), error: 'cpu' }, { ...job(14, note.id), error: 'cpu' }])
+  assertEquals(retried, [])
+})
+
+Deno.test('a job that failed on its own waits out its visibility timeout, even when its batch stops after progress', async () => {
+  const broken: FileRow = { ...note, id: '00000000-0000-4000-8000-000000000005', path: 'broken.md', content: '# Broken\n\nUnreadable.\n' }
+  const { store, retried } = fakeStore([broken, recipes])
+  const failing = async (text: string) => {
+    if (text.includes('Unreadable')) throw new Error('model unavailable')
+    return await embed(text)
+  }
+  // The broken note fails at its embedding; the worker stops during recipes' second.
+  const { stopping, embed: stoppingEmbed } = stopsAt(3, failing)
+  const outcome = await processBatch([job(15, broken.id), job(16, recipes.id)], store, stoppingEmbed, stopping)
+  assertEquals(outcome.failed, [{ ...job(15, broken.id), error: 'model unavailable' }, { ...job(16, recipes.id), error: 'cpu' }])
+  assertEquals(retried, [{ jobIds: [16], seconds: RETRY_AFTER_PROGRESS_SECONDS }])
+})
+
+Deno.test('when bringing the jobs back early fails, the batch still answers and their timeout brings them back', async () => {
+  const { store } = fakeStore([recipes])
+  const { stopping, embed: stoppingEmbed } = stopsAt(2, embed)
+  const retryFails: PassageStore = { ...store, retryIn: () => Promise.reject(new Error('connection lost')) }
+  const outcome = await processBatch([job(17, recipes.id)], retryFails, stoppingEmbed, stopping)
+  assertEquals(outcome, { completed: [], failed: [{ ...job(17, recipes.id), error: 'cpu' }] })
+})
+
+Deno.test('once the worker is stopping, no new embedding starts', async () => {
+  inputs.length = 0
+  const { store, replaced } = fakeStore([recipes])
+  const controller = new AbortController()
+  // The stop comes as the second embedding is made, and that one does come back.
+  const stopsAfterSecond = async (text: string) => {
+    const embedding = await embed(text)
+    if (inputs.length === 2) controller.abort('cpu')
+    return embedding
+  }
+  // The next job starting shows the stopped one has ended. Its file is gone, so it just finishes.
+  const gone = '00000000-0000-4000-8000-000000000006'
+  const next = Promise.withResolvers<void>()
+  const watched: PassageStore = {
+    ...store,
+    file: (fileId) => {
+      if (fileId === gone) next.resolve()
+      return store.file(fileId)
+    },
+  }
+  await processBatch([job(18, recipes.id), job(19, gone)], watched, stopsAfterSecond, controller.signal)
+  await next.promise
+  assertEquals(inputs, ['Family recipes.', 'Sauce\n\nSlow simmered tomato sauce.'])
+  assertEquals(replaced, [])
 })

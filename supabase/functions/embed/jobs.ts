@@ -46,6 +46,8 @@ export interface PassageStore {
   replace(file: FileRow, rows: PassageRow[], jobId: number): Promise<void>
   /** Finish a job with nothing to write. */
   finish(jobId: number): Promise<void>
+  /** Show the jobs in the queue again after `seconds`, sooner than their visibility timeout would. */
+  retryIn(jobIds: number[], seconds: number): Promise<void>
 }
 
 /** Embedding for one passage: 384 numbers from gte-small, normalized. */
@@ -111,16 +113,87 @@ export async function processJob(job: Job, store: PassageStore, embed: Embed): P
 
 export type Outcome = { completed: Job[]; failed: Array<Job & { error: string }> }
 
-/** Each job on its own: one failure leaves the rest to finish, and its job returns to the queue. */
-export async function processJobs(jobs: Job[], store: PassageStore, embed: Embed): Promise<Outcome> {
-  const outcome: Outcome = { completed: [], failed: [] }
+/**
+ * Each job on its own: one failure leaves the rest to finish, and its job
+ * returns to the queue. `outcome` fills in as each job ends, so a caller that
+ * stops waiting partway knows which jobs are left.
+ */
+export async function processJobs(
+  jobs: Job[],
+  store: PassageStore,
+  embed: Embed,
+  outcome: Outcome = { completed: [], failed: [] },
+): Promise<Outcome> {
   for (const job of jobs) {
     try {
       await processJob(job, store, embed)
       outcome.completed.push(job)
     } catch (error) {
-      outcome.failed.push({ ...job, error: error instanceof Error ? error.message : String(error) })
+      outcome.failed.push({ ...job, error: errorMessage(error) })
     }
   }
   return outcome
+}
+
+/**
+ * How long the jobs a stop left stay hidden, in seconds, when the request kept
+ * a new embedding first: long enough for the stopping worker to answer, short
+ * enough for the next pg_cron run (every 10 seconds) to send them again.
+ */
+export const RETRY_AFTER_PROGRESS_SECONDS = 2
+
+/**
+ * Processes one request's batch. Just before the runtime stops the worker,
+ * `stopping` aborts with the reason ("cpu" when the request has used most of
+ * its CPU time), and the jobs left are reported failed. A file too long for
+ * one request finishes over several tries, each carrying on from the
+ * embeddings kept before it, so when this request kept a new one the jobs left
+ * come back within seconds, the small files in the batch with them. Otherwise
+ * they wait out their visibility timeout, minutes: a stop that kept nothing
+ * new (on a host where not even one embedding fits, say) must not retry every
+ * few seconds forever, and neither must a job that failed on its own. If
+ * bringing the jobs back early fails, the timeout still brings them back.
+ */
+export async function processBatch(jobs: Job[], store: PassageStore, embed: Embed, stopping: AbortSignal): Promise<Outcome> {
+  const stopped = new Promise<'stopped'>((resolve) => stopping.addEventListener('abort', () => resolve('stopped'), { once: true }))
+  let kept = 0
+  const outcome: Outcome = { completed: [], failed: [] }
+  const work = processJobs(
+    jobs,
+    // Counts the new embeddings this request keeps: its progress.
+    {
+      ...store,
+      keep: async (...args) => {
+        await store.keep(...args)
+        kept++
+      },
+    },
+    // Starts no embedding once the worker is stopping, so the CPU time left
+    // goes to bringing the jobs back and answering.
+    async (text) => {
+      stopping.throwIfAborted()
+      return await embed(text)
+    },
+    outcome,
+  )
+  if ((await Promise.race([work, stopped])) !== 'stopped') return outcome
+
+  const ended = new Set([...outcome.completed, ...outcome.failed].map((job) => job.jobId))
+  const left = jobs.filter((job) => !ended.has(job.jobId))
+  const result: Outcome = {
+    completed: [...outcome.completed],
+    failed: [...outcome.failed, ...left.map((job) => ({ ...job, error: String(stopping.reason) }))],
+  }
+  if (kept > 0 && left.length > 0) {
+    try {
+      await store.retryIn(left.map((job) => job.jobId), RETRY_AFTER_PROGRESS_SECONDS)
+    } catch (error) {
+      console.error('could not bring the jobs back early, so they return when their visibility timeout ends:', errorMessage(error))
+    }
+  }
+  return result
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
