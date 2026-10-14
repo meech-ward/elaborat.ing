@@ -187,6 +187,9 @@ function EmbedBar({ url, onProject, email }: { url: string; onProject: boolean; 
   return (
     <AppBar
       size="compact"
+      // Above a drawing's canvas, which bleeds under the whole page as it
+      // does under the workbench's own panels: otherwise it hides the bar.
+      className="relative z-10"
       home={<Link to="/" />}
       actions={
         <>

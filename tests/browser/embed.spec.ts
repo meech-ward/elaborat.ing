@@ -177,6 +177,11 @@ test("the panel tells its view which project and file are open, and again when a
 
   await app.getByRole("button", { name: "notes/flow.excalidraw", exact: true }).click()
   await expect.poll(() => messages(page)).toContainEqual(location({ path: "notes/flow.excalidraw", kind: "drawing" }))
+
+  // A drawing's canvas bleeds under the whole page; the panel's bar stays on top of it and works.
+  await expect(app.locator("[data-canvas-stage]")).toBeVisible({ timeout: 15_000 })
+  await app.getByRole("link", { name: "Projects" }).click()
+  await expect(app.getByRole("heading", { name: "Your projects" })).toBeVisible()
 })
 
 const LOCKED = "Open this from elaborat.ing in your ChatGPT sidebar."
