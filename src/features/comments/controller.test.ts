@@ -91,6 +91,31 @@ describe("CommentsController", () => {
     expect(controller.getState()).toMatchObject({ panelOpen: false, request: null, activeThreadId: null })
   })
 
+  test("while a thread is attached again, a Comment action attaches it instead of starting a comment, until it stops", () => {
+    const controller = new CommentsController()
+    const attached: [string, unknown][] = []
+    controller.onAttach((threadId, asked) => attached.push([threadId, asked.anchor]))
+    controller.show({ path: A.path, file: A })
+    controller.startAttach("t1")
+    expect(controller.getState()).toMatchObject({ panelOpen: true, activeThreadId: "t1", request: null, attaching: "t1" })
+    controller.requestComment(request(A))
+    expect(attached).toEqual([["t1", request(A).anchor]])
+    expect(controller.getState()).toMatchObject({ request: null, attaching: "t1" })
+    // Stopped (attached, Cancel or Escape), the action starts a comment again.
+    controller.stopAttach()
+    controller.requestComment(request(A))
+    expect(controller.getState()).toMatchObject({ request: request(A), attaching: null })
+    expect(attached).toHaveLength(1)
+    // Another file on screen, or the panel closing, stops it too.
+    controller.startAttach("t1")
+    controller.show({ path: B.path, file: B })
+    expect(controller.getState().attaching).toBeNull()
+    controller.show({ path: A.path, file: A })
+    controller.startAttach("t1")
+    controller.setPanelOpen(false)
+    expect(controller.getState().attaching).toBeNull()
+  })
+
   test("places are kept per file and notify only when they change", () => {
     const controller = new CommentsController()
     let changes = 0

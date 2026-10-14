@@ -125,6 +125,11 @@ export interface CommentsRemote {
   reopen(threadId: string): Promise<{ revision: number; thread: RemoteThread }>
   /** Ask the author's agents to deal with a thread, or stop. Its creator only, never an agent. */
   setAskAgent(threadId: string, ask: boolean): Promise<{ revision: number; thread: RemoteThread }>
+  /**
+   * Attach a thread to other text or the whole file, described against the
+   * saved version `fileVersion`. Its creator, an editor or the owner; never an agent.
+   */
+  moveAnchor(threadId: string, fileVersion: number, anchor: CommentAnchor): Promise<{ revision: number; thread: RemoteThread }>
   /** Delete a comment's words: its author or the owner, never an agent. The thread goes with its last live comment. */
   deleteComment(commentId: string): Promise<{ revision: number; comment_id: string; thread_deleted: boolean }>
   /** Delete a thread: the owner, or its creator while every live comment in it is theirs; never an agent. */
@@ -189,6 +194,10 @@ export class SupabaseCommentsRemote implements CommentsRemote {
 
   async setAskAgent(threadId: string, ask: boolean) {
     return ThreadResult.parse(await this.rpc("set_comment_ask_agent", { thread_id: threadId, ask }))
+  }
+
+  async moveAnchor(threadId: string, fileVersion: number, anchor: CommentAnchor) {
+    return ThreadResult.parse(await this.rpc("move_comment_anchor", { thread_id: threadId, file_version: fileVersion, anchor }))
   }
 
   async deleteComment(commentId: string) {

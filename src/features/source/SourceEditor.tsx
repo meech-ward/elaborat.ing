@@ -17,6 +17,8 @@ export type SourceComments = {
   canComment: boolean;
   /** Only the connection keeps the person from commenting: Comment shows over a selection, off, saying so. */
   offline?: boolean;
+  /** A detached thread is being attached again: Comment reads Attach here, and attaches it to the selection. */
+  attaching?: boolean;
   /** Headings take section comments (notes). */
   sections: boolean;
   /** The key that comments, shown on the Comment button. */

@@ -1077,6 +1077,7 @@ export function WorkspaceWorkbench({
       data-compact={narrow}
       data-focus={focus && !narrow}
       data-comment-draft={(narrow && commentsUi.panelOpen && commentsUi.request !== null) || undefined}
+      data-comment-attach={(narrow && commentsUi.panelOpen && commentsUi.attaching !== null) || undefined}
       ref={shell}
     >
       <div className="wb-body" inert={filesScreen}>

@@ -228,6 +228,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           ...comments,
           userId: account.userId,
           owner: role === "owner",
+          editor: canEdit(role),
           viewer: commentsViewer,
           canWrite: !commentsViewer && !archived && !commentsOffline,
           writeBlocked: commentsViewer

@@ -11,7 +11,7 @@ import { CommentComposer } from "../ui/CommentComposer"
 import { CommentActionButton, CommentHighlight, CommentMarker, CommentsButton, DetachedBadge } from "../ui/CommentMarker"
 import { commentHighlightClass } from "../ui/commentHighlightClass"
 import { CommentsPanel, CommentsSheet } from "../ui/CommentsPanel"
-import { CommentAnchorLine, CommentDraft, CommentThread } from "../ui/CommentThread"
+import { CommentAnchorLine, CommentAttachPrompt, CommentDraft, CommentThread } from "../ui/CommentThread"
 import type { CommentAnchorView } from "../ui/commentTypes"
 import { EditorHeader } from "../ui/EditorHeader"
 import { EmptyState } from "../ui/EmptyState"
@@ -96,6 +96,54 @@ function SampleThreadDemo({
   )
 }
 
+/**
+ * The detached sample, attached again: Attach to text shows the prompt above
+ * it (in the app the note's selection then reads Attach here), Cancel puts it
+ * back, and Attach to the whole note attaches it there.
+ */
+function AttachDemo() {
+  const state = useSampleThreads([sampleThreads.detached])
+  const thread = state.all[0]
+  const [picking, setPicking] = useState(false)
+  const [anchor, setAnchor] = useState<CommentAnchorView | null>(null)
+  if (!thread) return <GuideValue>Thread deleted with its last comment.</GuideValue>
+  return (
+    <div className="flex w-full max-w-[300px] flex-col gap-2">
+      {picking && (
+        <CommentAttachPrompt
+          onCancel={() => setPicking(false)}
+          onAttachToFile={() => {
+            setAnchor({ kind: "document", label: "Whole note" })
+            setPicking(false)
+          }}
+        />
+      )}
+      <CommentThread
+        anchor={anchor ?? thread.anchor}
+        comments={thread.comments}
+        resolved={thread.resolved}
+        active={picking}
+        now={NOW}
+        onAttach={anchor ? undefined : () => setPicking(true)}
+        {...state.handlers(thread)}
+      />
+      {(anchor || state.changed) && (
+        <Button
+          variant="link"
+          size="xs"
+          className="self-start px-0"
+          onClick={() => {
+            setAnchor(null)
+            state.reset()
+          }}
+        >
+          Reset the sample
+        </Button>
+      )}
+    </div>
+  )
+}
+
 const anchors: { anchor: CommentAnchorView; caption: string }[] = [
   { anchor: { kind: "text", quote: QUOTE }, caption: "text: the quote after an accent bar, two lines at most" },
   { anchor: { kind: "section", heading: "Steps" }, caption: "a section: its heading" },
@@ -131,9 +179,11 @@ function ThreadStates() {
         </div>
         <GuideValue>12.5px muted; a button that shows the anchor in the file.</GuideValue>
         <GuideLabel>Detached</GuideLabel>
-        <SampleThreadDemo thread={sampleThreads.detached} />
+        <AttachDemo />
         <SampleThreadDemo thread={sampleThreads.gone} />
-        <GuideValue>The quote is kept when its text, heading or element is gone: struck through in dim, a dashed bar, and the badge says so.</GuideValue>
+        <GuideValue>
+          The quote is kept when its text, heading or element is gone: struck through in dim, a dashed bar, and the badge says so. A detached text or section thread has Attach to text beside Resolve, for its author, editors and the owner: the prompt above it asks for the text, Cancel or Escape leaves it as it was.
+        </GuideValue>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <GuideLabel>Resolved</GuideLabel>
@@ -255,7 +305,11 @@ function ComposerAndMarkers() {
           <CommentActionButton />
           <CommentActionButton size="touch" />
         </div>
-        <GuideValue>Over a selection or a selected element, on an island: 32 high, 40 on phones.</GuideValue>
+        <div className="flex flex-wrap items-center gap-3">
+          <CommentActionButton attach />
+          <CommentActionButton attach size="touch" />
+        </div>
+        <GuideValue>Over a selection or a selected element, on an island: 32 high, 40 on phones. While a detached thread is attached again it reads Attach here, with the link icon.</GuideValue>
         <GuideLabel>Comments button</GuideLabel>
         <div className="flex flex-wrap items-center gap-3">
           <CommentsButton count={3} />
@@ -286,6 +340,16 @@ function ComposerAndMarkers() {
           <CommentDraft anchor={{ kind: "document", label: "Whole drawing" }} onSubmit={noop} onCancel={noop} autoFocus={false} />
         </div>
         <GuideValue>On the whole file, from the panel&apos;s new-comment button.</GuideValue>
+        <GuideLabel>Attaching a detached thread</GuideLabel>
+        <div className="w-full max-w-[300px]">
+          <CommentAttachPrompt autoFocus={false} onAttachToFile={noop} onCancel={noop} />
+        </div>
+        <div className="w-full max-w-[358px]">
+          <CommentAttachPrompt autoFocus={false} size="touch" onAttachToFile={noop} onCancel={noop} className="shadow-panel" />
+        </div>
+        <GuideValue>
+          After Attach to text: a 1px accent-line border, what to do, Cancel, and Attach to the whole note. It takes the keyboard. In the panel it sits above the threads; on a phone the sheet steps away and it floats 12 above the foot of the screen, so the note can be selected.
+        </GuideValue>
       </div>
     </div>
   )

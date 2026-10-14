@@ -1,6 +1,7 @@
 import { CloudUpload, LogIn } from "lucide-react"
-import { useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react"
+import { useContext, useEffect, useEffectEvent, useRef, useState, type ReactElement, type ReactNode } from "react"
 import {
+  CommentAttachPrompt,
   CommentDraft,
   CommentsPanel,
   CommentsSheet,
@@ -87,6 +88,43 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
   const [draftIds] = useState(() => new WeakMap<CommentRequest, string>())
   const [replyIds] = useState(() => new Map<string, string>())
 
+  // Attach to text: a detached thread of the file on screen waits for the
+  // text a Comment action is on (or the whole file), and moves its anchor
+  // there. Escape or Cancel leaves it as it was.
+  const attaching = ui.attaching !== null && threads.some((thread) => thread.id === ui.attaching) ? ui.attaching : null
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const attach = async (threadId: string, request: CommentRequest) => {
+    const thread = threads.find((each) => each.id === threadId)
+    if (!store || !controller || thread?.file_id !== request.file.fileId) return
+    setAttachError(null)
+    try {
+      await store.moveAnchor(threadId, request.file.fileVersion, request.anchor)
+      controller.stopAttach()
+      say("Comment attached")
+      focusThread(threadId)
+    } catch (error) {
+      setAttachError(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const onAttach = useEffectEvent((threadId: string, request: CommentRequest) => void attach(threadId, request))
+  useEffect(() => controller?.onAttach((threadId, request) => onAttach(threadId, request)), [controller])
+  // A thread deleted elsewhere meanwhile is not attached: the Comment actions start comments again.
+  useEffect(() => {
+    if (ui.attaching !== null && attaching === null) controller?.stopAttach()
+  }, [attaching, controller, ui.attaching])
+  useEffect(() => {
+    if (!attaching || !controller) return
+    // Wherever the keyboard is, unless something there takes Escape first (a menu, the source editor's selection).
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      event.preventDefault()
+      controller.stopAttach()
+      focusThread(attaching)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [attaching, controller])
+
   if (!comments && !guest) return null
   if (!ui.target && !guest) return null
 
@@ -140,6 +178,14 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
       }}
       askAgent={thread.askAgent}
       onOpenVersion={openVersion(thread.id)}
+      onAttach={
+        thread.attachable
+          ? () => {
+              setAttachError(null)
+              controller?.startAttach(thread.id)
+            }
+          : undefined
+      }
       onAskAgentChange={
         thread.own
           ? async (ask) => {
@@ -197,6 +243,23 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
     )
   }
 
+  if (attaching && file && !draft) {
+    draft = (
+      <CommentAttachPrompt
+        key={attaching}
+        fileNoun={noun}
+        error={attachError}
+        size={compact ? "touch" : "default"}
+        onAttachToFile={() => void attach(attaching, { file, anchor: { kind: "document" } })}
+        onCancel={() => {
+          controller?.stopAttach()
+          focusThread(attaching)
+        }}
+        className={cn(compact && "fixed inset-x-3 bottom-[calc(12px+env(safe-area-inset-bottom))] z-30 shadow-panel")}
+      />
+    )
+  }
+
   let panelStatus: CommentsStatus = "ready"
   if (comments && !online) panelStatus = "offline"
   else if (status === "loading") panelStatus = "loading"
@@ -215,7 +278,7 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
     readOnly: comments?.viewer ? true : comments && online && !canWrite && comments.writeBlocked ? comments.writeBlocked : false,
     placeholder,
     draft,
-    onCommentOnFile: canWrite && file && controller ? () => controller.requestComment({ file, anchor: { kind: "document" } }) : undefined,
+    onCommentOnFile: canWrite && file && controller && !attaching ? () => controller.requestComment({ file, anchor: { kind: "document" } }) : undefined,
     fileNoun: noun,
     onRetry: () => {
       for (const id of [fileId, elementsId]) if (store && id) void store.load(id)
@@ -223,7 +286,15 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
     announcement,
   }
 
-  if (compact) return <CommentsSheet open={open} onOpenChange={(next) => setOpen(next)} {...body} />
+  if (compact) {
+    // While a thread's text is picked the sheet steps away, and the prompt floats over the note.
+    return (
+      <>
+        <CommentsSheet open={open && !attaching} onOpenChange={(next) => setOpen(next)} {...body} draft={attaching ? null : draft} />
+        {open && attaching && draft}
+      </>
+    )
+  }
   if (!open) return null
   const close = () => {
     setOpen(false)
@@ -236,9 +307,10 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
         "h-full shrink-0 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
         className,
       )}
-      // Escape closes the panel, as it closes the sheet; a field or a menu in it takes Escape first.
+      // Escape closes the panel, as it closes the sheet; a field or a menu in it takes Escape first,
+      // and while a thread is being attached Escape gives that up instead (above).
       onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
+        if (event.key !== "Escape" || event.defaultPrevented || attaching || !event.currentTarget.contains(event.target as Node)) return
         if (event.target instanceof HTMLElement && event.target.closest("textarea, input")) return
         event.preventDefault()
         close()

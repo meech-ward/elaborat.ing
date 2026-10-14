@@ -2,10 +2,11 @@
 -- selection, or a drawing element. See "Comments" in docs/architecture.md.
 --
 -- A thread holds the anchor, the file and whether it is resolved; its
--- comments are the opening comment and every reply. Anchors are stored once,
--- exactly as the app describes them, and never rewritten: every reader finds
--- them again in the text it shows, and a thread whose text is gone shows as
--- detached. Nothing is ever written into the file.
+-- comments are the opening comment and every reply. Anchors are stored
+-- exactly as the app describes them, and readers never rewrite them: every
+-- reader finds them again in the text it shows, and a thread whose text is
+-- gone shows as detached until a person attaches it to other text
+-- (move_comment_anchor). Nothing is ever written into the file.
 --
 -- Threads hang off the file's id, not its path, so they follow a rename or a
 -- move. There is no foreign key to the file: deleting a file (which any
@@ -825,6 +826,74 @@ $$;
 
 revoke all on function public.edit_comment(uuid, text) from public, anon;
 grant execute on function public.edit_comment(uuid, text) to authenticated;
+
+-- Attach a thread to other text, a heading or the whole file, such as a
+-- detached thread whose text is gone. `file_version` is the saved version of
+-- the thread's file the new anchor was described against, as add_comment's
+-- is, and the anchor is checked as add_comment checks it. The thread's
+-- creator, or anyone who may edit the project (an editor or the owner), and
+-- only in a normal session: it changes what someone's words are about, so an
+-- agent never does it, as it never edits a comment.
+create function private.move_comment_anchor(thread_id uuid, file_version bigint, anchor jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.require_user();
+  p public.projects;
+  t public.comment_threads;
+  new_revision bigint;
+begin
+  perform private.check_limit('comment_writes_per_minute');
+  if private.is_oauth_client() then
+    raise exception 'Only a signed-in person can move a comment; agents can reply' using errcode = '42501';
+  end if;
+  if move_comment_anchor.thread_id is null or move_comment_anchor.file_version is null
+    or move_comment_anchor.file_version <= 0 then
+    raise exception 'A thread id and a positive file version are required' using errcode = '22023';
+  end if;
+  if not coalesce(private.is_valid_comment_anchor(move_comment_anchor.anchor), false) then
+    raise exception 'Invalid anchor' using errcode = '22023';
+  end if;
+
+  p := private.lock_project_for_comment(
+    private.comment_project((select ct.project_id from public.comment_threads ct where ct.id = move_comment_anchor.thread_id))
+  );
+  select * into t from public.comment_threads ct where ct.id = move_comment_anchor.thread_id and ct.project_id = p.id;
+  if t.id is null then
+    raise exception 'Comment unavailable' using errcode = '42501';
+  end if;
+  if t.created_by is distinct from uid and coalesce(private.project_role(p.id), '') not in ('owner', 'editor') then
+    raise exception 'Only the person who started a thread, an editor or the owner can move it' using errcode = '42501';
+  end if;
+
+  update public.projects set revision = revision + 1, updated_at = now()
+  where id = p.id
+  returning revision into new_revision;
+  update public.comment_threads ct
+  set anchor = move_comment_anchor.anchor, file_version = move_comment_anchor.file_version
+  where ct.id = t.id
+  returning * into t;
+  return jsonb_build_object('revision', new_revision, 'thread', private.thread_json(t));
+end;
+$$;
+
+revoke all on function private.move_comment_anchor(uuid, bigint, jsonb) from public, anon;
+grant execute on function private.move_comment_anchor(uuid, bigint, jsonb) to authenticated;
+
+create function public.move_comment_anchor(thread_id uuid, file_version bigint, anchor jsonb)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.move_comment_anchor(thread_id, file_version, anchor)
+$$;
+
+revoke all on function public.move_comment_anchor(uuid, bigint, jsonb) from public, anon;
+grant execute on function public.move_comment_anchor(uuid, bigint, jsonb) to authenticated;
 
 -- Resolve or reopen a thread. Anyone who can comment may, agents included.
 -- Resolving a resolved thread, or reopening an open one, changes nothing.

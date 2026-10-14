@@ -73,8 +73,9 @@ export function useFileComments(comments: ProjectCommentsValue | null, ui: Comme
   const places = useMemo(() => (elementPlaces.size === 0 ? ownPlaces : new Map([...ownPlaces, ...elementPlaces])), [ownPlaces, elementPlaces])
   const userId = comments?.userId ?? null
   const owner = comments?.owner ?? false
+  const editor = comments?.editor ?? false
   const noun = ui.target ? fileNoun(ui.target.path) : "note"
-  const views = useMemo(() => threadViews(threads, places, { userId, owner }, noun), [threads, places, userId, owner, noun])
+  const views = useMemo(() => threadViews(threads, places, { userId, owner, editor }, noun), [threads, places, userId, owner, editor, noun])
   return { file, fileId, elementsId, threads, status, views, noun }
 }
 

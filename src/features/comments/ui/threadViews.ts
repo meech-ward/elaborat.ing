@@ -8,8 +8,12 @@ import type { RemoteComment, RemoteThread } from "../remote"
 // words, what each thread is on (placed by the file on screen), and what the
 // person looking may do. Pure, so the rules are tested without React.
 
-/** Who is looking: their account, and whether they own the project (the owner deletes anyone's comment). */
-export type Viewer = { userId: string | null; owner: boolean }
+/**
+ * Who is looking: their account, whether they own the project (the owner
+ * deletes anyone's comment), and whether they may edit it (an editor or the
+ * owner attaches anyone's thread to other text).
+ */
+export type Viewer = { userId: string | null; owner: boolean; editor?: boolean }
 
 export type ThreadView = {
   id: string
@@ -22,6 +26,8 @@ export type ThreadView = {
   askAgent: boolean
   /** The viewer started it, so they may ask their agents or stop. */
   own: boolean
+  /** Its text or heading is gone, and the viewer may attach it to other text: its creator, an editor or the owner. */
+  attachable: boolean
 }
 
 /** A person as a comment shows them: their name, else their email, or null for a deleted account. */
@@ -78,15 +84,18 @@ export function threadViews(
 ): { open: ThreadView[]; resolved: ThreadView[] } {
   const view = (thread: RemoteThread): ThreadView => {
     const place = places.get(thread.id)
+    const detached = place?.attached === false
+    // The opening comment is always its creator's, a deleted one included.
+    const own = viewer.userId !== null && thread.comments[0]?.author?.user_id === viewer.userId
     return {
       id: thread.id,
       anchor: thread.anchor.kind === "document" ? { kind: "document", label: `Whole ${noun}` } : anchorView(thread.anchor, place),
-      detached: place?.attached === false,
+      detached,
       comments: thread.comments.map((comment) => entry(comment, viewer)),
       resolved: thread.resolved_at ? { by: author(thread.resolved_by), at: thread.resolved_at } : null,
       askAgent: thread.ask_agent === true,
-      // The opening comment is always its creator's, a deleted one included.
-      own: viewer.userId !== null && thread.comments[0]?.author?.user_id === viewer.userId,
+      own,
+      attachable: detached && (thread.anchor.kind === "text" || thread.anchor.kind === "section") && (own || viewer.owner || viewer.editor === true),
     }
   }
   const start = (thread: RemoteThread) => places.get(thread.id)?.range?.start ?? (thread.anchor.kind === "text" || thread.anchor.kind === "section" ? thread.anchor.position.start : 0)

@@ -15,6 +15,8 @@ export type ProjectCommentsValue = {
   userId: string
   /** The project's owner may delete anyone's comments. */
   owner: boolean
+  /** May edit the project (an editor or the owner): attaches anyone's thread to other text. */
+  editor: boolean
   /** A viewer reads comments but cannot write them (the panel says so). */
   viewer: boolean
   /** May start, reply to and resolve threads now: a commenter, editor or owner, online, the project not archived. */
@@ -39,7 +41,7 @@ export function useProjectComments(): ProjectCommentsValue | null {
   return useContext(ProjectCommentsContext)
 }
 
-const NO_STATE: CommentsUiState = { target: null, panelOpen: false, activeThreadId: null, request: null }
+const NO_STATE: CommentsUiState = { target: null, panelOpen: false, activeThreadId: null, request: null, attaching: null }
 const noSubscription = () => () => {}
 
 /** The panel's and the file's shared state (the file on screen, the open thread, a new comment), re-rendering on change. */

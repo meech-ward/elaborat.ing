@@ -10,7 +10,8 @@ import { APP_URL } from "./urls.ts"
 // Rendered (a highlight), each placed in the text on screen as it changes;
 // markers and highlights open the panel at their thread, and the panel shows
 // a thread's text in the note. A thread whose text is deleted is no longer
-// marked and shows in the panel with its quote.
+// marked and shows in the panel with its quote, and can be attached to other
+// text from its card.
 
 test.describe.configure({ timeout: 60_000 })
 
@@ -305,6 +306,37 @@ test("a thread whose text is deleted shows in the panel as detached, with its qu
   const detached = panel(page).getByRole("article").filter({ hasText: "Detached" })
   await expect(detached).toContainText("where agents help")
   await expect(detached).toContainText("Which agents?")
+})
+
+test("a detached thread is attached to other text from its card, and its new text is marked", async ({ page }) => {
+  const { fake, id } = await seeded(page, { threads: false, view: "Split" })
+  // A thread on words a save had removed just before it was sent: detached from the start.
+  const gone = "Invite a teammate from the members page."
+  const fileId = [...fake.server.projects.get(id)!.files.values()].find((file) => file.path === PATH)!.id
+  fake.comments.call(person.id, "add_comment", { project_id: id, thread_id: crypto.randomUUID(), file_id: fileId, file_version: 1, anchor: textAnchor(gone, 0, gone.length), body: "Which page?" })
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await page.getByRole("button", { name: /^Comments/ }).first().click()
+  const card = panel(page).getByRole("article").filter({ hasText: "Which page?" })
+  await expect(card).toContainText("Detached")
+
+  // Attach to text asks for the text, and the Comment button over a selection reads Attach here.
+  await card.getByRole("button", { name: "Attach to text" }).click()
+  const prompt = panel(page).getByRole("group", { name: "Select the text this comment is about" })
+  await expect(prompt).toBeFocused()
+  const frame = frameOf(page)
+  await frame.getByText("Create a project.").click({ position: { x: 1, y: 6 } })
+  await page.keyboard.press("Shift+End")
+  await page.getByRole("button", { name: "Attach here", exact: true }).click()
+
+  // The card shows its new quote, and the text is marked in both views.
+  const attached = thread(page, "“Create a project.”")
+  await expect(attached).toContainText("Which page?")
+  await expect(attached).not.toContainText("Detached")
+  await expect(prompt).toHaveCount(0)
+  await expect(panel(page).locator('p[role="status"]')).toHaveText("Comment attached")
+  await expect(frame.locator(".comment-highlight")).toHaveText(["Create a project."])
+  await expect.poll(() => sourceMarked(page)).toBe("Create a project.")
+  expect(fake.comments.threads.map((entry) => entry.anchor)).toMatchObject([{ kind: "text", quote: { exact: "Create a project." } }])
 })
 
 test("a commenter comments on a note they cannot change, from the comment key in Rendered", async ({ page }) => {

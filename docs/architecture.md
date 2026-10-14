@@ -419,8 +419,11 @@ longer than 12 lines shows folded, with Show more.
   reply. The client chooses thread and reply ids, so sending one again returns
   what the first send made instead of posting twice. A thread sent again after
   it was deleted answers that it was deleted, and does not come back.
-- **Anchors** are stored once, in the app's shape (`placement.ts`), and never
-  rewritten; "detached" is worked out by each reader, never stored.
+- **Anchors** are stored in the app's shape (`placement.ts`), and readers
+  never rewrite them; "detached" is worked out by each reader, never stored.
+  A person moves one with `move_comment_anchor` (Attach to text, on a detached
+  thread): the thread's creator, an editor or the owner, never an agent, with
+  the anchor checked as `add_comment` checks it, against the version selected in.
   - `{ kind: "document" }`: the whole file. Any file.
   - `{ kind: "text", quote, position }`: a selection in the source, as
     `describeRange` describes it, at most 5,000 characters. Any text file

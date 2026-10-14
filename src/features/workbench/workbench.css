@@ -210,6 +210,9 @@ above the choices. */
    screen (CommentsSheet): the open file ends where the sheet starts, and
    shows the text or element being commented on there (CommentsSurface). */
 .wb-app[data-compact="true"][data-comment-draft] .wb-sessions { padding-bottom: 50svh; }
+/* While a detached comment is attached again, its prompt floats over the
+   foot of the screen (CommentsSurfaceView): the open file ends above it. */
+.wb-app[data-compact="true"][data-comment-attach] .wb-sessions { padding-bottom: 128px; }
 /* The desktop frame: floating panels on a dotted background. The project,
    the files and the account sit down the side, the editor beside them. */
 .wb-app:not([data-compact="true"]) {

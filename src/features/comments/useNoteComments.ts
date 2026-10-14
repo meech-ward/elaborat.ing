@@ -12,6 +12,8 @@ export type NoteComments = {
   canComment: boolean
   /** Only the connection keeps this person from commenting: the Comment actions show, off, and say so. */
   offline: boolean
+  /** One of this note's threads is being attached again: the Comment actions read Attach here, and attach it to their text. */
+  attaching: boolean
   /** The commented text to mark, placed in `marksSource`. */
   marks: readonly CommentMark[]
   /** The text the marks were placed in. A view showing other text waits for the next marks. */
@@ -115,6 +117,7 @@ export function useNoteComments({
   return {
     canComment,
     offline: Boolean(file && comments?.writeBlocked === NEEDS_CONNECTION),
+    attaching: ui.attaching !== null && threads.some((thread) => thread.id === ui.attaching),
     marks,
     marksSource: source,
     open(threadId, focus = true) {

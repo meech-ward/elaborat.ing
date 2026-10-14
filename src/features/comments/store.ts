@@ -1,4 +1,5 @@
 import { RemoteError } from "../project-storage/remote"
+import type { CommentAnchor } from "./placement"
 import { offline, type CommentsRemote, type NewThread, type RemoteComment, type RemoteThread } from "./remote"
 
 /**
@@ -144,6 +145,13 @@ export class ProjectComments {
   /** Asks the author's agents to deal with a thread, or stops. */
   async setAskAgent(threadId: string, ask: boolean): Promise<RemoteThread> {
     const { revision, thread } = await this.remote.setAskAgent(threadId, ask)
+    this.written(revision, thread.file_id, (threads) => upsert(threads, thread))
+    return thread
+  }
+
+  /** Attaches a thread to other text or the whole file, described against the saved version `fileVersion`. */
+  async moveAnchor(threadId: string, fileVersion: number, anchor: CommentAnchor): Promise<RemoteThread> {
+    const { revision, thread } = await this.remote.moveAnchor(threadId, fileVersion, anchor)
     this.written(revision, thread.file_id, (threads) => upsert(threads, thread))
     return thread
   }

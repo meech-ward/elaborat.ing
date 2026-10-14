@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { RemoteError } from "../project-storage/remote"
+import type { CommentAnchor } from "./placement"
 import { offline, type CommentList, type CommentsRemote, type NewThread, type RemoteComment, type RemoteThread } from "./remote"
 import { ProjectComments } from "./store"
 
@@ -98,6 +99,13 @@ class MemoryComments implements CommentsRemote {
     return this.answer({ revision: this.revision, thread })
   }
 
+  moveAnchor(threadId: string, fileVersion: number, anchor: CommentAnchor) {
+    const thread = this.thread(threadId)
+    this.revision++
+    Object.assign(thread, { file_version: fileVersion, anchor })
+    return this.answer({ revision: this.revision, thread })
+  }
+
   deleteComment(commentId: string) {
     const thread = this.threads.find((candidate) => candidate.comments.some((comment) => comment.id === commentId))!
     this.revision++
@@ -149,6 +157,9 @@ describe("ProjectComments", () => {
     await store.resolve(added.id)
     expect(store.threads(A)[1].resolved_at).not.toBeNull()
     await store.reopen(added.id)
+    const text = { kind: "text" as const, quote: { type: "TextQuoteSelector" as const, exact: "B", prefix: "", suffix: "" }, position: { type: "TextPositionSelector" as const, start: 0, end: 1 } }
+    await store.moveAnchor(added.id, 2, text)
+    expect(store.threads(A)[1]).toMatchObject({ file_version: 2, anchor: text })
     expect(await store.deleteComment(id(4))).toEqual({ threadDeleted: false })
     expect(store.threads(A)[1].comments.map((comment) => [comment.body, comment.deleted_at === null])).toEqual([
       ["Second", true],
@@ -158,7 +169,7 @@ describe("ProjectComments", () => {
     expect(bodies(store.threads(A))).toEqual([["Second", null]])
     expect(await store.deleteComment(store.threads(A)[0].comments[0].id)).toEqual({ threadDeleted: true })
     expect(store.threads(A)).toEqual([])
-    expect(reported).toEqual([4, 5, 6, 7, 8, 9, 10, 11])
+    expect(reported).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12])
     await store.settled()
     expect(server.lists).toEqual([A])
     expect(store.threads(A)).toEqual(server.threads.filter((thread) => thread.file_id === A))

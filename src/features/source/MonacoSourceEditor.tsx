@@ -643,6 +643,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       {comments?.canComment && commentButton && (
         <CommentActionButton
           shortcut={comments.shortcut}
+          attach={comments.attaching}
           className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
           style={{ top: commentButton.top, left: commentButton.left }}
           // Keep the keyboard in the editor, so the selection stays.

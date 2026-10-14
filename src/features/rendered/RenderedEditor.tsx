@@ -146,6 +146,8 @@ export type RenderedComments = {
   canComment: boolean;
   /** Only the connection keeps the person from commenting: Comment shows by a selection or heading, off, saying so. */
   offline?: boolean;
+  /** A detached thread is being attached again: the Comment actions read Attach here, and attach it to their text. */
+  attaching?: boolean;
   /** The key that comments, shown on the Comment button. */
   shortcut?: Shortcut;
   /** Commented text was clicked (`focus` false: the keyboard stays in the note). */
@@ -1262,6 +1264,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       {active && comments?.canComment && selectionAction && (
         <CommentActionButton
           shortcut={comments.shortcut}
+          attach={comments.attaching}
           className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
           style={{ top: selectionAction.top, left: selectionAction.left }}
           onClick={() => {
@@ -1272,6 +1275,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       )}
       {active && comments?.canComment && headingAction && (
         <CommentActionButton
+          attach={comments.attaching}
           className="absolute z-10 pointer-coarse:h-10 pointer-coarse:px-3.5"
           style={{ top: headingAction.top, left: headingAction.left }}
           onPointerEnter={() => {

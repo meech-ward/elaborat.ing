@@ -6,7 +6,9 @@ import type { CommentAnchor } from "./placement"
 // each thread is now and reports it (`place`); the panel lists the threads and
 // asks the file to show one (`reveal`). A marker or highlight in the file
 // opens the panel at its thread (`openThread`), and a selection's Comment
-// action opens it with a new comment on that text (`requestComment`).
+// action opens it with a new comment on that text (`requestComment`). While
+// the panel attaches a detached thread again (`startAttach`), that action
+// attaches the thread to its text instead (`onAttach`).
 //
 // Plain state and events, no React: context.tsx reads it with
 // useSyncExternalStore.
@@ -52,14 +54,20 @@ export type CommentsUiState = {
   activeThreadId: string | null
   /** A new comment waiting for its words, or null. */
   request: CommentRequest | null
+  /**
+   * The thread being attached again, or null. Meanwhile the file's Comment
+   * actions attach it to their text instead of starting a comment.
+   */
+  attaching: string | null
 }
 
-const INITIAL: CommentsUiState = { target: null, panelOpen: false, activeThreadId: null, request: null }
+const INITIAL: CommentsUiState = { target: null, panelOpen: false, activeThreadId: null, request: null, attaching: null }
 const NO_PLACES: ReadonlyMap<string, ThreadPlace> = new Map()
 
 type Listener = () => void
 type ThreadListener = (threadId: string) => void
 type RequestListener = (request: CommentRequest) => void
+type AttachListener = (threadId: string, request: CommentRequest) => void
 
 export class CommentsController {
   private state: CommentsUiState = INITIAL
@@ -68,6 +76,7 @@ export class CommentsController {
   private readonly revealListeners = new Set<ThreadListener>()
   private readonly focusListeners = new Set<ThreadListener>()
   private readonly requestListeners = new Set<RequestListener>()
+  private readonly attachListeners = new Set<AttachListener>()
 
   /** Calls `listener` after every change to the state or the places. Returns an unsubscribe function. */
   subscribe = (listener: Listener): (() => void) => {
@@ -81,7 +90,8 @@ export class CommentsController {
 
   /**
    * The file view that became active says what it shows. Showing another
-   * file closes its thread and drops a new comment started on the last one.
+   * file closes its thread and drops a new comment started on the last one,
+   * and a thread being attached.
    */
   show(target: CommentTarget): void {
     const current = this.state.target
@@ -92,13 +102,14 @@ export class CommentsController {
       target,
       activeThreadId: sameFileId ? this.state.activeThreadId : null,
       request: request && (request.file.fileId === target.file?.fileId || request.file.fileId === target.elements?.fileId) ? request : null,
+      attaching: sameFileId ? this.state.attaching : null,
     })
   }
 
   /** The file view at `path` is no longer on screen. */
   leave(path: string): void {
     if (this.state.target?.path !== path) return
-    this.set({ target: null, activeThreadId: null, request: null })
+    this.set({ target: null, activeThreadId: null, request: null, attaching: null })
   }
 
   /** Where each thread of a file is in the text on screen now, by thread id. */
@@ -119,8 +130,16 @@ export class CommentsController {
     if (focus) for (const listener of this.focusListeners) listener(threadId)
   }
 
-  /** The Comment action on a selection or a heading: open the panel with a new comment on it. */
+  /**
+   * The Comment action on a selection or a heading: open the panel with a
+   * new comment on it, or attach the thread being attached there.
+   */
   requestComment(request: CommentRequest): void {
+    const attaching = this.state.attaching
+    if (attaching) {
+      for (const listener of this.attachListeners) listener(attaching, request)
+      return
+    }
     this.set({ panelOpen: true, activeThreadId: null, request })
   }
 
@@ -132,7 +151,7 @@ export class CommentsController {
   }
 
   setPanelOpen(open: boolean): void {
-    this.set(open ? { panelOpen: true } : { panelOpen: false, activeThreadId: null, request: null })
+    this.set(open ? { panelOpen: true } : { panelOpen: false, activeThreadId: null, request: null, attaching: null })
   }
 
   /** The thread open in the panel, or null. */
@@ -161,6 +180,19 @@ export class CommentsController {
     this.set({ request: null, ...(threadId ? { activeThreadId: threadId } : {}) })
   }
 
+  /**
+   * Attach to text, on a detached thread: until `stopAttach`, the file's
+   * Comment actions attach it to their text (`onAttach`).
+   */
+  startAttach(threadId: string): void {
+    this.set({ panelOpen: true, activeThreadId: threadId, request: null, attaching: threadId })
+  }
+
+  /** The thread was attached, or attaching it was given up (Cancel, Escape). */
+  stopAttach(): void {
+    this.set({ attaching: null })
+  }
+
   // --- Events ---
 
   /** The file views listen: show this thread's text. Returns an unsubscribe function. */
@@ -173,6 +205,12 @@ export class CommentsController {
   onRevealRequest(listener: RequestListener): () => void {
     this.requestListeners.add(listener)
     return () => this.requestListeners.delete(listener)
+  }
+
+  /** The panel listens: attach this thread to the text a Comment action is on. Returns an unsubscribe function. */
+  onAttach(listener: AttachListener): () => void {
+    this.attachListeners.add(listener)
+    return () => this.attachListeners.delete(listener)
   }
 
   /** The panel listens: scroll to this thread and move the keyboard to it. Returns an unsubscribe function. */

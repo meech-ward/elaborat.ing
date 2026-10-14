@@ -102,6 +102,23 @@ describe("threadViews", () => {
     expect(theirs.comments[0]).toMatchObject({ viaAgent: false, agent: null, version: null })
   })
 
+  test("a detached text or section thread may be attached again by its creator, an editor or the owner", () => {
+    const gone = new Map<string, ThreadPlace>([
+      [ship.id, { attached: false }],
+      [steps.id, { attached: false }],
+      [whole.id, { attached: true }],
+    ])
+    const attachable = (viewer: Viewer, places = gone) =>
+      threadViews([ship, steps, whole], places, viewer, "note").open.filter((view) => view.attachable).map((view) => view.id)
+    // `ship` is the viewer's own; `steps` someone else's; a whole file thread is never detached.
+    expect(attachable(me)).toEqual([ship.id])
+    expect(attachable({ ...me, editor: true })).toEqual([ship.id, steps.id])
+    expect(attachable(owner)).toEqual([ship.id, steps.id])
+    expect(attachable({ userId: OTHER, owner: false })).toEqual([steps.id])
+    // Not while its text is there.
+    expect(attachable(owner, NONE)).toEqual([])
+  })
+
   test("a deleted account and a deleted comment", () => {
     const view = threadViews([thread(7, { kind: "document" }, [comment(8, null, null), comment(9, OTHER)])], NONE, me, "note").open[0]
     expect(view.comments[0]).toMatchObject({ author: null, body: null, canEdit: false, canDelete: false })

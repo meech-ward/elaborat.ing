@@ -101,7 +101,16 @@ export {
 } from "./ui/CommentsPanel"
 export { commentHighlightClass } from "./ui/commentHighlightClass"
 export { COMMENT_MAX_LENGTH, absoluteTime, commentLength, relativeTime, type CommentLength } from "./ui/commentText"
-export { CommentAnchorLine, CommentDraft, CommentItem, CommentThread, DeleteCommentDialog, anchorSummary, type CommentThreadProps } from "./ui/CommentThread"
+export {
+  CommentAnchorLine,
+  CommentAttachPrompt,
+  CommentDraft,
+  CommentItem,
+  CommentThread,
+  DeleteCommentDialog,
+  anchorSummary,
+  type CommentThreadProps,
+} from "./ui/CommentThread"
 export { FOLDED_LINES, FoldedText } from "./ui/FoldedText"
 export {
   CommentsSizeContext,

@@ -1,5 +1,5 @@
 import { cva } from "class-variance-authority"
-import { MessageSquare, MessageSquarePlus, Unlink } from "lucide-react"
+import { LinkIcon, MessageSquare, MessageSquarePlus, Unlink } from "lucide-react"
 import type { ComponentProps } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -109,15 +109,18 @@ export function CommentHighlight({ active = false, className, ...props }: Compon
  * The Comment button that floats by a selection or a drawing's selected
  * element: an island (the island fill, radius 10, the island shadow and
  * ring) holding the icon and the word, with the key when the view has one.
- * 32 high (`touch`: 40, 15px).
+ * 32 high (`touch`: 40, 15px). With `attach`, while a detached thread is
+ * being attached again (CommentAttachPrompt), it reads Attach here, with
+ * the link icon, in place of its words.
  */
 export function CommentActionButton({
   size = "default",
   shortcut,
+  attach = false,
   className,
   children = "Comment",
   ...props
-}: Omit<ComponentProps<typeof Button>, "variant" | "size"> & { size?: CommentsSize; shortcut?: Shortcut }) {
+}: Omit<ComponentProps<typeof Button>, "variant" | "size"> & { size?: CommentsSize; shortcut?: Shortcut; attach?: boolean }) {
   return (
     <Button
       variant="ghost"
@@ -129,8 +132,8 @@ export function CommentActionButton({
       )}
       {...props}
     >
-      <MessageSquarePlus aria-hidden="true" />
-      {children}
+      {attach ? <LinkIcon aria-hidden="true" /> : <MessageSquarePlus aria-hidden="true" />}
+      {attach ? "Attach here" : children}
       {shortcut && <ButtonShortcut className="text-dim pointer-coarse:hidden">{shortcut.label}</ButtonShortcut>}
     </Button>
   )

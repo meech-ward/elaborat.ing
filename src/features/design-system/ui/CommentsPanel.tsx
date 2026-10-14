@@ -39,7 +39,7 @@ export type CommentsBodyProps = {
    * as an EmptyState saying why (signed out, a file not synced yet).
    */
   placeholder?: ReactNode
-  /** A CommentDraft being written, shown first. */
+  /** A CommentDraft being written, or a CommentAttachPrompt, shown first. */
   draft?: ReactNode
   /** Start a comment on the whole file; shows the header button and the empty state's action. */
   onCommentOnFile?: () => void

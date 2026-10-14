@@ -70,6 +70,7 @@ export class FakeComments {
       "delete_comment",
       "delete_comment_thread",
       "set_comment_ask_agent",
+      "move_comment_anchor",
     ].includes(rpc)
   }
 
@@ -100,6 +101,8 @@ export class FakeComments {
         return this.deleteThread(user, String(args.thread_id))
       case "set_comment_ask_agent":
         return this.setAskAgent(user, String(args.thread_id), args.ask === true, agent)
+      case "move_comment_anchor":
+        return this.moveAnchor(user, String(args.thread_id), args.file_version, args.anchor, agent)
     }
     throw new Error(`No fake for ${rpc}`)
   }
@@ -339,6 +342,23 @@ export class FakeComments {
     if (thread.createdBy !== user) throw new RemoteError("access", "Only the person who started a thread can ask an agent about it")
     if (thread.askAgent === ask) return { revision: project.revision, thread: this.threadJson(thread) }
     thread.askAgent = ask
+    return { revision: this.bump(thread.projectId), thread: this.threadJson(thread) }
+  }
+
+  private moveAnchor(user: string, threadId: string, fileVersion: unknown, anchor: unknown, agent: boolean) {
+    if (agent) throw new RemoteError("access", "Only a signed-in person can move a comment; agents can reply")
+    if (typeof fileVersion !== "number" || !Number.isInteger(fileVersion) || fileVersion <= 0) {
+      throw new RemoteError("invalid", "A thread id and a positive file version are required")
+    }
+    this.checkAnchor(anchor)
+    const thread = this.thread(user, threadId)
+    const project = this.writable(user, thread.projectId)
+    const role = this.server.role(user, project)
+    if (thread.createdBy !== user && role !== "owner" && role !== "editor") {
+      throw new RemoteError("access", "Only the person who started a thread, an editor or the owner can move it")
+    }
+    thread.anchor = structuredClone(anchor)
+    thread.fileVersion = fileVersion
     return { revision: this.bump(thread.projectId), thread: this.threadJson(thread) }
   }
 

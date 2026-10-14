@@ -1,4 +1,4 @@
-import { Bot, Check, CircleCheck, Ellipsis, FileClock, FileText, Heading, Reply, RotateCcw, Shapes, UserRound } from "lucide-react"
+import { Bot, Check, CircleAlert, CircleCheck, Ellipsis, FileClock, FileText, Heading, LinkIcon, Reply, RotateCcw, Shapes, TextCursorInput, UserRound } from "lucide-react"
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -24,7 +24,8 @@ import { IconButton } from "./IconButton"
 
 // A comment thread in the panel: what it is about (its context line), its
 // comments, and Resolve or Reopen, Reply, and each comment's Edit and
-// Delete. No shadcn primitive is a thread: it is an article laid out around
+// Delete; a detached one's Attach to text, and the prompt that picks its new
+// text. No shadcn primitive is a thread: it is an article laid out around
 // shadcn's Avatar, Badge, Button and the library's ActionMenu and
 // CommentComposer.
 
@@ -402,6 +403,12 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
   onAskAgentChange?: (ask: boolean) => void | Promise<unknown>
   /** Show a version a comment links to, such as the one an agent saved in answer. */
   onOpenVersion?: (version: number) => void
+  /**
+   * A detached thread the person may attach to other text, while it is open:
+   * offers Attach to text beside Resolve, which starts picking the text
+   * (CommentAttachPrompt).
+   */
+  onAttach?: () => void
   /** Open the reply field at first (it opens from Reply otherwise). */
   defaultReplying?: boolean
   /** The time relative times count from; now by default. */
@@ -420,7 +427,8 @@ export type CommentThreadProps = Omit<ComponentProps<"article">, "children"> & {
  *
  * An open thread whose author asked an agent shows the Ask an agent badge;
  * its author gets the switch instead, beside Reply (or in the reply's
- * composer), which turns it on or off at once.
+ * composer), which turns it on or off at once. A detached one that may be
+ * attached again (`onAttach`) has Attach to text beside Resolve.
  *
  * Focus never falls to the page: closing or sending Reply goes back to Reply, an edit
  * back to its comment's actions, Resolve and Reopen to the next thread (or
@@ -442,6 +450,7 @@ export function CommentThread({
   askAgent = false,
   onAskAgentChange,
   onOpenVersion,
+  onAttach,
   defaultReplying = false,
   now,
   size: sizeProp,
@@ -550,6 +559,11 @@ export function CommentThread({
     >
       <div className="flex items-start gap-2">
         <CommentAnchorLine anchor={anchor} onSelect={onSelect} size={size} className="flex-1" />
+        {canWrite && onAttach && !resolved && (
+          <IconButton label="Attach to text" tooltipSide="left" onClick={onAttach} className={cn("-my-1 shrink-0", touch && "size-10")}>
+            <LinkIcon />
+          </IconButton>
+        )}
         {canWrite && toggle && (
           <IconButton
             label={resolved ? "Reopen" : "Resolve"}
@@ -681,5 +695,78 @@ export function CommentDraft({
         size={size}
       />
     </article>
+  )
+}
+
+/**
+ * Picking the text a detached thread is about, after its Attach to text:
+ * a card with a 1px accent-line border saying "Select the text this comment
+ * is about", then Cancel and Attach to the whole note. Meanwhile the
+ * selection's Comment button reads Attach here (CommentActionButton's
+ * `attach`), and attaches the thread there. In the panel it sits above the
+ * threads; on a phone it floats at the foot of the screen while the sheet is
+ * away, so the note can be selected. It takes the keyboard when it shows;
+ * `error` says why the last try failed.
+ */
+export function CommentAttachPrompt({
+  fileNoun = "note",
+  onAttachToFile,
+  onCancel,
+  error,
+  autoFocus = true,
+  size: sizeProp,
+  className,
+  ...props
+}: Omit<ComponentProps<"div">, "children"> & {
+  /** What the file is, in "Attach to the whole note". */
+  fileNoun?: string
+  onAttachToFile: () => void
+  onCancel: () => void
+  error?: string | null
+  autoFocus?: boolean
+  size?: CommentsSize
+}) {
+  const size = useCommentsSize(sizeProp)
+  const touch = size === "touch"
+  const titleId = useId()
+  const errorId = useId()
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (autoFocus) box.current?.focus()
+  }, [autoFocus])
+  return (
+    <div
+      ref={box}
+      role="group"
+      tabIndex={-1}
+      aria-labelledby={titleId}
+      aria-describedby={error ? errorId : undefined}
+      data-slot="comment-attach"
+      className={cn(
+        "flex flex-col rounded-menu border border-accent-line bg-panel text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
+        cardSizes[size],
+        className,
+      )}
+      {...props}
+    >
+      <p id={titleId} className={cn("flex items-start gap-1.5 leading-snug font-medium", touch ? "text-[15px]" : "text-[13px]")}>
+        <TextCursorInput aria-hidden="true" className={cn("shrink-0 text-muted-foreground", touch ? "mt-0.5 size-4" : "mt-px size-3.5")} />
+        Select the text this comment is about
+      </p>
+      {error && (
+        <p id={errorId} role="alert" className={cn("flex items-start gap-1.5 leading-snug text-destructive", touch ? "text-[13px]" : "text-xs")}>
+          <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+          <span className="min-w-0">{error}</span>
+        </p>
+      )}
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Button type="button" variant="ghost" size={touch ? "touch" : "sm"} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" variant="secondary" size={touch ? "touch" : "sm"} onClick={onAttachToFile}>
+          Attach to the whole {fileNoun}
+        </Button>
+      </div>
+    </div>
   )
 }

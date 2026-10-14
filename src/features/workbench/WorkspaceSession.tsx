@@ -385,6 +385,7 @@ export function WorkspaceSession({
     source: noteComments.marksSource,
     canComment: noteComments.canComment,
     offline: noteComments.offline,
+    attaching: noteComments.attaching,
     shortcut: apple ? { label: "⌘⌥M", aria: "Meta+Alt+M" } : { label: "Ctrl+Alt+M", aria: "Control+Alt+M" },
     onOpen: noteComments.open,
     onComment: (request: NoteCommentRequest, source: string) => {
