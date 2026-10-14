@@ -27,7 +27,7 @@
   --tw-prose-links: var(--accent);
   --tw-prose-bold: var(--text);
   --tw-prose-counters: var(--body);
-  --tw-prose-bullets: var(--panel-border);
+  --tw-prose-bullets: var(--muted);
   --tw-prose-hr: var(--panel-border);
   --tw-prose-quotes: var(--text);
   --tw-prose-quote-borders: var(--accent);
@@ -81,6 +81,31 @@
 .preview-prose .reading-table th {
   background: var(--seg);
 }
+/* Typography's tables have no outer border, so it leaves out the first
+   column's start padding and the last column's end padding. This table has a
+   border (above), so every cell is padded the same and its text never touches
+   the edge. */
+.preview-prose .reading-table :is(th, td) {
+  padding: 0.6em 0.9em;
+}
+/* A quote is the note's own text set off by its rule: Typography's added
+   quotation marks, italics and heavier weight go, and its paragraphs' outer
+   margins collapse so the rule spans just the text. */
+.preview-prose :where(blockquote):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  color: var(--body);
+  font-style: normal;
+  font-weight: inherit;
+}
+.preview-prose :where(blockquote p):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+.preview-prose :where(blockquote p):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
+.reading-document blockquote > :first-child {
+  margin-top: 0;
+}
+.reading-document blockquote > :last-child {
+  margin-bottom: 0;
+}
 
 .reading-document {
   display: grid;
@@ -118,9 +143,24 @@
   margin-block: 0;
   padding-inline-start: 0;
 }
+/* A nested list follows its item's text closely, not a block's gap away. */
+.reading-document li :is(ul, ol) {
+  margin-block: 0.2em 0;
+}
+.ProseMirror li > p:has(+ :is(ul, ol)),
+.reading-document li > p:has(+ :is(ul, ol)) {
+  margin-block-end: 0;
+}
 .reading-document img {
   max-width: 100%;
   height: auto;
+}
+/* A code block's own margins are for prose around it. In the reading column
+   the column's gap spaces it like any other block: the column is a grid, and
+   its items' margins add up instead of collapsing. */
+.reading-document > .document-code,
+.reading-document > * > .document-code {
+  margin-block: 0;
 }
 .reading-table {
   max-width: 100%;

@@ -19,7 +19,7 @@
     border-radius: .75rem;
     background: var(--seg);
   }
-  .document-code-label { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--panel-border); color: var(--muted); font: 11px/1.5 var(--code-font); }
+  .document-code-label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--panel-border); color: var(--muted); font: 11px/1.5 var(--code-font); }
   .document-code-label span { font-family: var(--ui-font); }
   .document-code-label button { min-height: 32px; padding: 2px 8px; font: inherit; cursor: pointer; }
   .document-code .document-code-editor { display: block; box-sizing: border-box; width: 100%; min-height: 7rem; margin: 0; border: 0; border-radius: 0; padding: 1rem; background: var(--seg); color: var(--text); font: 13px/1.7 var(--code-font); white-space: pre; tab-size: 2; resize: vertical; }
