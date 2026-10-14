@@ -106,7 +106,7 @@ describe("anchorRange", () => {
     expect(reanchor(before, 7, 62, after)).toEqual({ start: 7, end: 62 })
   })
 
-  test("a quote anchors with up to half its characters changed, and no more", () => {
+  test("a quote in unchanged context anchors with up to half its characters changed, and no more", () => {
     const before = "Note: 0123456789 end."
     // Five of the ten characters changed.
     expect(reanchor(before, 6, 16, "Note: 01234abcde end.")).toEqual({ start: 6, end: 16 })
@@ -130,6 +130,35 @@ describe("anchorRange", () => {
     // What is left is longer than the quote, so the null comes from the
     // error limit, not from the text being too short.
     expect(reanchor(before, 44, 88, first + last)).toBeNull()
+  })
+
+  test("a changed quote anchors only while it keeps most of its text or its context", () => {
+    const note = [
+      "How a customer moves from sign-up to their first project, and where agents help.",
+      "",
+      "1. Sign up with an email link.",
+      "2. Create a project.",
+      "",
+    ].join("\n")
+    // Item 2 as selected in Source, and its words as selected in Rendered.
+    const item = note.indexOf("2. Create a project.")
+    const words = note.indexOf("Create a project.")
+    const end = item + "2. Create a project.".length
+
+    // With item 2 removed, the closest text is in the paragraph ("irst
+    // project,"), which keeps little of the quote or its context: detached.
+    const removed = note.replace("2. Create a project.\n", "")
+    expect(reanchor(note, item, end, removed)).toBeNull()
+    expect(reanchor(note, words, end, removed)).toBeNull()
+
+    // Moved to the top of the list and renumbered, the item has new context
+    // but keeps most of its text.
+    const reordered = note.replace(
+      "1. Sign up with an email link.\n2. Create a project.",
+      "1. Create a project.\n2. Sign up with an email link.",
+    )
+    const moved = reordered.indexOf("1. Create a project.")
+    expect(reanchor(note, item, end, reordered)).toEqual({ start: moved, end: moved + "1. Create a project.".length })
   })
 
   test("ranges at the very start and very end of the document", () => {

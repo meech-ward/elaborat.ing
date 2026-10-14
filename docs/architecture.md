@@ -409,7 +409,10 @@ approach Hypothesis uses, rather than anything custom.
   W3C model counts code points.
 - On read, it is re-anchored with approximate string matching
   (`approx-string-match`, the library Hypothesis uses), scoring candidates by
-  quote, context and closeness to the stored position.
+  quote, context and closeness to the stored position. Unlike Hypothesis, a
+  match that is not exact must keep 80% of the quote, or 80% of the stored
+  context must still match around it, so a deleted quote detaches rather than
+  moving onto text that looks a little like it.
 - A section comment quotes its heading line. A document comment has no selector.
 - A drawing comment uses the Excalidraw element ID, which is stable.
 - A comment that can no longer be found is shown as detached, at document

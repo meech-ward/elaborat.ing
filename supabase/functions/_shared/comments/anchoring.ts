@@ -38,6 +38,13 @@ const SUFFIX_WEIGHT = 20
 const POSITION_WEIGHT = 2
 const TOTAL_WEIGHT = QUOTE_WEIGHT + PREFIX_WEIGHT + SUFFIX_WEIGHT + POSITION_WEIGHT
 
+// Unlike Hypothesis, a candidate that is not exact must keep at least this
+// share of the quote, or this share of the stored context must still match
+// around it. Otherwise a short quote whose text was deleted moves onto any
+// words that look a little like it, instead of showing as detached.
+const MIN_QUOTE_SCORE = 0.8
+const MIN_CONTEXT_SCORE = 0.8
+
 type Match = { start: number; end: number; errors: number }
 
 type Candidate = TextRange & { score: number; distance: number }
@@ -96,6 +103,12 @@ export function anchorRange(
         : similarity(text.slice(Math.max(0, match.start - prefix.length), match.start), prefix)
     const suffixScore =
       suffix === "" ? 1 : similarity(text.slice(match.end, match.end + suffix.length), suffix)
+    // The prefix and suffix count by their length: a context cut short at an
+    // edge of the document says little about where the quote is now.
+    const contextLength = prefix.length + suffix.length
+    const contextScore =
+      contextLength === 0 ? 0 : (prefix.length * prefixScore + suffix.length * suffixScore) / contextLength
+    if (quoteScore < MIN_QUOTE_SCORE && contextScore < MIN_CONTEXT_SCORE) continue
     const distance = Math.abs(match.start - position.start)
     const positionScore = 1 - distance / text.length
 
