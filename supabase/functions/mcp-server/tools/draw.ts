@@ -189,6 +189,28 @@ const newScene = (): Record<string, unknown> => ({ type: 'excalidraw', version: 
  * Throws a DrawError, saving nothing, for an id already used, a label or an
  * arrow whose shape is not there, or an element missing what it needs.
  */
+/**
+ * A label where Excalidraw keeps a centred one: the middle of its shape, or
+ * the middle of its arrow's path (its middle point, or the middle of its
+ * middle segment). The x and y it was sent don't matter, so an agent never
+ * has to work them out.
+ */
+function placeLabel(label: Element, container: Element): void {
+  let centre: Point
+  if (container.type === 'arrow') {
+    const points = (container.points as Point[] | undefined) ?? [[0, 0]]
+    const half = Math.floor(points.length / 2)
+    const [mx, my] = points.length % 2 === 1
+      ? points[half]
+      : [(points[half - 1][0] + points[half][0]) / 2, (points[half - 1][1] + points[half][1]) / 2]
+    centre = [num(container.x, 0) + mx, num(container.y, 0) + my]
+  } else {
+    centre = [num(container.x, 0) + num(container.width, 0) / 2, num(container.y, 0) + num(container.height, 0) / 2]
+  }
+  label.x = round2(centre[0] - num(label.width, 0) / 2)
+  label.y = round2(centre[1] - num(label.height, 0) / 2)
+}
+
 export function addElements(content: string | null, elements: NewElement[], updated = Date.now()): { content: string; elementCount: number } {
   let scene: Record<string, unknown>
   if (content === null || content.trim() === '') {
@@ -238,7 +260,10 @@ export function addElements(content: string | null, elements: NewElement[], upda
     bound.set(targetId, [...(bound.get(targetId) ?? []), { type: kind, id: from.id }])
   }
   for (const entry of added) {
-    if (entry.type === 'text' && typeof entry.containerId === 'string') bind(entry, entry.containerId, 'text')
+    if (entry.type === 'text' && typeof entry.containerId === 'string') {
+      bind(entry, entry.containerId, 'text')
+      placeLabel(entry, live.get(entry.containerId)!)
+    }
     if (entry.type !== 'arrow') continue
     for (const end of [entry.startBinding, entry.endBinding]) {
       if (isRecord(end) && typeof end.elementId === 'string') bind(entry, end.elementId, 'arrow')
@@ -281,7 +306,7 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
           .describe(
             'The elements to add, in drawing order, as Excalidraw elements: each with a new id, a type, x and y. ' +
               'Shapes need width and height, text needs text, and arrows and lines need points relative to x and y. ' +
-              'A label is a text with containerId set to its shape. An arrow attaches with startBinding and endBinding ' +
+              'A label is a text with containerId set to its shape or arrow; draw centres it there, so its x and y can be 0. An arrow attaches with startBinding and endBinding ' +
               '({"elementId": "..."}). The shapes they name may be in the drawing already or in this call.'
           ),
         base_version: z

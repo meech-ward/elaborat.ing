@@ -3,6 +3,7 @@ import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
+import { addElements, type NewElement } from './draw.ts'
 import { drawElement, drawingSvg, parseDrawing } from './drawingSvg.ts'
 import { registerTools, type ToolContext } from './index.ts'
 
@@ -138,11 +139,12 @@ Deno.test('draw creates a new drawing whose elements have what Excalidraw and th
     fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a0',
     roundness: null, version: 1, isDeleted: false, boundElements: [{ type: 'text', id: 'draft-label' }], link: null, locked: false,
   })
-  // A label: Excalifont, Excalidraw's line height for it, and centred in its shape.
+  // A label: Excalifont, Excalidraw's line height for it, and centred in its
+  // shape whatever x and y it was sent (five characters estimated 55 wide).
   assertEquals(
     { ...label, seed: 0, versionNonce: 0, updated: 0, width: 0 },
     {
-      id: 'draft-label', type: 'text', x: 50, y: 27.5, width: 0, height: 25, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+      id: 'draft-label', type: 'text', x: 62.5, y: 27.5, width: 0, height: 25, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
       fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a1',
       roundness: null, seed: 0, version: 1, versionNonce: 0, isDeleted: false, boundElements: [], updated: 0, link: null, locked: false,
       text: 'Draft', fontSize: 20, fontFamily: 5, textAlign: 'center', verticalAlign: 'middle', containerId: 'draft', originalText: 'Draft',
@@ -251,6 +253,25 @@ Deno.test('a later call binds a label and an arrow to shapes an earlier call add
   const drawn = drawingSvg(parseDrawing(files[PATH].content))
   assert('svg' in drawn)
   assertStringIncludes(drawn.svg, '>Worker</text>')
+})
+
+Deno.test('a label sent at 0, 0 sits in the middle of its shape, and an arrow\'s label on the middle of its arrow', async () => {
+  const { content } = addElements(null, [
+    { id: 'box', type: 'rectangle', x: 100, y: 50, width: 200, height: 100 },
+    { id: 'box-label', type: 'text', x: 0, y: 0, text: 'Hello', containerId: 'box' },
+    { id: 'link', type: 'arrow', x: 0, y: 0, points: [[0, 0], [200, 100]] },
+    { id: 'link-label', type: 'text', x: 0, y: 0, text: 'go', containerId: 'link' },
+    { id: 'bend', type: 'arrow', x: 10, y: 10, points: [[0, 0], [40, 80], [100, 0]] },
+    { id: 'bend-label', type: 'text', x: 0, y: 0, text: 'via', containerId: 'bend' },
+  ] as NewElement[])
+  const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
+  const at = (id: string) => [byId.get(id)!.x, byId.get(id)!.y]
+  // 'Hello' is estimated 55 by 25: centred on the box's middle, (200, 100).
+  assertEquals(at('box-label'), [172.5, 87.5])
+  // 'go' is 22 by 25, on the straight arrow's middle, (100, 50).
+  assertEquals(at('link-label'), [89, 37.5])
+  // 'via' is 33 by 25, on the bent arrow's middle point, (50, 90).
+  assertEquals(at('bend-label'), [33.5, 77.5])
 })
 
 Deno.test('draw adds once more to a drawing someone saved in between, and returns the conflict when it happens again', async () => {
