@@ -1,8 +1,8 @@
 /**
  * The chat card's code that only some cards need, loaded when it is needed:
- * the note editor (on Edit), the live view (for a new file shown while it is
- * written), the code highlighter (for a note with a code block), the
- * component compiler (for a note with
+ * the note editor (on Edit), the live view (for a new file or a change to
+ * one, shown while it is written), the code highlighter (for a note with a
+ * code block), the component compiler (for a note with
  * components, or a component file) and the component preview frame's
  * runtime, which the frame loads itself and which loads the charts' library
  * only for a note with a chart. `bun run build:chat-card` builds them as ES

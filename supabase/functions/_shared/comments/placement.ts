@@ -1,8 +1,9 @@
 // A copy of src/features/comments/placement.ts for the Edge Functions, with Deno imports. Change that file and copy it here; src/features/comments/sharedCopies.test.ts fails when they differ.
 // Comment anchors, as the database stores them (supabase/schemas/comments.sql),
-// and where each one is in a file now. An anchor is described once, against
-// the text the person was looking at, and never rewritten: every reader finds
-// it again in the text it shows. One that can no longer be found is detached.
+// and where each one is in a file now. An anchor is described against the
+// text the person was looking at, and readers never rewrite it: every reader
+// finds it again in the text it shows. One that can no longer be found is
+// detached, until a person attaches it to other text (move_comment_anchor).
 //
 // This module is pure. A copy lives in supabase/functions/_shared/comments/
 // for the MCP server; sharedCopies.test.ts fails when the two drift apart.

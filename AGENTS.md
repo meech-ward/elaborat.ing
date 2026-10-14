@@ -89,8 +89,10 @@ regenerating migrations from `supabase/schemas/` would change
   publishable key) may appear in `VITE_` variables, because Vite ships them to
   the browser. Secrets go in Supabase or Cloudflare secret storage, or GitHub
   repository secrets.
-- **Test against the cloud.** Database, auth and function changes are checked
-  on a hosted Supabase project, not a local `supabase start` stack.
+- **Where Supabase changes are tested.** Database tests (pgTAP, in
+  `supabase/tests/`) run on a throwaway local stack:
+  `bunx supabase@2.118.0 db start`, then `bunx supabase@2.118.0 test db`.
+  Auth and function changes are checked on a hosted Supabase project.
 - **Smallest complete change.** Do what the task asks, test in proportion to
   risk, and list anything else you notice instead of fixing it.
 - **Bump the plugin's version when a skill changes.** Change `version` in

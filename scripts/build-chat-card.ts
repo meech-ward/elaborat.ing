@@ -9,7 +9,8 @@
 //
 // - the app's fonts, which the card adds once the host has answered
 // - editor: the note editor, when Edit is pressed (src/chat-card/lazy/editor.ts)
-// - live: a new note, drawing or diagram shown while the agent writes it
+// - live: a note, drawing or diagram shown while the agent writes it, a new
+//   one (create_and_show) or a change to one (update_and_show)
 //   (src/chat-card/lazy/live.ts), drawn with the MCP server's own renderers
 // - highlight: the app's code highlighter, after a note with a code block shows
 // - compile: the component compiler, for a note with components or a component file
