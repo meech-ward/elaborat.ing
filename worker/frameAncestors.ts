@@ -1,10 +1,14 @@
 /**
- * A `frame-ancestors` source list from a Worker variable: origins only
- * (scheme, host and port), separated by spaces. Anything else, a wildcard, a
- * path or an empty value, gives `'none'`, so nothing may frame the page.
+ * A `frame-ancestors` source list from a Worker variable, separated by spaces:
+ * origins (scheme, host and port), or `https://*.` followed by a domain of at
+ * least two labels, for a host that serves each app from its own subdomain.
+ * Anything else, a bare wildcard, a path or an empty value, gives `'none'`, so
+ * nothing may frame the page.
  */
+const SOURCE = /^(?:https?:\/\/[a-z0-9.-]+(?::\d+)?|https:\/\/\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)$/i;
+
 export function frameAncestors(value: string | undefined): string {
-  const origins = (value ?? "").split(/\s+/).filter(Boolean);
-  if (origins.length === 0 || !origins.every((origin) => /^https?:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(origin))) return "'none'";
-  return origins.join(" ");
+  const sources = (value ?? "").split(/\s+/).filter(Boolean);
+  if (sources.length === 0 || !sources.every((source) => SOURCE.test(source))) return "'none'";
+  return sources.join(" ");
 }

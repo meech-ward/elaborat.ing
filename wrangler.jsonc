@@ -20,17 +20,18 @@
   // OPENAI_APPS_CHALLENGE (not set here yet): the token OpenAI gives to verify
   // the domain when a plugin is submitted, served as plain text at
   // /.well-known/openai-apps-challenge. It is public, so add it to "vars".
-  // EMBED_FRAME_ANCESTORS (not set here yet): who may frame /embed, the app in
-  // a chat's panel, as exact origins separated by spaces: the panel's view
-  // origin, the origins it shows as its ancestors, and the chat's site, such
-  // as "https://<view origin> https://chatgpt.com". The panel shows the line
-  // to copy when it cannot open. Unset, or with a wildcard, a path or anything
-  // else that is not an origin, nothing may frame it. Set it only once the
-  // host probe shows that another server declaring the panel's widget domain
-  // does not get the panel's origin (docs/architecture.md, Frontend hosting).
+  // EMBED_FRAME_ANCESTORS: who may frame /embed, the app in a chat's panel,
+  // separated by spaces: origins, or https://*. and a domain for a host that
+  // serves each app from its own subdomain. ChatGPT serves plugin views from
+  // subdomains of web-sandbox.oaiusercontent.com inside chatgpt.com. The
+  // panel's one-time pass is what keeps an account's data out of any other
+  // view's frame (docs/architecture.md, Frontend hosting). Unset, or with a
+  // bare wildcard, a path or anything else, nothing may frame it. The panel
+  // shows its origins under Details when it cannot open.
   // MCP_PROBE_UPSTREAM: temporary host capability probe, remove after testing.
   "vars": {
     "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server",
+    "EMBED_FRAME_ANCESTORS": "https://*.web-sandbox.oaiusercontent.com https://chatgpt.com",
     "MCP_PROBE_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-probe"
   },
   // The hosted instance's domain. Self-hosters: change or remove this route.

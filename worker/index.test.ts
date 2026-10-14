@@ -90,8 +90,15 @@ describe("/embed, the app in a chat's panel", () => {
     }
   });
 
-  test("unset, or with a wildcard, a path or anything else that is not an origin, nothing may frame them", async () => {
-    for (const value of [undefined, "", "   ", "*", "https://*.example.test", "https://chat.example.test/", "https://chat.example.test/embed", "chat.example.test", "https://chat.example.test 'self'", `${ORIGINS} *`]) {
+  test("a host's sandbox domain may be named with https://*. and a domain of two or more labels", async () => {
+    const value = "https://*.sandbox.example.test https://chat.example.test";
+    const response = await handle(new Request("https://site.test/embed"), { ASSETS: framedAssets, EMBED_FRAME_ANCESTORS: value });
+    expect(response.headers.get("Content-Security-Policy")).toBe(`frame-ancestors ${value}`);
+    expect(response.headers.get("X-Frame-Options")).toBeNull();
+  });
+
+  test("unset, or with a bare wildcard, a path or anything else that is not an origin, nothing may frame them", async () => {
+    for (const value of [undefined, "", "   ", "*", "https://*", "https://*.test", "http://*.example.test", "https://a.*.example.test", "*.example.test", "https://chat.example.test/", "https://chat.example.test/embed", "chat.example.test", "https://chat.example.test 'self'", `${ORIGINS} *`]) {
       const response = await handle(new Request("https://site.test/embed"), { ASSETS: framedAssets, EMBED_FRAME_ANCESTORS: value });
       expect(response.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
       expect(response.headers.get("X-Frame-Options")).toBeNull();

@@ -667,10 +667,9 @@ Events event, `comment.created`, whose subscribe verifies the callback with
 the signed challenge and sends one sample event. Each step writes one JSON log
 line. The view declares the panel's widget domain (`openai/widgetDomain`
 `https://elaborat.ing`) and shows its own origin at the top, to check whether
-another server claiming that domain gets the panel's origin, which the panel's
-`frame-ancestors` will trust. `EMBED_FRAME_ANCESTORS` waits for that answer
-(Frontend hosting): the panel's pass does not replace it, since a page on
-the view's origin can drive a live view and take its passes. `/embed-probe`
+another server claiming that domain gets the panel's origin (a page on the
+view's own origin can drive a live view and take its passes, whatever
+`frame-ancestors` says; Frontend hosting). `/embed-probe`
 reports its ancestors, storage, service worker and session, and offers
 sign-in with an emailed code. Its framing test is done: like every other page
 it now sends `X-Frame-Options: DENY`, and it posts nothing to other windows.
@@ -893,8 +892,8 @@ The production server's tools are unchanged.
   `sandbox.csp.frameDomains` lacks the app's origin (Claude restricts frame
   domains), or the app has not said it is ready within 10 seconds, the view
   says "elaborat.ing isn't switched on for this panel yet." with Open in
-  elaborat.ing and, under Details, its own origin and its ancestors: the line
-  to set as `EMBED_FRAME_ANCESTORS` (Frontend hosting). It also sends that
+  elaborat.ing and, under Details, its own origin and its ancestors: what
+  `EMBED_FRAME_ANCESTORS` must cover (Frontend hosting). It also sends that
   line to `panel_origins` once (and once more, with `ok: true`, when the app
   did open), a view-only tool that validates it (https origins, one space
   apart, at most ten) and writes one log line of the function,
@@ -1295,15 +1294,20 @@ and HEAD) run the Worker first, which sends the page with
 `Content-Security-Policy: frame-ancestors <EMBED_FRAME_ANCESTORS>` in place of
 `X-Frame-Options: DENY`, and `X-Robots-Tag: noindex`. Every other path keeps
 DENY, including other `/embed/` pages. `EMBED_FRAME_ANCESTORS` (a public
-value in `vars`) is exact origins separated by spaces, checked as the sandbox
-domain's `FRAME_ANCESTORS` is (`worker/frameAncestors.ts`); unset, or with a
-wildcard, a path or anything else, the policy is `'none'`. frame-ancestors
-checks every ancestor, so the list holds the panel view's origin, the origins
-it shows as its ancestors, and `https://chatgpt.com`; the panel's view shows
-that line when it cannot open. Until it is set the browser refuses every
-framed `/embed`, so no signed-in page shows in any frame. Set it only once
-the host probe (Agents) shows that another server declaring the panel's
-widget domain does not get the panel's origin. The service worker
+value in `vars`) is origins separated by spaces, or `https://*.` and a domain
+of at least two labels, checked as the sandbox domain's `FRAME_ANCESTORS` is
+(`worker/frameAncestors.ts`); unset, or with a bare wildcard, a path or
+anything else, the policy is `'none'`. frame-ancestors checks every ancestor.
+ChatGPT serves each plugin's view from its own subdomain of
+`web-sandbox.oaiusercontent.com`, nested in a frame of the same origin inside
+`https://chatgpt.com`, so the hosted value is
+`https://*.web-sandbox.oaiusercontent.com https://chatgpt.com`. That lets any
+plugin's view frame `/embed`; the pass (below) is what keeps an account out of
+every frame but this site's own view, and naming the panel's exact origin
+would not cover the case the pass leaves open, a server that gets the panel's
+own origin. The panel's view shows its origins when it cannot open, and
+reports them to `panel_origins`, so the list can be narrowed or extended for
+another host. The service worker
 never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
 panel none registers.
 
@@ -1316,9 +1320,10 @@ site. So the app shows nothing of an account until it has a pass, the second
 line. The pass holds off another server that gets the panel's origin only
 while no view of this site is open in the same tab: a page on the view's
 origin can script a live view, take the pass in its result or ask
-`panel_pass` for one, and frame `/embed` with it. So the pass does not
-replace the host probe, and `EMBED_FRAME_ANCESTORS` still waits for it
-(above). The MCP server mints a pass with the
+`panel_pass` for one, and frame `/embed` with it. That case is the same
+whether `EMBED_FRAME_ANCESTORS` names the exact origin or the host's sandbox
+domain, so it rests on the host keeping each plugin's view origin to that
+plugin, as ChatGPT documents. The MCP server mints a pass with the
 person's own token (`mint_panel_pass`, `supabase/schemas/panel_passes.sql`):
 32 random bytes, kept only as a SHA-256 hash, good for 5 minutes and one use,
 at most 10 per person (minting drops expired and used ones, and the oldest
