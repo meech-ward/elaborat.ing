@@ -906,9 +906,18 @@ The production server's tools are unchanged.
   came) sees the first new block or line come into view, smoothly or at once
   with reduced motion: in Rendered the frame scrolls only its own document,
   and in Source Monaco reveals the line near the top. A reader who scrolled
-  up, has text selected, or typed in that view in the last 3 s stays put. A
-  note with unsaved edits says it changed elsewhere, as before, and writes
-  nothing in.
+  up, has text selected, or typed in that view in the last 3 s stays put.
+  Whatever a newer version changes, the person's caret and selection stay
+  where they were in both views, mapped through the change (`writeIn.ts`):
+  kept before it, moved with the text after it, and from replaced text to
+  the nearer end of what replaced it. Whole lines or blocks added count from
+  where they start, so a paragraph added above one that begins with the same
+  words leaves the caret in its own paragraph. Focus stays where it was.
+  Source still replaces the model's value, which clears its undo history as
+  before (Monaco has no public way to clear it after applying edits), then
+  sets the selections back; the frame maps its selection whenever a render
+  replaces its document without placing the caret. A note with unsaved edits
+  says it changed elsewhere, as before, and writes nothing in.
 - **Decision: a change the person watches is shown as it is written.**
   `update_and_show` (titled Change and show) changes a note, drawing or
   diagram that exists, with the version the agent read, and returns

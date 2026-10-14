@@ -35,6 +35,8 @@ import { createRoot } from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { captureDraftsBeforeRender, setSourceDraftContext, finishSourceDraftRender, queueRangeEdit, queueComponentValueEdit, settleSourceDraft } from './sourceDrafts';
 import { FluidEditor } from "./fluidEditor";
+import { TextSelection, type EditorState } from "prosemirror-state";
+import { mapThroughDoc } from "../features/document/writeIn";
 import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, ExampleCard, Tabs, Tab, type SideBySideProps } from '../features/rendered/documentBlocks';
 import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly } from './readOnly';
@@ -697,6 +699,13 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       const projection = pending.fluid;
       const editor = fluidEditor;
       const Content = fluidContent;
+      // A new document that replaces the one on screen without placing the
+      // caret (such as a newer saved version an agent saved) keeps the
+      // person's caret and selection where they were in it.
+      const replaced =
+        shownEpoch !== -1 && (projection.reset || projection.epoch !== shownEpoch) && !projection.selection
+          ? editor.view.state
+          : null;
       // Blocks a newer saved version added, the first time this frame shows
       // it (as the editor writes them in), come into view if the reader is
       // following the note's end.
@@ -712,6 +721,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       for (const listener of islandListeners) listener();
       setAuthoringContext(pending.session, pending.revision, pending.authoring);
       editor.receive({ kind: "render", ...pending });
+      if (replaced) keepSelection(editor, replaced);
       applyCommentMarks();
       root.render(
         <StrictMode>
@@ -982,6 +992,20 @@ function revealWrittenIn(editor: FluidEditor, from: number): void {
   if (top <= scroller.scrollTop) return;
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   scroller.scrollTo({ top, behavior: reduce ? "instant" : "smooth" });
+}
+
+/**
+ * The editor took a new document in place of `shown`'s: put the person's
+ * caret and selection back where they were, mapped through what changed
+ * (src/features/document/writeIn.ts), instead of at the top. A selection
+ * alone: focus and scroll stay as they are.
+ */
+function keepSelection(editor: FluidEditor, shown: EditorState): void {
+  const { state } = editor.view;
+  const place = mapThroughDoc(shown.doc, state.doc);
+  const at = (pos: number) => state.doc.resolve(Math.max(0, Math.min(place(pos), state.doc.content.size)));
+  const kept = TextSelection.between(at(shown.selection.anchor), at(shown.selection.head));
+  if (!kept.eq(state.selection)) editor.view.dispatch(state.tr.setSelection(kept));
 }
 
 // Comments. The parent sends the commented text as document ranges for a

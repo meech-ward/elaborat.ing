@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { recordFrameMessages, releaseTransactions } from "./rendered-support.ts"
 import { APP_URL } from "./urls.ts"
@@ -378,6 +378,70 @@ test("a note scrolled up to read stays where it is when an agent adds a section,
   await page.waitForTimeout(1_000)
   expect((await frameScroll(page)).top).toBe(scrolled.top)
   expect(await sourceLines(page)).toEqual(lines)
+})
+
+// The person's caret, after "What ships" in the plan's paragraph, when an
+// agent's save reaches the open note: what they type next goes there.
+const PLAN = "# Launch plan\n\nWhat ships on day one.\n"
+const sourceLine = (page: Page, text: string) => page.locator(".monaco-editor:visible .view-line").filter({ hasText: text })
+
+/** Click the line, then put the caret after its first two words with the keys. */
+async function caretAfterWhatShips(page: Page, line: Locator) {
+  await line.click()
+  await page.keyboard.press("Home")
+  for (let step = 0; step < "What ships".length; step++) await page.keyboard.press("ArrowRight")
+}
+
+async function agentSaves(fake: FakeSupabase, id: string, content: string) {
+  await fake.agentChanges.save(person.id, id, "notes/launch.md", content)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+}
+
+test("the caret in a rendered note stays where it was when an agent adds a section, and what the person types goes there", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
+  await page.getByRole("button", { name: "Rendered" }).click()
+  await caretAfterWhatShips(page, noteFrame(page).getByText("What ships on day one."))
+  await agentSaves(fake, id, `${PLAN}\n## Risks\n\nThe import is slow.\n`)
+  await expect(noteFrame(page).getByRole("heading", { name: "Risks" })).toBeVisible()
+  await page.keyboard.type("X")
+  await expect(noteFrame(page).getByText("What shipsX on day one.")).toBeVisible()
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => serverContent(fake, id, "notes/launch.md")).toBe("# Launch plan\n\nWhat shipsX on day one.\n\n## Risks\n\nThe import is slow.\n")
+})
+
+test("the caret in a note's source stays where it was when an agent adds a section, and what the person types goes there", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
+  await caretAfterWhatShips(page, sourceLine(page, "What ships on day one."))
+  await agentSaves(fake, id, `${PLAN}\n## Risks\n\nThe import is slow.\n`)
+  await expect(editorText(page)).toContainText("The import is slow.")
+  await page.keyboard.type("X")
+  await expect(editorText(page)).toContainText("What shipsX on day one.")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect.poll(() => serverContent(fake, id, "notes/launch.md")).toBe("# Launch plan\n\nWhat shipsX on day one.\n\n## Risks\n\nThe import is slow.\n")
+})
+
+test("a paragraph an agent adds above the caret leaves it after the same word, in Rendered and in Source, and the view without focus does not take it", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
+  await page.getByRole("button", { name: "Split", exact: true }).click()
+  // In Rendered, above a paragraph that starts with the same words.
+  await caretAfterWhatShips(page, noteFrame(page).getByText("What ships on day one."))
+  await agentSaves(fake, id, "# Launch plan\n\nWhat ships first is the import.\n\nWhat ships on day one.\n")
+  await expect(noteFrame(page).getByText("What ships first is the import.")).toBeVisible()
+  await page.keyboard.type("X")
+  await expect(noteFrame(page).getByText("What shipsX on day one.")).toBeVisible()
+  await page.keyboard.press("ControlOrMeta+s")
+  const first = "# Launch plan\n\nWhat ships first is the import.\n\nWhat shipsX on day one.\n"
+  await expect.poll(() => serverContent(fake, id, "notes/launch.md")).toBe(first)
+  // In Source, with the rendered note's caret where it was.
+  await caretAfterWhatShips(page, sourceLine(page, "What shipsX on day one."))
+  await agentSaves(fake, id, first.replace("What shipsX", "What ships next is the export.\n\nWhat shipsX"))
+  await expect(editorText(page)).toContainText("What ships next is the export.")
+  await page.keyboard.type("Y")
+  await expect(editorText(page)).toContainText("What shipsYX on day one.")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect
+    .poll(() => serverContent(fake, id, "notes/launch.md"))
+    .toBe("# Launch plan\n\nWhat ships first is the import.\n\nWhat ships next is the export.\n\nWhat shipsYX on day one.\n")
 })
 
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {

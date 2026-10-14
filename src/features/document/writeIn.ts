@@ -3,8 +3,11 @@
 // new version added at its end: the rendered note's new blocks come in one
 // after another, and the source's new lines are highlighted for a moment.
 // Display only, like a drawing's draw-in (src/features/drawings/drawIn.ts).
-// The editors that show it load on first use, so this module stays out of
-// the workbench's first paint.
+// The person's caret and selection stay where they were, mapped through what
+// changed (mapThroughText, mapThroughDoc). The editors that show it load on
+// first use, so this module stays out of the workbench's first paint.
+
+import type { Fragment, Node as PMNode } from "prosemirror-model";
 
 /**
  * The newer saved version a note took while open, as the workbench gives it
@@ -27,4 +30,99 @@ export function appendedFrom(before: string, after: string): number | null {
   if (start === -1) return null;
   const from = kept.length + start;
   return kept === "" || after.slice(kept.length, from).includes("\n") ? from : null;
+}
+
+/**
+ * Where a place goes when what was from `from` to `to` became what is from
+ * `from` to `newTo`: one before the change stays, one after it moves with its
+ * text, and one inside replaced text goes to the nearer end of the new text.
+ * One at `from` stays before text added there, unless `down`.
+ */
+function throughChange(place: number, from: number, to: number, newTo: number, down = false): number {
+  if (place < from || (place === from && !(down && from === to))) return place;
+  if (place >= to) return place + newTo - to;
+  return place - from <= to - place ? from : newTo;
+}
+
+/**
+ * Where a place in a note's text (an offset in `before`) is in the newer
+ * version `after`, for the person's caret and selection in Source. The one
+ * stretch that changed runs from the first character that differs to the
+ * last, except that whole lines added or taken out count from the start of
+ * their line: a paragraph added above one that starts with the same words is
+ * a paragraph added, not words, and a place at the start of the line below
+ * added lines moves down with that line.
+ */
+export function mapThroughText(before: string, after: string): (offset: number) => number {
+  if (before === after) return (offset) => offset;
+  const delta = after.length - before.length;
+  const shorter = Math.min(before.length, after.length);
+  let same = 0;
+  while (same < shorter && before.charCodeAt(same) === after.charCodeAt(same)) same++;
+  const line = same === 0 ? 0 : before.lastIndexOf("\n", same - 1) + 1;
+  let tail = 0;
+  while (tail < shorter - line && before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)) tail++;
+  // Only whole lines added (or taken out) from the start of that line on.
+  const longer = delta > 0 ? after : before;
+  const lines = shorter - tail === line && longer.charCodeAt(longer.length - tail - 1) === 10;
+  const from = lines ? line : same;
+  const to = before.length - (lines ? tail : Math.min(tail, shorter - same));
+  return (offset) => throughChange(offset, from, to, to + delta, lines && delta > 0 && from < before.length);
+}
+
+type Stretch = { from: number; to: number; newTo: number };
+
+/** Where two runs of content that begin at `at` differ, from the first different character to the last. */
+function narrowed(before: Fragment, after: Fragment, at: number): Stretch | null {
+  const from = before.findDiffStart(after, at);
+  const end = before.findDiffEnd(after, at + before.size, at + after.size);
+  if (from === null || !end) return null;
+  let { a: to, b: newTo } = end;
+  // Text added or taken out beside text just like it: the stretch starts at the first difference.
+  if (to < from) {
+    newTo += from - to;
+    to = from;
+  }
+  if (newTo < from) {
+    to += from - newTo;
+    newTo = from;
+  }
+  return { from, to, newTo };
+}
+
+/**
+ * Where two runs of blocks that begin at `at` differ: whole blocks alike at
+ * either end first, then inside a block that became another of its kind.
+ */
+function blocksChanged(before: Fragment, after: Fragment, at: number): Stretch | null {
+  const fewer = Math.min(before.childCount, after.childCount);
+  let first = 0;
+  let from = at;
+  while (first < fewer && before.child(first).eq(after.child(first))) from += before.child(first++).nodeSize;
+  let last = 0;
+  let to = at + before.size;
+  let newTo = at + after.size;
+  while (last < fewer - first && before.child(before.childCount - 1 - last).eq(after.child(after.childCount - 1 - last))) {
+    to -= before.child(before.childCount - 1 - last).nodeSize;
+    newTo -= after.child(after.childCount - 1 - last).nodeSize;
+    last++;
+  }
+  if (before.childCount - first - last === 1 && after.childCount - first - last === 1) {
+    const was = before.child(first);
+    const now = after.child(first);
+    if (!was.isLeaf && was.sameMarkup(now))
+      return was.isTextblock ? narrowed(was.content, now.content, from + 1) : blocksChanged(was.content, now.content, from + 1);
+  }
+  return narrowed(before.cut(from - at, to - at), after.cut(from - at, newTo - at), from);
+}
+
+/**
+ * The same for the rendered note: where a position in the document `before`
+ * is in the newer version `after`, for the caret and selection in the
+ * frame. Whole blocks alike at either end are kept first, so a paragraph
+ * added above one that starts with the same words is a paragraph added.
+ */
+export function mapThroughDoc(before: PMNode, after: PMNode): (pos: number) => number {
+  const change = blocksChanged(before.content, after.content, 0);
+  return change ? (pos) => throughChange(pos, change.from, change.to, change.newTo) : (pos) => pos;
 }

@@ -11,7 +11,7 @@ import type { SourceEditorApi, SourceHandoff } from "./sourceBuffer";
 import type { RenderedPatchOptions, SourceSelection } from "./renderedHistory";
 import type { SourcePatch } from "@/features/document";
 import { languageForFormat } from "./modelSync";
-import { appendedFrom } from "../document/writeIn";
+import { appendedFrom, mapThroughText } from "../document/writeIn";
 import "./sourceArrived.css";
 
 /**
@@ -650,12 +650,37 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     // Whether the person follows the end of the text shown, before it is replaced.
     const editor = editorRef.current;
     const following = Boolean(editor && live.current.visible && followingEnd(editor, typedAtRef.current));
+    // A newer saved version the note took (src/features/document/writeIn.ts).
+    const arrived = writeIn?.documentId === documentId && writeIn.text === documentText;
+    // The text shown and the person's selections in it (file offsets), before it is replaced.
+    const shown =
+      arrived && editor
+        ? {
+            text: fileText(model),
+            selections: (editor.getSelections() ?? []).map((selection) => ({
+              anchor: offsetAt(model, selection.getSelectionStart()),
+              head: offsetAt(model, selection.getPosition()),
+            })),
+          }
+        : null;
     const replaced = documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
-    // A newer saved version the note took (src/features/document/writeIn.ts):
-    // the lines it added to the end are highlighted, unless the person
-    // prefers reduced motion. Decorations only, outside undo. If the person
-    // was following the end, the first added line comes into view.
-    if (replaced && writeIn?.documentId === documentId && writeIn.text === documentText) {
+    // Replacing the model's value cleared its undo history, as when a file
+    // opens, and put the cursor at the top: the person's caret and selections
+    // go back where they were, mapped through what changed. The lines the new
+    // version added to the end are highlighted, unless the person prefers
+    // reduced motion. Decorations only, outside undo. If the person was
+    // following the end, the first added line comes into view.
+    if (replaced && arrived) {
+      if (editor && shown && shown.selections.length > 0) {
+        const place = mapThroughText(shown.text, documentText);
+        editor.setSelections(
+          shown.selections.map(({ anchor, head }) => {
+            const start = positionAt(model, place(anchor));
+            const end = positionAt(model, place(head));
+            return new monaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column);
+          }),
+        );
+      }
       const from = appendedFrom(writeIn.before, writeIn.text);
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (from !== null && !reduce) arrivedRef.current?.(from);
