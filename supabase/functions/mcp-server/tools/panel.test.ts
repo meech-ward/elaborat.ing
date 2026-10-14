@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { FILE_VIEW_META } from './fileView.ts'
 import { registerTools, type ToolContext } from './index.ts'
-import { OLD_PANEL_VIEW_URIS, PANEL_META_KEY, PANEL_PASS_KEY, PANEL_VIEW_URI } from './panel.ts'
+import { OLD_PANEL_VIEW_URIS, PANEL_META_KEY, PANEL_PASS_KEY, PANEL_VIEW_HTML, PANEL_VIEW_URI } from './panel.ts'
 
 // open_panel, panel_pass, panel_origins and the view, on a real McpServer through a real MCP
 // client, with a stand-in Supabase client that answers the project's title
@@ -95,7 +95,7 @@ Deno.test('open_panel opens from the sidebar and a conversation panel, and its v
     assertStringIncludes(view.text, 'callTool("panel_pass", {})')
     assert(!/[?&]pass=/.test(view.text), 'no pass in a query string')
     // It reports its origins to the server when it shows the fallback, and when the app opened.
-    assertStringIncludes(view.text, 'callTool("panel_origins", ok ? { origins: line, ok: true } : { origins: line })')
+    assertStringIncludes(view.text, 'callTool("panel_origins", args)')
     assertStringIncludes(view.text, 'if (!reportedBlocked) { reportedBlocked = true; reportOrigins(false); }')
     assertStringIncludes(view.text, 'if (!reportedOk) { reportedOk = true; reportOrigins(true); }')
   })
@@ -166,6 +166,43 @@ Deno.test('panel_origins takes only https origins, one space apart, at most ten,
     const missing = await withLog(() => client.callTool({ name: 'panel_origins', arguments: {} }) as Promise<CallToolResult>)
     assert(missing.value.isError, 'accepted no origins')
     assertEquals(missing.lines, [])
+  })
+})
+
+Deno.test('panel_origins logs what the host reported about the view, numbers and short strings only', async () => {
+  await withClient(async (client) => {
+    const origins = 'https://chat.example'
+    const report = (host: unknown) => withLog(() => client.callTool({ name: 'panel_origins', arguments: { origins, ok: true, host } }) as Promise<CallToolResult>)
+    const host = {
+      display_mode: 'fullscreen',
+      safe_area: { top: 80, right: 0, bottom: 12.5, left: 0 },
+      openai_safe_area: { top: 0 },
+      container: { width: 1200, max_height: 900, label: 'dropped' },
+      window: { width: 1280, height: 800 },
+      email: 'dropped@example.com',
+    }
+    const fine = await report(host)
+    assert(!fine.value.isError, JSON.stringify(fine.value))
+    // Fields it does not know are dropped.
+    const logged = { display_mode: 'fullscreen', safe_area: host.safe_area, openai_safe_area: host.openai_safe_area, container: { width: 1200, max_height: 900 }, window: host.window }
+    assertEquals(fine.lines.map((line) => JSON.parse(line)), [{ event: 'panel_ok', user: 'me', origins, host: logged }])
+
+    const bad = [
+      'fullscreen',
+      { display_mode: 'x'.repeat(33) },
+      { display_mode: 'full screen' },
+      { display_mode: 'someone@example.com' },
+      { display_mode: 3 },
+      { safe_area: { top: '80' } },
+      { safe_area: [80] },
+      { window: { width: 1e6 } },
+      { container: { height: -1e6 } },
+    ]
+    for (const value of bad) {
+      const { lines, value: result } = await report(value)
+      assert(result.isError, `accepted ${JSON.stringify(value)}`)
+      assertEquals(lines, [], `logged ${JSON.stringify(value)}`)
+    }
   })
 })
 
@@ -261,5 +298,234 @@ Deno.test('a project the user cannot open is an error, and so is a path without 
       assert(result.isError, `accepted ${JSON.stringify(args)}`)
     }
     assertEquals(queries.length, before, 'invalid input never reaches Supabase')
+  })
+})
+
+// The view's own script, run against a stand-in page: the host's window above
+// it (which keeps what the view posts), the app's frame inside it (which the
+// test speaks for), and a clock the test moves. `openai` stands in for
+// ChatGPT's window.openai.
+
+type Posted = { jsonrpc: string; id?: number; method?: string; params?: Record<string, unknown> }
+type Frame = { hidden: boolean; src: string; contentWindow: { postMessage(message: unknown, origin: string): void }; cloneNode(): Frame; parentNode: { replaceChild(next: Frame): void } }
+type Listener = (event: { source: unknown; origin: string; data: unknown }) => void
+
+const APP = 'https://elaborat.ing'
+const LOCATION = 'elaborating-embed:location'
+
+function runView(openai?: Record<string, unknown>) {
+  const script = /<script>([\s\S]*)<\/script>/.exec(PANEL_VIEW_HTML)?.[1]
+  if (!script) throw new Error('the view has no script')
+  const posted: Posted[] = []
+  const listeners: Record<string, Listener[]> = {}
+  const host = { postMessage: (message: Posted) => void posted.push(message) }
+  // Each page the view frames is a new frame, with a window of its own.
+  const newFrame = (): Frame => ({
+    hidden: true,
+    src: '',
+    contentWindow: { postMessage() {} },
+    cloneNode: () => newFrame(),
+    parentNode: { replaceChild: (next) => void (frame = next) },
+  })
+  let frame = newFrame()
+  const element = () => ({ hidden: true, textContent: '', onclick: null })
+  const elements: Record<string, unknown> = { app: frame, fallback: element(), origins: element(), open: element() }
+  const timers = new Map<number, { at: number; run: () => void }>()
+  let now = 0
+  let nextTimer = 1
+  const page = {
+    parent: host,
+    openai,
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener: (type: string, listener: Listener) => void (listeners[type] ??= []).push(listener),
+    open() {},
+  }
+  const document = { getElementById: (id: string) => elements[id], documentElement: { style: {}, dataset: {} }, body: { style: {} }, referrer: '' }
+  const location = { origin: 'https://view.example', ancestorOrigins: ['https://chat.example'] }
+  new Function('window', 'document', 'location', 'setTimeout', 'clearTimeout', script)(
+    page,
+    document,
+    location,
+    (run: () => void, ms = 0) => (timers.set(nextTimer, { at: now + ms, run }), nextTimer++),
+    (id: number) => void timers.delete(id)
+  )
+  // Lets the view's promises run.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+  const dispatch = async (source: unknown, origin: string, data: unknown) => {
+    for (const listener of listeners.message ?? []) listener({ source, origin, data })
+    await settle()
+  }
+  const fromHost = (data: unknown) => dispatch(host, 'https://chat.example', data)
+  return {
+    posted,
+    frame: () => frame,
+    fromHost,
+    fromApp: (data: unknown, from: { source?: unknown; origin?: string } = {}) => dispatch(from.source ?? frame.contentWindow, from.origin ?? APP, data),
+    /** Answers the view's last request for `method`. */
+    answer: (method: string, result: unknown) => fromHost({ jsonrpc: '2.0', id: posted.findLast((message) => message.method === method)?.id, result }),
+    /** Moves the clock on, running the view's timers that come due. */
+    async tick(ms: number) {
+      now += ms
+      for (const [id, timer] of [...timers].sort(([, a], [, b]) => a.at - b.at)) if (timer.at <= now && timers.delete(id)) timer.run()
+      await settle()
+    },
+    /** What the view told the model, each call's params in order. */
+    told: () => posted.filter((message) => message.method === 'ui/update-model-context').map((message) => message.params),
+  }
+}
+
+/** A view the host has initialized with `hostContext`, framing the app after the tool's result; the app has said it is ready. */
+async function openView(hostContext: Record<string, unknown> = { theme: 'light', displayMode: 'fullscreen' }, openai?: Record<string, unknown>) {
+  const view = runView(openai)
+  await view.answer('ui/initialize', { hostCapabilities: {}, hostContext })
+  const pass = 'a'.repeat(64)
+  await view.fromHost({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { [PANEL_META_KEY]: '/embed', [PANEL_PASS_KEY]: pass } } })
+  assertEquals(view.frame().src, `${APP}/embed?theme=light#pass=${pass}`)
+  await view.fromApp({ type: 'elaborating-embed:ready' })
+  return view
+}
+
+const at = (file: { path: string; kind: string } | null, name = 'Test') => ({ type: LOCATION, project: { id: PROJECT, name }, file })
+const context = (text: string) => ({ content: [{ type: 'text', text }] })
+const OPEN = `The person has elaborat.ing open beside this chat: project "Test" (project_id ${PROJECT})`
+const READ = 'they mean this file: read it with read_file before changing it.'
+
+Deno.test('the view tells the model which project and file the person has open, once it settles, and only when it changes', async () => {
+  const view = await openView()
+  assertEquals(view.told(), [])
+
+  await view.fromApp(at({ path: 'drawings/how-mcp-works.excalidraw', kind: 'drawing' }))
+  await view.tick(299)
+  assertEquals(view.told(), [], 'not before it settles')
+  await view.tick(1)
+  assertEquals(view.told(), [
+    context(
+      `${OPEN}, file "drawings/how-mcp-works.excalidraw", a drawing. When they say "this" or "the drawing", ${READ} ` +
+        'Add to it with draw, one shape with its label and arrows per call, so they can watch it being drawn. ' +
+        'Change or remove elements with write_file and base_version.'
+    ),
+  ])
+
+  // The same again tells it nothing new; quick moves tell it only where they end.
+  await view.fromApp(at({ path: 'drawings/how-mcp-works.excalidraw', kind: 'drawing' }))
+  await view.tick(300)
+  await view.fromApp(at({ path: 'notes/plan.mdx', kind: 'note' }))
+  await view.tick(100)
+  await view.fromApp(at({ path: 'notes/plan.md', kind: 'note' }))
+  await view.tick(300)
+  assertEquals(view.told().slice(1), [
+    context(
+      `${OPEN}, file "notes/plan.md", a note. When they say "this" or "the note", ${READ} ` +
+        'Add to it with append_to_note, a section per call, so they can watch it being written. ' +
+        'Change or remove text with write_file and base_version.'
+    ),
+  ])
+
+  // A diagram, another file and an Obsidian drawing are changed with write_file; a project with no file open is named alone.
+  const rest: [Record<string, unknown>, string][] = [
+    [at({ path: 'diagrams/flow.d2', kind: 'diagram' }), `${OPEN}, file "diagrams/flow.d2", a diagram. When they say "this" or "the diagram", ${READ} Change it with write_file and base_version.`],
+    [at({ path: 'data/list.json', kind: 'other' }), `${OPEN}, file "data/list.json", a file. When they say "this" or "the file", ${READ} Change it with write_file and base_version.`],
+    [at({ path: 'Sketch.excalidraw.md', kind: 'drawing' }), `${OPEN}, file "Sketch.excalidraw.md", a drawing. When they say "this" or "the drawing", ${READ} Change it with write_file and base_version.`],
+    [at(null), `${OPEN}, with no file open. When they say "this" or "the project", they mean this project.`],
+    [at(null, 'Plan "B"'), `The person has elaborat.ing open beside this chat: project "Plan \\"B\\"" (project_id ${PROJECT}), with no file open. When they say "this" or "the project", they mean this project.`],
+  ]
+  for (const [location, text] of rest) {
+    await view.fromApp(location)
+    await view.tick(300)
+    assertEquals(view.told().at(-1), context(text))
+  }
+
+  // Nothing open: an empty list, once.
+  for (let time = 0; time < 2; time++) {
+    await view.fromApp({ type: LOCATION, project: null, file: null })
+    await view.tick(300)
+  }
+  assertEquals(view.told().length, 2 + rest.length + 1)
+  assertEquals(view.told().at(-1), { content: [] })
+})
+
+Deno.test("the view takes a location only from the app's frame, and only one that checks out", async () => {
+  const view = await openView()
+  const good = at({ path: 'notes/plan.md', kind: 'note' })
+  await view.fromApp(good, { origin: 'https://other.example' })
+  await view.fromApp(good, { source: {} })
+  await view.fromHost(good)
+  const file = (path: unknown, kind: unknown = 'note') => ({ ...good, file: { path, kind } })
+  const bad = [
+    { ...good, project: null },
+    { ...good, project: { id: 'not-a-project', name: 'Test' } },
+    { ...good, project: { id: PROJECT } },
+    { ...good, project: { id: PROJECT, name: ' ' } },
+    { ...good, project: { id: PROJECT, name: 'x'.repeat(161) } },
+    { ...good, project: { id: PROJECT, name: 7 } },
+    { ...good, file: undefined },
+    { type: LOCATION },
+    file('notes/plan.md', 'sketch'),
+    file('notes/plan.md', null),
+    file(42),
+    file(''),
+    file('/notes/plan.md'),
+    file('notes/'),
+    file('notes//plan.md'),
+    file('notes/../plan.md'),
+    file('notes/.plan.md'),
+    file('notes\\plan.md'),
+    file('C:plan.md'),
+    file('notes/plan\n.md'),
+    file('x'.repeat(1025)),
+  ]
+  for (const data of bad) await view.fromApp(data)
+  await view.tick(300)
+  assertEquals(view.told(), [])
+
+  // From the app's frame, it does.
+  await view.fromApp(good)
+  await view.tick(300)
+  assertEquals(view.told().length, 1)
+})
+
+Deno.test('the view clears what it told the model when the app is no longer on screen', async () => {
+  const view = await openView()
+  await view.fromApp(at({ path: 'notes/plan.md', kind: 'note' }))
+  await view.tick(300)
+  assertEquals(view.told().length, 1)
+  // The chat shows the view again: a new page loads, and the app does not say it is ready in time.
+  await view.fromApp({ type: 'elaborating-embed:pass' })
+  await view.answer('tools/call', { _meta: { [PANEL_PASS_KEY]: 'b'.repeat(64) } })
+  assertEquals(view.frame().src, `${APP}/embed?theme=light#pass=${'b'.repeat(64)}`)
+  await view.tick(10_000)
+  await view.tick(300)
+  assertEquals(view.told().length, 2)
+  assertEquals(view.told().at(-1), { content: [] })
+})
+
+Deno.test('the view reports what the host said about its place, and panel_origins logs it as sent', async () => {
+  const view = await openView(
+    {
+      theme: 'light',
+      displayMode: 'fullscreen',
+      safeAreaInsets: { top: 80, right: 0, bottom: 12.5, left: 0 },
+      containerDimensions: { width: 1200, maxHeight: 900, label: 'not a number' },
+      userAgent: 'not reported',
+    },
+    { safeArea: { insets: { top: 64, right: 0, bottom: 0, left: 0 } } }
+  )
+  const call = view.posted.findLast((message) => message.method === 'tools/call' && message.params?.name === 'panel_origins')
+  const host = {
+    display_mode: 'fullscreen',
+    safe_area: { top: 80, right: 0, bottom: 12.5, left: 0 },
+    openai_safe_area: { top: 64, right: 0, bottom: 0, left: 0 },
+    container: { width: 1200, max_height: 900 },
+    window: { width: 1280, height: 800 },
+  }
+  const origins = 'https://view.example https://chat.example'
+  assertEquals(call?.params?.arguments, { origins, ok: true, host })
+
+  // The server takes what the view sends as it is.
+  await withClient(async (client) => {
+    const { lines, value } = await withLog(() => client.callTool({ name: 'panel_origins', arguments: call?.params?.arguments as Record<string, unknown> }) as Promise<CallToolResult>)
+    assert(!value.isError, JSON.stringify(value))
+    assertEquals(lines.map((line) => JSON.parse(line)), [{ event: 'panel_ok', user: 'me', origins, host }])
   })
 })

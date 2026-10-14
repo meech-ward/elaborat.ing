@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useRouterState } from "@tanstack/react-router"
 import { ChevronLeft, ExternalLink } from "lucide-react"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react"
 import { LoginForm } from "@/components/login-form"
 import { DottedPage, panel } from "@/components/panel"
 import { buttonVariants } from "@/components/ui/button"
@@ -8,7 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAppearance } from "@/features/appearance"
 import { signOut } from "@/features/auth/useAuth"
 import { AccountPill, AppBar, Banner, ConfirmActionHost } from "@/features/design-system"
-import { ProjectsHome, useProjectAccount } from "@/features/projects"
+import { parseProjectLocation } from "@/features/navigation"
+import { ProjectsHome, useProjectAccount, type ProjectAccount } from "@/features/projects"
+import { libraryFor } from "@/features/projects/account"
+import { kindForPath } from "@/features/workbench/session"
 import { loadClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { framed, panelPass } from "./mode"
@@ -21,12 +24,16 @@ import { framed, panelPass } from "./mode"
 // as the signed-in person. It talks to the view that frames it:
 //   to the view    {type: "elaborating-embed:ready"} once it has started,
 //                  {type: "elaborating-embed:open", url} for a link to the site,
-//                  {type: "elaborating-embed:pass"} when it has no pass that works
+//                  {type: "elaborating-embed:pass"} when it has no pass that works,
+//                  {type: "elaborating-embed:location", project, file} when what
+//                  is open changes: project {id, name} and file {path, kind:
+//                  "note" | "drawing" | "diagram" | "other"}, each or null
 //   from the view  {type: "elaborating-embed:theme", theme: "light" | "dark"}
 
 const READY = "elaborating-embed:ready"
 const OPEN = "elaborating-embed:open"
 const PASS = "elaborating-embed:pass"
+const LOCATION = "elaborating-embed:location"
 const THEME = "elaborating-embed:theme"
 
 /** The view's origin, where messages to it go, as the browser gives it (the referrer where ancestorOrigins is missing). */
@@ -84,6 +91,37 @@ function useView() {
       .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
       .catch(() => {})
   }, [])
+}
+
+/** The kind of file the view names, by the app's kind for its path. */
+const KINDS = { note: "note", drawing: "drawing", diagram: "diagram", text: "other" } as const
+
+/** The project's name in the account's library, once the library has the project; null without one. */
+function useProjectName(account: ProjectAccount | null, projectId: string | null): string | null {
+  const library = account && projectId ? libraryFor(account) : null
+  const state = useSyncExternalStore(
+    (notify) => (library ? library.subscribe(notify) : () => {}),
+    () => (library ? library.getState() : null),
+  )
+  return state?.entries.find((entry) => entry.id === projectId)?.title ?? null
+}
+
+/**
+ * Tells the view what the person has open whenever it changes: the project
+ * on screen and the file open in it (the one in the address), or nothing
+ * (`href` null). The view tells the chat's model. A project shows as open
+ * once the library has its name.
+ */
+function useTellLocation(account: ProjectAccount | null, href: string | null) {
+  const location = href === null ? null : parseProjectLocation(href)
+  const projectId = location?.kind === "project" ? location.projectId : null
+  const name = useProjectName(account, projectId)
+  const id = name === null ? null : projectId
+  const path = id !== null && location?.kind === "project" ? location.path : null
+  useEffect(() => {
+    const project = id !== null && name !== null ? { id, name } : null
+    tellView({ type: LOCATION, project, file: project && path !== null ? { path, kind: KINDS[kindForPath(path)] } : null })
+  }, [id, name, path])
 }
 
 /** The pass this page was opened with, until an account redeems it. */
@@ -223,6 +261,7 @@ export function EmbedRoot() {
   // page, so the panel keeps its own projects list until then.
   const projectShown = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/projects/$projectId") })
   const url = new URL(path, window.location.origin).href
+  useTellLocation(account.kind === "account" ? account.account : null, pass === "open" && onProject && projectShown ? href : null)
 
   let page: ReactNode
   if (path !== "/" && !onProject) {

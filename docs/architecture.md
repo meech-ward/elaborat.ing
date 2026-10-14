@@ -1016,13 +1016,25 @@ The production server's tools are unchanged.
   elaborat.ing and, under Details, its own origin and its ancestors: what
   `EMBED_FRAME_ANCESTORS` must cover (Frontend hosting). It also sends that
   line to `panel_origins` once (and once more, with `ok: true`, when the app
-  did open), a view-only tool that validates it (https origins, one space
-  apart, at most ten) and writes one log line of the function,
-  `{"event":"panel_origins"|"panel_ok","user":<caller>,"origins":...}`, and
-  stores nothing, so the line can be read from the function's logs instead
-  of copied from the panel. The app in the panel keeps a
+  did open), with what the host reported about the view's place (`host`: its
+  display mode, the safe area's insets from the host context and from
+  `window.openai.safeArea`, the container's dimensions and the window's size,
+  numbers and short strings only), a view-only tool that validates it (https
+  origins, one space apart, at most ten) and writes one log line of the
+  function,
+  `{"event":"panel_origins"|"panel_ok","user":<caller>,"origins":...,"host":{...}}`,
+  and stores nothing, so the line can be read from the function's logs
+  instead of copied from the panel. The app in the panel keeps a
   sign-in of its own (the host partitions its storage under the chat's site)
-  and updates through the app's own Realtime sync when an agent saves. Each
+  and updates through the app's own Realtime sync when an agent saves. It
+  tells the view what the person has open whenever that changes
+  (`elaborating-embed:location`: the project's id and name and the open
+  file's path and kind, or nothing), and the view checks it and, once it has
+  settled for 300 ms and differs from the last, gives the chat's model one
+  short text with `ui/update-model-context`: the project and file, that
+  "this" means that file, how to add to it so the person can watch (`draw`
+  for a drawing, `append_to_note` for a note) and that changes go through
+  `write_file` with `base_version`; with nothing open, an empty list. Each
   page the view frames carries a one-time pass in its fragment
   (`#pass=<64 hex characters>`, never the query string): `open_panel`'s
   result has one in `_meta` (`elaborat.ing/pass`, which reaches the view and

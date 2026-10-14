@@ -22,6 +22,12 @@ import type { ToolContext } from './types.ts'
 // any project: open_panel's result has one for the first page, and the view
 // asks panel_pass for each one after. A pass is only ever in `_meta`, which
 // reaches the view and not the model.
+//
+// The app tells the view what the person has open (elaborating-embed:location:
+// a project and a file in it, or nothing), and the view passes it on to the
+// chat's model with ui/update-model-context, so "this drawing" means the one
+// on screen. The view's report to panel_origins also says what the host
+// reported about the view's place: its display mode, safe area and sizes.
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
@@ -95,6 +101,24 @@ const originsLine = z
     return list.length <= PANEL_ORIGINS_MAX && list.every(isHttpsOrigin)
   }, { message: `origins must be https origins (scheme and host only) separated by single spaces, at most ${PANEL_ORIGINS_MAX} of them.` })
 
+/** A length in CSS pixels, as a host reports it. */
+const pixels = z.number().min(-100_000).max(100_000)
+const edges = z.object({ top: pixels, right: pixels, bottom: pixels, left: pixels }).partial()
+
+/**
+ * What the host reported about the view's place, for panel_origins' log line:
+ * its display mode, the safe area's insets from the MCP Apps host context and
+ * from ChatGPT's window.openai.safeArea, the container's dimensions and the
+ * window's size. Numbers and short strings only; other fields are dropped.
+ */
+const hostReport = z.object({
+  display_mode: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/i).optional(),
+  safe_area: edges.optional(),
+  openai_safe_area: edges.optional(),
+  container: z.object({ width: pixels, height: pixels, max_width: pixels, max_height: pixels }).partial().optional(),
+  window: z.object({ width: pixels, height: pixels }).partial().optional(),
+})
+
 const STYLE = `
 :root { color-scheme: light dark; --fg: #1d2127; --muted: #5d6573; --bg: #ffffff; --line: #d9dde3; }
 :root[data-theme="dark"] { --fg: #e8eaee; --muted: #a2a9b6; --bg: #16191f; --line: #333944; }
@@ -117,6 +141,12 @@ const SCRIPT = String.raw`
   var EMBED_PATH = new RegExp("^/embed(?:/projects/" + UUID + "(?:/[^?#]*)?)?$", "i");
   var APP_PATH = new RegExp("^/(?:projects/" + UUID + "(?:/[^?#]*)?)?$", "i");
   var PASS = /^[0-9a-f]{64}$/;
+  var PROJECT_ID = new RegExp("^" + UUID + "$", "i");
+  // Not a project path: a slash at either end or two in a row, a name that starts with a dot, a backslash, a colon or a control character.
+  var BAD_PATH = /^\/|\/$|\/\/|(^|\/)\.|[\\:\u0000-\u001f\u007f-\u009f]/;
+  var KINDS = ["note", "drawing", "diagram", "other"];
+  var MODE = /^[a-z][a-z0-9_-]{0,31}$/i;
+  var EDGES = ["top", "right", "bottom", "left"];
   var frame = document.getElementById("app");
   var fallback = document.getElementById("fallback");
   var nextId = 1, pending = {}, initialized = false, ready = false, readyTimer = null, serverTools = false;
@@ -127,6 +157,10 @@ const SCRIPT = String.raw`
   var resultSeen = false, waitTimer = null;
   // Whether the view has told the server its origins: once for the fallback, once for the app opening.
   var reportedBlocked = false, reportedOk = false;
+  // What the model was last told about what the person has open ("" for nothing), and the change waiting to be told.
+  var told = "", tellTimer = null;
+  // The host's display mode, safe area and container as it reported them, for panel_origins.
+  var hostMode = null, hostInsets = null, hostContainer = null;
 
   function post(message) { window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*"); }
   function request(method, params) {
@@ -151,17 +185,79 @@ const SCRIPT = String.raw`
     return list.filter(function (origin, index) { return origin && origin !== "null" && list.indexOf(origin) === index; }).join(" ");
   }
 
-  // Tell the server where the view sits, so its log holds the origins to allow (ok: the app opened here).
+  // Tell the server where the view sits, so its log holds the origins to allow (ok: the app opened here),
+  // and what the host reported about the view's place.
   function reportOrigins(ok) {
     var line = origins();
     if (!line) return;
-    Promise.resolve().then(function () { return callTool("panel_origins", ok ? { origins: line, ok: true } : { origins: line }); }).catch(function () {});
+    var args = { origins: line, host: hostReport() };
+    if (ok) args.ok = true;
+    Promise.resolve().then(function () { return callTool("panel_origins", args); }).catch(function () {});
+  }
+  // The host's display mode, the safe area's insets (its context's and window.openai's), the container and the window: numbers and short strings only.
+  function hostReport() {
+    var openai = window.openai, report = {};
+    if (typeof hostMode === "string" && MODE.test(hostMode)) report.display_mode = hostMode;
+    pick(report, "safe_area", hostInsets, EDGES, EDGES);
+    pick(report, "openai_safe_area", openai && openai.safeArea && openai.safeArea.insets, EDGES, EDGES);
+    pick(report, "container", hostContainer, ["width", "height", "maxWidth", "maxHeight"], ["width", "height", "max_width", "max_height"]);
+    pick(report, "window", window, ["innerWidth", "innerHeight"], ["width", "height"]);
+    return report;
+  }
+  // report[key]: the numbers among value's fields, each under its name in the report; nothing when there are none.
+  function pick(report, key, value, fields, names) {
+    if (!value || typeof value !== "object") return;
+    var numbers = {}, any = false;
+    for (var i = 0; i < fields.length; i++) {
+      var n = value[fields[i]];
+      if (typeof n === "number" && isFinite(n) && Math.abs(n) <= 100000) { numbers[names[i]] = n; any = true; }
+    }
+    if (any) report[key] = numbers;
   }
   function showFallback() {
     document.getElementById("origins").textContent = origins();
     fallback.hidden = false;
     frame.hidden = true;
+    tellModel(null);
     if (!reportedBlocked) { reportedBlocked = true; reportOrigins(false); }
+  }
+
+  // What the person has open, from the app's location message: null for nothing, undefined for a message that doesn't check out.
+  function readPlace(data) {
+    var project = data.project, file = data.file;
+    if (project === null) return file === null ? null : undefined;
+    if (!project || typeof project !== "object" || typeof project.id !== "string" || !PROJECT_ID.test(project.id)) return undefined;
+    var name = project.name;
+    if (typeof name !== "string" || name.length > 160 || !/\S/.test(name)) return undefined;
+    if (file === null) return { id: project.id, name: name, path: null, kind: null };
+    if (!file || typeof file !== "object" || typeof file.path !== "string" || !file.path || file.path.length > 1024 || BAD_PATH.test(file.path)) return undefined;
+    if (KINDS.indexOf(file.kind) === -1) return undefined;
+    return { id: project.id, name: name, path: file.path, kind: file.kind };
+  }
+  // What the model hears about it, and which tools change it so the person watches: "" for nothing open.
+  function contextText(place) {
+    if (!place) return "";
+    var text = "The person has elaborat.ing open beside this chat: project " + JSON.stringify(place.name) + " (project_id " + place.id + ")";
+    if (!place.path) return text + ", with no file open. When they say \"this\" or \"the project\", they mean this project.";
+    var noun = place.kind === "other" ? "file" : place.kind;
+    text += ", file " + JSON.stringify(place.path) + ", a " + noun + ". When they say \"this\" or \"the " + noun + "\", they mean this file: read it with read_file before changing it.";
+    if (place.kind === "drawing" && /\.excalidraw$/i.test(place.path)) {
+      return text + " Add to it with draw, one shape with its label and arrows per call, so they can watch it being drawn. Change or remove elements with write_file and base_version.";
+    }
+    if (place.kind === "note" && /\.mdx?$/i.test(place.path)) {
+      return text + " Add to it with append_to_note, a section per call, so they can watch it being written. Change or remove text with write_file and base_version.";
+    }
+    return text + " Change it with write_file and base_version.";
+  }
+  // Tells the model a moment after it settles, and only what it wasn't told last; each context replaces the one before.
+  function tellModel(place) {
+    var text = contextText(place);
+    clearTimeout(tellTimer);
+    tellTimer = setTimeout(function () {
+      if (text === told) return;
+      told = text;
+      request("ui/update-model-context", { content: text ? [{ type: "text", text: text }] : [] }).catch(function () {});
+    }, 300);
   }
 
   // The page to frame: the tool's, unless it is only the projects; then the host's deep link; then the projects.
@@ -248,7 +344,9 @@ const SCRIPT = String.raw`
   function readContext(context) {
     if (!context) return;
     setTheme(context.theme);
-    if (typeof context.displayMode === "string") inline = context.displayMode === "inline";
+    if (typeof context.displayMode === "string") { inline = context.displayMode === "inline"; hostMode = context.displayMode; }
+    if (context.safeAreaInsets) hostInsets = context.safeAreaInsets;
+    if (context.containerDimensions) hostContainer = context.containerDimensions;
     var dimensions = context.containerDimensions || {};
     var height = dimensions.maxHeight || dimensions.height || (window.openai && window.openai.maxHeight);
     if (typeof height === "number" && height > 0) maxHeight = height;
@@ -280,6 +378,9 @@ const SCRIPT = String.raw`
         // The page had no pass that works (one already used, say, when the chat shows the view again): one new one.
         retried = true;
         show(true);
+      } else if (data.type === "elaborating-embed:location") {
+        var place = readPlace(data);
+        if (place !== undefined) tellModel(place);
       }
       return;
     }
@@ -445,20 +546,21 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
 
   // For the view only: where it sits, as one log line of this function and
   // nothing else, so the origins to allow can be read from the logs instead of
-  // copied from the panel. `ok` means the app did open there. Nothing is
-  // stored, so it is not destructive; it is not read-only, since it logs.
+  // copied from the panel. `ok` means the app did open there; `host` is what
+  // the host reported about the view's place. Nothing is stored, so it is not
+  // destructive; it is not read-only, since it logs.
   server.registerTool(
     'panel_origins',
     {
       title: 'Panel origins',
       description:
         'Used by the Projects panel itself: reports the origins the panel sits in, so the site can allow them. Not for use in a conversation.',
-      inputSchema: z.object({ origins: originsLine, ok: z.boolean().optional() }),
+      inputSchema: z.object({ origins: originsLine, ok: z.boolean().optional(), host: hostReport.optional() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
-    ({ origins, ok }) => {
-      console.log(JSON.stringify({ event: ok ? 'panel_ok' : 'panel_origins', user: userClaims.id, origins }))
+    ({ origins, ok, host }) => {
+      console.log(JSON.stringify({ event: ok ? 'panel_ok' : 'panel_origins', user: userClaims.id, origins, host }))
       return { content: [{ type: 'text', text: 'Noted.' }] }
     }
   )

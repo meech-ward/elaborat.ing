@@ -160,6 +160,25 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   expect(nativeDialogs).toEqual([])
 })
 
+test("the panel tells its view which project and file are open, and again when another file opens", async ({ page }) => {
+  const fake = await fakeSupabase(page)
+  const id = crypto.randomUUID()
+  await fake.server.remote(person.id).createProject(id, "Launch plan")
+  await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [
+    { op: "put", path: "notes/plan.md", content: "# Plan\n" },
+    { op: "put", path: "notes/flow.excalidraw", content: '{"type":"excalidraw","version":2,"elements":[]}' },
+  ])
+  await signedInPanel(page)
+  const app = await openPanel(page, `embed/projects/${id}/notes/plan.md#pass=${fake.mintPanelPass()}`)
+  const location = (file: { path: string; kind: string }) => ({ origin: APP, data: { type: "elaborating-embed:location", project: { id, name: "Launch plan" }, file } })
+
+  await expect(app.getByRole("tab", { name: "notes/plan.md" })).toBeVisible({ timeout: 15_000 })
+  await expect.poll(() => messages(page)).toContainEqual(location({ path: "notes/plan.md", kind: "note" }))
+
+  await app.getByRole("button", { name: "notes/flow.excalidraw", exact: true }).click()
+  await expect.poll(() => messages(page)).toContainEqual(location({ path: "notes/flow.excalidraw", kind: "drawing" }))
+})
+
 const LOCKED = "Open this from elaborat.ing in your ChatGPT sidebar."
 
 test("signed in, without a pass that works the panel shows only a way to the site, and reads no project", async ({ page }) => {
