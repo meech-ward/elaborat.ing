@@ -54,10 +54,13 @@ const SERVER_INSTRUCTIONS =
   FILE_FORMAT_INSTRUCTIONS +
   'To show a file to the user, use show_file; to show the user a component you are writing, use preview_component. ' +
   // A model's one big tool call shows nothing until it is done; small draw
-  // saves show in the app, and in its panel beside the chat, as they land.
+  // and append_to_note saves show in the app, and in its panel beside the
+  // chat, as they land.
   'To make or extend a drawing the user can watch in elaborat.ing or in its panel beside the chat, call draw several times ' +
   'with a few elements each (a shape, its label, then its arrows, in reading order), not one big write_file. ' +
   "To change or remove a drawing's elements, use write_file once with base_version, then draw what is new. " +
+  'To write a note the user can watch in elaborat.ing or in its panel beside the chat, call append_to_note several times, ' +
+  'a section each (a heading and its paragraphs, in reading order), not one big write_file. ' +
   'To make a new note, drawing or diagram the user should watch being made in the chat, use create_and_show. ' +
   'When the user should watch a change happen in the chat, use update_and_show with the base_version from read_file. ' +
   'Use write_file for quiet changes and for files the user is not watching (components, code, many files at once). ' +

@@ -1,5 +1,6 @@
 import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 
+import { registerAppendToNote } from './appendToNote.ts'
 import { registerCommentTools } from './comments.ts'
 import { registerComponentPreview } from './componentPreview.ts'
 import { registerDrawTool } from './draw.ts'
@@ -29,6 +30,7 @@ export function registerTools(server: McpServer, context: ToolContext, { embedVi
   registerSearchTool(server, context)
   registerFileView(server, context)
   registerDrawTool(server, context)
+  registerAppendToNote(server, context)
   registerComponentPreview(server, context)
   registerCommentTools(server, context)
   if (embedView) registerPanel(server, context)

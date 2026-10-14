@@ -51,6 +51,7 @@ import {
   codeFenceFromParagraph,
   projectFluidSource,
   prepareFluidTransaction,
+  fluidBlockPositionFrom,
   fluidPositionForSourceOffset,
   fluidSourceOffsetForPosition,
   type FluidProjection,
@@ -92,6 +93,7 @@ import type { ComponentEnvironment } from '../document/componentModules';
 import { encodeTextLeaf } from './instrumentation';
 import { componentValuePatch } from './componentValueEdit';
 import { applySourcePatches } from '../document';
+import { appendedFrom, type WriteIn } from '../document/writeIn';
 
 export type RenderedEditorProps = {
   document: DocumentSnapshot;
@@ -134,6 +136,13 @@ export type RenderedEditorProps = {
   readOnly?: boolean;
   /** The note's commented text, and the Comment actions when the person may comment. */
   comments?: RenderedComments | null;
+  /**
+   * A newer saved version the note took while open, such as an agent's
+   * section (src/features/document/writeIn.ts). When `document` is that
+   * version and it added to the end of the text shown before, the frame
+   * writes the added blocks in, once. Display only.
+   */
+  writeIn?: WriteIn | null;
   apiRef?: React.RefObject<RenderedEditorApi | null>;
 };
 
@@ -231,6 +240,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     sandboxOrigin = SANDBOX_ORIGIN,
     readOnly = false,
     comments = null,
+    writeIn = null,
     apiRef,
   } = props;
   const pendingOwners = useRef({ fluid: false, draft: false });
@@ -372,6 +382,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const authority = useRef<Exposed | null>(null);
   const epoch = useRef(0);
   const latestDocument = useRef(document);
+  // The newer saved version the note last took, for the projection below,
+  // which writes each one in once; and the render that does, with the
+  // position where the blocks it added start.
+  const arrival = useRef(writeIn);
+  const writtenIn = useRef<WriteIn | null>(null);
+  const writingIn = useRef<{ exposed: Exposed; position: number } | null>(null);
+  useLayoutEffect(() => {
+    arrival.current = writeIn;
+  }, [writeIn]);
   const pendingLocalEdit = useRef<{
     identity?: number; revision: number; text: string;
     ack: NonNullable<NonNullable<RenderMessage['authoring']>['editAck']>;
@@ -465,6 +484,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
               pendingLocalEdit.current?.text === document.text
               ? pendingLocalEdit.current.ack : undefined,
           };
+          // The version the note took, as it arrived: its added blocks write in.
+          const arrived = arrival.current;
+          let writeInAt: number | null = null;
+          if (arrived && arrived !== writtenIn.current && arrived.documentId === documentId && arrived.text === document.text) {
+            writtenIn.current = arrived;
+            const from = appendedFrom(arrived.before, arrived.text);
+            writeInAt = from === null ? null : fluidBlockPositionFrom(projection, from);
+          }
+          writingIn.current = writeInAt === null ? null : { exposed: next, position: writeInAt };
           pendingLocalEdit.current = null;
           authority.current = next;
           setExposed(next);
@@ -517,6 +545,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         doc: exposed.doc.toJSON(),
         selection: exposed.selection,
         islands: exposed.islands.map(({ id, from }) => ({ id, from })),
+        writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
       readOnly: readOnly || undefined,
       slots: exposed.slots.map((slot) => ({

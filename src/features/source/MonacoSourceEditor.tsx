@@ -11,6 +11,8 @@ import type { SourceEditorApi, SourceHandoff } from "./sourceBuffer";
 import type { RenderedPatchOptions, SourceSelection } from "./renderedHistory";
 import type { SourcePatch } from "@/features/document";
 import { languageForFormat } from "./modelSync";
+import { appendedFrom } from "../document/writeIn";
+import "./sourceArrived.css";
 
 /**
  * VS Code-like Markdown/MDX source editor (Monaco, workers bundled locally).
@@ -33,6 +35,8 @@ import { languageForFormat } from "./modelSync";
 type RailMarker = { line: number; top: number; ids: string[]; active: boolean; label: string };
 
 const LINE_HEIGHT = 22;
+/** How long the lines a newer saved version added stay highlighted (sourceArrived.css fades them). */
+const ARRIVED_MS = 1600;
 
 // A model keeps a file's byte order mark out of its text and offsets
 // (`getValue()` leaves it off) and gives it back when asked. The app's text
@@ -59,6 +63,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   const [rail, setRail] = useState<{ shown: boolean; markers: RailMarker[] }>({ shown: false, markers: [] });
   const [commentButton, setCommentButton] = useState<{ top: number; left: number } | null>(null);
   const commentMarksRef = useRef<((marks: readonly CommentMark[], source: string) => void) | null>(null);
+  // Highlights the lines from an offset to the end for a moment: what a newer saved version added.
+  const arrivedRef = useRef<((from: number) => void) | null>(null);
   // Latest callbacks without rebinding the mount-once editor. Assigned in
   // an effect (never during render) so memoization stays valid.
   const live = useRef(props);
@@ -246,6 +252,16 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     // the next marks arrive; markers and the Comment button follow them.
     const markDecorations = editor.createDecorationsCollection();
     const flashDecorations = editor.createDecorationsCollection();
+    const arrivedDecorations = editor.createDecorationsCollection();
+    let arrivedTimer = 0;
+    arrivedRef.current = (from) => {
+      const start = positionAt(model, from).lineNumber;
+      arrivedDecorations.set([
+        { range: new monaco.Range(start, 1, model.getLineCount(), 1), options: { isWholeLine: true, className: "source-arrived" } },
+      ]);
+      window.clearTimeout(arrivedTimer);
+      arrivedTimer = window.setTimeout(() => arrivedDecorations.clear(), ARRIVED_MS);
+    };
     let marked: { decoration: string; mark: CommentMark }[] = [];
     let flashTimer = 0;
     const canCommentKey = editor.createContextKey<boolean>("elaboratingCanComment", false);
@@ -532,6 +548,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     return () => {
       handoff.detach();
       commentMarksRef.current = null;
+      arrivedRef.current = null;
+      window.clearTimeout(arrivedTimer);
       for (const item of disposables) item.dispose();
       editorRef.current = null;
       modelRef.current = null;
@@ -581,7 +599,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   // isolates the old document's undo history. Typing and rendered patches
   // emit acknowledgements which may lag newer model events. The per-model
   // synchronizer distinguishes those echoes from outside replacements.
-  const { documentText, format: docFormat, documentId, editorLanguage } = props;
+  const { documentText, format: docFormat, documentId, editorLanguage, writeIn } = props;
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
@@ -595,8 +613,15 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     editorRef.current?.updateOptions({
       autoClosingQuotes: language === "markdown" || language === "mdx" ? "never" : "languageDefined",
     });
-    documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
-  }, [documentText, docFormat, documentId, editorLanguage]);
+    const replaced = documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
+    // A newer saved version the note took (src/features/document/writeIn.ts):
+    // the lines it added to the end are highlighted, unless the person
+    // prefers reduced motion. Decorations only, outside undo.
+    if (replaced && writeIn?.documentId === documentId && writeIn.text === documentText) {
+      const from = appendedFrom(writeIn.before, writeIn.text);
+      if (from !== null && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) arrivedRef.current?.(from);
+    }
+  }, [documentText, docFormat, documentId, editorLanguage, writeIn]);
 
   useEffect(() => {
     editorRef.current?.updateOptions({

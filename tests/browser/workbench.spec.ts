@@ -7,7 +7,8 @@ import { showView } from "./views.ts"
 
 // Editing notes in a project: the source and rendered views, saves on this
 // device that sync to the stand-in server, drafts that survive reloads and
-// leaving, and a file changed in two places.
+// leaving, a file changed in two places, and a section an agent adds to the
+// open note writing in.
 
 const projectUrl = (id: string, path?: string) => new URL(`projects/${id}${path ? `/${path}` : ""}`, APP_URL).href
 
@@ -217,6 +218,91 @@ test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved s
   await expect(paragraph).toHaveText("First paragraph.", { timeout: 15_000 })
   await expect(mark).toHaveCount(0)
   expect(serverContent(fake, id, "a.md")).toBe("# Title\n\nFirst paragraph.\n")
+})
+
+/**
+ * From now on, records every frame how opaque the note's frame draws the
+ * blocks with these texts (null while one is not there) and, on the page,
+ * whether the note says it has unsaved changes and how many lines Source
+ * highlights as just added.
+ */
+async function watchNote(page: Page, texts: string[]) {
+  await page.frameLocator('iframe[title="Isolated document preview"]').locator("body").evaluate((_, texts) => {
+    const frames: (number | null)[][] = []
+    Object.assign(window, { noteFrames: frames })
+    const tick = () => {
+      const blocks = [...document.querySelectorAll("h1, h2, p")]
+      frames.push(texts.map((text) => {
+        const block = blocks.find((element) => element.textContent === text)
+        return block ? Number(getComputedStyle(block).opacity) : null
+      }))
+      if (frames.length < 1_500) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, texts)
+  await page.evaluate(() => {
+    const frames: number[][] = []
+    Object.assign(window, { pageFrames: frames })
+    const tick = () => {
+      const unsaved = document.querySelector(".wb-session [aria-live]")?.textContent?.includes("Unsaved changes")
+      frames.push([unsaved ? 1 : 0, document.querySelectorAll(".monaco-editor .source-arrived").length])
+      if (frames.length < 1_500) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+}
+const noteFrames = (page: Page) =>
+  page.frameLocator('iframe[title="Isolated document preview"]').locator("body").evaluate(() => (window as unknown as { noteFrames: (number | null)[][] }).noteFrames)
+const pageFrames = (page: Page) => page.evaluate(() => (window as unknown as { pageFrames: number[][] }).pageFrames)
+
+test("a section an agent adds to the open note writes in, leaves nothing unsaved or to undo, and with reduced motion appears at once", async ({ page }) => {
+  const NOTE = "# Launch plan\n\nWhat ships on day one.\n"
+  const RISKS = `${NOTE}\n## Risks\n\nThe import is slow.\n`
+  const { fake, id } = await openProject(page, { "notes/launch.md": NOTE }, "notes/launch.md")
+  await page.getByRole("button", { name: "Split", exact: true }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  await expect(frame.getByRole("heading", { name: "Launch plan" })).toBeVisible({ timeout: 15_000 })
+  await expect(editorText(page)).toContainText("What ships on day one.")
+  const saves = fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length
+
+  // The agent adds a section (append_to_note), which reaches the open note through Realtime.
+  await watchNote(page, ["Launch plan", "Risks", "The import is slow."])
+  await fake.agentChanges.save(person.id, id, "notes/launch.md", RISKS)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(frame.getByText("The import is slow.")).toBeVisible()
+  await expect.poll(async () => (await noteFrames(page)).at(-1)).toEqual([1, 1, 1])
+  const written = await noteFrames(page)
+  // The new heading came in part way, and its paragraph after it; what was there stayed as it was.
+  expect(written.some(([, heading]) => heading !== null && heading > 0 && heading < 1)).toBe(true)
+  expect(written.some(([, heading, paragraph]) => heading !== null && paragraph !== null && heading > paragraph + 0.2)).toBe(true)
+  expect(written.filter(([old]) => old !== 1)).toEqual([])
+  // Source highlighted the new lines for a moment.
+  expect((await pageFrames(page)).some(([, highlighted]) => highlighted > 0)).toBe(true)
+  await expect.poll(async () => (await pageFrames(page)).at(-1)?.[1]).toBe(0)
+
+  // The note took the saved version: nothing unsaved at any point, nothing saved again, and nothing to undo.
+  expect((await pageFrames(page)).filter(([unsaved]) => unsaved)).toEqual([])
+  await expect(page.getByRole("tab", { name: "launch.md, unsaved changes" })).toHaveCount(0)
+  await frame.getByText("The import is slow.").click()
+  await page.keyboard.press("ControlOrMeta+z")
+  await page.waitForTimeout(500)
+  await expect(frame.getByRole("heading", { name: "Risks" })).toBeVisible()
+  await expect(editorText(page)).toContainText("The import is slow.")
+  await expect(page.getByRole("tab", { name: "launch.md, unsaved changes" })).toHaveCount(0)
+  expect((await pageFrames(page)).filter(([unsaved]) => unsaved)).toEqual([])
+  expect(fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length).toBe(saves)
+  expect(serverContent(fake, id, "notes/launch.md")).toBe(RISKS)
+
+  // With reduced motion the next section appears at once, and Source highlights nothing.
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await watchNote(page, ["Owners", "Ada runs the launch."])
+  await fake.agentChanges.save(person.id, id, "notes/launch.md", `${RISKS}\n## Owners\n\nAda runs the launch.\n`)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(frame.getByText("Ada runs the launch.")).toBeVisible()
+  // Twenty frames with both shown, any of which would catch them on the way in.
+  await expect.poll(async () => (await noteFrames(page)).filter(([heading, paragraph]) => heading !== null && paragraph !== null).length).toBeGreaterThan(20)
+  expect((await noteFrames(page)).filter(([heading, paragraph]) => (heading !== null && heading < 1) || (paragraph !== null && paragraph < 1))).toEqual([])
+  expect((await pageFrames(page)).filter(([unsaved, highlighted]) => unsaved || highlighted)).toEqual([])
 })
 
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {

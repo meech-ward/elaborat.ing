@@ -251,6 +251,13 @@ export const fluidRenderSchema = z.object({
   ),
   doc: fluidJsonObject,
   selection: z.optional(fluidSelection),
+  /**
+   * The document is a newer saved version that added to the end of the one
+   * on screen (such as an agent's section): the position where the added
+   * blocks start. The frame writes them in, unless the person prefers
+   * reduced motion. Display only.
+   */
+  writeIn: z.optional(whole),
 });
 
 /** Parent -> child: render this compiled document. */

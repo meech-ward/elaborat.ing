@@ -651,6 +651,24 @@ export function fluidPositionForSourceOffset(
   return nearest?.position ?? null;
 }
 
+/**
+ * Where the blocks start whose source starts at `offset` or later: the
+ * position of the first of them, so every block from there on comes from
+ * that source. Null when none does (the source there is inside a block that
+ * starts before it, such as an open code fence).
+ */
+export function fluidBlockPositionFrom(
+  projection: FluidProjection,
+  offset: number,
+): number | null {
+  let first: number | null = null;
+  for (const entry of projection.mapping.nodes) {
+    if (entry.node.isInline || entry.from < offset) continue;
+    if (first === null || entry.pos < first) first = entry.pos;
+  }
+  return first;
+}
+
 function canonicalFrame(
   mark: Mark,
   hint?: FluidSyntaxHint,

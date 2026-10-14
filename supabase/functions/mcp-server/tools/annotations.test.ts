@@ -68,6 +68,10 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // draw only adds elements to a drawing (or creates it): none already there is removed or changed.
   const draw = tools.find((tool) => tool.name === 'draw')
   assertEquals(draw?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  // append_to_note only adds text at the end of a note (or creates it): nothing already in it changes.
+  const append = tools.find((tool) => tool.name === 'append_to_note')
+  assertEquals(append?.title, 'Add to note')
+  assertEquals(append?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   // update_and_show overwrites a file, as write_file does, and mounts the same view.
   const update = tools.find((tool) => tool.name === 'update_and_show')
   assertEquals(update?.title, 'Change and show')

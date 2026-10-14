@@ -19,7 +19,14 @@ The user's instructions win over this skill when they differ.
 - Save files that belong together, such as a note and the component file it
   imports, in one `save_files` call.
 - Use `show_file` when the user wants to see the note.
-- To make a new note the user should watch being written, use
+- To write a note the user can watch in elaborat.ing, or in its panel beside
+  the chat, call `append_to_note` several times, a section each (a heading
+  and its paragraphs), in reading order, not one big `write_file`: each call
+  saves, and the app writes each section in. It adds at most 4,000
+  characters a call, after one blank line. Keep each block (a list, a table,
+  a code block, a component) whole in one call. To change text already in
+  the note, use `write_file` with `base_version`.
+- To make a new note the user should watch being written in the chat, use
   `create_and_show` instead of `write_file`. Create any drawing or diagram it
   embeds first: build a drawing with `draw`, a few elements a call, so the
   user can watch it in elaborat.ing (see the drawings skill).

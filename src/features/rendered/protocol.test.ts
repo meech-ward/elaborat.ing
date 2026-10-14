@@ -237,6 +237,16 @@ describe('checkParentMessage', () => {
     expect(render.ok).toBe(true);
     if (render.ok && render.message.kind === 'render') expect(render.message.authoring?.editAck?.draftId).toBe(4);
   });
+  test('a render can say where the blocks a newer saved version added start, as a document position', () => {
+    const fluid = { epoch: 3, operation: 0, reset: true, runtimeKey: 'k', islands: [], doc: { type: 'doc' } };
+    const render = (writeIn: unknown) => ({ kind: 'render', session: 'session-1a', revision: 8, code: 'x', slots: [], fluid: { ...fluid, writeIn } });
+    const checked = checkParentMessage({ data: render(12), source: {}, activeSession: 'session-1a' });
+    expect(checked.ok && checked.message.kind === 'render' ? checked.message.fluid?.writeIn : null).toBe(12);
+    expect(checkParentMessage({ data: render(undefined), source: {}, activeSession: 'session-1a' }).ok).toBe(true);
+    for (const invalid of [-1, 1.5, '12', null])
+      expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
+  });
+
   test('accepts a well-formed render for a fresh child', () => {
     const result = checkParentMessage({
       data: { kind: 'render', session: 'session-1a', revision: 0, code: 'x', slots: [] },

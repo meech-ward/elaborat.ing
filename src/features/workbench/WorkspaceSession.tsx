@@ -7,6 +7,7 @@ import type { TabFile } from "./tabs";
 import { SourceEditor, preloadSourceEditor, type SourceEditorApi } from "@/features/source";
 import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
+import type { WriteIn } from "@/features/document/writeIn";
 import { LazyRenderedEditor, preloadRenderedEditor } from "./LazyRenderedEditor";
 import type { RenderedPatchOptions } from "../source/renderedHistory";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
@@ -570,6 +571,9 @@ export function WorkspaceSession({
 
   // A newer saved copy (from another tab, or brought in by sync): a clean
   // buffer takes it; a buffer with edits keeps them and offers the choice.
+  // The copy the note last took this way (an agent's section, say), with the
+  // text it showed before: the views write in what it added.
+  const [arrived, setArrived] = useState<WriteIn | null>(null);
   const checkingSaved = useRef(false);
   useEffect(() => {
     if (savedRevision === undefined || savedRevision === null || !openFile.path) return;
@@ -586,7 +590,9 @@ export function WorkspaceSession({
         setOpenFile(next);
         if (adopt && read.savedContent !== current.text) {
           setComponentGeneration((value) => value + 1);
-          setSnapshot(store.replaceDocument(read.savedContent, formatForFilename(path)));
+          const taken = store.replaceDocument(read.savedContent, formatForFilename(path));
+          setArrived({ documentId: taken.docId, text: taken.text, before: current.text });
+          setSnapshot(taken);
         }
       })
       .catch(() => {
@@ -810,6 +816,7 @@ export function WorkspaceSession({
               onCursor={() => {}}
               readOnly={readOnly}
               comments={{ ...commentProps, sections: isNote }}
+              writeIn={isNote ? arrived : null}
               onSave={() => {
                 if (readOnly) {
                   setNotice(readOnly);
@@ -852,6 +859,7 @@ export function WorkspaceSession({
                 onOpenLink={handleOpenLink}
                 readOnly={Boolean(readOnly)}
                 comments={commentProps}
+                writeIn={arrived}
                 apiRef={renderedApi}
               />
               )}

@@ -4,6 +4,7 @@ import type { CommentMark, NoteCommentRequest } from "@/features/comments";
 import { Banner, BannerAction, LoadingLine, type Shortcut } from "@/features/design-system";
 import { moduleLoader, useModule } from "@/lib/moduleLoader";
 import type { ComponentDefinition } from "../document/componentCatalog";
+import type { WriteIn } from "../document/writeIn";
 import { createSourceHandoff, type SourceEditorApi } from "./sourceBuffer";
 
 export type { SourceEditorApi };
@@ -65,6 +66,13 @@ export interface SourceEditorProps {
   /** Why the text cannot be changed here, or null (the default) when it can. Monaco shows it when someone tries to type. */
   readOnly?: string | null;
   comments?: SourceComments | null;
+  /**
+   * A newer saved version the note took while open, such as an agent's
+   * section (src/features/document/writeIn.ts). When the editor shows that
+   * version and it added to the end of the text shown before, the added
+   * lines are highlighted for a moment. Display only.
+   */
+  writeIn?: WriteIn | null;
 }
 
 /** Pull a leading `line:column` (MDX/VFile style) out of an error message. */

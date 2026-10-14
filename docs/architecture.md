@@ -873,6 +873,30 @@ The production server's tools are unchanged.
   300 ms, 60 ms after the one before (the last starts within 1.2 s), in
   frames outside undo that never mark the file changed; with reduced motion
   they appear at once.
+- **Decision: a note grows in sections the person can watch
+  (`append_to_note`).** As with a drawing, a note written in one
+  `write_file` appears all at once. `append_to_note` (`tools/appendToNote.ts`,
+  titled Add to note) adds up to 4,000 characters to the end of a `.md` or
+  `.mdx` note, creating it if there is none, and saves through `save_files`
+  with the version it read, as `write_file` does; the server's instructions
+  and the notes skill tell agents to call it several times, a section each (a
+  heading and its paragraphs). It only adds, so it is not destructive: the
+  note's trailing whitespace is trimmed, then come one blank line, the text
+  without blank lines before it, and one line break at the end. A save that
+  conflicts is read again and added once more, since an addition at the end
+  goes on top of any other change; with `base_version`, a note changed since
+  is a conflict. A `mutation_id` that already saved this text gets that save
+  back (its version in `file_versions`), so a retry never adds it twice. A
+  drawing, diagram or other file is refused with the tool that changes it. In
+  the app, and so in the panel, an open note that takes a newer version saved
+  elsewhere whose text extends the one on screen (its trailing whitespace
+  aside) writes the added part in (`src/features/document/writeIn.ts`): in
+  Rendered the frame fades each new block up into place over 280 ms, 120 ms
+  after the one before (the last starts within 1.2 s), told where they start
+  by the render's `fluid.writeIn`; in Source the added lines are highlighted
+  for 1.6 s. Both are display only, outside undo, and never mark the file
+  changed; with reduced motion nothing animates. A note with unsaved edits
+  says it changed elsewhere, as before, and writes nothing in.
 - **Decision: a change the person watches is shown as it is written.**
   `update_and_show` (titled Change and show) changes a note, drawing or
   diagram that exists, with the version the agent read, and returns

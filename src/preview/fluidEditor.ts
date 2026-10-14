@@ -234,6 +234,15 @@ function objects(doc: PMNode): string {
   return JSON.stringify(ids);
 }
 
+/**
+ * Blocks a newer saved version added write in (`fluid.writeIn`): each fades
+ * up into place over this long, as the chat card's live note brings in new
+ * blocks, the next this long after it, and the last within this long.
+ */
+const WRITE_IN_MS = 280;
+const WRITE_IN_STAGGER_MS = 120;
+const WRITE_IN_LAST_START_MS = 1200;
+
 /** One persistent source-derived view. No history plugin, serializer, or IO. */
 export class FluidEditor {
   readonly view: EditorView;
@@ -673,6 +682,9 @@ export class FluidEditor {
     const fluid = message.fluid;
     if (!fluid) return;
     const reset = fluid.reset || fluid.epoch !== this.epoch;
+    // Blocks a newer saved version added write in where it replaces a
+    // document this frame showed; a render sent again writes nothing in.
+    const writeInFrom = fluid.epoch !== this.epoch && this.epoch !== -1 ? fluid.writeIn : undefined;
     this.session = message.session;
     this.revision = message.revision;
     // The new document has the code block, if the parent made one.
@@ -701,6 +713,7 @@ export class FluidEditor {
       }
       this.view.updateState(state);
       if (fluid.selection) this.view.focus();
+      if (writeInFrom !== undefined) this.writeIn(writeInFrom);
     } else if (fluid.operation === this.operation) {
       // The optimistic document and selection are already ahead during a
       // burst. An ack only advances authority; it never overwrites that view.
@@ -714,6 +727,31 @@ export class FluidEditor {
     }
     this.post({ kind: "rendered" });
     this.flush();
+  }
+
+  /**
+   * Writes in the blocks from `from` on, which a newer saved version added:
+   * the outermost blocks that start there or later (a list's new items, not
+   * the list), one after another. Animations alone: the editor's state, the
+   * DOM and the document stay as they are. Nothing with reduced motion.
+   */
+  private writeIn(from: number) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const blocks: Element[] = [];
+    this.view.state.doc.descendants((node, pos) => {
+      if (!node.isBlock || pos + node.nodeSize <= from) return false;
+      if (pos < from) return true;
+      const dom = this.view.nodeDOM(pos);
+      if (dom instanceof Element) blocks.push(dom);
+      return false;
+    });
+    const stagger = Math.min(WRITE_IN_STAGGER_MS, WRITE_IN_LAST_START_MS / Math.max(1, blocks.length));
+    blocks.forEach((block, order) =>
+      block.animate(
+        [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }],
+        { duration: WRITE_IN_MS, delay: order * stagger, easing: "ease-out", fill: "backwards" },
+      ),
+    );
   }
 
   /** The note revision the document on screen was rendered from. */
