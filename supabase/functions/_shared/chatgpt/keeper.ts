@@ -134,6 +134,14 @@ export class PlanKeeper {
         throw new OAuthError('authorization_failed', 'That is a different ChatGPT account from the one connected before.')
       }
       await this.save({ ...credentials, client_id: callback.clientId, email: identity.email, subject: identity.sub, reconnect: false, tokens })
+      // The session this sign-in replaces would stay valid at OpenAI until it
+      // expired, so it is revoked, with the client it was issued to. Only after
+      // the save, and revokeToken never throws, so the new sign-in is kept
+      // whatever the revoke answers.
+      const replaced = credentials.tokens
+      if (replaced && credentials.client_id && replaced.refresh_token !== tokens.refresh_token) {
+        await revokeToken(this.fetcher, { clientId: credentials.client_id, refreshToken: replaced.refresh_token })
+      }
     })
     this.modelCache = null
     return { returnTo: callback.transaction.returnTo, plan: planAllowed(tokens.scopes) }

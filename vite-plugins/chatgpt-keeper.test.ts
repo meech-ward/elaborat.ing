@@ -253,10 +253,26 @@ describe("signing in", () => {
     expect(saved.client_id).toBe(ISSUED)
     expect(saved.subject).toBe("user-1")
     expect(saved.tokens?.refresh_token).toBe("refresh-0")
+    // A first sign-in replaces nothing, so nothing is revoked.
+    expect(fake.requests.some((entry) => entry.url === REVOKE_URL)).toBe(false)
     // Used once: the same callback again is refused.
     const again = (await handle(new Request(callback)))!
     expect(again.status).toBe(400)
     expect(await again.text()).toContain("could not be verified")
+  })
+
+  test("a sign-in that replaces a connection keeps the new tokens and revokes the refresh token it replaced", async () => {
+    const fake = fakeOpenAI()
+    const store = memoryStore(connected({ expires_at: Date.now() + 3_600_000 }))
+    const handle = keeperHandler(new PlanKeeper({ store, fetch: fake.fetcher }), { origin: () => ORIGIN })
+    const params = await start(handle, fake)
+    const done = (await handle(new Request(`${ORIGIN}/auth/callback?code=the-code&state=${params.get("state")}&client_id=${ISSUED}&scope=x`)))!
+    expect(done.status).toBe(303)
+    const revokes = fake.requests.filter((entry) => entry.url === REVOKE_URL).map((entry) => entry.form!)
+    expect(revokes.map((form) => form.get("token"))).toEqual(["refresh-old"])
+    expect(revokes[0].get("token_type_hint")).toBe("refresh_token")
+    expect(revokes[0].get("client_id")).toBe(ISSUED)
+    expect(store.current()!.tokens?.refresh_token).toBe("refresh-0")
   })
 
   test("an expired transaction, a state that matches none, and a nonce that does not match are refused, and nothing is kept", async () => {
