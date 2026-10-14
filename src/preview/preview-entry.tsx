@@ -1090,6 +1090,29 @@ window.addEventListener(
   },
   { passive: true },
 );
+// A link in the note opens through the app: a file in the project in a tab, a
+// web page in a new browser tab. The frame never navigates itself, and a link
+// to a heading of this note scrolls to it. Clicks a component handled itself
+// (it called preventDefault) and selections that end on a link are left alone.
+document.addEventListener("click", (event) => {
+  if (event.defaultPrevented || event.button !== 0 || !(event.target instanceof Element)) return;
+  const link = event.target.closest("a[href]");
+  if (!link) return;
+  event.preventDefault();
+  const href = link.getAttribute("href") ?? "";
+  if (!document.getSelection()?.isCollapsed) return;
+  if (href.startsWith("#")) {
+    let id = href.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      // Use the id as written.
+    }
+    (document.getElementById(id) ?? document.getElementsByName(id)[0])?.scrollIntoView({ block: "start" });
+    return;
+  }
+  if (activeSession && href.trim()) postToParent({ kind: "open-link", session: activeSession, revision: activeRevision, href: href.slice(0, 2048) });
+});
 // Commented text opens its thread when clicked (not when a selection ends on it).
 document.addEventListener("click", (event) => {
   if (!activeSession || !commentMarks || !(event.target instanceof Element)) return;

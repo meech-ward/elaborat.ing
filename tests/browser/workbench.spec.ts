@@ -519,3 +519,31 @@ test.describe("on a phone", () => {
     await expect(editorText(page)).toContainText("Typed on a phone.")
   })
 })
+
+test("a link in a rendered note opens the file it names in a tab, says when there is none, and opens a web page in a new tab", async ({ page }) => {
+  await page.context().route("https://example.com/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>Example</title>" }))
+  await openProject(
+    page,
+    {
+      "README.mdx": "# Start here\n\n- [The marble](brainstorm/marble.mdx)\n- [Missing](brainstorm/missing.mdx)\n- [Example](https://example.com/docs)\n",
+      "brainstorm/marble.mdx": "# The marble\n",
+    },
+    "README.mdx",
+  )
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.getByRole("tabpanel", { name: "README.mdx" }).frameLocator('iframe[title="Isolated document preview"]')
+
+  await frame.getByRole("link", { name: "The marble" }).click()
+  await expect(page.getByRole("tab", { name: "brainstorm/marble.mdx" })).toHaveAttribute("aria-selected", "true")
+
+  await page.getByRole("tab", { name: "README.mdx" }).click()
+  await frame.getByRole("link", { name: "Missing" }).click()
+  await expect(page.getByText("There's no brainstorm/missing.mdx in this project.")).toBeVisible()
+  await expect(page.getByRole("tab", { name: "README.mdx" })).toHaveAttribute("aria-selected", "true")
+
+  const popup = page.waitForEvent("popup")
+  await frame.getByRole("link", { name: "Example" }).click()
+  expect((await popup).url()).toBe("https://example.com/docs")
+  // The note stays where it was: the frame never navigated.
+  await expect(frame.getByRole("heading", { name: "Start here" })).toBeVisible()
+})

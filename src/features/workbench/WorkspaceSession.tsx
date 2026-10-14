@@ -39,6 +39,7 @@ import {
   saveTarget,
   type OpenFile,
 } from "./session";
+import { linkedFile, resolveNoteLink } from "./noteLinks";
 
 type Mode = EditorView;
 
@@ -305,6 +306,23 @@ export function WorkspaceSession({
       void openPath(path);
     },
     [openPath],
+  );
+
+  // A link clicked in the rendered note: a project file opens in a tab, a web
+  // page in a new browser tab.
+  const handleOpenLink = useCallback(
+    (href: string) => {
+      const link = resolveNoteLink(href, initial.path);
+      if (link.kind === "web") {
+        window.open(link.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (link.kind !== "file") return;
+      const file = linkedFile(link.path, workspacePaths);
+      if (file) openPath(file);
+      else setNotice(`There's no ${link.path} in this project.`);
+    },
+    [initial.path, workspacePaths, openPath],
   );
 
   // Notes compile-check in Source mode (same pipeline as Rendered).
@@ -825,6 +843,7 @@ export function WorkspaceSession({
                   /\.(?:excalidraw(?:\.md)?|d2)$/.test(path),
                 )}
                 onEditResource={handleEditResource}
+                onOpenLink={handleOpenLink}
                 readOnly={Boolean(readOnly)}
                 comments={commentProps}
                 apiRef={renderedApi}

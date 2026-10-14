@@ -630,6 +630,14 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     /** Workspace path the child wants to inspect (always re-checked by the parent). */
     path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
+  // A link in the note was clicked: its href as written. The parent decides
+  // what it opens, and only while the person's click is still active.
+  z.strictObject({
+    kind: z.literal("open-link"),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    href: z.string().check(z.minLength(1), z.maxLength(2048)),
+  }),
 ]);
 
 export type ChildMessage = z.infer<typeof childMessageSchema>;
@@ -661,6 +669,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "comment-open":
     case "comment-shortcut":
     case "comment-markers":
+    case "open-link":
       return "drop";
     case "edit-rejected":
       return "refusal";

@@ -122,6 +122,8 @@ export type RenderedEditorProps = {
   /** Listing metadata for insertion, not authority to open/edit a resource. */
   availableResourcePaths?: readonly string[];
   onEditResource?: (path: string) => void;
+  /** A link in the note was clicked (its href as written), while the click is still active. */
+  onOpenLink?: (href: string) => void;
   /**
    * The sandbox domain whose page the frame loads (docs/architecture.md,
    * Component isolation). Defaults to the build's VITE_SANDBOX_ORIGIN (none
@@ -223,6 +225,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     allowedResourcePaths,
     availableResourcePaths,
     onEditResource,
+    onOpenLink,
     sandboxOrigin = SANDBOX_ORIGIN,
     readOnly = false,
     comments = null,
@@ -976,6 +979,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         onError?.(error);
         return;
       }
+      if (message.kind === "open-link") {
+        // Only a person's click opens anything: the frame's own code cannot,
+        // since a click in the frame is what activates this page too.
+        const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+        if (activation && !activation.isActive) return;
+        onOpenLink?.(message.href);
+        return;
+      }
       if (message.kind === "edit-resource") {
         // The path was parsed from evaluated document output: allow only a
         // reference the parent itself parsed from the authoritative source.
@@ -1157,6 +1168,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     document.format,
     exposed,
     onEditResource,
+    onOpenLink,
     onError,
     onPatch,
     onHistory,
