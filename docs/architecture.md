@@ -999,7 +999,7 @@ The production server's tools are unchanged.
   `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
   sidebar (global entrypoint), a conversation's side panel (thread
   entrypoint), or a model's call with a project and file; `{}` opens the
-  projects list. Its view (`ui://elaborating/panel-v1.html`) is a small
+  projects list. Its view (`ui://elaborating/panel-v4.html`, earlier names still answering) is a small
   hand-written page, not the card's build: it declares
   `https://elaborat.ing` in `frameDomains` (and `frame_domains` and
   `redirect_domains` in `openai/widgetCSP`), uses the card's widget domain so

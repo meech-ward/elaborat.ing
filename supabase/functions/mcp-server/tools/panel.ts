@@ -31,14 +31,14 @@ import type { ToolContext } from './types.ts'
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v3.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v4.html'
 /**
  * Earlier names of the panel view. A host keeps the tool list it last read, so
  * it asks for the name that list carries until it refreshes; serving the
  * earlier names too means a rename never shows "App unavailable" meanwhile.
  * The content is always the current view.
  */
-export const OLD_PANEL_VIEW_URIS = ['ui://elaborating/panel-v2.html', 'ui://elaborating/panel-v1.html']
+export const OLD_PANEL_VIEW_URIS = ['ui://elaborating/panel-v3.html', 'ui://elaborating/panel-v2.html', 'ui://elaborating/panel-v1.html']
 /** The result `_meta` key holding the app's page to frame, such as /embed/projects/<id>. `_meta` reaches the view, not the model. */
 export const PANEL_META_KEY = 'elaborat.ing/embed'
 /** The result `_meta` key holding a one-time pass for the page the view frames. */
