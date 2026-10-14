@@ -250,6 +250,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     let flashTimer = 0;
     const canCommentKey = editor.createContextKey<boolean>("elaboratingCanComment", false);
     const onHeadingKey = editor.createContextKey<boolean>("elaboratingOnHeading", false);
+    const attachingKey = editor.createContextKey<boolean>("elaboratingAttaching", false);
     const headingAt = (lineNumber: number) => {
       // Only a line that looks like a heading, or sits over an underline, is checked in full.
       const line = model.getLineContent(lineNumber);
@@ -301,6 +302,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       setCommentButton((current) => (current?.top === button?.top && current?.left === button?.left ? current : button));
       canCommentKey.set(Boolean(comments?.canComment));
       onHeadingKey.set(Boolean(comments?.canComment && comments.sections && selection?.isEmpty() && headingAt(selection.startLineNumber)));
+      attachingKey.set(Boolean(comments?.attaching));
     };
     commentMarksRef.current = (marks, source) => {
       // Marks placed in other text (typing ran ahead) wait for the next set.
@@ -322,12 +324,13 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     disposables.push(
       // The comment key comments on the selection, or on the heading the
       // cursor is on. Elsewhere it is left to the page (it shows or hides
-      // the comments).
+      // the comments). While a detached thread is attached again, the key
+      // and the menu attach it there instead (Attach here).
       editor.addAction({
         id: "elaborating.comment",
         label: "Comment",
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
-        precondition: "elaboratingCanComment && editorHasSelection",
+        precondition: "elaboratingCanComment && !elaboratingAttaching && editorHasSelection",
         contextMenuGroupId: "navigation",
         contextMenuOrder: 0,
         run() {
@@ -340,12 +343,26 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         id: "elaborating.comment-section",
         label: "Comment on section",
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
-        precondition: "elaboratingCanComment && !editorHasSelection && elaboratingOnHeading",
+        precondition: "elaboratingCanComment && !elaboratingAttaching && !editorHasSelection && elaboratingOnHeading",
         contextMenuGroupId: "navigation",
         contextMenuOrder: 0,
         run() {
           const position = editor.getPosition();
           if (position) commentOn({ kind: "section", offset: offsetAt(model, position) });
+        },
+      }),
+      editor.addAction({
+        id: "elaborating.attach",
+        label: "Attach here",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
+        precondition: "elaboratingCanComment && elaboratingAttaching && editorHasSelection || elaboratingCanComment && elaboratingAttaching && elaboratingOnHeading",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 0,
+        run() {
+          const selection = editor.getSelection();
+          const position = editor.getPosition();
+          if (selection && !selection.isEmpty()) commentOn({ kind: "text", from: offsetAt(model, selection.getStartPosition()), to: offsetAt(model, selection.getEndPosition()) });
+          else if (position) commentOn({ kind: "section", offset: offsetAt(model, position) });
         },
       }),
       editor.onDidScrollChange(updateComments),
@@ -588,14 +605,15 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     });
   }, [readOnly]);
 
-  // The commented text, and whether the Comment actions are offered.
+  // The commented text, and whether the Comment actions are offered (and attach).
   const commentMarks = props.comments?.marks;
   const commentSource = props.comments?.source;
   const canComment = props.comments?.canComment ?? false;
   const commentsOffline = props.comments?.offline ?? false;
+  const commentsAttaching = props.comments?.attaching ?? false;
   useEffect(() => {
     commentMarksRef.current?.(commentMarks ?? [], commentSource ?? "");
-  }, [canComment, commentsOffline, commentMarks, commentSource]);
+  }, [canComment, commentsOffline, commentsAttaching, commentMarks, commentSource]);
 
   // The component stays mounted in rendered mode (history preserved);
   // relayout when it becomes visible again.

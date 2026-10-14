@@ -93,6 +93,8 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
   // there. Escape or Cancel leaves it as it was.
   const attaching = ui.attaching !== null && threads.some((thread) => thread.id === ui.attaching) ? ui.attaching : null
   const [attachError, setAttachError] = useState<string | null>(null)
+  // The comment sent last from here: when it comes back detached, the prompt says its text changed.
+  const [sent, setSent] = useState<string | null>(null)
   const attach = async (threadId: string, request: CommentRequest) => {
     const thread = threads.find((each) => each.id === threadId)
     if (!store || !controller || thread?.file_id !== request.file.fileId) return
@@ -182,6 +184,7 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
         thread.attachable
           ? () => {
               setAttachError(null)
+              setSent(null)
               controller?.startAttach(thread.id)
             }
           : undefined
@@ -232,8 +235,16 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
         onSubmit={async (body, { askAgent }) => {
           const thread = await store.add({ threadId, fileId: request.file.fileId, fileVersion: request.file.fileVersion, anchor: request.anchor, body, askAgent })
           controller.finishRequest(thread.id)
+          setSent(thread.id)
           say("Comment added")
           focusThread(thread.id)
+          // Once the file has placed it (and after the focus above), a comment
+          // on text a save removed just before it was sent (an agent's, say)
+          // is detached: its text is asked for at once.
+          afterRender(() => {
+            if (thread.anchor.kind !== "text" && thread.anchor.kind !== "section") return
+            if (controller.placesFor(thread.file_id).get(thread.id)?.attached === false) controller.startAttach(thread.id)
+          })
         }}
         onCancel={() => {
           controller.finishRequest()
@@ -248,6 +259,7 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
       <CommentAttachPrompt
         key={attaching}
         fileNoun={noun}
+        changed={attaching === sent}
         error={attachError}
         size={compact ? "touch" : "default"}
         onAttachToFile={() => void attach(attaching, { file, anchor: { kind: "document" } })}

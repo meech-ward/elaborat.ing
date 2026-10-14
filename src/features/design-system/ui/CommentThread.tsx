@@ -706,10 +706,12 @@ export function CommentDraft({
  * `attach`), and attaches the thread there. In the panel it sits above the
  * threads; on a phone it floats at the foot of the screen while the sheet is
  * away, so the note can be selected. It takes the keyboard when it shows;
- * `error` says why the last try failed.
+ * `error` says why the last try failed. A comment that was detached as it
+ * was sent (`changed`) says its text changed instead, and asks for it.
  */
 export function CommentAttachPrompt({
   fileNoun = "note",
+  changed = false,
   onAttachToFile,
   onCancel,
   error,
@@ -720,6 +722,8 @@ export function CommentAttachPrompt({
 }: Omit<ComponentProps<"div">, "children"> & {
   /** What the file is, in "Attach to the whole note". */
   fileNoun?: string
+  /** The comment was just sent, and its text was gone by then (a save removed it). */
+  changed?: boolean
   onAttachToFile: () => void
   onCancel: () => void
   error?: string | null
@@ -751,7 +755,7 @@ export function CommentAttachPrompt({
     >
       <p id={titleId} className={cn("flex items-start gap-1.5 leading-snug font-medium", touch ? "text-[15px]" : "text-[13px]")}>
         <TextCursorInput aria-hidden="true" className={cn("shrink-0 text-muted-foreground", touch ? "mt-0.5 size-4" : "mt-px size-3.5")} />
-        Select the text this comment is about
+        {changed ? "The text changed before your comment was sent. Select what it is about." : "Select the text this comment is about"}
       </p>
       {error && (
         <p id={errorId} role="alert" className={cn("flex items-start gap-1.5 leading-snug text-destructive", touch ? "text-[13px]" : "text-xs")}>

@@ -11,7 +11,8 @@ import { APP_URL } from "./urls.ts"
 // markers and highlights open the panel at their thread, and the panel shows
 // a thread's text in the note. A thread whose text is deleted is no longer
 // marked and shows in the panel with its quote, and can be attached to other
-// text from its card.
+// text from its card; one sent on text a save had just removed asks for its
+// text at once.
 
 test.describe.configure({ timeout: 60_000 })
 
@@ -319,12 +320,27 @@ test("a detached thread is attached to other text from its card, and its new tex
   const card = panel(page).getByRole("article").filter({ hasText: "Which page?" })
   await expect(card).toContainText("Detached")
 
-  // Attach to text asks for the text, and the Comment button over a selection reads Attach here.
+  // Attach to text asks for the text. Escape in the Rendered view gives that up, as it does elsewhere.
   await card.getByRole("button", { name: "Attach to text" }).click()
   const prompt = panel(page).getByRole("group", { name: "Select the text this comment is about" })
   await expect(prompt).toBeFocused()
   const frame = frameOf(page)
   await frame.getByText("Create a project.").click({ position: { x: 1, y: 6 } })
+  await page.keyboard.press("Escape")
+  await expect(prompt).toHaveCount(0)
+  await expect(card).toBeFocused()
+
+  // Asked again: Source's menu offers Attach here in place of Comment, and so does the button over a selection.
+  await card.getByRole("button", { name: "Attach to text" }).click()
+  await expect(prompt).toBeFocused()
+  await sourceLines(page).getByText("Create a project.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Shift+Home")
+  await sourceLines(page).getByText("Create a project.").click({ button: "right" })
+  await expect(page.getByRole("menuitem").first()).toHaveAccessibleName(/^Attach here/)
+  await expect(page.getByRole("menuitem", { name: /^Comment/ })).toHaveCount(0)
+  await frame.getByText("Create a project.").click({ position: { x: 1, y: 6 } })
+  await expect(page.getByRole("menuitem")).toHaveCount(0)
   await page.keyboard.press("Shift+End")
   await page.getByRole("button", { name: "Attach here", exact: true }).click()
 
@@ -337,6 +353,31 @@ test("a detached thread is attached to other text from its card, and its new tex
   await expect(frame.locator(".comment-highlight")).toHaveText(["Create a project."])
   await expect.poll(() => sourceMarked(page)).toBe("Create a project.")
   expect(fake.comments.threads.map((entry) => entry.anchor)).toMatchObject([{ kind: "text", quote: { exact: "Create a project." } }])
+})
+
+test("a comment sent on text a save removed just before comes back detached, and asks for its text at once", async ({ page }) => {
+  const { fake, id } = await seeded(page, { threads: false, view: "Rendered" })
+  const frame = frameOf(page)
+  const paragraph = frame.locator("p").filter({ hasText: "How a customer moves" })
+  await paragraph.click({ position: { x: 1, y: 8 } })
+  await page.keyboard.press("Shift+End")
+  await commentButton(page).click()
+  const field = panel(page).getByRole("textbox", { name: "New comment" })
+  await expect(field).toBeFocused()
+
+  // An agent's save removes the paragraph while the comment is written; the note shows it.
+  const words = "How a customer moves from sign-up to their first project, and where agents help.\n\n"
+  await fake.agentChanges.save(person.id, id, PATH, NOTE.replace(words, ""))
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(paragraph).toHaveCount(0)
+  await field.fill("Which agents?")
+  await field.press("ControlOrMeta+Enter")
+
+  // It is sent on the version it was written on, comes back detached, and the panel asks for its text.
+  const prompt = panel(page).getByRole("group", { name: "The text changed before your comment was sent. Select what it is about." })
+  await expect(prompt).toBeFocused()
+  await expect(panel(page).getByRole("article").filter({ hasText: "Which agents?" })).toContainText("Detached")
+  expect(fake.comments.threads.map((entry) => [entry.fileVersion, (entry.anchor as { quote: { exact: string } }).quote.exact])).toEqual([[1, words.trim()]])
 })
 
 test("a commenter comments on a note they cannot change, from the comment key in Rendered", async ({ page }) => {

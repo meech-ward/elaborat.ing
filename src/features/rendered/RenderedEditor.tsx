@@ -719,7 +719,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         frameRef.current?.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: message.key,
-            code: /^[123]$/.test(message.key) ? `Digit${message.key}` : message.key === "." ? "Period" : `Key${message.key.toUpperCase()}`,
+            code: message.key === "Escape" ? "Escape" : /^[123]$/.test(message.key) ? `Digit${message.key}` : message.key === "." ? "Period" : `Key${message.key.toUpperCase()}`,
             metaKey: message.meta,
             ctrlKey: message.ctrl,
             altKey: message.alt,

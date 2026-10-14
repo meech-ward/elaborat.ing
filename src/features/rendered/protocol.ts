@@ -501,11 +501,12 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     kind: z.literal("ready"),
     session: z.string().check(z.minLength(1)),
   }),
-  // An app shortcut pressed inside the frame, passed up so it works there too.
+  // An app shortcut pressed inside the frame, or an Escape no control there
+  // used, passed up so it works there too.
   z.strictObject({
     kind: z.literal("shortcut"),
     session: z.string().check(z.minLength(1)),
-    key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3", "m"]),
+    key: z.enum(["s", "k", "p", "d", ".", "1", "2", "3", "m", "Escape"]),
     meta: z.boolean(),
     ctrl: z.boolean(),
     alt: z.boolean(),

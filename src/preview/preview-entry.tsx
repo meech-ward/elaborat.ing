@@ -154,6 +154,15 @@ window.addEventListener(
   },
   true,
 );
+// An Escape no control in the note used is passed up too: outside the frame
+// it stops attaching a comment to text. The note's text (ProseMirror) marks
+// every Escape as handled, so only a control's use counts, such as a field
+// putting its value back. ProseMirror leaves these controls' keys to them.
+window.addEventListener("keydown", (event) => {
+  if (!activeSession || event.key !== "Escape") return;
+  if (event.defaultPrevented && event.target instanceof Element && event.target.closest("button,input,select,textarea,[data-authoring-from]")) return;
+  postToParent({ kind: "shortcut", session: activeSession, key: "Escape", meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey });
+});
 
 // The page never zooms on phones and tablets (docs/architecture.md): a pinch
 // over the frame must not zoom the app's page either. iOS Safari ignores the
