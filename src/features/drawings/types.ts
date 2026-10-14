@@ -220,6 +220,13 @@ export interface DrawingCanvasProps {
    * redraws the canvas without marking anything changed.
    */
   present?: (scene: DrawingScene) => DrawingScene;
+  /**
+   * A scene that arrived from elsewhere, such as an agent's save. When
+   * `scene` becomes this scene, the elements new in it draw in: each fades
+   * in to its own opacity, one after another, unless the person prefers
+   * reduced motion. Display only, like `present`.
+   */
+  drawIn?: DrawingScene | null;
   /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */
   onScrollChange?: (scrollX: number, scrollY: number, zoom: number) => void;
   /** Phone controls: the touch-sized tool island at the bottom, and no zoom island. Default false. */

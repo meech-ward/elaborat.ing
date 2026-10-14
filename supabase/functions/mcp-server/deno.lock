@@ -10,6 +10,7 @@
     "npm:@supabase/server@1.6.0": "1.6.0_@supabase+supabase-js@2.108.2",
     "npm:@supabase/supabase-js@2.108.2": "2.108.2",
     "npm:approx-string-match@2.0.0": "2.0.0",
+    "npm:fractional-indexing@3.2.0": "3.2.0",
     "npm:lz-string@1.5.0": "1.5.0",
     "npm:openai@^4.52.5": "4.104.0_zod@4.4.3",
     "npm:rehype-sanitize@6.0.0": "6.0.0",
@@ -363,6 +364,9 @@
         "node-domexception",
         "web-streams-polyfill"
       ]
+    },
+    "fractional-indexing@3.2.0": {
+      "integrity": "sha512-PcOxmqwYCW7O2ovKRU8OoQQj2yqTfEB/yeTYk4gPid6dN5ODRfU1hXd9tTVZzax/0NkO7AxpHykvZnT1aYp/BQ=="
     },
     "function-bind@1.1.2": {
       "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA=="

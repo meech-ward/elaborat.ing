@@ -183,6 +183,105 @@ test("a drawing changed on another device updates the open canvas when it has no
   expect(fake.server.content(id, "sketch.excalidraw")).toBe(theirs)
 })
 
+// A drawing an agent adds to while it is open: a frame, then two solid boxes
+// inside it, red at its own full opacity and blue at half.
+const RED = "#e03131"
+const BLUE = "#1971c2"
+const box = (id: string, index: string, x: number, y: number, color: string, opacity = 100) => ({
+  id, type: "rectangle", x, y, width: 160, height: 100, angle: 0, strokeColor: color, backgroundColor: color, fillStyle: "solid",
+  strokeWidth: 2, strokeStyle: "solid", roughness: 0, opacity, groupIds: [], frameId: null, index, roundness: null, seed: 7,
+  version: 1, versionNonce: 7, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false,
+})
+const framed = (...boxes: object[]) =>
+  `${JSON.stringify(
+    {
+      type: "excalidraw",
+      version: 2,
+      source: "https://excalidraw.com",
+      elements: [{ ...box("frame", "a0", 0, 0, "#1e1e1e"), width: 420, height: 260, backgroundColor: "transparent" }, ...boxes],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    },
+    null,
+    2,
+  )}\n`
+const ADDED = framed(box("red", "a1", 30, 30, RED), box("blue", "a2", 230, 130, BLUE, 50))
+
+/**
+ * From now on, records every frame how opaque the canvas draws the red box
+ * and the blue one (the alpha, 0 to 255, of the most opaque pixel of each),
+ * and 1 when the drawing says it has unsaved changes.
+ */
+async function watchBoxes(page: Page) {
+  const rgb = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
+  await page.evaluate(([red, blue]) => {
+    const near = (data: Uint8ClampedArray, i: number, color: number[]) => color.every((value, at) => Math.abs(data[i + at] - value) < 16)
+    const frames: number[][] = []
+    Object.assign(window, { boxFrames: frames })
+    const copy = document.createElement("canvas")
+    const context = copy.getContext("2d", { willReadFrequently: true })!
+    const tick = () => {
+      const canvas = document.querySelector<HTMLCanvasElement>(".excalidraw canvas.static")
+      if (canvas && canvas.width > 0) {
+        copy.width = Math.ceil(canvas.width / 4)
+        copy.height = Math.ceil(canvas.height / 4)
+        context.drawImage(canvas, 0, 0, copy.width, copy.height)
+        const { data } = context.getImageData(0, 0, copy.width, copy.height)
+        let [shownRed, shownBlue] = [0, 0]
+        for (let i = 0; i < data.length; i += 4) {
+          if (near(data, i, red)) shownRed = Math.max(shownRed, data[i + 3])
+          else if (near(data, i, blue)) shownBlue = Math.max(shownBlue, data[i + 3])
+        }
+        const unsaved = document.querySelector(".wb-native-view [aria-live]")?.textContent?.includes("Unsaved changes")
+        frames.push([shownRed, shownBlue, unsaved ? 1 : 0])
+      }
+      if (frames.length < 1_500) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [rgb(RED), rgb(BLUE)])
+}
+const boxFrames = (page: Page) => page.evaluate(() => (window as unknown as { boxFrames: number[][] }).boxFrames)
+/** How the boxes are drawn now: red's alpha, and blue's to the nearest 8. */
+const boxesNow = async (page: Page) => {
+  const [red, blue] = (await boxFrames(page)).at(-1) ?? [0, 0]
+  return [red, Math.round(blue / 8) * 8]
+}
+
+async function agentAddsBoxes(page: Page) {
+  const { fake, id } = await openProject(page, { "sketch.excalidraw": framed() }, "sketch.excalidraw")
+  await expect(canvas(page)).toBeVisible()
+  await expect(status(page)).toContainText("1 elements")
+  const saves = saveCalls(fake)
+  await watchBoxes(page)
+  // The agent's save reaches the open drawing through Realtime.
+  await fake.agentChanges.save(person.id, id, "sketch.excalidraw", ADDED)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(status(page)).toContainText("3 elements")
+  // Both end up drawn, each at its own opacity.
+  await expect.poll(() => boxesNow(page)).toEqual([255, 128])
+  return { fake, saves }
+}
+
+test("elements an agent adds to the open drawing draw in, and the drawing stays saved with nothing to undo", async ({ page }) => {
+  const { fake, saves } = await agentAddsBoxes(page)
+  // On the way, the red box showed part way in.
+  expect((await boxFrames(page)).some(([red]) => red > 0 && red < 250)).toBe(true)
+  // The fade changed nothing of the file's: it never had unsaved changes, and has nothing to undo.
+  expect((await boxFrames(page)).filter(([, , unsaved]) => unsaved)).toEqual([])
+  await expect(status(page)).toContainText("Saved")
+  await expect(page.getByRole("tab", { name: "sketch.excalidraw, unsaved changes" })).toHaveCount(0)
+  expect(saveCalls(fake)).toBe(saves)
+  await page.getByRole("button", { name: "More tools" }).click()
+  await expect(page.getByRole("menuitem", { name: "Undo" })).toBeDisabled()
+})
+
+test("with reduced motion, elements an agent adds to the open drawing appear at once", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await agentAddsBoxes(page)
+  // No frame showed either box part way in.
+  expect((await boxFrames(page)).filter(([red, blue]) => (red > 0 && red < 250) || (blue > 0 && blue < 120))).toEqual([])
+})
+
 test("on a desktop the canvas fills the window behind the panels, and the side panel keeps its own clicks", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   const { fake, id } = await openProject(page, { "sketch.excalidraw": SCENE }, "sketch.excalidraw")

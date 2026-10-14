@@ -2,6 +2,7 @@ import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 
 import { registerCommentTools } from './comments.ts'
 import { registerComponentPreview } from './componentPreview.ts'
+import { registerDrawTool } from './draw.ts'
 import { registerFileView } from './fileView.ts'
 import { registerPanel } from './panel.ts'
 import { registerProjectTools } from './projects.ts'
@@ -27,6 +28,7 @@ export function registerTools(server: McpServer, context: ToolContext, { embedVi
   registerProjectTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
+  registerDrawTool(server, context)
   registerComponentPreview(server, context)
   registerCommentTools(server, context)
   if (embedView) registerPanel(server, context)

@@ -64,6 +64,9 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   const create = tools.find((tool) => tool.name === 'create_and_show')
   assertEquals(create?.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
   assertEquals(create?._meta, { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } })
+  // draw only adds elements to a drawing (or creates it): none already there is removed or changed.
+  const draw = tools.find((tool) => tool.name === 'draw')
+  assertEquals(draw?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
   const pass = tools.find((tool) => tool.name === 'panel_pass')
   assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })

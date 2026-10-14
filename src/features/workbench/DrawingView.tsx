@@ -128,6 +128,9 @@ export function DrawingView({
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<{ revision: string; content: string | null } | null>(null);
   const [changedElsewhere, setChangedElsewhere] = useState<{ revision: string; content: string } | null>(null);
+  // The newer saved version this drawing last took while open (an agent's
+  // save, say): the canvas draws in the elements new in it.
+  const [arrived, setArrived] = useState<DrawingScene | null>(null);
   const frozen = useRef(false);
   const locked = blocked || Boolean(readOnly);
   useLayoutEffect(() => {
@@ -225,7 +228,7 @@ export function DrawingView({
     setScene(parsed.scene);
   }, [path]);
 
-  const adopt = useCallback((content: string, revision: string) => {
+  const adopt = useCallback((content: string, revision: string): DrawingScene | null => {
     const { parsed, error } = tryParse(content, path);
     setOriginal(parsed);
     if (parsed) setScene(parsed.scene);
@@ -236,6 +239,7 @@ export function DrawingView({
     setBaseRevision(revision);
     setConflict(null);
     setChangedElsewhere(null);
+    return parsed?.scene ?? null;
   }, [path]);
 
   const selectView = useCallback((next: CanvasView) => {
@@ -347,7 +351,7 @@ export function DrawingView({
       .then((read) => {
         if (read.revision === null || read.savedContent === null || read.revision === baseRevision) return;
         if (dirty) setChangedElsewhere({ revision: read.revision, content: read.savedContent });
-        else adopt(read.savedContent, read.revision);
+        else setArrived(adopt(read.savedContent, read.revision));
       })
       .catch(() => {
         // The next list refresh tries again.
@@ -529,6 +533,7 @@ export function DrawingView({
             }}
             theme={theme}
             present={present}
+            drawIn={arrived}
             onScrollChange={onStageScroll}
             compact={!desktop}
             active={active && view !== "source"}

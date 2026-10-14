@@ -836,6 +836,27 @@ The production server's tools are unchanged.
   skeleton; with reduced motion nothing animates. `write_file` and
   `save_files` keep no view, so ordinary saves stay plain, and the app and
   the panel update when the save lands, as for any save.
+- **Decision: a drawing grows in small saves the person can watch (`draw`).**
+  Nothing can show while a model writes one tool call, and ChatGPT sends no
+  partial input, so a drawing written in one `write_file` appears all at
+  once. `draw` (`tools/draw.ts`) adds 1 to 50 elements to a `.excalidraw`
+  drawing, creating it if there is none, and saves through `save_files` with
+  the version it read, as `write_file` does; the server's instructions and
+  the drawings skill tell agents to call it several times with a few
+  elements each. It only adds, so it is not destructive: every id must be
+  new, and an existing element changes only to list a new label or arrow in
+  its `boundElements`. Fields left out get Excalidraw 0.18.1's defaults, and
+  indices continue after the scene's last with `fractional-indexing`,
+  Excalidraw's own library, so the app and `drawingSvg.ts` draw the result.
+  A save that conflicts is read again and applied once more; with
+  `base_version`, a drawing changed since is a conflict. An Obsidian
+  `.excalidraw.md` is refused (`write_file` changes it). In the app, and so
+  in the panel, a drawing open on its canvas draws in the elements new in a
+  version saved elsewhere (`DrawingCanvas`'s `drawIn`,
+  `src/features/drawings/drawIn.ts`): each fades to its own opacity over
+  300 ms, 60 ms after the one before (the last starts within 1.2 s), in
+  frames outside undo that never mark the file changed; with reduced motion
+  they appear at once.
 - **The card is built from the component library.** `src/chat-card` is a
   small React app on the library's components and the Supabase Green
   palette, light or dark as the host says; its states are on `/style-guide`.

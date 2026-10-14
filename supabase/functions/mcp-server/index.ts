@@ -52,7 +52,12 @@ const SERVER_INSTRUCTIONS =
   // app; the in-app assistant's instructions use the same text.
   FILE_FORMAT_INSTRUCTIONS +
   'To show a file to the user, use show_file; to show the user a component you are writing, use preview_component. ' +
-  'To make a new note, drawing or diagram the user should watch being made, use create_and_show. ' +
+  // A model's one big tool call shows nothing until it is done; small draw
+  // saves show in the app, and in its panel beside the chat, as they land.
+  'To make or extend a drawing the user can watch in elaborat.ing or in its panel beside the chat, call draw several times ' +
+  'with a few elements each (a shape, its label, then its arrows, in reading order), not one big write_file. ' +
+  "To change or remove a drawing's elements, use write_file once with base_version, then draw what is new. " +
+  'To make a new note, drawing or diagram the user should watch being made in the chat, use create_and_show. ' +
   'To change a file, use write_file. ' +
   'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
   'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'

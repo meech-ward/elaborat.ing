@@ -14,14 +14,21 @@ The user's instructions win over this skill when they differ.
   `.excalidraw.md` files: keep those in their own format.
 - For boxes and arrows that should lay themselves out, a D2 diagram is usually
   the better choice. Use a drawing for sketches and hand-placed layouts.
-- To change a drawing, read it, change only the elements you need, and keep
-  every other element and field as it is, ids included. Save with
-  `write_file` and the `base_version` you read.
-- Embed it in a note with `<Drawing src="drawings/idea.excalidraw" />`, and
-  show it with `show_file`.
-- To make a new drawing the user should watch being drawn, use
+- To make or extend a drawing the user can watch in elaborat.ing, or in its
+  panel beside the chat, call `draw` several times with a few elements each,
+  in reading order: a shape, its label, then its arrows. Not one big
+  `write_file`: each `draw` saves, and the app draws each save in. Every
+  element needs a new id; `draw` fills in the fields you leave out and lists
+  each label and arrow in its shape's `boundElements`.
+- To change or remove elements, read the drawing, change only what you need,
+  and keep every other element and field as it is, ids included. Save once
+  with `write_file` and the `base_version` you read, then add anything new
+  with `draw`.
+- To make a new drawing the user should watch being drawn in the chat, use
   `create_and_show`. Put `elements` before `appState`, and write each shape,
-  then its label, then its arrows. Create it before the note that embeds it.
+  then its label, then its arrows.
+- Embed it in a note with `<Drawing src="drawings/idea.excalidraw" />`, and
+  show it with `show_file`. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.
 
 ## The scene
@@ -43,7 +50,8 @@ The user's instructions win over this skill when they differ.
 ```
 
 - Every element needs a unique `id`, a `type`, `x`, `y`, `width` and
-  `height`. The app fills in the fields you leave out.
+  `height`. The app fills in the fields you leave out. `draw` takes the
+  elements alone, such as the ones above, a few at a time.
 - Types: rectangle, ellipse, diamond, text, arrow, line and freedraw.
 - Style: `strokeColor`, `backgroundColor` (`"transparent"` or a colour),
   `fillStyle` (`"solid"` or `"hachure"`), `strokeWidth` (1, 2 or 4),

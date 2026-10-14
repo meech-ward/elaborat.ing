@@ -27,6 +27,10 @@
 // - External scene identities never echo back as authored edits: the push
 //   resets the baseline, so the library's own echo re-baselines quietly,
 //   and feeding an emitted scene back in is a referential no-op.
+// - A scene that arrived from elsewhere (`drawIn`, such as an agent's save)
+//   draws its new elements in (drawIn.ts): frames that change only their
+//   opacity, outside undo, while the library events report each one's own
+//   opacity, so the fade never reaches raw or marks anything changed.
 //
 // Browser-only and lazily loaded: the native package (pinned in
 // package.json) resolves at render time. Unit tests never render this.
@@ -47,6 +51,7 @@ import type { LibrarySnapshot } from './merge.ts';
 import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
+import { arrivingElements, drawInOpacities, withOpacities } from './drawIn.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
 import {
   CanvasPins,
@@ -204,6 +209,28 @@ function pushScene(api: NativeAPI, target: DrawingScene, onError?: (message: str
   }
 }
 
+/**
+ * Fades the arriving elements in on the canvas, frame by frame and outside
+ * undo, ending at each one's own opacity; no other element is touched.
+ * `onDone` runs after the last frame. Returns what stops it.
+ */
+function drawElementsIn(api: NativeAPI, arriving: ReadonlyMap<string, number>, onDone: () => void): () => void {
+  let frame = 0;
+  let start: number | null = null;
+  const step = (now: number) => {
+    start ??= now;
+    const shown = drawInOpacities(arriving, now - start);
+    if (shown) frame = requestAnimationFrame(step);
+    (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+      elements: withOpacities(api.getSceneElementsIncludingDeleted(), shown ?? arriving),
+      captureUpdate: 'NEVER',
+    });
+    if (!shown) onDone();
+  };
+  frame = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(frame);
+}
+
 /** The scene as the canvas shows it; raw when nothing is presented over it. */
 function presented(present: DrawingCanvasProps['present'], scene: DrawingScene): DrawingScene {
   return present ? present(scene) : scene;
@@ -244,7 +271,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, onScrollChange, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, drawIn = null, onScrollChange, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   // The canvas controls' layer, which covers the part of the canvas a person can see.
@@ -260,6 +287,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const pushedRef = useRef<DrawingScene>(scene);
   // External scene that arrived before the vendor API was ready.
   const pendingRef = useRef<DrawingScene | null>(null);
+  // The canvas has shown its first scene.
+  const loadedRef = useRef(false);
   // What the canvas shows over raw (palette colours); never saved.
   const presentRef = useRef(present);
   const onChangeRef = useRef(onChange);
@@ -401,22 +430,44 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     };
   });
 
+  // The draw-in on the canvas (drawIn.ts): the elements arriving, with the
+  // opacity each ends at, and what stops it.
+  const drawingInRef = useRef<{ arriving: ReadonlyMap<string, number>; stop: () => void } | null>(null);
+  useEffect(() => () => drawingInRef.current?.stop(), []);
+
   // External scene identities (agent edits, reloads) replace the raw
   // authority and reset the library baseline, so the vendor echo of the
   // push re-baselines quietly instead of emitting. A parent's own authored
   // echo must retain the baseline: the next native event can be the text
   // commit, with no intervening selection/paint event to re-establish it.
-  // A new presentation redraws the raw scene the same way, quietly.
+  // A new presentation redraws the raw scene the same way, quietly. A scene
+  // that arrived from elsewhere (`drawIn`) draws its new elements in, unless
+  // the person prefers reduced motion.
   useEffect(() => {
     const restyled = present !== presentRef.current;
     presentRef.current = present;
     if (scene !== pushedRef.current) {
+      const before = rawRef.current;
       pushedRef.current = scene;
       rawRef.current = scene;
       baselineRef.current = null;
+      drawingInRef.current?.stop();
+      drawingInRef.current = null;
       const api = apiRef.current;
       if (api) {
-        pushScene(api, presented(present, scene), onErrorRef.current ?? undefined);
+        const shown = presented(present, scene);
+        const motion = loadedRef.current && scene === drawIn && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const arriving = motion ? arrivingElements(before, scene) : null;
+        if (arriving && arriving.size > 0) {
+          // They arrive unseen, then fade in.
+          pushScene(api, { ...shown, elements: withOpacities(shown.elements, new Map([...arriving.keys()].map((id) => [id, 0]))) }, onErrorRef.current ?? undefined);
+          const stop = drawElementsIn(api, arriving, () => {
+            if (drawingInRef.current?.arriving === arriving) drawingInRef.current = null;
+          });
+          drawingInRef.current = { arriving, stop };
+        } else {
+          pushScene(api, shown, onErrorRef.current ?? undefined);
+        }
       } else {
         pendingRef.current = scene;
       }
@@ -429,7 +480,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         pendingRef.current = rawRef.current;
       }
     }
-  }, [scene, present]);
+  }, [scene, present, drawIn]);
 
   // The scene opens fitted into the visible area, clear of the islands, when
   // it first loads and whenever the canvas is shown again (another tab or the
@@ -437,7 +488,6 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   // the area again when the area moves or changes size (focus mode, Split,
   // the side panel, the window) until someone pans or zooms it; after that
   // the scene point in the middle of the area stays there.
-  const loadedRef = useRef(false);
   const openWantedRef = useRef(true);
   // The area the view was last placed for; null while it cannot be measured.
   const placedRef = useRef<CanvasArea | null>(null);
@@ -503,9 +553,11 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     ui.set(canvasUiFrom(appState, ui.get()));
     layoutPins(elements, appState);
     let current: LibrarySnapshot;
+    // Elements drawing in report their own opacity, not the one the canvas shows now.
+    const arriving = drawingInRef.current?.arriving;
     try {
       // Workbench appearance is presentation-only, never an authored theme edit.
-      current = snapshotLibraryState(elements, files, theme ? {...appState,theme:rawRef.current.appState?.theme} : appState);
+      current = snapshotLibraryState(arriving ? withOpacities(elements, arriving) : elements, files, theme ? {...appState,theme:rawRef.current.appState?.theme} : appState);
     } catch (error) {
       onErrorRef.current?.(error instanceof Error ? error.message : String(error));
       return;

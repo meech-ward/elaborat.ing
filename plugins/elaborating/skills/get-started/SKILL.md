@@ -19,7 +19,8 @@ The user's instructions win over this skill when they differ.
      `show_file` the note. A new diagram is drawn the first time it opens in
      the app, so give the user the note's link too.
 3. In three short lines, say what they can ask for:
-   - Write or edit notes in MDX, with drawings, D2 diagrams and charts.
+   - Write or edit notes in MDX, with D2 diagrams, charts, and drawings they
+     can watch being drawn in elaborat.ing.
    - Search everything in their projects.
    - Work through the comments people leave on their files, with a reply on
      each thread.
