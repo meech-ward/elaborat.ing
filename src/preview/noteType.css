@@ -155,11 +155,16 @@
   max-width: 100%;
   height: auto;
 }
-/* A code block's own margins are for prose around it. In the reading column
-   the column's gap spaces it like any other block: the column is a grid, and
-   its items' margins add up instead of collapsing. */
-.reading-document > .document-code,
-.reading-document > * > .document-code {
+/* A component's own margins (a code block's, Columns', an Alert's, a
+   Separator's) are for prose around it. In the reading column the column's
+   gap spaces it like any other block: the column is a grid, and its items'
+   margins add up instead of collapsing. */
+.reading-document > .not-prose,
+.reading-document > * > .not-prose {
+  margin-block: 0;
+}
+/* Cards side by side in Columns are spaced by its gap alone. */
+.reading-document [data-component="Columns"] [data-component="Card"] {
   margin-block: 0;
 }
 .reading-table {

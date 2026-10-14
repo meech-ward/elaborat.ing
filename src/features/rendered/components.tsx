@@ -14,17 +14,18 @@ export function Counter(props: { initial?: number; step?: number }): ReactNode {
   const initial = typeof props.initial === 'number' ? props.initial : 0;
   const step = typeof props.step === 'number' ? props.step : 1;
   const [count, setCount] = useState(initial);
+  // The library's small outline buttons. Not <Button>: each Button marks
+  // itself as a component of its own (data-component), and these are parts.
+  const stepButton = buttonClass('outline', 'sm', 'w-8 px-0');
   return (
-    <span
-      className="not-prose"
-      data-component="Counter"
-      style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}
-    >
-      <button type="button" onClick={() => setCount((value) => value - step)} aria-label="Decrement">
+    <span className="not-prose inline-flex items-center gap-2 align-middle" data-component="Counter">
+      <button type="button" className={stepButton} onClick={() => setCount((value) => value - step)} aria-label="Decrement">
         -
       </button>
-      <output aria-live="polite">{count}</output>
-      <button type="button" onClick={() => setCount((value) => value + step)} aria-label="Increment">
+      <output aria-live="polite" className="min-w-6 text-center tabular-nums">
+        {count}
+      </output>
+      <button type="button" className={stepButton} onClick={() => setCount((value) => value + step)} aria-label="Increment">
         +
       </button>
     </span>
@@ -121,18 +122,16 @@ export function Button({
   variant?: ButtonVariant;
   size?: ButtonSize;
 }): ReactNode {
-  return (
-    <button
-      {...props}
-      className={cn(
-        'not-prose inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50',
-        buttonVariants[buttonVariant(variant)],
-        buttonSizes[buttonSize(size)],
-        className,
-      )}
-      data-component="Button"
-      type={type}
-    />
+  return <button {...props} className={buttonClass(variant, size, className)} data-component="Button" type={type} />;
+}
+
+/** A button's classes, for Button and for the buttons inside other components. */
+function buttonClass(variant: ButtonVariant | undefined, size: ButtonSize | undefined, className?: string): string {
+  return cn(
+    'not-prose inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50',
+    buttonVariants[buttonVariant(variant)],
+    buttonSizes[buttonSize(size)],
+    className,
   );
 }
 
