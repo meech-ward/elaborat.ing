@@ -23,6 +23,11 @@ The user's instructions win over this skill when they differ.
   `create_and_show` instead of `write_file`. Create any drawing or diagram it
   embeds first: build a drawing with `draw`, a few elements a call, so the
   user can watch it in elaborat.ing (see the drawings skill).
+- When the user should watch a change to a note happen in the chat, use
+  `update_and_show` with the `base_version` from `read_file`: the card shows
+  the note as saved and writes the change in. Use `write_file` for quiet
+  changes and for files the user isn't watching, such as component files,
+  code, or many files at once.
 
 ## Built-in components
 

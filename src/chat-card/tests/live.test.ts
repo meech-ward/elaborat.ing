@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { partialRelay } from "../bridge"
 import { cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
-import { drawingScanner, noteTail, type SceneElement } from "../live/partial"
+import { commonPrefixLength, drawingScanner, elementChange, noteBeingChanged, noteTail, sameElement, type SceneElement } from "../live/partial"
 import type { CardFile } from "../toolResult"
 
 // The live card: reading a file while the agent writes it, the host's
@@ -106,6 +106,74 @@ describe("a note as it is written", () => {
     for (const text of ["# Plan", "a < b, and 2<3", '<Drawing src="a.excalidraw" />', "Some <b\n\nmore after a blank line", "Not --- frontmatter\n---"]) {
       expect(noteTail(text)).toBe(text)
     }
+  })
+})
+
+describe("a change to a saved drawing, element by element", () => {
+  const box = { ...base, id: "box", type: "rectangle", x: 0, y: 0, width: 120, height: 60, version: 3, versionNonce: 11, updated: 1, index: "a0" }
+
+  test("an element the same apart from Excalidraw's bookkeeping, in any key order, is kept", () => {
+    const rewritten = Object.fromEntries(Object.entries({ ...box, version: 9, versionNonce: 42, updated: 7, index: "a5", boundElements: [{ id: "arrow", type: "arrow" }] }).reverse())
+    expect(sameElement(box, rewritten)).toBe(true)
+    // An agent that leaves the bookkeeping out keeps it too.
+    const bare: SceneElement = { ...box }
+    for (const key of ["version", "versionNonce", "updated", "index"]) delete bare[key]
+    expect(sameElement(box, bare)).toBe(true)
+  })
+
+  test("anything that draws differently is a change: a place, a size, a colour, a seed, text, points or a new field", () => {
+    for (const change of [{ x: 1 }, { width: 121 }, { strokeColor: "#e03131" }, { seed: 8 }, { roundness: { type: 3 } }, { groupIds: ["g"] }, { link: null }]) {
+      expect(sameElement(box, { ...box, ...change })).toBe(false)
+    }
+    const arrow = { ...base, id: "a", type: "arrow", x: 0, y: 0, points: [[0, 0], [80, 0]] }
+    expect(sameElement(arrow, { ...arrow, points: [[0, 0], [80, 10]] })).toBe(false)
+    expect(sameElement(arrow, { ...arrow, points: [[0, 0], [80, 0], [90, 0]] })).toBe(false)
+    const label = { ...base, id: "t", type: "text", text: "Ship it" }
+    expect(sameElement(label, { ...label, text: "Ship it today" })).toBe(false)
+    // A field left out is a change too.
+    const uncoloured: SceneElement = { ...box }
+    delete uncoloured.strokeColor
+    expect(sameElement(box, uncoloured)).toBe(false)
+  })
+
+  test("each element of the new drawing is kept, changed or new, by its id", () => {
+    const saved = new Map<unknown, SceneElement>([["box", box], ["label", { ...base, id: "label", type: "text", text: "Write" }]])
+    expect(elementChange(saved, { ...box, version: 4 })).toBe("kept")
+    expect(elementChange(saved, { ...base, id: "label", type: "text", text: "Write it" })).toBe("changed")
+    expect(elementChange(saved, { ...box, id: "box-2" })).toBe("added")
+    expect(elementChange(saved, { ...box, id: undefined })).toBe("added")
+    expect(elementChange(new Map(), box)).toBe("added")
+  })
+})
+
+describe("a change to a saved note", () => {
+  const SAVED = "# Launch plan\n\nShip it soon.\n\n## Next\n\nTell the team.\n"
+
+  test("the common start of two texts", () => {
+    expect(commonPrefixLength(SAVED, SAVED)).toBe(SAVED.length)
+    expect(commonPrefixLength(SAVED, "# Launch")).toBe(8)
+    expect(commonPrefixLength(SAVED, "# Launch plan\n\nShip it today")).toBe("# Launch plan\n\nShip it ".length)
+    expect(commonPrefixLength(SAVED, "")).toBe(0)
+    expect(commonPrefixLength("", SAVED)).toBe(0)
+    expect(commonPrefixLength("é", "e")).toBe(0)
+  })
+
+  test("the saved note shows at once while the new text is still its start; from where it differs, the new text is written in", () => {
+    for (const written of ["", "# Launch", SAVED.slice(0, 30), SAVED]) {
+      expect(noteBeingChanged(SAVED, written)).toEqual({ text: SAVED, writing: false })
+    }
+    const today = "# Launch plan\n\nShip it today"
+    expect(noteBeingChanged(SAVED, today)).toEqual({ text: today, writing: true })
+    // A new paragraph at the end comes in after the whole saved note.
+    const added = `${SAVED}\nAnd a new paragraph`
+    expect(noteBeingChanged(SAVED, added)).toEqual({ text: added, writing: true })
+  })
+
+  test("once the whole input is in, the new text shows, also where it only cuts the saved note short", () => {
+    const shorter = "# Launch plan\n\nShip it soon.\n"
+    expect(noteBeingChanged(SAVED, shorter)).toEqual({ text: SAVED, writing: false })
+    expect(noteBeingChanged(SAVED, shorter, true)).toEqual({ text: shorter, writing: true })
+    expect(noteBeingChanged(SAVED, SAVED, true)).toEqual({ text: SAVED, writing: true })
   })
 })
 

@@ -1,31 +1,44 @@
 /**
- * The chat card's live view: a new note, drawing or diagram shown while the
- * agent is still writing it (create_and_show's partial input), until the
- * saved card takes its place. It draws with the server's own renderers, the
- * same ones that make the saved card (drawElement, renderNote), so nothing
- * changes when the card settles. Built into the card's `live` module
- * (../lazy/live.ts), which loads only when a card goes live.
+ * The chat card's live view: a note, drawing or diagram shown while the
+ * agent is still writing it (create_and_show's and update_and_show's partial
+ * input), until the saved card takes its place. It draws with the server's
+ * own renderers, the same ones that make the saved card (drawElement,
+ * renderNote), so nothing changes when the card settles. Built into the
+ * card's `live` module (../lazy/live.ts), which loads only when a card goes
+ * live.
  *
  * A drawing's elements draw in one after another as a person would sketch
- * them: each line drawn along its length, hachure fills scribbled in, solid
- * fills faded in after their outline, text written left to right, and the
- * view easing out to hold what is drawn so far. A note renders as Markdown,
- * its new blocks fading in and the last one written into with a caret. A
- * diagram's D2 source writes in as text. With reduced motion, everything
- * just appears.
+ * them, each with a quiet pencil sound (pencil.ts): each line drawn along
+ * its length, hachure fills scribbled in, solid fills faded in after their
+ * outline, text written left to right, and the view easing out to hold what
+ * is drawn so far. A note renders as Markdown, its new blocks fading in and
+ * the last one written into with a caret. A diagram's D2 source writes in
+ * as text. With reduced motion, everything just appears, in silence.
+ *
+ * A change to a saved file (update_and_show) starts from the file as saved
+ * (`base`): a drawing's elements show at once, those the new content keeps
+ * stay, changed and new ones draw in as they come, and those it leaves out
+ * fade once the whole input is in; a note shows as saved while the new text
+ * is the same as its start, and from where it differs the new text writes in.
  */
-import { drawElement, MAX_ELEMENTS, MAX_SVG_CHARS, type Box } from "../../../supabase/functions/mcp-server/tools/drawingSvg.ts"
+import { drawElement, MAX_ELEMENTS, MAX_SVG_CHARS, parseDrawing, type Box } from "../../../supabase/functions/mcp-server/tools/drawingSvg.ts"
 import { renderNote } from "../../../supabase/functions/mcp-server/tools/markdown.ts"
-import { drawingScanner, noteTail, type SceneElement } from "./partial"
+import { drawingScanner, elementChange, noteBeingChanged, noteTail, type SceneElement } from "./partial"
+import { pencil } from "./pencil"
 import { readingMarkup } from "../readingMarkup"
 
 export type LiveKind = "note" | "drawing" | "diagram"
-export type LiveOptions = { kind: LiveKind; path: string; reducedMotion: boolean }
+/** `sound`: the pencil sound starts on (the person's setting); it is never on with reduced motion. */
+export type LiveOptions = { kind: LiveKind; path: string; reducedMotion: boolean; sound?: boolean }
 export type LiveHandle = {
   /** The file so far; `final`: all of it (the tool's input), which then draws in within a short time. */
   update(content: string, final?: boolean): void
+  /** The file as saved before this change (update_and_show), once read: what stays shows at once. */
+  base(content: string): void
   /** Draws what is left quickly; resolves when it is drawn. */
   finish(): Promise<void>
+  /** Turns the pencil sound on or off. */
+  setSound(on: boolean): void
   destroy(): void
 }
 
@@ -34,6 +47,11 @@ const PREVIEW_LIMIT = 40_000
 /** How long the rest of a drawing takes once its whole input is in, and once the file is saved. */
 const FINAL_MS = 1200
 const SETTLE_MS = 400
+/** How long a saved element the new drawing leaves out takes to fade, and one it changes once its new one starts. */
+const LEAVE_MS = 320
+const REPLACE_MS = 200
+/** Pencil strokes start at most this often, so a quick finish is not a burst of sound. */
+const STROKE_GAP_MS = 70
 /** A note renders at most this often. */
 const NOTE_MS = 100
 /** The smallest part of the scene the view shows, so the first shapes are not blown up. */
@@ -74,7 +92,7 @@ function moreNote(el: HTMLElement, text: string) {
 
 export function mountLive(el: HTMLElement, options: LiveOptions): LiveHandle {
   addStyle()
-  if (options.kind === "drawing") return mountDrawing(el, options.reducedMotion)
+  if (options.kind === "drawing") return mountDrawing(el, options.reducedMotion, options.sound ?? true)
   return mountText(el, options)
 }
 
@@ -84,7 +102,8 @@ export function mountLive(el: HTMLElement, options: LiveOptions): LiveHandle {
  * or faded in.
  */
 type Step = { how: "stroke" | "text" | "fade"; ms: number; pieces: Array<{ el: SVGGraphicsElement; length: number }> }
-type Item = { g: SVGGElement; box: Box; steps: Step[]; ms: number }
+/** An element waiting to draw in: its parts, what kind it is (for its sound), and the saved one it changes, if any. */
+type Item = { g: SVGGElement; box: Box; steps: Step[]; ms: number; type: string; replaces: SVGGElement | null }
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
 
@@ -139,12 +158,24 @@ function stepsOf(g: SVGGElement): Step[] {
 /** How long an element takes at normal speed: its steps one after another, lines overlapping a little. */
 const itemMs = (steps: Step[]) => steps.reduce((total, step) => total + step.ms * (step.how === "stroke" ? 0.85 : 1), 0)
 
-function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
+function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): LiveHandle {
   const svg = document.createElementNS(SVG_NS, "svg")
   svg.setAttribute("class", "live-svg")
   svg.setAttribute("aria-hidden", "true")
   el.append(svg)
   const more = moreNote(el, "Still drawing")
+  const pen = reducedMotion ? null : pencil(sound)
+  let lastStroke = -Infinity
+
+  // A change to a saved drawing: the saved file, its elements by id, the
+  // <g> of each one still shown as saved, the ids the new content has had,
+  // and whether the ones it left out have gone. `whole`: all the input is in.
+  let whole = false
+  let savedFile: string | null = null
+  let saved = new Map<unknown, SceneElement>()
+  const shownSaved = new Map<unknown, SVGGElement>()
+  const seen = new Set<unknown>()
+  let retired = false
 
   const scanner = drawingScanner()
   const types = new Map<unknown, unknown>()
@@ -177,24 +208,95 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
     svg.setAttribute("viewBox", next.map((value) => Math.round(value * 10) / 10).join(" "))
   }
 
+  /** Fades a saved element out and takes it away; with reduced motion, at once. */
+  const leave = (g: SVGGElement, ms: number) => {
+    if (reducedMotion) return g.remove()
+    const animation = g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, fill: "forwards" })
+    running.add(animation)
+    animation.onfinish = animation.oncancel = () => {
+      running.delete(animation)
+      g.remove()
+    }
+    kick()
+  }
+
+  /** Whether one more drawn part fits; when it does not, the view says it is still drawing and takes no more. */
+  const fits = (part: string) => {
+    drawnCount++
+    size += part.length
+    if (drawnCount <= MAX_ELEMENTS && size <= MAX_SVG_CHARS) return true
+    full = true
+    more.hidden = false
+    return false
+  }
+
   const add = (element: SceneElement) => {
     if (full) return
+    seen.add(element.id)
     types.set(element.id, element.type)
+    // Against the saved drawing, if this is a change: an element it keeps shows already.
+    const change = elementChange(saved, element)
+    if (change === "kept") return
+    const old = change === "changed" ? (shownSaved.get(element.id) ?? null) : null
+    shownSaved.delete(element.id)
     const drawn = drawElement(element, types)
-    if (!drawn) return
-    drawnCount++
-    size += drawn.part.length
-    if (drawnCount > MAX_ELEMENTS || size > MAX_SVG_CHARS) {
-      full = true
-      more.hidden = false
+    if (!drawn || !fits(drawn.part)) {
+      if (old) leave(old, REPLACE_MS)
       return
     }
     svg.insertAdjacentHTML("beforeend", drawn.part)
     const g = svg.lastElementChild as SVGGElement
-    if (reducedMotion) return grow(drawn.box)
+    if (reducedMotion) {
+      old?.remove()
+      return grow(drawn.box)
+    }
     g.style.opacity = "0"
     const steps = stepsOf(g)
-    queue.push({ g, box: drawn.box, steps, ms: itemMs(steps) })
+    queue.push({ g, box: drawn.box, steps, ms: itemMs(steps), type: String(element.type), replaces: old })
+  }
+
+  /**
+   * The saved drawing at once, under what the new content has drawn so
+   * far: every element the new content has not had yet.
+   */
+  const showSaved = () => {
+    if (savedFile === null) return
+    let elements: SceneElement[]
+    try {
+      elements = parseDrawing(savedFile)
+    } catch {
+      return
+    }
+    saved = new Map(elements.filter((element) => typeof element.id === "string").map((element) => [element.id, element]))
+    for (const element of elements) if (!types.has(element.id)) types.set(element.id, element.type)
+    const parts: string[] = []
+    const ids: unknown[] = []
+    for (const element of elements) {
+      if (full) break
+      if (seen.has(element.id)) continue
+      const drawn = drawElement(element, types)
+      if (!drawn || !fits(drawn.part)) continue
+      parts.push(drawn.part)
+      ids.push(element.id)
+      grow(drawn.box)
+    }
+    svg.insertAdjacentHTML("afterbegin", parts.join(""))
+    const placed = [...svg.children].slice(0, ids.length) as SVGGElement[]
+    ids.forEach((id, index) => shownSaved.set(id, placed[index]))
+    if (reducedMotion || !view) {
+      if (target) showView(target)
+    } else kick()
+  }
+
+  /** The saved elements the new content left out fade, once all of it is in. */
+  const retire = () => {
+    if (retired || savedFile === null) return
+    retired = true
+    for (const [id, g] of shownSaved) {
+      if (seen.has(id)) continue
+      shownSaved.delete(id)
+      leave(g, LEAVE_MS)
+    }
   }
 
   const clear = () => {
@@ -208,6 +310,10 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
     more.hidden = true
     bounds.splice(0, 4, Infinity, Infinity, -Infinity, -Infinity)
     view = target = null
+    saved = new Map()
+    shownSaved.clear()
+    seen.clear()
+    retired = false
   }
 
   /** How fast the next element draws: faster as a backlog grows, and fast enough to end by the deadline. */
@@ -222,6 +328,8 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
 
   const play = (item: Item, speed: number): number => {
     item.g.style.opacity = ""
+    // The saved element this one changes goes as the new one starts.
+    if (item.replaces) leave(item.replaces, REPLACE_MS)
     let at = 0
     const track = (animation: Animation, done?: () => void) => {
       running.add(animation)
@@ -260,6 +368,10 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
       const speed = speedAt(now)
       const item = queue.shift()!
       const ms = play(item, speed)
+      if (pen && now - lastStroke >= STROKE_GAP_MS) {
+        lastStroke = now
+        pen.stroke(item.type, ms)
+      }
       grow(item.box)
       // The next element starts when this one is most of the way drawn.
       nextAt = Math.max(nextAt, now - 32) + ms * 0.7
@@ -292,8 +404,15 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
   return {
     update(content, final = false) {
       const { added, restarted } = scanner.read(content)
-      if (restarted) clear()
+      if (restarted) {
+        clear()
+        showSaved()
+      }
       for (const element of added) add(element)
+      if (final) {
+        whole = true
+        retire()
+      }
       if (reducedMotion) {
         if (target) showView(target)
         return
@@ -301,7 +420,15 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
       if (final) deadline = Math.min(deadline ?? Infinity, performance.now() + FINAL_MS)
       if (added.length > 0 || restarted) kick()
     },
+    base(content) {
+      // Read after all the input came: nothing is left to show at once.
+      if (savedFile !== null || whole) return
+      savedFile = content
+      showSaved()
+    },
     finish() {
+      whole = true
+      retire()
       if (reducedMotion || (queue.length === 0 && running.size === 0)) {
         if (target) showView(target)
         return Promise.resolve()
@@ -320,10 +447,14 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean): LiveHandle {
         setTimeout(resolve, SETTLE_MS + 200)
       })
     },
+    setSound(on) {
+      pen?.set(on)
+    },
     destroy() {
       cancelAnimationFrame(frame)
       for (const animation of running) animation.cancel()
       settled?.()
+      pen?.close()
       svg.remove()
       more.remove()
     },
@@ -345,7 +476,9 @@ function lastNode(node: Element): ChildNode | null {
  * source in a block of code type of its own. A note renders
  * with the server's renderNote, at most ten times a second: blocks that did
  * not change stay, new ones fade in, and the last one is written into with a
- * caret.
+ * caret. A change to a saved note shows the saved note at once while the new
+ * text is still its start (noteBeingChanged), with no caret, and is written
+ * into from where they differ.
  */
 function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveHandle {
   const viewport = el.querySelector<HTMLElement>("[data-live-viewport]") ?? el
@@ -358,7 +491,10 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
   caret.setAttribute("aria-hidden", "true")
   const shown: string[] = []
   let latest = ""
-  let rendered = ""
+  // The note as saved, for a change to it; and whether the whole input is in.
+  let saved: string | null = null
+  let whole = false
+  let rendered: string | null = null
   let timer = 0
   let lastRender = 0
 
@@ -367,9 +503,11 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
   const render = () => {
     timer = 0
     lastRender = performance.now()
-    if (latest === rendered) return
-    rendered = latest
-    let text = latest
+    const now = kind === "note" && saved !== null ? noteBeingChanged(saved, latest, whole) : { text: latest, writing: true }
+    const key = `${now.writing ? "w" : "s"}${now.text}`
+    if (key === rendered) return
+    rendered = key
+    let text = now.text
     const cut = text.length > PREVIEW_LIMIT
     if (cut) {
       const end = text.lastIndexOf("\n", PREVIEW_LIMIT)
@@ -383,7 +521,8 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
     }
     let note: ReturnType<typeof renderNote>
     try {
-      note = renderNote(noteTail(text))
+      // The saved note is whole; only text being written may end in an open tag.
+      note = renderNote(now.writing ? noteTail(text) : text)
     } catch {
       return
     }
@@ -410,11 +549,13 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
       if (old) old.replaceWith(block)
       else {
         content.append(block)
-        if (!reducedMotion) block.classList.add("live-in")
+        // What is being written fades in; a saved note shows at once.
+        if (!reducedMotion && now.writing) block.classList.add("live-in")
       }
     })
     for (const old of current.slice(blocks.length)) old.remove()
     shown.length = blocks.length
+    if (!now.writing) return
     // The caret goes where the writing is: the end of the last block's last words.
     let spot = content.lastElementChild
     for (let next = spot && lastNode(spot); next instanceof Element && !VOID.has(next.tagName); next = lastNode(next)) spot = next
@@ -426,16 +567,25 @@ function mountText(el: HTMLElement, { kind, reducedMotion }: LiveOptions): LiveH
     update(text, final = false) {
       latest = text
       if (final) {
+        whole = true
         clearTimeout(timer)
         return render()
       }
       if (!timer) timer = window.setTimeout(render, Math.max(0, lastRender + NOTE_MS - performance.now()))
     },
+    base(text) {
+      if (kind !== "note" || saved !== null) return
+      saved = text
+      clearTimeout(timer)
+      render()
+    },
     finish() {
+      whole = true
       clearTimeout(timer)
       render()
       return Promise.resolve()
     },
+    setSound() {},
     destroy() {
       clearTimeout(timer)
       if (given) given.replaceChildren()

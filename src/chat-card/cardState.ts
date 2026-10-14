@@ -1,7 +1,7 @@
 /**
  * What the chat card shows, as one state and the events that change it. The
- * card loads (the tool is running), shows a new file live while the agent
- * writes it (create_and_show), shows a problem, or shows a file. A
+ * card loads (the tool is running), shows a file live while the agent
+ * writes it (create_and_show, update_and_show), shows a problem, or shows a file. A
  * shown note is read, edited, or held in conflict after a save found a newer
  * version; `busy` covers the editor starting, a save and a reload.
  */
@@ -17,7 +17,7 @@ export type LiveKind = "note" | "drawing" | "diagram"
 
 export type CardState =
   | { phase: "loading"; path: string | null }
-  /** A new file shown as it is written, until it is saved. */
+  /** A file shown as it is written, until it is saved. */
   | { phase: "live"; path: string; kind: LiveKind }
   | { phase: "problem"; message: string; tone: CardBannerTone }
   | {
@@ -34,7 +34,7 @@ export type CardState =
 export type CardEvent =
   /** The host's tool input or result, or its cancel. Ignored while the note is being edited. */
   | { type: "input"; path: string }
-  /** A new file's content has started to come in: from loading, the card goes live. */
+  /** A file's content has started to come in: from loading, the card goes live. */
   | { type: "live"; path: string; kind: LiveKind }
   | { type: "result"; file: CardFile }
   | { type: "problem"; message: string; tone: CardBannerTone }

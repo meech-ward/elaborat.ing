@@ -844,7 +844,205 @@ test("with reduced motion, a new drawing's shapes appear as they come, with noth
   await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 5))
   await expect.poll(() => liveShapes(page)).toBe(7)
   expect(await cardFrame(page).evaluate(() => document.getAnimations().length)).toBe(0)
+  // And in silence: there is no pencil sound to mute.
+  await expect(card.getByRole("button", { name: "Pencil sound" })).toHaveCount(0)
   await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
   await send(page, "ui/notifications/tool-result", FLOW_RESULT)
   await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+})
+
+// update_and_show: a change to a saved file shown as the agent writes it. When
+// the first partial input names the file, the card reads it as saved through
+// the host (read_file): what the change keeps shows at once, and what it
+// changes or adds comes in. Once the card settles it reports how the host
+// sent the input (card_report).
+
+/** The drawing as saved: two shapes the change keeps and one it leaves out. */
+const SAVED_SCENE = JSON.stringify(
+  {
+    type: "excalidraw",
+    version: 2,
+    elements: [
+      ...JSON.parse(FLOW_SCENE).elements.slice(0, 2),
+      { ...shape, id: "gone", type: "rectangle", x: 500, y: 200, width: 80, height: 40, seed: 9 },
+    ],
+    appState: { viewBackgroundColor: "#ffffff" },
+  },
+  null,
+  2,
+)
+/** The change: the two kept as they were (their bookkeeping moved on), and a new ellipse. */
+const CHANGED_SCENE = JSON.stringify(
+  {
+    type: "excalidraw",
+    version: 2,
+    elements: [...JSON.parse(FLOW_SCENE).elements.slice(0, 2).map((element: Record<string, unknown>) => ({ ...element, version: 5 })), JSON.parse(FLOW_SCENE).elements[2]],
+    appState: { viewBackgroundColor: "#ffffff" },
+  },
+  null,
+  2,
+)
+/** Where each element is placed in the live view, by id. */
+const PLACED = { a: "translate(0 0)", "a-label": "translate(30 22)", gone: "translate(500 200)", b: "translate(280 -10)" }
+
+const updateInput = (path: string, content: string) => ({ arguments: { project_id: PROJECT, path, base_version: 3, content } })
+const readAnswer = (path: string, content: string) => ({
+  content: [{ type: "text", text: JSON.stringify({ path, content, version: 3 }) }],
+  structuredContent: { path, content, version: 3, updated_at: null },
+})
+/** update_and_show's result: show_file's, for the saved change. */
+const updated = (path: string, kind: "note" | "drawing", meta: Record<string, unknown>) => {
+  const result = created(path, kind, meta)
+  return { ...result, content: [{ type: "text", text: `Saved ${path} as version 4 and showed it to the user.` }], structuredContent: { ...result.structuredContent, version: 4 } }
+}
+
+/** The live view's elements on screen, by where they are placed. */
+const placed = (page: Page) => cardFrame(page).evaluate(() => [...document.querySelectorAll(".live-svg > g")].map((g) => g.getAttribute("transform")))
+/** Notes, in the card, the place of every element that animates from now on. */
+const watchAnimations = (page: Page) =>
+  cardFrame(page).evaluate(() => {
+    const animated: string[] = []
+    ;(window as unknown as { animated: string[] }).animated = animated
+    const animate = Element.prototype.animate
+    Element.prototype.animate = function (this: Element, ...args: Parameters<Element["animate"]>) {
+      const g = this.closest(".live-svg > g")
+      if (g) animated.push(g.getAttribute("transform") ?? "")
+      return animate.apply(this, args)
+    }
+  })
+const animated = (page: Page) => cardFrame(page).evaluate(() => [...new Set((window as unknown as { animated: string[] }).animated)])
+
+test("a change to a drawing shows what it keeps at once, draws the new shape in, and the shape it drops fades", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await answer(page, "read_file", readAnswer(FLOW, SAVED_SCENE))
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await watchAnimations(page)
+
+  // The first partial input names the file; none of its elements is written yet.
+  const opening = CHANGED_SCENE.indexOf('"elements"') + 12
+  await send(page, "ui/notifications/tool-input-partial", updateInput(FLOW, CHANGED_SCENE.slice(0, opening)))
+  // The saved drawing shows at once, as it is.
+  await expect.poll(() => placed(page)).toEqual([PLACED.a, PLACED["a-label"], PLACED.gone])
+  await expect(card.getByRole("status").filter({ hasText: `Drawing ${FLOW}` })).toBeVisible()
+  expect((await calls(page)).filter((call) => call.name === "read_file")).toEqual([{ name: "read_file", arguments: { project_id: PROJECT, path: FLOW } }])
+
+  // The rest comes in: the kept shapes stay as they are, and the new one draws in.
+  const cuts = cutsOf(CHANGED_SCENE, 6).filter((cut) => cut > opening)
+  for (const cut of [...cuts, CHANGED_SCENE.length]) {
+    await send(page, "ui/notifications/tool-input-partial", updateInput(FLOW, CHANGED_SCENE.slice(0, cut)))
+    await page.waitForTimeout(80)
+  }
+  await expect.poll(() => placed(page)).toEqual([PLACED.a, PLACED["a-label"], PLACED.gone, PLACED.b])
+  expect(await animated(page)).toEqual([PLACED.b])
+
+  // Once the whole input is in, the shape the change leaves out fades away.
+  await send(page, "ui/notifications/tool-input", updateInput(FLOW, CHANGED_SCENE))
+  await expect.poll(() => placed(page)).toEqual([PLACED.a, PLACED["a-label"], PLACED.b])
+  expect(await animated(page)).toEqual([PLACED.b, PLACED.gone])
+
+  await send(page, "ui/notifications/tool-result", updated(FLOW, "drawing", { "elaborat.ing/svg": { [FLOW]: SVG } }))
+  await expect(card.getByRole("img", { name: `Drawing ${FLOW}` })).toBeVisible()
+  await expect(card.getByText("v4", { exact: true })).toBeVisible()
+  await expect(card.locator(".live-svg")).toHaveCount(0)
+
+  // It tells the server once how the host sent the input.
+  await expect.poll(async () => (await calls(page)).filter((call) => call.name === "card_report").length).toBe(1)
+  const [report] = (await calls(page)).filter((call) => call.name === "card_report")
+  expect(report.arguments).toEqual({ host: "stand-in", tool: "update_and_show", partials: cuts.length + 2, first_partial_ms: expect.any(Number), total_ms: expect.any(Number) })
+  expect(Number(report.arguments.total_ms)).toBeGreaterThan(Number(report.arguments.first_partial_ms))
+  await page.waitForTimeout(300)
+  expect((await calls(page)).filter((call) => call.name === "card_report")).toHaveLength(1)
+  expect(await violations(page)).toEqual([])
+})
+
+const SAVED_PLAN = ["# Launch plan", "", "Ship it *soon*, with care.", "", "- first item", "- second item", ""].join("\n")
+const CHANGED_PLAN = `${SAVED_PLAN}\n## Next\n\nTell the team.\n`
+
+test("a change to a note shows its unchanged opening at once and writes the new part in", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "dark", result: null, manual: true })
+  await answer(page, "read_file", readAnswer("notes/launch.mdx", SAVED_PLAN))
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await send(page, "ui/notifications/tool-input-partial", updateInput("notes/launch.mdx", "# Lau"))
+  // Only the start of the heading is written, and the note shows as saved, at once and with no caret.
+  const live = card.locator("[data-live-content]")
+  await expect(live.getByText("second item")).toBeVisible()
+  await expect(live.locator("h1")).toHaveText("Launch plan")
+  await expect(live.locator(".live-caret")).toHaveCount(0)
+  await expect(live.getByText("Tell the team.")).toHaveCount(0)
+
+  // The new part is written in after it as it comes, under a caret.
+  const heading = CHANGED_PLAN.indexOf("Tell")
+  for (const cut of [SAVED_PLAN.length + 4, heading]) {
+    await send(page, "ui/notifications/tool-input-partial", updateInput("notes/launch.mdx", CHANGED_PLAN.slice(0, cut)))
+    await page.waitForTimeout(120)
+  }
+  await expect(live.locator("h2")).toHaveText("Next")
+  await expect(live.locator(".live-caret")).toHaveCount(1)
+  await expect(live.getByText("Tell the team.")).toHaveCount(0)
+  await send(page, "ui/notifications/tool-input-partial", updateInput("notes/launch.mdx", CHANGED_PLAN))
+  await expect(live.getByText("Tell the team.")).toBeVisible()
+  // What was saved stayed as it was: none of it came in again.
+  await expect(live.getByText("second item")).toBeVisible()
+  await expect(live.locator(".live-in").filter({ hasText: /Launch plan|soon|first item/ })).toHaveCount(0)
+
+  await send(page, "ui/notifications/tool-input", updateInput("notes/launch.mdx", CHANGED_PLAN))
+  await send(page, "ui/notifications/tool-result", updated("notes/launch.mdx", "note", { "elaborat.ing/html": "<h1>Launch plan</h1><p>As saved, with the next step.</p>", "elaborat.ing/source": CHANGED_PLAN }))
+  await expect(card.getByText("As saved, with the next step.")).toBeVisible()
+  await expect(live).toHaveCount(0)
+})
+
+test("a change saved over by someone else first shows the server's message, and nothing of the change", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await answer(page, "read_file", readAnswer(FLOW, SAVED_SCENE))
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await send(page, "ui/notifications/tool-input-partial", updateInput(FLOW, CHANGED_SCENE))
+  await expect.poll(() => placed(page)).toContain(PLACED.b)
+  const message = `Someone changed ${FLOW} first: it is now version 5. Nothing was saved. Read it again, merge, and retry.`
+  const conflict = { status: "conflict", conflicts: [{ path: FLOW, base_version: 3, current: { version: 5, content: SAVED_SCENE } }] }
+  await send(page, "ui/notifications/tool-input", updateInput(FLOW, CHANGED_SCENE))
+  await send(page, "ui/notifications/tool-result", { content: [{ type: "text", text: message }, { type: "text", text: JSON.stringify(conflict) }], structuredContent: conflict })
+  await expect(card.getByText(message)).toBeVisible()
+  await expect(card.getByText("This file could not be shown")).toBeVisible()
+  await expect(card.locator(".live-svg")).toHaveCount(0)
+})
+
+test("a drawing drawing in makes a pencil stroke for its shapes where the browser lets audio play, and the person can mute it", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  // Counts the strokes the card starts, and finds out whether this browser lets the frame play audio unasked.
+  const audible = await cardFrame(page).evaluate(async () => {
+    const state = window as unknown as { strokes: number }
+    state.strokes = 0
+    const start = AudioBufferSourceNode.prototype.start
+    AudioBufferSourceNode.prototype.start = function (this: AudioBufferSourceNode, ...args: Parameters<AudioBufferSourceNode["start"]>) {
+      state.strokes++
+      return start.apply(this, args)
+    }
+    const probe = new AudioContext()
+    await Promise.race([probe.resume(), new Promise((resolve) => setTimeout(resolve, 300))])
+    const running = probe.state === "running"
+    await probe.close()
+    return running
+  })
+  const strokes = () => cardFrame(page).evaluate(() => (window as unknown as { strokes: number }).strokes)
+
+  await send(page, "ui/notifications/tool-input-partial", input(FLOW, FLOW_SCENE.slice(0, FLOW_SCENE.indexOf('"id": "c"'))))
+  await expect.poll(() => liveShapes(page)).toBe(4)
+  const sound = card.getByRole("button", { name: "Pencil sound" })
+  await expect(sound).toHaveAttribute("aria-pressed", "true")
+  // On by default; where the browser holds audio back, silent.
+  if (audible) await expect.poll(strokes).toBeGreaterThan(0)
+  else {
+    await page.waitForTimeout(1500)
+    expect(await strokes()).toBe(0)
+  }
+
+  // Muted, the rest draws in without a sound.
+  await sound.click()
+  await expect(sound).toHaveAttribute("aria-pressed", "false")
+  const muted = await strokes()
+  await send(page, "ui/notifications/tool-input-partial", input(FLOW, FLOW_SCENE))
+  await expect.poll(() => liveShapes(page)).toBe(7)
+  await page.waitForTimeout(1500)
+  expect(await strokes()).toBe(muted)
 })

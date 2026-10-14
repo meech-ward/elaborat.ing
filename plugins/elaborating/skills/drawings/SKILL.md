@@ -27,6 +27,12 @@ The user's instructions win over this skill when they differ.
 - To make a new drawing the user should watch being drawn in the chat, use
   `create_and_show`. Put `elements` before `appState`, and write each shape,
   then its label, then its arrows.
+- To change a drawing while the user watches in the chat, read it and save
+  the whole scene with `update_and_show` and the `base_version` you read,
+  keeping every other element and field as it is, ids included: the card
+  shows the drawing as saved, draws in the elements you changed or added, and
+  fades the ones you removed. For quiet changes, and drawings the user isn't
+  watching, use `write_file`.
 - Embed it in a note with `<Drawing src="drawings/idea.excalidraw" />`, and
   show it with `show_file`. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.

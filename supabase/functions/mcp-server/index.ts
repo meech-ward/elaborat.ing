@@ -58,7 +58,8 @@ const SERVER_INSTRUCTIONS =
   'with a few elements each (a shape, its label, then its arrows, in reading order), not one big write_file. ' +
   "To change or remove a drawing's elements, use write_file once with base_version, then draw what is new. " +
   'To make a new note, drawing or diagram the user should watch being made in the chat, use create_and_show. ' +
-  'To change a file, use write_file. ' +
+  'When the user should watch a change happen in the chat, use update_and_show with the base_version from read_file. ' +
+  'Use write_file for quiet changes and for files the user is not watching (components, code, many files at once). ' +
   'When the user asks you to work through their comments, list_comments with ask_agent true finds the threads they asked ' +
   'an agent about: change each file, reply_comment with the version your save returned, and leave the thread for them to resolve.'
 

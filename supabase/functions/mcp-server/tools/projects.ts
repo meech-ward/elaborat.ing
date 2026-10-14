@@ -14,7 +14,7 @@ export const path = z
   .string()
   .min(1)
   .describe('A path inside the project, such as notes/plan.md. No leading slash.')
-const baseVersion = z
+export const baseVersion = z
   .number()
   .int()
   .positive()
@@ -127,6 +127,8 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         'Read one file: its content and its version. Pass the version as base_version when you save changes to it.',
       inputSchema: z.object({ project_id: projectId, path }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      // update_and_show's card reads the file as saved before the change, to show what stays.
+      _meta: VIEW_CALLABLE,
     },
     async ({ project_id, path }) => {
       try {

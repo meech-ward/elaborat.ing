@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertFalse, assertStringIncludes } from 'jsr:@std/assert@1.0.19'
+import { assert, assertEquals, assertFalse, assertMatch, assertStringIncludes } from 'jsr:@std/assert@1.0.19'
 import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
@@ -132,7 +132,8 @@ Deno.test('show_file advertises the view and read_file stays text only', async (
     // The view can call show_file again, to show the note as saved.
     assertEquals(show?._meta, { ui: { visibility: ['model', 'app'], resourceUri: FILE_VIEW_URI }, 'openai/widgetAccessible': true })
     assertEquals(show?.annotations?.readOnlyHint, true)
-    assertEquals(tools.find((tool) => tool.name === 'read_file')?._meta, undefined)
+    // update_and_show's card reads the file as saved with read_file, which renders no view of its own.
+    assertEquals(tools.find((tool) => tool.name === 'read_file')?._meta, { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true })
     // The view saves an edited note with write_file, which renders no view of its own.
     assertEquals(tools.find((tool) => tool.name === 'write_file')?._meta, { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true })
   })
@@ -287,7 +288,7 @@ Deno.test('create_and_show changes nothing at a path that has a file, and makes 
   const { result, files } = await createAndShow('notes/plan.md', '# New', [file('notes/plan.md', '# Old')])
   assert(result.isError)
   assertEquals(result.content, [
-    { type: 'text', text: 'A file already exists at notes/plan.md. Nothing was saved. To change it, read it and use write_file with base_version.' },
+    { type: 'text', text: 'A file already exists at notes/plan.md. Nothing was saved. To change it, read it and use update_and_show or write_file with base_version.' },
   ])
   assertEquals(files, [file('notes/plan.md', '# Old')])
 
@@ -297,6 +298,117 @@ Deno.test('create_and_show changes nothing at a path that has a file, and makes 
     assertEquals(result.content, [{ type: 'text', text: 'Use write_file for this file.' }])
     assertFalse(queries.flat().some((step) => step[0] === 'rpc'), path)
   }
+})
+
+function updateAndShow(path: string, base_version: number, content: string, files: Row[]) {
+  return withClient(files, async (client, queries) => ({
+    result: (await client.callTool({ name: 'update_and_show', arguments: { project_id: PROJECT, path, base_version, content } })) as CallToolResult,
+    shown: (await client.callTool({ name: 'show_file', arguments: { project_id: PROJECT, path } })) as CallToolResult,
+    files,
+    queries,
+  }))
+}
+
+Deno.test('update_and_show saves a note or drawing as write_file does and shows it as show_file does', async () => {
+  const cases = [
+    ['notes/plan.mdx', '# Plan\n\nShip it.', '# Plan\n\nShip it.\n\nTell the team.'],
+    ['art/flow.excalidraw', SCENE, SCENE.replace('Hello', 'Hello there')],
+  ]
+  for (const [path, before, after] of cases) {
+    const files = [{ ...file(path, before), version: 4 }]
+    const { result, shown, queries } = await updateAndShow(path, 4, after, files)
+    // One save, the one write_file sends: a put with the version the agent read.
+    const saves = queries.flat().filter((step) => step[0] === 'rpc')
+    assertEquals(saves.length, 1)
+    assertEquals(saves[0][1], 'save_files')
+    const { mutation_id, ...args } = saves[0][2] as Record<string, unknown>
+    assertEquals(args, { project_id: PROJECT, changes: [{ op: 'put', path, content: after, base_version: 4 }] })
+    assertMatch(String(mutation_id), /^[0-9a-f-]{36}$/)
+    assertEquals(files[0].content, after)
+    assertFalse(result.isError)
+    assertEquals((result.structuredContent as { version: number }).version, 5)
+    assertEquals(result.structuredContent, shown.structuredContent)
+    assertEquals(result._meta, shown._meta)
+    const url = `https://elaborat.ing/projects/${PROJECT}/${path}`
+    assertEquals(result.content, [{ type: 'text', text: `Saved ${path} as version 5 and showed it to the user. Open it in elaborat.ing: ${url}` }])
+  }
+})
+
+Deno.test("update_and_show on a file changed since it was read saves nothing and gives write_file's conflict, after a line for the person", async () => {
+  const files = [{ ...file('notes/plan.mdx', '# Changed by Ana'), version: 6 }]
+  await withClient(files, async (client) => {
+    const args = { project_id: PROJECT, path: 'notes/plan.mdx', content: '# Mine', base_version: 4 }
+    const written = (await client.callTool({ name: 'write_file', arguments: args })) as CallToolResult
+    const result = (await client.callTool({ name: 'update_and_show', arguments: args })) as CallToolResult
+    assertEquals((written.structuredContent as { status: string }).status, 'conflict')
+    // The same result as write_file's, which is not an error either.
+    assertFalse(result.isError)
+    assertEquals(result.structuredContent, written.structuredContent)
+    assertEquals(result.content, [
+      { type: 'text', text: 'Someone changed notes/plan.mdx first: it is now version 6. Nothing was saved. Read it again, merge, and retry.' },
+      ...written.content,
+    ])
+    assertEquals(result._meta, undefined)
+    assertEquals(files[0].content, '# Changed by Ana')
+  })
+})
+
+Deno.test('update_and_show refuses a file that is not there, and changes only notes, drawings and diagrams', async () => {
+  const { result, files } = await updateAndShow('notes/gone.mdx', 3, '# New', [])
+  assert(result.isError)
+  assertEquals(result.content, [{ type: 'text', text: 'No file at notes/gone.mdx in this project. Nothing was saved. To make a new file, use create_and_show.' }])
+  assertEquals(files, [])
+
+  for (const path of ['data/rows.json', 'components/chart.tsx', 'notes/plan.md.bak']) {
+    const { result, queries } = await updateAndShow(path, 1, '{}', [file(path, '[]')])
+    assert(result.isError)
+    assertEquals(result.content, [{ type: 'text', text: 'Use write_file for this file.' }])
+    assertFalse(queries.flat().some((step) => step[0] === 'rpc'), path)
+  }
+})
+
+/** Runs `use` with console.log captured: the lines it printed. */
+async function withLog<T>(use: () => Promise<T>): Promise<{ lines: string[]; value: T }> {
+  const lines: string[] = []
+  const original = console.log
+  console.log = (...args: unknown[]) => lines.push(args.map(String).join(' '))
+  try {
+    return { lines, value: await use() }
+  } finally {
+    console.log = original
+  }
+}
+
+Deno.test('card_report logs one line with the caller and how the live card went, stores nothing, and takes only what the view sends', async () => {
+  await withClient([], async (client, queries) => {
+    const report = (args: Record<string, unknown>) => withLog(() => client.callTool({ name: 'card_report', arguments: args }) as Promise<CallToolResult>)
+    const streamed = { host: 'Claude', tool: 'update_and_show', partials: 42, first_partial_ms: 380, total_ms: 9120 }
+    const quiet = { host: 'chatgpt', tool: 'create_and_show', partials: 0, first_partial_ms: null, total_ms: 2400 }
+    for (const sent of [streamed, quiet]) {
+      const { lines, value } = await report(sent)
+      assert(!value.isError, JSON.stringify(value))
+      assertEquals(lines.map((line) => JSON.parse(line)), [{ event: 'card_live', user: ME, ...sent }])
+      assertEquals(value.content, [{ type: 'text', text: 'Noted.' }])
+      assertEquals(value.structuredContent, undefined)
+    }
+    assertEquals(queries, [], 'it reads and writes nothing in Supabase')
+
+    const bad = [
+      { ...streamed, host: '' },
+      { ...streamed, host: 'x'.repeat(41) },
+      { ...streamed, tool: 'write_file' },
+      { ...streamed, partials: -1 },
+      { ...streamed, partials: 1.5 },
+      { ...streamed, first_partial_ms: 'soon' },
+      { ...streamed, total_ms: 86_400_001 },
+      { host: 'Claude', tool: 'update_and_show', partials: 1, first_partial_ms: 10 },
+    ]
+    for (const sent of bad) {
+      const { lines, value } = await report(sent)
+      assert(value.isError, `accepted ${JSON.stringify(sent)}`)
+      assertEquals(lines, [], `logged ${JSON.stringify(sent)}`)
+    }
+  })
 })
 
 Deno.test('a note\'s Drawing and Diagram tags become embeds; other MDX stays text, imports go', () => {

@@ -22,7 +22,12 @@
  * host's partial input draws in (the live module, loaded then), and the
  * saved card takes its place when the result comes. A host that sends no
  * partial input gets the same drawing in, quickly, from the input, while the
- * tool is still running.
+ * tool is still running. update_and_show's card is live the same way, and
+ * where the host lets it call tools it first reads the file as saved
+ * (read_file), so what the change keeps shows at once. A drawing drawing in
+ * makes a quiet pencil sound, which the person can mute. Once a live card
+ * settles it tells the server, once, whether the host sent the input as it
+ * was written (card_report), for the server's log.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
@@ -38,7 +43,8 @@ import type { LiveHandle } from "./live/mount"
 import { blockModules, loadModule, ModuleNotLoaded, modulesAllowed } from "./modules"
 import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
 import { codeBlock, highlightBlock, type Highlighter } from "./readingMarkup"
-import { APP_ORIGIN, hasMeta, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
+import { pencilSoundOn, setPencilSound } from "./pencilSetting"
+import { APP_ORIGIN, hasMeta, parseReadResult, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
 const inputSchema = z.object({ path: z.string() })
 
@@ -65,23 +71,35 @@ function previewNote(path: string, outcome: PreviewOutcome): string | null {
   return `The preview of ${path} in the elaborat.ing card showed errors from its components. ${errors}`
 }
 
-/** A new file create_and_show is writing, from its input: what it is and its content so far; null for any other input. */
-function liveDraft(args: unknown): { path: string; kind: LiveKind; content: string } | null {
-  const { path, content } = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>
+type LiveDraft = { projectId: unknown; path: string; kind: LiveKind; content: string; update: boolean }
+
+/**
+ * A file create_and_show or update_and_show is writing, from its input: what
+ * it is and its content so far, and whether it changes a saved file
+ * (`update`: update_and_show's input names the version the agent read);
+ * null for any other input.
+ */
+function liveDraft(args: unknown): LiveDraft | null {
+  const { project_id, path, content, base_version } = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>
   if (typeof path !== "string" || typeof content !== "string") return null
   const kind: LiveKind | null = /\.excalidraw(\.md)?$/i.test(path) ? "drawing" : /\.d2$/i.test(path) ? "diagram" : /\.mdx?$/i.test(path) ? "note" : null
-  return kind && { path, kind, content }
+  return kind && { projectId: project_id, path, kind, content, update: typeof base_version === "number" }
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Carries a live file's content to its view, which may not have loaded yet:
- * the latest content waits for it. `final`: the whole input is in.
+ * the latest content waits for it, and so does the file as saved before an
+ * update (`saved`). `final`: the whole input is in.
  */
 type LiveFeed = {
   content: string | null
   final: boolean
+  saved: string | null
   view: LiveHandle | null
   push(content: string, final: boolean): void
+  base(saved: string): void
   attach(view: LiveHandle | null): void
 }
 
@@ -89,15 +107,22 @@ function liveFeed(): LiveFeed {
   const feed: LiveFeed = {
     content: null,
     final: false,
+    saved: null,
     view: null,
     push(content, final) {
       feed.content = content
       feed.final ||= final
       feed.view?.update(content, final)
     },
+    base(saved) {
+      feed.saved = saved
+      feed.view?.base(saved)
+    },
     attach(view) {
       feed.view = view
-      if (view && feed.content !== null) view.update(feed.content, feed.final)
+      if (!view) return
+      if (feed.saved !== null) view.base(feed.saved)
+      if (feed.content !== null) view.update(feed.content, feed.final)
     },
   }
   return feed
@@ -121,6 +146,15 @@ export function ChatCard({ host }: { host: HostBridge }) {
   // The input came with no partial input before it: the card goes live if the result does not come at once.
   const graceTimer = useRef(0)
   const [canCallTools, setCanCallTools] = useState(false)
+  // The same, for the host's events; and the host's name, for card_report.
+  const callable = useRef(false)
+  const hostName = useRef<string | null>(null)
+  // update_and_show's card asked for the file as saved; the card went live, as which tool, and said so to the server.
+  const savedAsked = useRef(false)
+  const live = useRef<{ tool: "create_and_show" | "update_and_show"; reported: boolean } | null>(null)
+  // The pencil sound of a drawing drawing in: on unless this viewer muted it. Never with reduced motion.
+  const [pencilOn, setPencilOn] = useState(pencilSoundOn)
+  const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)
   // The editor could not load from elaborat.ing, or the host said it would not allow it.
   const [editorBlocked, setEditorBlocked] = useState(false)
   const editor = useRef<CardEditor | null>(null)
@@ -137,69 +171,116 @@ export function ChatCard({ host }: { host: HostBridge }) {
   // Edit asked the host for full screen, so the card goes back inline when editing ends.
   const expanded = useRef(false)
 
-  useEffect(
-    () =>
-      host.subscribe((event) => {
-        switch (event.type) {
-          case "tool-input-partial": {
-            const draft = modulesBlocked.current ? null : liveDraft(event.args)
-            if (!draft) return
-            feed.push(draft.content, false)
-            return dispatch({ type: "live", path: draft.path, kind: draft.kind })
-          }
-          case "tool-input": {
-            const input = inputSchema.safeParse(event.args)
-            if (input.success) dispatch({ type: "input", path: input.data.path })
-            const draft = modulesBlocked.current ? null : liveDraft(event.args)
-            if (!draft) return
-            if (feed.content !== null) return feed.push(draft.content, true)
-            // No partial input: the input draws in quickly, unless the result comes with it (a conversation opened again).
-            window.clearTimeout(graceTimer.current)
-            graceTimer.current = window.setTimeout(() => {
-              feed.push(draft.content, true)
-              dispatch({ type: "live", path: draft.path, kind: draft.kind })
-            }, LIVE_GRACE_MS)
-            return
-          }
-          case "tool-result": {
-            window.clearTimeout(graceTimer.current)
-            lastResult.current = event.result
-            const shown = parseShowResult(event.result, host.openaiMeta())
-            if (!shown.ok) return dispatch({ type: "problem", message: shown.message, tone: "danger" })
-            // A live view that has drawn finishes drawing quickly first, then the saved card takes its place:
-            // read again then, with _meta that ChatGPT's globals may have brought meanwhile, unless a newer result came.
-            const view = feed.view
-            if (!view) return dispatch({ type: "result", file: shown.file })
-            void view.finish().then(() => {
-              if (lastResult.current !== event.result) return
-              const latest = parseShowResult(event.result, host.openaiMeta())
-              if (latest.ok) dispatch({ type: "result", file: latest.file })
-            })
-            return
-          }
-          case "tool-cancelled":
-            window.clearTimeout(graceTimer.current)
-            return dispatch({ type: "problem", message: "The tool call was cancelled.", tone: "info" })
-          case "ready":
-            // The fonts and modules come from the origin the view declares, unless the host said it does not allow it.
-            if (modulesAllowed(event.resourceDomains) === false) {
-              modulesBlocked.current = true
-              blockModules()
-              setEditorBlocked(true)
-            } else {
-              addCardFonts(event.hostFonts)
-            }
-            return setCanCallTools(event.canCallTools)
-          case "globals": {
-            if (lastResult.current === null || hasMeta(lastResult.current)) return
-            const shown = parseShowResult(lastResult.current, host.openaiMeta())
-            if (shown.ok) dispatch({ type: "result", file: shown.file })
-            return
-          }
+  useEffect(() => {
+    /** Goes live: the first time, notes which tool is writing. */
+    const goLive = (draft: LiveDraft) => {
+      live.current ??= { tool: draft.update ? "update_and_show" : "create_and_show", reported: false }
+      dispatch({ type: "live", path: draft.path, kind: draft.kind })
+    }
+    /**
+     * A change to a saved note or drawing: reads the file as saved, once,
+     * where the host lets the card call tools, so what stays shows at once.
+     * A diagram's source writes in as it is.
+     */
+    const readSaved = (draft: LiveDraft) => {
+      if (!draft.update || draft.kind === "diagram" || savedAsked.current || !callable.current) return
+      if (typeof draft.projectId !== "string" || !UUID.test(draft.projectId)) return
+      savedAsked.current = true
+      host.callTool("read_file", { project_id: draft.projectId, path: draft.path }).then(
+        (raw) => {
+          const saved = parseReadResult(raw, draft.path)
+          if (saved !== null) feed.base(saved)
+        },
+        () => {},
+      )
+    }
+    /** Once a live card settles, tells the server how it went, once: the host, how many partial inputs it sent, and when. */
+    const report = () => {
+      const card = live.current
+      if (!card || card.reported || !callable.current) return
+      card.reported = true
+      const sent = host.partialInputs()
+      host
+        .callTool("card_report", {
+          host: (hostName.current ?? "unknown").slice(0, 40),
+          tool: card.tool,
+          partials: sent.count,
+          first_partial_ms: sent.firstMs,
+          total_ms: Math.round(performance.now()),
+        })
+        .catch(() => {})
+    }
+    return host.subscribe((event) => {
+      switch (event.type) {
+        case "tool-input-partial": {
+          const draft = modulesBlocked.current ? null : liveDraft(event.args)
+          if (!draft) return
+          readSaved(draft)
+          feed.push(draft.content, false)
+          return goLive(draft)
         }
-      }),
-    [host, feed],
-  )
+        case "tool-input": {
+          const input = inputSchema.safeParse(event.args)
+          if (input.success) dispatch({ type: "input", path: input.data.path })
+          const draft = modulesBlocked.current ? null : liveDraft(event.args)
+          if (!draft) return
+          if (live.current) live.current.tool = draft.update ? "update_and_show" : "create_and_show"
+          if (feed.content !== null) return feed.push(draft.content, true)
+          // No partial input: the input draws in quickly, unless the result comes with it (a conversation opened again).
+          window.clearTimeout(graceTimer.current)
+          graceTimer.current = window.setTimeout(() => {
+            feed.push(draft.content, true)
+            goLive(draft)
+          }, LIVE_GRACE_MS)
+          return
+        }
+        case "tool-result": {
+          window.clearTimeout(graceTimer.current)
+          lastResult.current = event.result
+          const shown = parseShowResult(event.result, host.openaiMeta())
+          if (!shown.ok) {
+            dispatch({ type: "problem", message: shown.message, tone: "danger" })
+            return report()
+          }
+          // A live view that has drawn finishes drawing quickly first, then the saved card takes its place:
+          // read again then, with _meta that ChatGPT's globals may have brought meanwhile, unless a newer result came.
+          const view = feed.view
+          if (!view) {
+            dispatch({ type: "result", file: shown.file })
+            return report()
+          }
+          void view.finish().then(() => {
+            if (lastResult.current !== event.result) return
+            const latest = parseShowResult(event.result, host.openaiMeta())
+            if (latest.ok) dispatch({ type: "result", file: latest.file })
+            report()
+          })
+          return
+        }
+        case "tool-cancelled":
+          window.clearTimeout(graceTimer.current)
+          return dispatch({ type: "problem", message: "The tool call was cancelled.", tone: "info" })
+        case "ready":
+          // The fonts and modules come from the origin the view declares, unless the host said it does not allow it.
+          if (modulesAllowed(event.resourceDomains) === false) {
+            modulesBlocked.current = true
+            blockModules()
+            setEditorBlocked(true)
+          } else {
+            addCardFonts(event.hostFonts)
+          }
+          callable.current = event.canCallTools
+          hostName.current = event.hostName
+          return setCanCallTools(event.canCallTools)
+        case "globals": {
+          if (lastResult.current === null || hasMeta(lastResult.current)) return
+          const shown = parseShowResult(lastResult.current, host.openaiMeta())
+          if (shown.ok) dispatch({ type: "result", file: shown.file })
+          return
+        }
+      }
+    })
+  }, [host, feed])
 
   const shown = state.phase === "shown" ? state : null
   const editing = shown !== null && shown.mode !== "read"
@@ -311,7 +392,19 @@ export function ChatCard({ host }: { host: HostBridge }) {
         state={state}
         canEdit={canCallTools && !editorBlocked}
         editNote={canCallTools && editorBlocked ? CARD_TEXT.editorNotLoaded : null}
-        live={state.phase === "live" ? <LiveView kind={state.kind} path={state.path} feed={feed} /> : undefined}
+        live={state.phase === "live" ? <LiveView kind={state.kind} path={state.path} feed={feed} sound={pencilOn} reducedMotion={reducedMotion} /> : undefined}
+        sound={
+          state.phase === "live" && state.kind === "drawing" && !reducedMotion
+            ? {
+                on: pencilOn,
+                onToggle: () => {
+                  setPencilOn(!pencilOn)
+                  setPencilSound(!pencilOn)
+                  feed.view?.setSound(!pencilOn)
+                },
+              }
+            : null
+        }
         editor={
           shown && shown.mode !== "read" && shown.file.source !== null ? (
             <NoteEditor
@@ -355,19 +448,17 @@ export function ChatCard({ host }: { host: HostBridge }) {
 }
 
 /**
- * A new file as it is written: the live module (loaded the first time)
+ * A file as it is written: the live module (loaded the first time)
  * draws into the card's own frame for it, at a fixed height so the card does
  * not resize as it grows: a drawing on the dotted canvas, a note in the
  * note's type, a diagram's source as the module sets it. Where the module does not
- * load, the card shows its skeleton.
+ * load, the card shows its skeleton. `sound`: the pencil sound starts on.
  */
-function LiveView({ kind, path, feed }: { kind: LiveKind; path: string; feed: LiveFeed }) {
+function LiveView({ kind, path, feed, sound, reducedMotion }: { kind: LiveKind; path: string; feed: LiveFeed; sound: boolean; reducedMotion: boolean }) {
   const box = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
   const start = useEffectEvent((element: HTMLElement) =>
-    loadModule("live").then(({ mountLive }) =>
-      mountLive(element, { kind, path, reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches }),
-    ),
+    loadModule("live").then(({ mountLive }) => mountLive(element, { kind, path, reducedMotion, sound })),
   )
   useEffect(() => {
     const element = box.current

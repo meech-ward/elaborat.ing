@@ -1,8 +1,8 @@
 /**
  * The tool results the chat card reads, parsed at the bridge: show_file's
  * view of one file (supabase/functions/mcp-server/tools/fileView.ts),
- * preview_component's view of a component file (componentPreview.ts), and
- * write_file's outcome. The host passes them on from the server, so every
+ * preview_component's view of a component file (componentPreview.ts),
+ * write_file's outcome, and read_file's content (projects.ts). The host passes them on from the server, so every
  * field is checked; links count only when they go to elaborat.ing, and a
  * drawing only when it is SVG markup the server drew. Zod Mini, which the
  * card's small script tree-shakes, where full Zod would all come along.
@@ -170,4 +170,13 @@ export function parseWriteResult(raw: unknown, path: string): WriteOutcome {
   if (status === "conflict") return { kind: "conflict" }
   const change = changes.find((entry) => entry?.path === path)
   return { kind: "saved", version: change?.version ?? null }
+}
+
+const readSchema = z.object({ structuredContent: z.object({ path: z.string(), content: z.string() }) })
+
+/** read_file's content of the file at `path`, or null when it did not read that file. */
+export function parseReadResult(raw: unknown, path: string): string | null {
+  const parsed = isError(raw) ? null : readSchema.safeParse(raw)
+  if (!parsed?.success || parsed.data.structuredContent.path !== path) return null
+  return parsed.data.structuredContent.content
 }

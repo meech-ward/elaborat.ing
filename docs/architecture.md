@@ -786,8 +786,8 @@ The production server's tools are unchanged.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. The `show_file` tool (`tools/fileView.ts`), the
-  `preview_component` tool (`tools/componentPreview.ts`) and `create_and_show`
-  (below) share one `ui://` view. `show_file` renders a note's Markdown (raw HTML
+  `preview_component` tool (`tools/componentPreview.ts`), `create_and_show`
+  and `update_and_show` (below) share one `ui://` view. `show_file` renders a note's Markdown (raw HTML
   and other MDX shown as text, except a `<Callout>` written as one block,
   which becomes a callout; sanitized) and draws drawings and diagrams, shown on
   their own or embedded in a note with `<Drawing>` and `<Diagram>`, each with an
@@ -857,6 +857,40 @@ The production server's tools are unchanged.
   300 ms, 60 ms after the one before (the last starts within 1.2 s), in
   frames outside undo that never mark the file changed; with reduced motion
   they appear at once.
+- **Decision: a change the person watches is shown as it is written.**
+  `update_and_show` (titled Change and show) changes a note, drawing or
+  diagram that exists, with the version the agent read, and returns
+  show_file's result. It saves as `write_file` does, so it is destructive;
+  a stale version gets `write_file`'s conflict result after one line the
+  card shows, and a path with no file, or another file type, is refused.
+  The server's instructions and the plugin's skills send agents to it when
+  the person should watch a change happen in the chat, and to `write_file`
+  for quiet changes and files nobody is watching. Its card goes live as
+  `create_and_show`'s does, and where the host lets views call tools, the
+  first partial input that names the file has the card read it as saved
+  (`read_file`, which the view may call): a drawing's elements show at
+  once, those the new content keeps as they were (the same apart from
+  Excalidraw's bookkeeping: version, nonce, update time, order index and
+  bound elements) stay, changed and new ones draw in as they come, and those
+  it leaves out fade once the whole input is in; a note shows as saved while
+  the new text is still its start, and from where they differ the new text
+  writes in; a diagram's source writes in as text. A host that sends no
+  partial input gets `create_and_show`'s fallback.
+- **Decision: a pencil sound while a drawing draws in.** Each element makes
+  a short, quiet pencil stroke as it draws in, made with Web Audio from
+  noise in the live module (no file is fetched); the variation of each
+  stroke follows the Excalidraw MCP app's (MIT, credited in the file). It is
+  on by default, and a button in the live card mutes it, remembered for the
+  viewer in the card's storage where the host gives it one. It is silent
+  with reduced motion, and where the browser keeps the audio held back.
+- **A live card says how it went.** When a live card settles, it calls
+  `card_report` once, a view-only tool (`ui.visibility: ["app"]`) that
+  validates the host's name (at most 40 characters), the tool, how many
+  partial inputs the host sent and when the first came and when the card
+  settled (ms after it started), writes one log line of the function,
+  `{"event":"card_live","user":<caller>,...}`, and stores nothing, as
+  `panel_origins` does. It shows which hosts send the input as it is
+  written.
 - **The card is built from the component library.** `src/chat-card` is a
   small React app on the library's components and the Supabase Green
   palette, light or dark as the host says; its states are on `/style-guide`.

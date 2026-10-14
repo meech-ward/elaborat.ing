@@ -6,7 +6,7 @@ import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
-import { mutationId, path, projectId, VIEW_CALLABLE } from './projects.ts'
+import { baseVersion, mutationId, path, projectId, VIEW_CALLABLE } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
@@ -22,12 +22,16 @@ import type { ToolContext } from './types.ts'
 // drawing or diagram and shows it, and the view draws it while the agent is
 // still writing it (the host's partial tool input). It only creates, so it
 // is not destructive, and the database refuses a put without a version on a
-// path that exists. Changing a file stays with write_file, which has no view.
+// path that exists. update_and_show changes one the same way, saving as
+// write_file does: the view first reads the file as saved (read_file), shows
+// what stays at once and draws in what changes. Quiet changes stay with
+// write_file, which has no view. card_report is the view's own: it logs how
+// a live card went, to learn which hosts send the input as it is written.
 // https://modelcontextprotocol.io/docs/extensions/apps
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v25.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v26.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -54,6 +58,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v22.html',
   'ui://elaborating/file-view-v23.html',
   'ui://elaborating/file-view-v24.html',
+  'ui://elaborating/file-view-v25.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -78,8 +83,11 @@ export const FILE_VIEW_META = {
   'openai/widgetDomain': APP_ORIGIN,
 }
 
-/** The files create_and_show makes: notes, drawings and diagrams. */
+/** The files create_and_show makes and update_and_show changes: notes, drawings and diagrams. */
 const SHOWN_AS_MADE = /\.(md|mdx|excalidraw|d2)$/i
+
+/** The longest a card_report's times may be: a day, in ms. */
+const DAY_MS = 86_400_000
 
 /** Characters of a note rendered in the view; the rest is a click away. */
 const PREVIEW_LIMIT = 40_000
@@ -217,13 +225,14 @@ function preview(content: string): { source: string; truncated: boolean } {
 /**
  * show_file's result for one file: the card's view of it, with the note's
  * HTML and source, the drawings drawn, and a component preview's sources.
- * `created`: create_and_show just made it, which the model's text says.
+ * `made`: create_and_show just created it, or update_and_show saved it,
+ * which the model's text says.
  */
 export async function showFilePayload(
   { supabase, userClaims }: ToolContext,
   project_id: string,
   path: string,
-  { created = false }: { created?: boolean } = {}
+  { made }: { made?: 'created' | 'updated' } = {}
 ): Promise<CallToolResult> {
   try {
     const { data, error } = await supabase
@@ -249,7 +258,15 @@ export async function showFilePayload(
     const editors = shared && modules ? await componentEditors(supabase, project_id, [data.path, ...Object.keys(modules)], userClaims?.id) : null
     return {
       content: [
-        { type: 'text', text: `${created ? 'Created' : 'Showing'} ${data.path} (version ${data.version})${created ? ' and showed it' : ''} to the user. Open it in elaborat.ing: ${url}` },
+        {
+          type: 'text',
+          text:
+            made === 'created'
+              ? `Created ${data.path} (version ${data.version}) and showed it to the user. Open it in elaborat.ing: ${url}`
+              : made === 'updated'
+                ? `Saved ${data.path} as version ${data.version} and showed it to the user. Open it in elaborat.ing: ${url}`
+                : `Showing ${data.path} (version ${data.version}) to the user. Open it in elaborat.ing: ${url}`,
+        },
       ],
       structuredContent: {
         project_id,
@@ -288,7 +305,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         title: 'File view',
         description:
           'A view of one file with a link to open it in elaborat.ing; notes can be edited in it, and components are previewed. ' +
-          'Used by show_file, preview_component and create_and_show.',
+          'Used by show_file, preview_component, create_and_show and update_and_show.',
         mimeType: MCP_APP_MIME_TYPE,
       },
       () => ({
@@ -330,7 +347,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         'Create a new note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
         'which draws it while you write it where the chat allows that. It only creates: a file already at the path is not changed. ' +
         'Use it when the user should watch a new note, drawing or diagram being made. ' +
-        'To change a file, read it and use write_file with base_version.',
+        'To change a file, read it and use update_and_show, or write_file for a quiet change, with base_version.',
       inputSchema: z.object({
         project_id: projectId,
         path,
@@ -352,12 +369,91 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         })
         if (error) throw error
         if (data?.status === 'conflict') {
-          return errorResult(`A file already exists at ${path}. Nothing was saved. To change it, read it and use write_file with base_version.`)
+          return errorResult(`A file already exists at ${path}. Nothing was saved. To change it, read it and use update_and_show or write_file with base_version.`)
         }
-        return await showFilePayload(context, project_id, path, { created: true })
+        return await showFilePayload(context, project_id, path, { made: 'created' })
       } catch (error) {
         return runtimeErrorResult(error)
       }
+    }
+  )
+
+  server.registerTool(
+    'update_and_show',
+    {
+      title: 'Change and show',
+      description:
+        'Change a note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
+        'which shows the change while you write it where the chat allows that: what stays shows at once, and what changes comes in. ' +
+        'Read the file first and pass the version you read as base_version, with the complete new content. ' +
+        'It saves as write_file does: if the result status is "conflict", someone changed the file first: read it again, merge, and retry. ' +
+        'Use it when the user should watch the change happen. For quiet changes, and for files the user is not watching ' +
+        '(components, code, many files at once), use write_file.',
+      inputSchema: z.object({
+        project_id: projectId,
+        path,
+        base_version: baseVersion,
+        content: z.string().describe('The complete new content of the file.'),
+        mutation_id: mutationId,
+      }),
+      // It overwrites the file, so it is destructive, as write_file is.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      // The model's tool only: the view never calls it.
+      _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
+    },
+    async ({ project_id, path, base_version, content, mutation_id }) => {
+      if (!SHOWN_AS_MADE.test(path)) return errorResult('Use write_file for this file.')
+      try {
+        // The same save as write_file's: a put with the version the agent read.
+        const { data, error } = await context.supabase.rpc('save_files', {
+          project_id,
+          mutation_id: mutation_id ?? crypto.randomUUID(),
+          changes: [{ op: 'put', path, content, base_version }],
+        })
+        if (error) throw error
+        if (data?.status === 'conflict') {
+          const current = (data.conflicts as Array<{ current?: { version?: number } | null }> | undefined)?.[0]?.current
+          // A version for a file that is not there: nothing to change.
+          if (!current) return errorResult(`No file at ${path} in this project. Nothing was saved. To make a new file, use create_and_show.`)
+          // write_file's conflict result, after a line the card shows the person.
+          return {
+            content: [
+              { type: 'text', text: `Someone changed ${path} first: it is now version ${current.version}. Nothing was saved. Read it again, merge, and retry.` },
+              { type: 'text', text: JSON.stringify(data) },
+            ],
+            structuredContent: data,
+          }
+        }
+        return await showFilePayload(context, project_id, path, { made: 'updated' })
+      } catch (error) {
+        return runtimeErrorResult(error)
+      }
+    }
+  )
+
+  // How a live card went, from the card itself, once it settles: which host,
+  // whether it sent the input as it was written (partials) and when. One log
+  // line of the function, read from its logs; nothing is stored, so it is
+  // not destructive, and it is not read-only, since it logs.
+  server.registerTool(
+    'card_report',
+    {
+      title: 'Card report',
+      description:
+        'Used by the file view itself: reports how a card that showed a file as it was written went, for the server log. Not for use in a conversation.',
+      inputSchema: z.object({
+        host: z.string().min(1).max(40).describe("The host's name, as it gave it."),
+        tool: z.enum(['create_and_show', 'update_and_show']),
+        partials: z.number().int().min(0).max(1_000_000).describe('How many times the host sent the input so far.'),
+        first_partial_ms: z.number().int().min(0).max(DAY_MS).nullable().describe('When the first came, in ms after the card started; null for none.'),
+        total_ms: z.number().int().min(0).max(DAY_MS).describe('When the card settled, in ms after it started.'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
+    },
+    ({ host, tool, partials, first_partial_ms, total_ms }) => {
+      console.log(JSON.stringify({ event: 'card_live', user: context.userClaims.id, host, tool, partials, first_partial_ms, total_ms }))
+      return { content: [{ type: 'text', text: 'Noted.' }] }
     }
   )
 }

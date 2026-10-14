@@ -183,3 +183,66 @@ export function noteTail(text: string): string {
   }
   return text
 }
+
+/**
+ * What Excalidraw changes on an element without changing how it is drawn:
+ * its version and nonce, when it changed, its place in the scene's order,
+ * and what is bound to it (an arrow attached to a shape changes the shape's
+ * list, not the shape).
+ */
+const BOOKKEEPING = new Set(["version", "versionNonce", "updated", "index", "boundElements"])
+
+/** Whether two JSON values are the same, whatever the order of their keys, leaving out `skip` at the top. */
+function sameValue(a: unknown, b: unknown, skip?: ReadonlySet<string>): boolean {
+  if (a === b) return true
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    const list = b as unknown[]
+    return a.length === list.length && a.every((item, index) => sameValue(item, list[index]))
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left).filter((key) => !skip?.has(key))
+  return (
+    keys.length === Object.keys(right).filter((key) => !skip?.has(key)).length &&
+    keys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]))
+  )
+}
+
+/**
+ * Whether an element of a changed drawing is the saved drawing's element,
+ * unchanged: the same, apart from Excalidraw's bookkeeping (update_and_show).
+ */
+export function sameElement(saved: SceneElement, next: SceneElement): boolean {
+  return sameValue(saved, next, BOOKKEEPING)
+}
+
+/**
+ * What an element of a changed drawing is next to the saved drawing's
+ * elements by id: one of them unchanged (kept, already shown), one of them
+ * changed, or new.
+ */
+export function elementChange(saved: ReadonlyMap<unknown, SceneElement>, element: SceneElement): "kept" | "changed" | "added" {
+  const before = typeof element.id === "string" ? saved.get(element.id) : undefined
+  if (!before) return "added"
+  return sameElement(before, element) ? "kept" : "changed"
+}
+
+/** How many characters two texts share from the start. */
+export function commonPrefixLength(a: string, b: string): number {
+  const end = Math.min(a.length, b.length)
+  let at = 0
+  while (at < end && a.charCodeAt(at) === b.charCodeAt(at)) at++
+  return at
+}
+
+/**
+ * What a note being changed shows (update_and_show), from the note as saved
+ * and the new text so far: while the new text is still the saved note's
+ * start, the saved note, at once; from where it differs, and once the whole
+ * input is in (`final`), the new text, written in from there (`writing`).
+ */
+export function noteBeingChanged(saved: string, written: string, final = false): { text: string; writing: boolean } {
+  if (!final && commonPrefixLength(saved, written) === written.length) return { text: saved, writing: false }
+  return { text: written, writing: true }
+}

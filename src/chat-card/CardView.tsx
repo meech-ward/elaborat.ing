@@ -5,7 +5,7 @@
 // components from their files rather than the public entry, which would
 // bundle the whole style guide.
 import "./card.css"
-import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert } from "lucide-react"
+import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert, Volume2, VolumeX } from "lucide-react"
 import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { DottedPage } from "@/components/panel"
@@ -68,8 +68,10 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
   editNote?: string | null
   /** The note editor, shown while editing and in a conflict. */
   editor?: ReactNode
-  /** A new file as it is written, while the card is live. */
+  /** A file as it is written, while the card is live. */
   live?: ReactNode
+  /** While a drawing draws in: its pencil sound, on or off, and the button that mutes it. */
+  sound?: { on: boolean; onToggle: () => void } | null
   /** The components' preview: a note's in place of its HTML once drawn, or a component file's. */
   preview?: CardPreview | null
   /** Loads the highlighter for a note's code blocks, which show plain until it has (and where it does not load). */
@@ -86,7 +88,7 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  * dotted canvas); problems in banners; and Edit, Save, Load latest and
  * Cancel with the save status under it.
  */
-export function CardView({ state, canEdit, editNote = null, editor, live, preview = null, highlighter, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
+export function CardView({ state, canEdit, editNote = null, editor, live, sound = null, preview = null, highlighter, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
   return (
     <section
@@ -104,10 +106,23 @@ export function CardView({ state, canEdit, editNote = null, editor, live, previe
       )}
       {shown && <CardFooter state={shown} canEdit={canEdit} editNote={editNote} onEdit={onEdit} onSave={onSave} onCancel={onCancel} onReload={onReload} />}
       {state.phase === "live" && (
-        <footer className="border-t border-border px-4 py-3 max-[500px]:px-3">
-          <p role="status" className="truncate text-[13px] leading-snug text-muted-foreground">
+        <footer className="flex items-center gap-2 border-t border-border px-4 py-3 max-[500px]:px-3">
+          <p role="status" className="min-w-0 flex-1 truncate text-[13px] leading-snug text-muted-foreground">
             {state.kind === "drawing" ? "Drawing" : "Writing"} {state.path}
           </p>
+          {sound && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="-my-1"
+              aria-label="Pencil sound"
+              aria-pressed={sound.on}
+              title={sound.on ? "Mute the pencil sound" : "Turn the pencil sound on"}
+              onClick={sound.onToggle}
+            >
+              {sound.on ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+            </Button>
+          )}
         </footer>
       )}
     </section>

@@ -14,9 +14,10 @@ The user's instructions win over this skill when they differ.
   and saves two files next to it: the canvas (`sign-in.excalidraw`), which
   keeps shapes people moved and anything drawn by hand, and a layout record
   (`sign-in.d2.json`). Don't write or edit those two.
-- To change a diagram, read its `.d2` file and save the new source with
-  `write_file` and its `base_version`. Changes made by hand on the canvas
-  survive the next layout.
+- To change a diagram, read its `.d2` file and save the new source with its
+  `base_version`: with `update_and_show` when the user should watch the
+  change happen in the chat, or with `write_file` for a quiet change. Changes made by
+  hand on the canvas survive the next layout.
 - To move, rename or delete a diagram, do the same to each of its three files
   that exists (see `list_files`) in one `save_files` call, so they stay
   together.

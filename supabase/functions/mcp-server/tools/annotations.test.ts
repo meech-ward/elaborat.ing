@@ -24,6 +24,7 @@ const DESTRUCTIVE = [
   'save_files',
   'share_project',
   'unarchive_project',
+  'update_and_show',
   'write_file',
 ]
 
@@ -67,6 +68,15 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // draw only adds elements to a drawing (or creates it): none already there is removed or changed.
   const draw = tools.find((tool) => tool.name === 'draw')
   assertEquals(draw?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  // update_and_show overwrites a file, as write_file does, and mounts the same view.
+  const update = tools.find((tool) => tool.name === 'update_and_show')
+  assertEquals(update?.title, 'Change and show')
+  assertEquals(update?.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false })
+  assertEquals(update?._meta, { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } })
+  // card_report logs how a live card went, for the view only, and stores nothing.
+  const report = tools.find((tool) => tool.name === 'card_report')
+  assertEquals(report?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(report?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
   // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
   const pass = tools.find((tool) => tool.name === 'panel_pass')
   assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })

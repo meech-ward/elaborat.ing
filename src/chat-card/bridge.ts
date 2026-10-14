@@ -24,11 +24,12 @@ export type HostEvent =
   /**
    * Initialized: whether the host lets the card call this server's tools, the
    * origins it approved for scripts and other resources, or null when it did
-   * not say (`hostCapabilities.sandbox.csp.resourceDomains`), and whether the
+   * not say (`hostCapabilities.sandbox.csp.resourceDomains`), whether the
    * card uses the host's fonts instead of the app's (ChatGPT, whose
-   * guidelines ask for the system's fonts).
+   * guidelines ask for the system's fonts), and the host's name as it gave
+   * it (`hostInfo.name`), or null.
    */
-  | { type: "ready"; canCallTools: boolean; resourceDomains: string[] | null; hostFonts: boolean }
+  | { type: "ready"; canCallTools: boolean; resourceDomains: string[] | null; hostFonts: boolean; hostName: string | null }
   /** ChatGPT set its globals, which may hold a result's `_meta` that came late. */
   | { type: "globals" }
 
@@ -47,6 +48,8 @@ export type HostBridge = {
   requestDisplayMode(mode: DisplayMode): void
   /** The result `_meta` ChatGPT hands the card on window.openai, or undefined. */
   openaiMeta(): unknown
+  /** How many partial inputs the host sent, and when the first came, in ms after the card started (null for none). */
+  partialInputs(): { count: number; firstMs: number | null }
 }
 
 export type DisplayMode = "inline" | "fullscreen"
@@ -238,6 +241,8 @@ export function connectHost(appVersion: string): HostBridge {
     for (const listener of listeners) listener(event)
   }
   const partials = partialRelay((args) => emit({ type: "tool-input-partial", args }))
+  // Every partial input the host sent, before they are passed on at most once a frame.
+  const sent = { count: 0, firstMs: null as number | null }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return
@@ -254,6 +259,8 @@ export function connectHost(appVersion: string): HostBridge {
     }
     switch (message.method) {
       case "ui/notifications/tool-input-partial":
+        sent.count++
+        sent.firstMs ??= Math.round(performance.now())
         return partials.partial(argumentsSchema.parse(message.params ?? {}).arguments)
       case "ui/notifications/tool-input":
         partials.close()
@@ -291,7 +298,8 @@ export function connectHost(appVersion: string): HostBridge {
       notify("ui/notifications/initialized")
       watchSize(notify)
       const csp = capabilities.sandbox?.csp
-      emit({ type: "ready", canCallTools: canCallTools(), resourceDomains: csp ? (csp.resourceDomains ?? []) : null, hostFonts })
+      const hostName = typeof result.hostInfo?.name === "string" && result.hostInfo.name ? result.hostInfo.name : null
+      emit({ type: "ready", canCallTools: canCallTools(), resourceDomains: csp ? (csp.resourceDomains ?? []) : null, hostFonts, hostName })
     },
     () => {},
   )
@@ -328,5 +336,6 @@ export function connectHost(appVersion: string): HostBridge {
       else openai()?.requestDisplayMode?.({ mode })?.catch(() => {})
     },
     openaiMeta: () => openai()?.toolResponseMetadata,
+    partialInputs: () => ({ ...sent }),
   }
 }
