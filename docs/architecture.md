@@ -872,7 +872,13 @@ The production server's tools are unchanged.
   `src/features/drawings/drawIn.ts`): each fades to its own opacity over
   300 ms, 60 ms after the one before (the last starts within 1.2 s), in
   frames outside undo that never mark the file changed; with reduced motion
-  they appear at once.
+  they appear at once. When any of them is out of sight (outside the visible
+  part of the canvas, clear of its islands), the view follows them with
+  Excalidraw's `scrollToContent`: they go to the middle at the same zoom,
+  zooming out only as far as it takes to fit them (not below the readable
+  zoom a drawing opens at), over 500 ms or at once with reduced motion. It
+  stays put while the person draws a shape or line or edits text, and for
+  3 s after they last pressed, scrolled or typed on the canvas.
 - **Decision: a note grows in sections the person can watch
   (`append_to_note`).** As with a drawing, a note written in one
   `write_file` appears all at once. `append_to_note` (`tools/appendToNote.ts`,
@@ -895,8 +901,14 @@ The production server's tools are unchanged.
   after the one before (the last starts within 1.2 s), told where they start
   by the render's `fluid.writeIn`; in Source the added lines are highlighted
   for 1.6 s. Both are display only, outside undo, and never mark the file
-  changed; with reduced motion nothing animates. A note with unsaved edits
-  says it changed elsewhere, as before, and writes nothing in.
+  changed; with reduced motion nothing animates. A reader following the end
+  of the note (it was on screen, within about a line, before the new version
+  came) sees the first new block or line come into view, smoothly or at once
+  with reduced motion: in Rendered the frame scrolls only its own document,
+  and in Source Monaco reveals the line near the top. A reader who scrolled
+  up, has text selected, or typed in that view in the last 3 s stays put. A
+  note with unsaved edits says it changed elsewhere, as before, and writes
+  nothing in.
 - **Decision: a change the person watches is shown as it is written.**
   `update_and_show` (titled Change and show) changes a note, drawing or
   diagram that exists, with the version the agent read, and returns

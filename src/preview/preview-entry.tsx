@@ -542,6 +542,8 @@ const subscribeIslands = (listener: () => void) => {
   };
 };
 let fluidEditor: FluidEditor | null = null;
+/** The fluid render epoch the editor shows; -1 before its first render. */
+let shownEpoch = -1;
 let runtimeKey: string | null = null;
 /** The commented text to mark, as the parent last sent it for a revision. */
 let commentMarks: CommentMarksMessage | null = null;
@@ -695,6 +697,12 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       const projection = pending.fluid;
       const editor = fluidEditor;
       const Content = fluidContent;
+      // Blocks a newer saved version added, the first time this frame shows
+      // it (as the editor writes them in), come into view if the reader is
+      // following the note's end.
+      const writtenIn = projection.writeIn !== undefined && shownEpoch !== -1 && projection.epoch !== shownEpoch ? projection.writeIn : undefined;
+      const follow = writtenIn !== undefined && followingEnd(editor) ? writtenIn : null;
+      shownEpoch = projection.epoch;
       flushSync(() => {
       captureDraftsBeforeRender();
       setSourceDraftContext(pending.session, pending.revision, pending.authoring?.editAck, pending.slots);
@@ -713,6 +721,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       );
       });
       finishSourceDraftRender(pending.slots.flatMap(slot => [...slot.props, ...(slot.titleInsertion ? [slot.titleInsertion] : [])]));
+      if (follow !== null) revealWrittenIn(editor, follow);
       return;
     }
     // The JSX runtime stays in evaluation scope; document components arrive
@@ -933,6 +942,46 @@ if (typeof IntersectionObserver !== "undefined" && document.documentElement) {
       maybeRestoreReadingPosition();
   });
   frameVisibility.observe(document.documentElement);
+}
+
+/**
+ * Following what an agent adds. When a newer saved version adds blocks at the
+ * end of the note (`fluid.writeIn`), the first of them comes into view if the
+ * reader was following: the end of the note was on screen, or within about a
+ * line of it, before they came (always so for a note that fitted). A reader
+ * who scrolled up to read, typed in the frame in the last few seconds, or has
+ * text selected stays where they are. Only this document scrolls, never the
+ * page around the frame: smoothly, or at once with reduced motion.
+ */
+const TYPING_MS = 3000;
+/** Room kept above the first new block when there is more after it than fits. */
+const FOLLOW_MARGIN = 16;
+let typedAt = -Infinity;
+window.addEventListener("keydown", () => {
+  typedAt = performance.now();
+}, true);
+
+/** Whether the reader follows the note's end: its end on screen, and nothing typed or selected. */
+function followingEnd(editor: FluidEditor): boolean {
+  const selection = document.getSelection();
+  if (selection && !selection.isCollapsed) return false;
+  if (document.hasFocus() && performance.now() - typedAt < TYPING_MS) return false;
+  const line = parseFloat(getComputedStyle(document.body).lineHeight) || 25;
+  return editor.view.dom.getBoundingClientRect().bottom <= document.documentElement.clientHeight + line;
+}
+
+/** Scroll the block at `from` up toward the top, as far as the note goes; never back up. */
+function revealWrittenIn(editor: FluidEditor, from: number): void {
+  const block = editor.view.nodeDOM(from);
+  const scroller = document.scrollingElement;
+  if (!(block instanceof Element) || !scroller) return;
+  const top = Math.min(
+    scroller.scrollHeight - scroller.clientHeight,
+    scroller.scrollTop + block.getBoundingClientRect().top - FOLLOW_MARGIN,
+  );
+  if (top <= scroller.scrollTop) return;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  scroller.scrollTo({ top, behavior: reduce ? "instant" : "smooth" });
 }
 
 // Comments. The parent sends the commented text as document ranges for a

@@ -282,6 +282,46 @@ test("with reduced motion, elements an agent adds to the open drawing appear at 
   expect((await boxFrames(page)).filter(([red, blue]) => (red > 0 && red < 250) || (blue > 0 && blue < 120))).toEqual([])
 })
 
+/** Open the frame on its own, watch the canvas, and have the agent add the red box far to its right, out of sight. */
+async function agentAddsBoxOutOfSight(page: Page, beforeTheAgent?: () => Promise<void>) {
+  const { fake, id } = await openProject(page, { "sketch.excalidraw": framed() }, "sketch.excalidraw")
+  await expect(canvas(page)).toBeVisible()
+  await expect(status(page)).toContainText("1 elements")
+  await expect(page.getByRole("button", { name: "Reset zoom, now 100%" })).toBeVisible()
+  const saves = saveCalls(fake)
+  await watchBoxes(page)
+  await beforeTheAgent?.()
+  await fake.agentChanges.save(person.id, id, "sketch.excalidraw", framed(box("red", "a1", 2400, 80, RED)))
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await expect(status(page)).toContainText("2 elements")
+  return { fake, saves }
+}
+
+test("the open drawing moves to an element an agent adds out of sight, at the same zoom, with nothing to save or undo", async ({ page }) => {
+  const { fake, saves } = await agentAddsBoxOutOfSight(page)
+  // The view went to the red box: it shows, all drawn in, and nothing was zoomed.
+  await expect.poll(() => boxesNow(page)).toEqual([255, 0])
+  await expect(page.getByRole("button", { name: "Reset zoom, now 100%" })).toBeVisible()
+  expect((await boxFrames(page)).filter(([, , unsaved]) => unsaved)).toEqual([])
+  await expect(status(page)).toContainText("Saved")
+  expect(saveCalls(fake)).toBe(saves)
+  await page.getByRole("button", { name: "More tools" }).click()
+  await expect(page.getByRole("menuitem", { name: "Undo" })).toBeDisabled()
+})
+
+test("a drawing the person has just moved stays where they put it when an agent adds an element out of sight", async ({ page }) => {
+  await agentAddsBoxOutOfSight(page, async () => {
+    // The person scrolls the view down a little with the mouse wheel.
+    const area = (await canvas(page).boundingBox())!
+    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2)
+    await page.mouse.wheel(0, 120)
+  })
+  // A second's worth of frames after it arrived, and the red box never came into view.
+  const arrived = (await boxFrames(page)).length
+  await expect.poll(async () => (await boxFrames(page)).length).toBeGreaterThan(arrived + 60)
+  expect((await boxFrames(page)).filter(([red]) => red > 0)).toEqual([])
+})
+
 test("on a desktop the canvas fills the window behind the panels, and the side panel keeps its own clicks", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   const { fake, id } = await openProject(page, { "sketch.excalidraw": SCENE }, "sketch.excalidraw")

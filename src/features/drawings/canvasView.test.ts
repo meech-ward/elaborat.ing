@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   OPENING_MARGIN,
   READABLE_ZOOM,
+  areaOffsets,
+  boundsInView,
   canvasToScene,
   canvasUiFrom,
   centreOn,
@@ -195,5 +197,25 @@ describe("comments on elements", () => {
     const centred = centreOn(view, area, { x: 300, y: 400 });
     expect(sceneToCanvas({ x: 300, y: 400 }, centred)).toEqual({ x: 280 + 580, y: 60 + 420 });
     expect(centred.zoom).toBe(2);
+  });
+});
+
+describe("following elements that arrive", () => {
+  test("a scene extent is in view only when all of it is in the area, clear of the islands", () => {
+    const view: CanvasViewport = { zoom: 1, scrollX: 0, scrollY: 0 };
+    const margin = OPENING_MARGIN.default;
+    expect(boundsInView([400, 200, 600, 300], view, area, margin)).toBe(true);
+    expect(boundsInView([280 + 32, 60 + 72, 1440 - 32, 900 - 72], view, area, margin)).toBe(true);
+    // Under the side panel, past the right edge, under the bottom island, or far away.
+    expect(boundsInView([200, 200, 400, 300], view, area, margin)).toBe(false);
+    expect(boundsInView([1300, 200, 1500, 300], view, area, margin)).toBe(false);
+    expect(boundsInView([400, 800, 600, 860], view, area, margin)).toBe(false);
+    expect(boundsInView([3000, 400, 3200, 500], view, area, margin)).toBe(false);
+    // Where the view is scrolled and zoomed to.
+    expect(boundsInView([3000, 400, 3200, 500], { zoom: 0.5, scrollX: -2000, scrollY: 0 }, area, margin)).toBe(true);
+  });
+
+  test("the area less the margin is what the offsets in from the canvas's edges leave", () => {
+    expect(areaOffsets({ width: 1440, height: 900 }, area, OPENING_MARGIN.default)).toEqual({ left: 312, top: 132, right: 32, bottom: 72 });
   });
 });

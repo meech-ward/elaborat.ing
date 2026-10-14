@@ -30,7 +30,9 @@
 // - A scene that arrived from elsewhere (`drawIn`, such as an agent's save)
 //   draws its new elements in (drawIn.ts): frames that change only their
 //   opacity, outside undo, while the library events report each one's own
-//   opacity, so the fade never reaches raw or marks anything changed.
+//   opacity, so the fade never reaches raw or marks anything changed. When
+//   any of them is out of sight, the view moves to them (followArrivals),
+//   unless the person has used the canvas in the last few seconds.
 //
 // Browser-only and lazily loaded: the native package (pinned in
 // package.json) resolves at render time. Unit tests never render this.
@@ -65,6 +67,9 @@ import {
 } from './CanvasComments.tsx';
 import {
   OPENING_MARGIN,
+  READABLE_ZOOM,
+  areaOffsets,
+  boundsInView,
   canvasToScene,
   canvasUiFrom,
   centreOn,
@@ -78,6 +83,7 @@ import {
   type CanvasArea,
   type CanvasViewport,
   type HitElement,
+  type OpeningMargin,
   type ScenePoint,
 } from './canvasView.ts';
 import './drawingCanvas.css';
@@ -231,9 +237,46 @@ function drawElementsIn(api: NativeAPI, arriving: ReadonlyMap<string, number>, o
   return () => cancelAnimationFrame(frame);
 }
 
+/** How long after the person last used the canvas (a pointer, the wheel or a key on it) the view stays where they left it. */
+const LEFT_ALONE_MS = 3000;
+
+/**
+ * Brings elements that just arrived into view when any of them is out of
+ * sight (outside the area, less the margin that keeps clear of the islands):
+ * Excalidraw's scrollToContent puts them in the middle of the area at the
+ * same zoom, zooming out only as far as it takes to fit them, and not below a
+ * readable zoom. Not while the person is drawing a shape or line or editing
+ * text. Animated unless `animate` is false. Only the view moves: nothing is
+ * recorded for undo, and the file does not change.
+ */
+function followArrivals(api: NativeAPI, ids: ReadonlyMap<string, number>, area: CanvasArea, margin: OpeningMargin, animate: boolean): void {
+  const state = api.getAppState();
+  if (!boundsNative || state.newElement || state.multiElement || state.editingTextElement || state.editingLinearElement) return;
+  const arrived = api.getSceneElements().filter((element) => ids.has(element.id));
+  if (arrived.length === 0) return;
+  const zoom = state.zoom.value;
+  if (boundsInView(boundsNative(arrived), { zoom, scrollX: state.scrollX, scrollY: state.scrollY }, area, margin)) return;
+  api.scrollToContent(arrived, {
+    fitToViewport: true,
+    maxZoom: zoom,
+    minZoom: Math.min(zoom, READABLE_ZOOM),
+    canvasOffsets: areaOffsets(state, area, margin),
+    animate,
+  });
+}
+
 /** The scene as the canvas shows it; raw when nothing is presented over it. */
 function presented(present: DrawingCanvasProps['present'], scene: DrawingScene): DrawingScene {
   return present ? present(scene) : scene;
+}
+
+/** The part of the canvas a person can see (the controls' layer), relative to the canvas; null while it is hidden. */
+function visibleAreaOf(wrapper: HTMLElement | null, area: HTMLElement | null): CanvasArea | null {
+  if (!wrapper || !area) return null;
+  const box = wrapper.getBoundingClientRect();
+  const view = area.getBoundingClientRect();
+  if (view.width === 0 || view.height === 0) return null;
+  return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
 }
 
 /** The scene's elements as the comment pins read them (geometry and id). */
@@ -311,14 +354,27 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   });
 
   /** The visible part of the canvas, relative to the canvas; null while it is hidden. */
-  const visibleArea = (): CanvasArea | null => {
-    const wrapper = wrapperRef.current;
-    const area = areaRef.current;
-    if (!wrapper || !area) return null;
-    const box = wrapper.getBoundingClientRect();
-    const view = area.getBoundingClientRect();
-    if (view.width === 0 || view.height === 0) return null;
-    return { left: view.left - box.left, top: view.top - box.top, width: view.width, height: view.height };
+  const visibleArea = (): CanvasArea | null => visibleAreaOf(wrapperRef.current, areaRef.current);
+
+  // The person's use of the canvas: the pointers down on it, and when they
+  // last pressed or let go of one, turned the wheel or pressed a key there
+  // (or went to an element from the comments). The view follows arriving
+  // elements only when the canvas has been left alone (followArrivals).
+  const heldRef = useRef(new Set<number>());
+  const usedAtRef = useRef(-Infinity);
+  useEffect(() => {
+    const release = (event: PointerEvent) => {
+      if (heldRef.current.delete(event.pointerId)) usedAtRef.current = performance.now();
+    };
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+    return () => {
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
+    };
+  }, []);
+  const onUse = () => {
+    usedAtRef.current = performance.now();
   };
 
   // Comment pins follow their elements and the view: placed again on every
@@ -398,6 +454,11 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const onPickDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     downRef.current = event.button === 0 && event.target instanceof HTMLCanvasElement ? { x: event.clientX, y: event.clientY } : null;
   };
+  const onUseDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    heldRef.current.add(event.pointerId);
+    onUse();
+    if (pickToComment) onPickDown(event);
+  };
   const onPickUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const down = downRef.current;
     downRef.current = null;
@@ -442,7 +503,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   // commit, with no intervening selection/paint event to re-establish it.
   // A new presentation redraws the raw scene the same way, quietly. A scene
   // that arrived from elsewhere (`drawIn`) draws its new elements in, unless
-  // the person prefers reduced motion.
+  // the person prefers reduced motion, and the view follows them when they
+  // are out of sight and the person has left the canvas alone for a while.
   useEffect(() => {
     const restyled = present !== presentRef.current;
     presentRef.current = present;
@@ -456,9 +518,9 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       const api = apiRef.current;
       if (api) {
         const shown = presented(present, scene);
-        const motion = loadedRef.current && scene === drawIn && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const arriving = motion ? arrivingElements(before, scene) : null;
-        if (arriving && arriving.size > 0) {
+        const arriving = loadedRef.current && scene === drawIn ? arrivingElements(before, scene) : null;
+        const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (arriving && arriving.size > 0 && motion) {
           // They arrive unseen, then fade in.
           pushScene(api, { ...shown, elements: withOpacities(shown.elements, new Map([...arriving.keys()].map((id) => [id, 0]))) }, onErrorRef.current ?? undefined);
           const stop = drawElementsIn(api, arriving, () => {
@@ -468,6 +530,10 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         } else {
           pushScene(api, shown, onErrorRef.current ?? undefined);
         }
+        const area = visibleAreaOf(wrapperRef.current, areaRef.current);
+        const leftAlone = heldRef.current.size === 0 && performance.now() - usedAtRef.current >= LEFT_ALONE_MS;
+        if (arriving && arriving.size > 0 && area && leftAlone)
+          followArrivals(api, arriving, area, OPENING_MARGIN[compact ? 'touch' : 'default'], motion);
       } else {
         pendingRef.current = scene;
       }
@@ -480,7 +546,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         pendingRef.current = rawRef.current;
       }
     }
-  }, [scene, present, drawIn]);
+  }, [scene, present, drawIn, compact]);
 
   // The scene opens fitted into the visible area, clear of the islands, when
   // it first loads and whenever the canvas is shown again (another tab or the
@@ -629,6 +695,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         const area = visibleArea();
         const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
         if (!api || !area || !element) return false;
+        usedAtRef.current = performance.now();
         const box = elementBox(pinElements([element])[0]);
         const state = api.getAppState();
         setViewport(api, centreOn({ zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }, area, { x: box.x + box.width / 2, y: box.y + box.height / 2 }));
@@ -654,7 +721,9 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       className="relative"
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
       onKeyDown={comments ? onCommentKey : undefined}
-      onPointerDownCapture={pickToComment ? onPickDown : undefined}
+      onKeyDownCapture={onUse}
+      onWheelCapture={onUse}
+      onPointerDownCapture={onUseDown}
       onPointerUp={pickToComment ? onPickUp : undefined}
     >
       <CanvasErrorBoundary onError={onError}>

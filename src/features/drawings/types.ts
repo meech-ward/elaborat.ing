@@ -224,7 +224,9 @@ export interface DrawingCanvasProps {
    * A scene that arrived from elsewhere, such as an agent's save. When
    * `scene` becomes this scene, the elements new in it draw in: each fades
    * in to its own opacity, one after another, unless the person prefers
-   * reduced motion. Display only, like `present`.
+   * reduced motion. When any of them is out of sight, the view moves to them,
+   * unless the person has used the canvas in the last few seconds. Display
+   * only, like `present`.
    */
   drawIn?: DrawingScene | null;
   /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */

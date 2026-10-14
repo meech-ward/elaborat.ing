@@ -37,6 +37,8 @@ type RailMarker = { line: number; top: number; ids: string[]; active: boolean; l
 const LINE_HEIGHT = 22;
 /** How long the lines a newer saved version added stay highlighted (sourceArrived.css fades them). */
 const ARRIVED_MS = 1600;
+/** A key pressed in the editor this recently counts as typing: the view does not follow what a newer saved version added. */
+const TYPING_MS = 3000;
 
 // A model keeps a file's byte order mark out of its text and offsets
 // (`getValue()` leaves it off) and gives it back when asked. The app's text
@@ -48,6 +50,33 @@ const positionAt = (model: monaco.editor.ITextModel, offset: number) => model.ge
 const offsetAt = (model: monaco.editor.ITextModel, position: monaco.IPosition) => model.getOffsetAt(position) + bomLength(model);
 /** The model as the document sync reads and replaces it: the file's text. */
 const fileModel = (model: monaco.editor.ITextModel) => ({ getValue: () => fileText(model), setValue: (value: string) => model.setValue(value) });
+
+/**
+ * Whether the person follows the end of the text: it is in view, or within
+ * about a line (as it always is when all of it fits), and they have nothing
+ * selected and typed nothing here in the last few seconds.
+ */
+function followingEnd(editor: monaco.editor.IStandaloneCodeEditor, typedAt: number): boolean {
+  if (editor.getSelections()?.some((selection) => !selection.isEmpty())) return false;
+  if (editor.hasTextFocus() && performance.now() - typedAt < TYPING_MS) return false;
+  return editor.getScrollTop() + editor.getLayoutInfo().height >= editor.getScrollHeight() - LINE_HEIGHT;
+}
+
+/**
+ * Scroll a line near the top of the view, as far as the text goes (Monaco's
+ * reveal near top). Monaco animates a scroll only while smoothScrolling is
+ * on, which would also animate the person's own scrolling, so it is on for
+ * this one scroll; at once with reduced motion.
+ */
+function revealNearTop(editor: monaco.editor.IStandaloneCodeEditor, lineNumber: number, reduce: boolean): void {
+  if (reduce) {
+    editor.revealLineNearTop(lineNumber, monaco.editor.ScrollType.Immediate);
+    return;
+  }
+  editor.updateOptions({ smoothScrolling: true });
+  editor.revealLineNearTop(lineNumber, monaco.editor.ScrollType.Smooth);
+  editor.updateOptions({ smoothScrolling: false });
+}
 
 export type MonacoSourceEditorProps = Omit<SourceEditorProps, "apiRef" | "initialText"> & { handoff: SourceHandoff };
 
@@ -65,6 +94,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   const commentMarksRef = useRef<((marks: readonly CommentMark[], source: string) => void) | null>(null);
   // Highlights the lines from an offset to the end for a moment: what a newer saved version added.
   const arrivedRef = useRef<((from: number) => void) | null>(null);
+  // When a key was last pressed in the editor (see TYPING_MS).
+  const typedAtRef = useRef(-Infinity);
   // Latest callbacks without rebinding the mount-once editor. Assigned in
   // an effect (never during render) so memoization stays valid.
   const live = useRef(props);
@@ -416,6 +447,9 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       editor.onDidChangeCursorPosition((event) => {
         live.current.onCursor(event.position.lineNumber, event.position.column);
       }),
+      editor.onKeyDown(() => {
+        typedAtRef.current = performance.now();
+      }),
     );
 
     // The formatted text as one undo step of its own.
@@ -613,13 +647,19 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     editorRef.current?.updateOptions({
       autoClosingQuotes: language === "markdown" || language === "mdx" ? "never" : "languageDefined",
     });
+    // Whether the person follows the end of the text shown, before it is replaced.
+    const editor = editorRef.current;
+    const following = Boolean(editor && live.current.visible && followingEnd(editor, typedAtRef.current));
     const replaced = documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
     // A newer saved version the note took (src/features/document/writeIn.ts):
     // the lines it added to the end are highlighted, unless the person
-    // prefers reduced motion. Decorations only, outside undo.
+    // prefers reduced motion. Decorations only, outside undo. If the person
+    // was following the end, the first added line comes into view.
     if (replaced && writeIn?.documentId === documentId && writeIn.text === documentText) {
       const from = appendedFrom(writeIn.before, writeIn.text);
-      if (from !== null && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) arrivedRef.current?.(from);
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (from !== null && !reduce) arrivedRef.current?.(from);
+      if (from !== null && following && editor) revealNearTop(editor, positionAt(model, from).lineNumber, reduce);
     }
   }, [documentText, docFormat, documentId, editorLanguage, writeIn]);
 

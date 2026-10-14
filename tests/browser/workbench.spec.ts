@@ -305,6 +305,81 @@ test("a section an agent adds to the open note writes in, leaves nothing unsaved
   expect((await pageFrames(page)).filter(([unsaved, highlighted]) => unsaved || highlighted)).toEqual([])
 })
 
+// A note longer than either view in Split, and the section an agent adds to
+// its end, which takes more room than the end of a view has below the note.
+const FIELD_NOTES = `# Field notes\n\n${Array.from({ length: 40 }, (_, at) => `Paragraph ${at + 1} of the field notes.`).join("\n\n")}\n`
+const WITH_RISKS = `${FIELD_NOTES}\n## Risks\n\nThe import is slow.\n\nThe export is slower.\n\nNobody has tried a restore.\n`
+const noteFrame = (page: Page) => page.frameLocator('iframe[title="Isolated document preview"]')
+/** How far the note's frame is scrolled, and how far it can be. */
+const frameScroll = (page: Page) =>
+  noteFrame(page).locator("body").evaluate(() => ({ top: Math.round(scrollY), max: document.documentElement.scrollHeight - innerHeight }))
+/** The lines Source shows, in order. */
+const sourceLines = async (page: Page) => (await editorText(page).locator(".view-line").allTextContents()).sort()
+
+/**
+ * Open the long note in Split and turn the mouse wheel over both views, a
+ * notch at a time: down to the end, then `back` notches up again.
+ */
+async function readLongNote(page: Page, back = 0) {
+  const project = await openProject(page, { "notes/field.md": FIELD_NOTES }, "notes/field.md")
+  await page.getByRole("button", { name: "Split", exact: true }).click()
+  await expect(noteFrame(page).getByRole("heading", { name: "Field notes" })).toBeVisible({ timeout: 15_000 })
+  await expect(editorText(page)).toContainText("# Field notes")
+  for (const view of [page.locator('iframe[title="Isolated document preview"]'), page.locator(".monaco-editor:visible").first()]) {
+    const box = (await view.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    for (let notch = 0; notch < 60; notch++) await page.mouse.wheel(0, 200)
+    await page.waitForTimeout(300)
+    for (let notch = 0; notch < back; notch++) await page.mouse.wheel(0, -200)
+  }
+  await expect
+    .poll(async () => {
+      const { top, max } = await frameScroll(page)
+      return max > 400 && (back ? top < max - 300 : top >= max - 1)
+    })
+    .toBe(true)
+  if (back) await expect(editorText(page)).not.toContainText("Paragraph 40 of the field notes.")
+  else await expect(editorText(page)).toContainText("Paragraph 40 of the field notes.")
+  return project
+}
+
+async function agentAddsRisks(fake: FakeSupabase, id: string) {
+  await fake.agentChanges.save(person.id, id, "notes/field.md", WITH_RISKS)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+}
+
+test("a note read to its end brings a section an agent adds into view, in Rendered and in Source", async ({ page }) => {
+  const { fake, id } = await readLongNote(page)
+  await agentAddsRisks(fake, id)
+  // All of the new section comes into view: its heading, through to its last paragraph.
+  for (const block of [noteFrame(page).getByRole("heading", { name: "Risks" }), noteFrame(page).getByText("Nobody has tried a restore.")]) {
+    await expect(block).toBeAttached()
+    await expect.poll(() => block.evaluate((element) => element.getBoundingClientRect().top >= 0 && element.getBoundingClientRect().bottom <= innerHeight)).toBe(true)
+  }
+  await expect(editorText(page)).toContainText("## Risks")
+  await expect(editorText(page)).toContainText("Nobody has tried a restore.")
+})
+
+test("a note scrolled up to read stays where it is when an agent adds a section, in Rendered and in Source", async ({ page }) => {
+  const { fake, id } = await readLongNote(page, 3)
+  // Settled where the reader left it.
+  await expect
+    .poll(async () => {
+      const before = (await frameScroll(page)).top
+      await page.waitForTimeout(250)
+      return (await frameScroll(page)).top === before
+    })
+    .toBe(true)
+  const scrolled = await frameScroll(page)
+  const lines = await sourceLines(page)
+  await agentAddsRisks(fake, id)
+  await expect(noteFrame(page).getByRole("heading", { name: "Risks" })).toBeAttached()
+  // Time for a view to have followed it, had it.
+  await page.waitForTimeout(1_000)
+  expect((await frameScroll(page)).top).toBe(scrolled.top)
+  expect(await sourceLines(page)).toEqual(lines)
+})
+
 test("leaving the project keeps unsaved edits, and they are there on return", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
   await typeAtEnd(page, "draft")

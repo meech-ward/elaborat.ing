@@ -270,6 +270,32 @@ export function centreOn(current: CanvasViewport, area: CanvasArea, point: Scene
   return { zoom: current.zoom, scrollX: x / current.zoom - point.x, scrollY: y / current.zoom - point.y };
 }
 
+/** Whether all of a scene extent shows in the area, less the margin, at this view. */
+export function boundsInView(bounds: SceneBounds, view: CanvasViewport, area: CanvasArea, margin: OpeningMargin): boolean {
+  const [minX, minY, maxX, maxY] = bounds;
+  const start = sceneToCanvas({ x: minX, y: minY }, view);
+  const end = sceneToCanvas({ x: maxX, y: maxY }, view);
+  return (
+    start.x >= area.left + margin.x &&
+    start.y >= area.top + margin.y &&
+    end.x <= area.left + area.width - margin.x &&
+    end.y <= area.top + area.height - margin.y
+  );
+}
+
+/**
+ * The area, less the margin, as offsets in from each edge of a canvas this
+ * size: what Excalidraw's scrollToContent fits content into.
+ */
+export function areaOffsets(canvas: { width: number; height: number }, area: CanvasArea, margin: OpeningMargin) {
+  return {
+    left: area.left + margin.x,
+    top: area.top + margin.y,
+    right: canvas.width - area.left - area.width + margin.x,
+    bottom: canvas.height - area.top - area.height + margin.y,
+  };
+}
+
 // The tool island's names for the tools Excalidraw names differently.
 const islandNames: Record<string, string> = { selection: "select", freedraw: "draw" };
 const nativeNames: Record<string, string> = { select: "selection", draw: "freedraw" };
