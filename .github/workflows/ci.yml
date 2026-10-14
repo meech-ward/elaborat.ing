@@ -14,7 +14,10 @@ concurrency:
 
 jobs:
   app:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to a new Ubuntu release from 2026-10-19, and a
+    # runner image change shouldn't break CI (and so stop deploys) unannounced.
+    # Move to a newer image on purpose, with a green run.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -52,7 +55,7 @@ jobs:
   # would only add its own run and the transfer before any test starts.
   browser-shard:
     name: browser (${{ matrix.project }} ${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       # Every shard runs to the end, so one run reports every failure.
       fail-fast: false
@@ -86,14 +89,14 @@ jobs:
   browser:
     needs: browser-shard
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - run: test "${{ needs.browser-shard.result }}" = success
 
   # Migrations are generated from supabase/schemas/ and committed. Regenerate
   # them and fail if that writes anything, so the two never drift apart.
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: supabase/setup-cli@v3
@@ -115,7 +118,7 @@ jobs:
   # Edge Functions run on Deno. Each has its own deno.json and deno.lock, and
   # --frozen fails rather than update a lockfile that is out of date.
   functions:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: denoland/setup-deno@v2

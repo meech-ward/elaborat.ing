@@ -38,7 +38,10 @@ jobs:
   # Scoped token: Edge Functions Read-write and Connection Pooling Read.
   deploy:
     if: vars.SUPABASE_PROJECT_ID != '' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to a new Ubuntu release from 2026-10-19, and a
+    # runner image change shouldn't break CI (and so stop deploys) unannounced.
+    # Move to a newer image on purpose, with a green run.
+    runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
     env:
@@ -89,7 +92,7 @@ jobs:
   # the config reads. Only this job's environment holds it.
   config:
     needs: deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: supabase-config
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_CONFIG_TOKEN }}
