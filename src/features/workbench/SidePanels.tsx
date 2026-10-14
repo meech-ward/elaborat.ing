@@ -105,6 +105,8 @@ export function TreeScroller({ children }: { children: ReactNode }) {
 /**
  * New file (a menu: note, drawing or diagram) and New folder, side by side.
  * On a phone they are the 40 high text buttons, New folder without a fill.
+ * Each takes the room its words need and they share the rest; in a narrow
+ * panel the icons go first, then the words shorten, so the two never overlap.
  */
 export function NewButtons({
   size,
@@ -119,21 +121,21 @@ export function NewButtons({
 }) {
   const touch = size === "touch";
   return (
-    <div className={cn("grid grid-cols-2", touch ? "mb-2 gap-2" : "mx-0.5 mb-2 gap-1.5")}>
+    <div className={cn(touch ? "mb-2 grid grid-cols-2 gap-2" : "@container/new mx-0.5 mb-2 flex gap-1.5")}>
       <ActionMenu
         {...menuProps}
         entries={newFile}
         contentProps={{ align: "start", ...menuProps?.contentProps }}
         trigger={
-          <Button size={touch ? "touch" : "sm"} className={cn(!touch && "rounded-tool")}>
-            {!touch && <Plus aria-hidden="true" strokeWidth={2.4} />}
-            New file
+          <Button size={touch ? "touch" : "sm"} className={cn("min-w-0", !touch && "flex-auto rounded-tool")}>
+            {!touch && <Plus aria-hidden="true" strokeWidth={2.4} className="hidden @[15rem]/new:block" />}
+            <span className="truncate">New file</span>
           </Button>
         }
       />
-      <Button variant={touch ? "ghost" : "secondary"} size={touch ? "touch" : "sm"} className={cn(touch ? "text-foreground" : "rounded-tool")} onClick={onNewFolder}>
-        {!touch && <FolderPlus aria-hidden="true" />}
-        New folder
+      <Button variant={touch ? "ghost" : "secondary"} size={touch ? "touch" : "sm"} className={cn("min-w-0", touch ? "text-foreground" : "flex-auto rounded-tool")} onClick={onNewFolder}>
+        {!touch && <FolderPlus aria-hidden="true" className="hidden @[15rem]/new:block" />}
+        <span className="truncate">New folder</span>
       </Button>
     </div>
   );

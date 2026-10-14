@@ -120,7 +120,7 @@ const SCRIPT = String.raw`
   var frame = document.getElementById("app");
   var fallback = document.getElementById("fallback");
   var nextId = 1, pending = {}, initialized = false, ready = false, readyTimer = null, serverTools = false;
-  var theme = null, metaPath = null, deepPath = null, shown = null, blocked = false, inline = true, maxHeight = null;
+  var theme = null, metaPath = null, deepPath = null, shown = null, blocked = false, inline = true, maxHeight = null, insets = null;
   // The result's pass, for the first page; spent passes; which page load is current; whether it asked for a new pass.
   var metaPass = null, spent = {}, loads = 0, retried = false;
   // Whether the tool's result has arrived, or the view stopped waiting for it.
@@ -237,8 +237,12 @@ const SCRIPT = String.raw`
     if (frame.contentWindow && shown) frame.contentWindow.postMessage({ type: "elaborating-embed:theme", theme: theme }, APP);
   }
   // Inline, the view is as tall as the chat allows; opened beside the chat it fills the panel.
+  // Full screen or in a panel, the host's own header and message box can lie
+  // over the view: the app keeps inside the safe area the host reports.
   function fit() {
     document.documentElement.style.height = inline && maxHeight ? maxHeight + "px" : "100%";
+    var safe = !inline && insets ? insets : { top: 0, right: 0, bottom: 0, left: 0 };
+    document.body.style.padding = safe.top + "px " + safe.right + "px " + safe.bottom + "px " + safe.left + "px";
     notify("ui/notifications/size-changed", { width: window.innerWidth, height: inline && maxHeight ? maxHeight : window.innerHeight });
   }
   function readContext(context) {
@@ -249,7 +253,14 @@ const SCRIPT = String.raw`
     var height = dimensions.maxHeight || dimensions.height || (window.openai && window.openai.maxHeight);
     if (typeof height === "number" && height > 0) maxHeight = height;
     if ("openai/deepLink" in context) readDeepLink(context["openai/deepLink"]);
+    readInsets(context.safeAreaInsets);
     fit();
+  }
+  // The safe area's insets in pixels, as the MCP Apps host context or ChatGPT's globals give them.
+  function readInsets(value) {
+    if (!value || typeof value !== "object") return;
+    var edge = function (name) { var n = Number(value[name]); return isFinite(n) && n > 0 ? Math.min(Math.round(n), 400) : 0; };
+    insets = { top: edge("top"), right: edge("right"), bottom: edge("bottom"), left: edge("left") };
   }
 
   window.addEventListener("message", function (event) {
@@ -288,7 +299,11 @@ const SCRIPT = String.raw`
     }
   });
   // ChatGPT may set the result's _meta in its globals after the result.
-  window.addEventListener("openai:set_globals", function () { readMeta(window.openai && window.openai.toolResponseMetadata); });
+  window.addEventListener("openai:set_globals", function () {
+    readMeta(window.openai && window.openai.toolResponseMetadata);
+    var safeArea = window.openai && window.openai.safeArea;
+    if (safeArea && safeArea.insets) { readInsets(safeArea.insets); fit(); }
+  });
 
   function openLink(url) {
     request("ui/open-link", { url: url }).catch(function () { window.open(url, "_blank", "noopener"); });
