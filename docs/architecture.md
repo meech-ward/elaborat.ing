@@ -969,9 +969,11 @@ The production server's tools are unchanged.
   card does not try): the card then shows the server's HTML, read-only, in
   the system's fonts, with a line that says the editor or the
   preview could not load. The files have content-hashed names and are
-  committed too, since the functions and the app deploy separately;
-  `builds.json` keeps the committed build's files next to a new one's, for
-  a view whose function deploys before the app or that a host cached.
+  committed too, since the functions and the app deploy separately. The
+  folder keeps the files of the last ten builds, listed newest first in
+  `builds.json`, for a view whose function deploys before the app or that a
+  host cached (ChatGPT for up to about an hour, through several rebuilds in
+  a busy hour); a file the builds share is stored once.
 - **Decision: the app itself beside the chat, framed from `/embed`.** The
   `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
   sidebar (global entrypoint), a conversation's side panel (thread

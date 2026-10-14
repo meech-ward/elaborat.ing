@@ -115,7 +115,8 @@ describe("the modules the card loads from elaborat.ing", () => {
   const addresses = [...new Set([...CARD_SCRIPT.matchAll(/["'`]https:\/\/elaborat\.ing\/chat-card\/([\w.-]+)["'`]/g)].map((match) => match[1]))]
 
   test("every file the view names is committed, with every file it imports, in the current build", () => {
-    const builds = JSON.parse(readFileSync(new globalThis.URL("builds.json", modules), "utf8")) as { current: string[] }
+    // The newest build, which the view names, is listed first.
+    const [current] = (JSON.parse(readFileSync(new globalThis.URL("builds.json", modules), "utf8")) as { builds: string[][] }).builds
     // The editor, the live view, the highlighter, the compiler, the frame's runtime and stylesheet, and three fonts.
     expect(addresses.length).toBe(9)
     const seen = new Set<string>()
@@ -128,7 +129,7 @@ describe("the modules the card loads from elaborat.ing", () => {
       for (const [, next] of code.matchAll(/(?:from|import)\s*\(?\s*["'`]\.\/([\w.-]+)["'`]/g)) visit(next)
     }
     for (const name of addresses) visit(name)
-    expect([...seen].filter((name) => !builds.current.includes(name))).toEqual([])
+    expect([...seen].filter((name) => !current.includes(name))).toEqual([])
     // The charts' library is one of them: a module the frame imports only for a note with a chart.
     expect([...seen].some((name) => name.startsWith("documentCharts-"))).toBe(true)
   })

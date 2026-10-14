@@ -23,16 +23,16 @@
 // shows the server's HTML, read-only, in the host's or the system's fonts.
 //
 // Both are committed: the Edge Functions deploy without building the app, and
-// the app deploys separately, so the previous build's files stay next to the
-// current ones (builds.json), for a view whose function is not deployed yet or
-// that a host cached. Run it after changing the card or the app modules it
-// uses, and give the view a new ui:// URI:
+// the app deploys separately, so the files of the last several builds stay
+// (builds.json, vite-plugins/chat-card-builds.ts), for a view whose function
+// is not deployed yet or that a host cached. Run it after changing the card or
+// the app modules it uses, and give the view a new ui:// URI:
 //
 //   bun run build:chat-card               writes both, and prints their sizes
 //   bun run build:chat-card --visualize   also writes treemaps to dist-visualize/chat-card/
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
 import { brotliCompressSync, constants, gzipSync } from "node:zlib"
@@ -40,6 +40,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { visualizer } from "rollup-plugin-visualizer"
 import { build, normalizePath, type PluginOption } from "vite"
+import { keepCardBuilds, listedCardBuilds } from "../vite-plugins/chat-card-builds"
 import { npmSpecifiers as npmSpecifierPlugin } from "../vite-plugins/npm-specifiers"
 import { COLOR_TOKEN_KEYS } from "../src/features/appearance/paletteCss"
 import { DEFAULT_THEME, getAppearanceTokens, tokenProperty, type ColorScheme } from "../src/features/appearance/tokens"
@@ -222,13 +223,11 @@ writeFileSync(
     `export const CARD_SCRIPT = ${JSON.stringify(code)}\n`,
 )
 
-// The files, next to the committed build's: builds.json lists both. The
-// committed one is what the last deploy serves, so builds between commits
-// replace each other, not it. A build the same as the committed one changes
-// nothing. Without git (a copy of the repository), the files on disk count.
-type Builds = { current: string[]; previous: string[] }
-mkdirSync(MODULES_DIR, { recursive: true })
-const committed = (): Builds | null => {
+// The files, before the committed builds' in builds.json
+// (vite-plugins/chat-card-builds.ts). A committed file an earlier build
+// removed comes back from git. Without git (a copy of the repository), the
+// files on disk count.
+const committed = (): unknown => {
   try {
     return JSON.parse(execFileSync("git", ["show", "HEAD:public/chat-card/builds.json"], { cwd: REPO, stdio: ["ignore", "pipe", "ignore"] }).toString())
   } catch {
@@ -236,19 +235,8 @@ const committed = (): Builds | null => {
   }
 }
 const fromGit = committed()
-const before: Builds = fromGit ?? (existsSync(BUILDS) ? JSON.parse(readFileSync(BUILDS, "utf8")) : { current: [], previous: [] })
-const written = [...files.keys()].sort()
-const builds: Builds = written.join() === [...before.current].sort().join() ? before : { current: written, previous: before.current }
-// A committed file an earlier build removed comes back from git.
-for (const name of builds.previous) {
-  if (fromGit && !files.has(name) && !existsSync(path.join(MODULES_DIR, name))) {
-    writeFileSync(path.join(MODULES_DIR, name), execFileSync("git", ["show", `HEAD:public/chat-card/${name}`], { cwd: REPO }))
-  }
-}
-const kept = new Set([...builds.current, ...builds.previous, "builds.json"])
-for (const name of readdirSync(MODULES_DIR)) if (!kept.has(name)) rmSync(path.join(MODULES_DIR, name))
-for (const [name, text] of files) writeFileSync(path.join(MODULES_DIR, name), text)
-writeFileSync(BUILDS, `${JSON.stringify(builds, null, 2)}\n`)
+const before = listedCardBuilds(fromGit ?? (existsSync(BUILDS) ? JSON.parse(readFileSync(BUILDS, "utf8")) : null))
+keepCardBuilds(MODULES_DIR, files, before, fromGit ? (name) => execFileSync("git", ["show", `HEAD:public/chat-card/${name}`], { cwd: REPO }) : undefined)
 
 // What each step downloads: the view itself, then each module with the chunks it imports.
 const size = (text: string | Uint8Array) => {
@@ -275,6 +263,6 @@ const lines: Array<[string, string | Uint8Array]> = [
   ["Components: the frame", loads([...frameFiles, frameStyle])],
   ["A chart in the note", loads(new Set(charts.flatMap((file) => [...graph(file)]).filter((file) => !frameFiles.has(file))))],
 ]
-console.log(`Wrote ${path.relative(REPO, OUT)} and ${written.length} modules in ${path.relative(REPO, MODULES_DIR)}`)
+console.log(`Wrote ${path.relative(REPO, OUT)} and ${files.size} modules in ${path.relative(REPO, MODULES_DIR)}`)
 console.log(`${"".padEnd(36)}       raw       gzip     brotli`)
 for (const [label, text] of lines) console.log(`${label.padEnd(36)} ${size(text)}`)
