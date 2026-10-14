@@ -4,6 +4,7 @@ import postgres from 'npm:postgres@3.4.9'
 import { withSupabase } from 'npm:@supabase/server@1.6.0'
 import { z } from 'npm:zod@4.4.3'
 
+import { lazyEmbedder, type ModelSession } from '../_shared/embedder.ts'
 import { JobSchema, processJobs } from './jobs.ts'
 import { postgresStore } from './store.ts'
 
@@ -14,14 +15,13 @@ import { postgresStore } from './store.ts'
 // The Edge Runtime's built-in models. Its type file above declares this
 // global, but `deno check` does not apply global declarations from a remote
 // module, so the one call used here is declared locally.
-declare const Supabase: {
-  ai: { Session: new (model: string) => { run(input: string, options: { mean_pool: boolean; normalize: boolean }): Promise<unknown> } }
-}
+declare const Supabase: { ai: { Session: new (model: string) => ModelSession } }
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!)
 const store = postgresStore(sql)
-const model = new Supabase.ai.Session('gte-small')
-const embed = async (text: string) => (await model.run(text, { mean_pool: true, normalize: true })) as number[]
+// Loaded on the first job, so a failed load fails that batch's jobs (they
+// return to the queue) instead of stopping the worker.
+const embed = lazyEmbedder(() => new Supabase.ai.Session('gte-small'))
 
 export default {
   // 'secret:*' accepts any of the project's secret keys, so the database can

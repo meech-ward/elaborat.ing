@@ -10,6 +10,7 @@ import {
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { postToCallback } from '../_shared/callbacks.ts'
+import { lazyEmbedder, type ModelSession } from '../_shared/embedder.ts'
 import { FILE_FORMAT_INSTRUCTIONS } from '../_shared/fileFormats.ts'
 import { EVENT_CAPABILITIES, type EventsContext, registerEvents } from './events.ts'
 import { registerTools, type ToolContext } from './tools/index.ts'
@@ -91,11 +92,10 @@ function createServer(context: ToolContext, events: EventsContext): McpServer {
 // The Edge Runtime's built-in models, for the search tool. Its type file
 // declares this global, but `deno check` does not apply global declarations
 // from a remote module, so the one call used here is declared locally.
-declare const Supabase: {
-  ai: { Session: new (model: string) => { run(input: string, options: { mean_pool: boolean; normalize: boolean }): Promise<unknown> } }
-}
-const model = new Supabase.ai.Session('gte-small')
-const embed = async (text: string) => (await model.run(text, { mean_pool: true, normalize: true })) as number[]
+declare const Supabase: { ai: { Session: new (model: string) => ModelSession } }
+// Loaded on the first search, not at boot: a failed load at boot stopped the
+// worker along with whatever request it was serving.
+const embed = lazyEmbedder(() => new Supabase.ai.Session('gte-small'))
 
 async function handleMcp(request: Request, ctx: SupabaseContext): Promise<Response> {
   // The server and its tools are bound to this caller for exactly one request.
