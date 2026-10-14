@@ -122,6 +122,32 @@ test("Save pressed while a rendered edit is finishing saves it once the edit has
   await expect(page.getByText("Finishing edit…")).toHaveCount(0)
 })
 
+/** Duplicate was asked for while the edit is held back: no copy until the edit has finished, then a copy that has it. */
+async function duplicatedOnceEditFinished(page: Page, fake: FakeSupabase, id: string) {
+  // A copy made at once, without the edit, would be open by now.
+  await page.waitForTimeout(500)
+  await expect(page.getByRole("tab", { name: "a copy.md" })).toHaveCount(0)
+  await releaseTransactions(page)
+  await expect(page.getByRole("tab", { name: "a copy.md" })).toHaveAttribute("aria-selected", "true")
+  await expect.poll(() => serverContent(fake, id, "a copy.md")).toBe("# Title\n\nFirst paragraph. More.\n")
+}
+
+test("⌘D / Ctrl+D pressed in the rendered view while an edit is finishing duplicates the file once the edit has finished", async ({ page }) => {
+  const { fake, id } = await typeHeldInRendered(page)
+  await page.keyboard.press("ControlOrMeta+d")
+  // The frame passes the shortcut up while the edit is still held back.
+  await page.waitForFunction(() => window.frameMessages.some((message) => message.kind === "shortcut"))
+  await duplicatedOnceEditFinished(page, fake, id)
+})
+
+test("Duplicate in the command palette while a rendered edit is finishing duplicates the file once the edit has finished", async ({ page }) => {
+  const { fake, id } = await typeHeldInRendered(page)
+  await page.keyboard.press("ControlOrMeta+k")
+  await page.getByLabel("Search commands").first().fill("Duplicate")
+  await page.keyboard.press("Enter")
+  await duplicatedOnceEditFinished(page, fake, id)
+})
+
 test("unsaved edits survive a reload, and are not sent to the server", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "saved\n" }, "a.md")
   await typeAtEnd(page, "draft")

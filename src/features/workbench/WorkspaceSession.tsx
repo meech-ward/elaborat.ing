@@ -146,10 +146,13 @@ export function WorkspaceSession({
   const editorApi = useRef<SourceEditorApi | null>(null);
   const [renderedPending, setRenderedPending] = useState(false);
   const renderedPendingRef = useRef(false);
+  // Whatever waits for a rendered edit to finish (a duplicate), let go once it has.
+  const editWaiters = useRef<Array<() => void>>([]);
   const pendingMode = useRef<Mode | null>(null);
   const handleRenderedPending = useCallback((pending: boolean) => {
     renderedPendingRef.current = pending;
     setRenderedPending(pending);
+    if (!pending) for (const resolve of editWaiters.current.splice(0)) resolve();
     if (!pending && pendingMode.current !== null) {
       const next = pendingMode.current;
       pendingMode.current = null;
@@ -174,6 +177,8 @@ export function WorkspaceSession({
         if (readOnly) return;
         await client.persistDrafts([{ path: initial.path, content: store.snapshot().text, baseRevision: openFile.baseRevision }]);
       },
+      whenEditFinished: () =>
+        renderedPendingRef.current ? new Promise<void>((resolve) => { editWaiters.current.push(resolve); }) : Promise.resolve(),
     });
     return () => onOperationSession?.(initial.path,null);
   }, [client,initial.path,locked,onOperationSession,openFile,readOnly,store]);

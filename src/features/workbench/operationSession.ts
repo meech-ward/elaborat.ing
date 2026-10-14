@@ -11,4 +11,6 @@ export interface OperationSession {
   freeze: () => void;
   release: () => void;
   persistDraft?: () => Promise<void>;
+  /** Resolves once no rendered edit is still finishing, so the text read next has it. */
+  whenEditFinished?: () => Promise<void>;
 }

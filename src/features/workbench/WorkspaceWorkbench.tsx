@@ -641,11 +641,14 @@ export function WorkspaceWorkbench({
    * Copy a file to "<name> copy" in its folder as it is on screen, unsaved
    * edits included, saved at once and opened in a new tab. The original is
    * not changed. A diagram's generated canvas and sidecar are copied with it,
-   * so the copy keeps its layout and canvas edits.
+   * so the copy keeps its layout and canvas edits. Every way to duplicate (a
+   * menu, ⌘D / Ctrl+D, the command palette) comes here, and waits here for a
+   * rendered edit that is still finishing, so the copy has it.
    */
   const duplicateFile = useCallback(
     async (path: string) => {
       try {
+        await leaveSessions.current.get(path)?.whenEditFinished?.();
         await leaveSessions.current.get(path)?.persistDraft?.();
         await client.flushLocalDrafts();
         const taken = takenNames();
