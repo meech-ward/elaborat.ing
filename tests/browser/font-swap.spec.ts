@@ -7,6 +7,9 @@ import { APP_URL } from "./urls.ts"
 // has Space Grotesk's metrics, so text wraps onto the same lines and nothing
 // jumps when the font arrives. These tests hold the font back, note where
 // everything on the sign-in page sits, let the font arrive and look again.
+// They check the stand-in the machine has: Arial's where Arial, Liberation Sans
+// or Arimo is installed (as in the test image), otherwise Roboto's (on a
+// machine with Roboto and none of those three, as an Android phone).
 
 /** Where each heading, paragraph, label, field, button and link sits. */
 const positions = (page: Page) =>
@@ -24,6 +27,12 @@ const positions = (page: Page) =>
   })
 
 const fontLoaded = (page: Page, family: string) => page.evaluate((family) => document.fonts.check(`13px '${family}'`), family)
+/** The stand-in the page draws in until then: Arial's, or Roboto's on a device without Arial, Liberation Sans or Arimo (an Android phone). */
+const standIn = (page: Page) =>
+  page.evaluate(() => {
+    const loaded = new Set([...document.fonts].filter((face) => face.status === "loaded").map((face) => face.family.replace(/["']/g, "")))
+    return ["Space Grotesk Fallback", "Space Grotesk Roboto Fallback"].find((family) => loaded.has(family)) ?? null
+  })
 
 /**
  * How far everything on the sign-in page moves when Space Grotesk arrives, in
@@ -36,15 +45,16 @@ async function movesOnArrival(page: Page, { password = false, uiFont }: { passwo
     await held
     await route.continue()
   })
-  if (uiFont) {
-    await page.addInitScript((uiFont) => {
-      document.addEventListener("DOMContentLoaded", () => {
-        const style = document.createElement("style")
-        style.textContent = `:root { --ui-font: ${uiFont} !important }`
-        document.head.append(style)
-      })
-    }, uiFont)
-  }
+  // Text is placed at fractions of a pixel, as phones and Macs place it:
+  // Chromium on Linux otherwise rounds each letter to whole pixels, which by
+  // itself moves what follows a word by several pixels, whatever the stand-in.
+  await page.addInitScript((uiFont) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style")
+      style.textContent = `:root { text-rendering: geometricPrecision; ${uiFont ? `--ui-font: ${uiFont} !important` : ""} }`
+      document.head.append(style)
+    })
+  }, uiFont ?? "")
   await fakeSupabase(page)
   await page.goto(new URL("sign-in", APP_URL).href)
   if (password) {
@@ -54,7 +64,7 @@ async function movesOnArrival(page: Page, { password = false, uiFont }: { passwo
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible()
   }
   await expect(page.getByText("Checking your session...")).toHaveCount(0)
-  if (!uiFont) await expect.poll(() => fontLoaded(page, "Space Grotesk Fallback")).toBe(true)
+  if (!uiFont) await expect.poll(() => standIn(page)).not.toBeNull()
   expect(await fontLoaded(page, "Space Grotesk Variable")).toBe(false)
   const before = await positions(page)
 
@@ -72,8 +82,7 @@ async function movesOnArrival(page: Page, { password = false, uiFont }: { passwo
  * Moves past a pixel up or down, or past 3.5 pixels sideways. A line that wraps
  * differently moves everything under it by a whole line. Sideways, the
  * stand-in's letters are not quite Space Grotesk's widths, so what sits after
- * a word can shift by up to 3 pixels (Chromium on Linux draws text at
- * whole-pixel sizes, which sets that floor).
+ * a word can shift by up to 3 pixels.
  */
 const jumps = (moves: { name: string; dx: number; dy: number }[]) => moves.filter(({ dx, dy }) => !(Math.abs(dy) <= 1 && Math.abs(dx) <= 3.5))
 

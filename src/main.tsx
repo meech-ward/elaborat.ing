@@ -22,11 +22,11 @@ if (leaving) {
 
 configureExcalidrawAssets()
 
-// Firefox loads the next font of a list only once a page asks for it, so while
+// Firefox loads the next fonts of a list only once a page asks for them, so while
 // Space Grotesk downloads it would lay text out in its default font instead of
-// Space Grotesk's stand-in (features/appearance/themes.css), and the page would
+// Space Grotesk's stand-ins (features/appearance/themes.css), and the page would
 // move when Space Grotesk arrives. In a panel the interface uses the device's fonts.
-if (!embedded) for (const weight of [400, 700]) void document.fonts.load(`${weight} 1em 'Space Grotesk Fallback'`).catch(() => {})
+if (!embedded) for (const weight of [400, 700]) void document.fonts.load(`${weight} 1em 'Space Grotesk Fallback', 'Space Grotesk Roboto Fallback'`).catch(() => {})
 
 // The page never zooms on phones and tablets (docs/architecture.md). iOS Safari
 // ignores the viewport's maximum-scale for pinches, so its page-level gesture
