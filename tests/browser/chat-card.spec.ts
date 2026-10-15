@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { expect, test, type Page } from "./fixtures.ts"
+import { expect, test, type FrameLocator, type Page } from "./fixtures.ts"
 import { FILE_VIEW_HTML } from "../../supabase/functions/mcp-server/tools/fileViewHtml.ts"
 
 // The show_file view (the chat card) in a stand-in MCP Apps host: a page that
@@ -75,13 +75,19 @@ function shown(version: number, source: string) {
 const DEFAULT_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'"
 const APP = "https://elaborat.ing"
 const DECLARED_CSP = `default-src 'none'; script-src 'self' 'unsafe-inline' ${APP}; style-src 'self' 'unsafe-inline' ${APP}; img-src 'self' data: ${APP}; font-src ${APP}; media-src 'self' data: ${APP}; connect-src 'none'; object-src 'none'`
+// The declared policy in a host that also allows code from strings (and so
+// WebAssembly) and workers from blob: URLs, as ChatGPT's view does: there the
+// card draws D2 diagrams itself. D2's engine is WebAssembly, and it lays a
+// diagram out by running ELK's JavaScript from strings.
+const EVAL_CSP = `${DECLARED_CSP.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' 'unsafe-eval'")}; worker-src blob:`
 
 /**
- * The host's policy for the view: the one it declares, the default one from a
- * host that does not say, or the default one from a host that says in
+ * The host's policy for the view: the one it declares, that one with code
+ * from strings and blob: workers allowed, the default one from a host that
+ * does not say, or the default one from a host that says in
  * `hostCapabilities.sandbox.csp` that it allows no resource origins.
  */
-type Policy = "declared" | "default" | "default-said"
+type Policy = "declared" | "eval" | "default" | "default-said"
 /**
  * `chatgpt`: the host puts window.openai in the frame, as ChatGPT does.
  * `modes`: the display modes the host offers (`availableDisplayModes`).
@@ -116,8 +122,9 @@ async function serveModules(page: Page) {
 /** Opens the stand-in host with the view in it; answers come from window.answers. */
 async function openHost(page: Page, host: Host) {
   const policy = host.policy ?? "declared"
-  const csp = policy === "declared" ? DECLARED_CSP : DEFAULT_CSP
-  const sandbox = policy === "declared" ? { csp: { resourceDomains: [APP] } } : policy === "default-said" ? { csp: {} } : undefined
+  const csp = policy === "declared" ? DECLARED_CSP : policy === "eval" ? EVAL_CSP : DEFAULT_CSP
+  const declared = policy === "declared" || policy === "eval"
+  const sandbox = declared ? { csp: { resourceDomains: [APP] } } : policy === "default-said" ? { csp: {} } : undefined
   const view = FILE_VIEW_HTML.replace(
     "<head>",
     `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><script>${host.chatgpt ? "window.openai={};" : ""}window.violations=[];document.addEventListener('securitypolicyviolation',(e)=>window.violations.push(e.violatedDirective+' '+e.blockedURI))</script>`,
@@ -359,6 +366,167 @@ test("a diagram shows on the dotted canvas in dark mode, with a banner when its 
   // Nothing runs past the phone's width.
   expect(await page.frames()[1].evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   expect(await violations(page)).toEqual([])
+})
+
+// D2 diagrams the app has not drawn from their source yet: a new one, with no
+// canvas, or one whose source changed since its canvas was saved. The server
+// sends what each is drawn from, and the card lays it out with the app's D2
+// engine, in a worker of its own, where the host allows code from strings and
+// workers from blob: URLs, as ChatGPT's view does.
+
+const SIGN_IN = "flows/sign-in.d2"
+const SIGN_IN_URL = `https://elaborat.ing/projects/${PROJECT}/${SIGN_IN}`
+/**
+ * A diagram as the app saves it once opened (made with projectDiagramArtifact,
+ * diagramSidecarText and saveDrawingFile), with Projects and its label then
+ * moved by hand, 40 right and 160 down: its source, canvas and layout record.
+ */
+const SAVED_DIAGRAM = JSON.parse(readFileSync(path.join(import.meta.dirname, "chat-card-diagram.json"), "utf8")) as { source: string; canvas: string; layout: string }
+const SIGN_IN_D2 = SAVED_DIAGRAM.source
+/** Its shapes' and lines' labels, in the order the app draws them. */
+const SIGN_IN_LABELS = ["Sign-in page", "Auth server", "Projects", "password", "session"]
+/** Its source since the canvas was saved: it gained a box and a line. */
+const CHANGED_D2 = `${SIGN_IN_D2}audit: Audit log\nauth -> audit: record\n`
+const NOT_DRAWN = "Open it in elaborat.ing to draw it."
+
+/** show_file's result for the diagram on its own, with what the card draws it from. */
+function diagramShown(status: "not_drawn" | "stale", d2: Record<string, string>, svgs: Record<string, string> = {}) {
+  return {
+    content: [{ type: "text", text: `Showing ${SIGN_IN} (version 2) to the user.` }],
+    structuredContent: {
+      project_id: PROJECT,
+      path: SIGN_IN,
+      kind: "diagram",
+      version: 2,
+      updated_at: null,
+      url: SIGN_IN_URL,
+      truncated: false,
+      embeds: [{ kind: "diagram", path: SIGN_IN, url: SIGN_IN_URL, status }],
+    },
+    _meta: { ...(Object.keys(svgs).length > 0 ? { "elaborat.ing/svg": svgs } : {}), "elaborat.ing/d2": { [SIGN_IN]: d2 } },
+  }
+}
+
+/** show_file's result for a note that embeds diagrams the app has not drawn yet, each with its source. */
+function noteShown(sources: Record<string, string>) {
+  const paths = Object.keys(sources)
+  const url = `https://elaborat.ing/projects/${PROJECT}/notes/sign-in.mdx`
+  return {
+    content: [{ type: "text", text: "Showing notes/sign-in.mdx (version 1) to the user." }],
+    structuredContent: {
+      project_id: PROJECT,
+      path: "notes/sign-in.mdx",
+      kind: "note",
+      version: 1,
+      updated_at: null,
+      url,
+      truncated: false,
+      embeds: paths.map((path) => ({ kind: "diagram", path, url: `https://elaborat.ing/projects/${PROJECT}/${path}`, status: "not_drawn" })),
+    },
+    _meta: {
+      "elaborat.ing/html": `<h1>Sign-in flow</h1><p>How someone signs in.</p>${paths.map((_, index) => `<figure class="embed" data-embed="${index}"></figure>`).join("")}`,
+      "elaborat.ing/source": `# Sign-in flow\n\nHow someone signs in.\n\n${paths.map((path) => `<Diagram src="${path}" />\n`).join("\n")}`,
+      "elaborat.ing/d2": Object.fromEntries(paths.map((path) => [path, { source: sources[path] }])),
+    },
+  }
+}
+
+/** The text in the card's drawing of the diagram at `path`. */
+const drawnText = (card: FrameLocator, path = SIGN_IN) => card.getByRole("img", { name: `Diagram ${path}` }).locator("text")
+/** The card's files asked for that draw diagrams: the module, D2's engine and its worker. */
+const DIAGRAM_FILES = ["diagram", "d2-engine", "d2-worker"]
+
+test("a note's new D2 diagram is drawn in the card from its source, and one that does not compile says to open it", async ({ page }) => {
+  test.setTimeout(60_000)
+  const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: noteShown({ [SIGN_IN]: SIGN_IN_D2, "flows/broken.d2": "x -> {\n" }) })
+  await expect(card.getByText("How someone signs in.")).toBeVisible()
+  // Its labels are in the drawing, laid out as the app lays it out.
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS, { timeout: 30_000 })
+  await expect(card.getByRole("img", { name: "Diagram flows/broken.d2" })).toHaveCount(0)
+  await expect(card.getByText(NOT_DRAWN)).toHaveCount(1)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  // The drawing module, and D2's engine and worker, came from elaborat.ing, under the host's policy.
+  expect(asked(page)).toEqual(expect.arrayContaining(DIAGRAM_FILES))
+  expect(await violations(page)).toEqual([])
+})
+
+test("a new D2 diagram shown on its own is drawn in the card, on the dotted canvas in dark mode", async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 390, height: 800 })
+  const card = await openHost(page, { tools: true, theme: "dark", policy: "eval", result: diagramShown("not_drawn", { source: SIGN_IN_D2 }) })
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS, { timeout: 30_000 })
+  // The palette's diagram fills, through the dark filter, as for a diagram the app drew.
+  await expect(card.locator(".card-art svg .d2-fill").first()).toBeAttached()
+  await expect(card.locator(".card-art svg")).toHaveCSS("filter", /invert/)
+  await expect(card.getByText(NOT_DRAWN)).toHaveCount(0)
+  expect(await page.frames()[1].evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(await violations(page)).toEqual([])
+})
+
+test("a D2 diagram whose source changed is drawn from the new source, keeping the shape moved by hand", async ({ page }) => {
+  test.setTimeout(60_000)
+  // Since its canvas was saved, with Projects moved, the source gained a box and a line.
+  const result = diagramShown("stale", { source: CHANGED_D2, canvas: SAVED_DIAGRAM.canvas, layout: SAVED_DIAGRAM.layout }, { [SIGN_IN]: SVG })
+  const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result })
+  const drawing = card.getByRole("img", { name: `Diagram ${SIGN_IN}` })
+  await expect(drawing.locator("text", { hasText: "Audit log" })).toHaveCount(1, { timeout: 30_000 })
+  await expect(drawing.locator("text", { hasText: "record" })).toHaveCount(1)
+  // Projects stays where it was moved to on the canvas.
+  const moved = (JSON.parse(SAVED_DIAGRAM.canvas).elements as Array<{ id: string; x: number; y: number }>).find((element) => element.id === "d2:projects:label")!
+  await expect(drawing.locator(`g[transform="translate(${moved.x} ${moved.y})"] text`)).toHaveText("Projects")
+  // Drawn from its source as it is now, it is not out of date.
+  await expect(card.getByText("Its source changed after this was drawn.", { exact: false })).toHaveCount(0)
+  expect(await violations(page)).toEqual([])
+})
+
+test("where D2's engine does not load, a new diagram says to open it and a changed one shows as last drawn", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: null, manual: true })
+  const failed: string[] = []
+  await page.route(`${APP}/chat-card/d2-engine-*`, (route) => {
+    failed.push(route.request().url())
+    return route.fulfill({ status: 404 })
+  })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await send(page, "ui/notifications/tool-result", noteShown({ [SIGN_IN]: SIGN_IN_D2 }))
+  await expect.poll(() => failed.length).toBe(1)
+  await expect(card.getByText(NOT_DRAWN)).toBeVisible()
+  await expect(card.getByRole("img", { name: `Diagram ${SIGN_IN}` })).toHaveCount(0)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+
+  await send(page, "ui/notifications/tool-result", diagramShown("stale", { source: CHANGED_D2, canvas: SAVED_DIAGRAM.canvas, layout: SAVED_DIAGRAM.layout }, { [SIGN_IN]: SVG }))
+  await expect(card.getByRole("status").filter({ hasText: "Its source changed after this was drawn." })).toBeVisible()
+  await expect(card.getByRole("img", { name: `Diagram ${SIGN_IN}` }).locator("rect")).toHaveCount(1)
+})
+
+test("D2's engine loads only for a card with a diagram to draw", async ({ page }) => {
+  test.setTimeout(60_000)
+  // A diagram the app has drawn, and a drawing: there is nothing for the card to draw.
+  const note = shown(4, "# Plan\n")
+  const drawn = {
+    ...note,
+    structuredContent: {
+      ...note.structuredContent,
+      embeds: [
+        { kind: "diagram", path: SIGN_IN, url: SIGN_IN_URL, status: "drawn" },
+        { kind: "drawing", path: "art/flow.excalidraw", url: `https://elaborat.ing/projects/${PROJECT}/art/flow.excalidraw`, status: "drawn" },
+      ],
+    },
+    _meta: {
+      ...note._meta,
+      "elaborat.ing/html": '<h1>Plan</h1><figure class="embed" data-embed="0"></figure><figure class="embed" data-embed="1"></figure>',
+      "elaborat.ing/svg": { [SIGN_IN]: SVG, "art/flow.excalidraw": SVG },
+    },
+  }
+  let card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: drawn })
+  await expect(card.getByRole("img", { name: `Diagram ${SIGN_IN}` })).toBeVisible()
+  await expect(card.getByRole("img", { name: "Drawing art/flow.excalidraw" })).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(asked(page).filter((name) => DIAGRAM_FILES.includes(name))).toEqual([])
+
+  // A note with a new diagram loads them.
+  card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: noteShown({ [SIGN_IN]: SIGN_IN_D2 }) })
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS, { timeout: 30_000 })
+  expect(asked(page)).toEqual(expect.arrayContaining(DIAGRAM_FILES))
 })
 
 // Component previews: a note's built-in and workspace components, and a
@@ -766,6 +934,34 @@ test("a new note writes in, its heading before it is saved, then the saved card 
   await send(page, "ui/notifications/tool-result", created("notes/launch.mdx", "note", { "elaborat.ing/html": "<h1>Launch plan</h1><p>As saved.</p>", "elaborat.ing/source": PLAN }))
   await expect(card.getByText("As saved.")).toBeVisible()
   await expect(card.locator("[data-live-content]")).toHaveCount(0)
+})
+
+test("a new D2 diagram writes in as source while its engine starts, and its drawing takes the source's place when the result comes", async ({ page }) => {
+  test.setTimeout(60_000)
+  const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  // Notes whether the card ever says it could not draw the diagram.
+  await cardFrame(page).evaluate((note) => {
+    const state = window as unknown as { saidNotDrawn: boolean }
+    state.saidNotDrawn = false
+    const root = document.getElementById("root")!
+    new MutationObserver(() => {
+      if (root.textContent?.includes(note)) state.saidNotDrawn = true
+    }).observe(root, { subtree: true, childList: true, characterData: true })
+  }, NOT_DRAWN)
+  await writeIn(page, SIGN_IN, SIGN_IN_D2, cutsOf(SIGN_IN_D2, 4))
+  await expect(card.locator(".live-source")).toContainText("auth -> projects: session")
+  // D2's engine starts loading while the source comes in.
+  await expect.poll(() => asked(page)).toEqual(expect.arrayContaining(DIAGRAM_FILES))
+
+  await send(page, "ui/notifications/tool-input", input(SIGN_IN, SIGN_IN_D2))
+  const result = diagramShown("not_drawn", { source: SIGN_IN_D2 })
+  await send(page, "ui/notifications/tool-result", { ...result, content: [{ type: "text", text: `Created ${SIGN_IN} (version 1) and showed it to the user.` }] })
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS, { timeout: 30_000 })
+  await expect(card.locator(".live-source")).toHaveCount(0)
+  await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toHaveAttribute("href", SIGN_IN_URL)
+  expect(await cardFrame(page).evaluate(() => (window as unknown as { saidNotDrawn: boolean }).saidNotDrawn)).toBe(false)
+  expect(await violations(page)).toEqual([])
 })
 
 test("input and result that come together, as in a conversation opened again, show the saved card at once", async ({ page }) => {

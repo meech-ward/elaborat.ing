@@ -8,21 +8,23 @@
  * card's small script tree-shakes, where full Zod would all come along.
  */
 import { z } from "zod/mini"
-import type { CardEmbed, FileKind } from "./embedText"
+import type { CardEmbed, DiagramSource, FileKind } from "./embedText"
 
 /** The app's origin: the only place the card links to. */
 export const APP_ORIGIN = "https://elaborat.ing/"
 
 /**
  * The result `_meta` keys (fileView.ts): the note's HTML, its source, each
- * drawn file's SVG by path, and the component files to preview.
+ * drawn file's SVG by path, what each diagram the card draws itself is drawn
+ * from, by path, and the component files to preview.
  */
 const HTML_KEY = "elaborat.ing/html"
 const SOURCE_KEY = "elaborat.ing/source"
 const SVG_KEY = "elaborat.ing/svg"
+const D2_KEY = "elaborat.ing/d2"
 const COMPONENTS_KEY = "elaborat.ing/components"
 
-export type { CardEmbed, EmbedStatus, FileKind } from "./embedText"
+export type { CardEmbed, DiagramSource, EmbedStatus, FileKind } from "./embedText"
 export { EMBED_NOTES, FILE_NOTES, KIND_NAMES, svgFor } from "./embedText"
 
 /** One file as the card shows it. */
@@ -40,6 +42,11 @@ export type CardFile = {
   embeds: Array<CardEmbed | null>
   /** SVG markup by path, for the embeds that were drawn. */
   svgs: Record<string, string>
+  /**
+   * What each diagram the app has not drawn from its source yet (not_drawn,
+   * stale) is drawn from, by path, for the card to draw it (cardDiagrams.ts).
+   */
+  diagrams: Record<string, DiagramSource>
   /** A note's sanitized HTML, rendered by the server. */
   html: string | null
   /** The whole note's source, when it can be edited here. */
@@ -98,6 +105,8 @@ const componentsSchema = z.catch(
 
 const metaSchema = z.catch(z.record(z.string(), z.unknown()), {})
 
+const diagramSourceSchema = z.object({ source: z.string(), canvas: z.optional(z.string()), layout: z.optional(z.string()) })
+
 const showSchema = z.object({ structuredContent: viewSchema, _meta: z.optional(z.unknown()) })
 
 const firstTextSchema = z.object({ content: z.tuple([z.object({ text: z.string() })], z.unknown()) })
@@ -124,6 +133,11 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].startsWith("<svg"),
     ),
   )
+  const diagrams: Record<string, DiagramSource> = {}
+  for (const [path, sent] of Object.entries(metaSchema.parse(meta[D2_KEY] ?? {}))) {
+    const parsed = diagramSourceSchema.safeParse(sent)
+    if (parsed.success) diagrams[path] = parsed.data
+  }
   const note = view.kind === "note"
   const component = view.kind === "component"
   const html = meta[HTML_KEY]
@@ -141,6 +155,7 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       truncated: view.truncated,
       embeds: view.embeds,
       svgs,
+      diagrams,
       html: note && typeof html === "string" ? html : null,
       source: noteSource,
       // A note's components are previewed from its whole source; a component file's from its own.

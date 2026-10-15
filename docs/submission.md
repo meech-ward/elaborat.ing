@@ -103,8 +103,9 @@ Every upload needs a new `version` in `plugin.json`.
 5. Complete the sign-in as the reviewer account, and wait for the tool scan.
    Fix anything under **Issues**. If the portal asks why a tool has its
    hints, the reasons are in [architecture](architecture.md) (every tool
-   states its three hints). The card loads its editor, component previews and
-   fonts from your site, which is the only other origin it uses.
+   states its three hints). The card loads its editor, component previews,
+   fonts and diagram engine (D2, about 6 MB the first time a chat shows a
+   diagram it draws) from your site, which is the only other origin it uses.
    The Projects panel (`open_panel`) frames your site, which needs a frame
    domain justification; to submit without it, set the `EMBED_VIEW_ENABLED`
    function secret to `false` first.

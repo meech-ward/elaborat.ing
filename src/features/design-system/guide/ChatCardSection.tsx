@@ -20,6 +20,7 @@ const NOTE: CardFile = {
   truncated: false,
   embeds: [{ kind: "diagram", path: "flows/signup.d2", url: `${PROJECT}/flows/signup.d2`, status: "drawn" }],
   svgs: { "flows/signup.d2": SAMPLE_DIAGRAM_SVG },
+  diagrams: {},
   html: SAMPLE_NOTE_HTML,
   source: "# Customer model\n",
   components: null,
@@ -139,6 +140,7 @@ const SPECIMENS: Array<{ label: string; state: CardState; editor?: ReactNode; pr
   },
   { label: "Diagram, out of date", state: shown(DIAGRAM) },
   { label: "Diagram not drawn yet", state: shown({ ...NOTE, embeds: [{ ...NOTE.embeds[0]!, status: "not_drawn" }], svgs: {} }) },
+  { label: "Diagram being laid out", state: shown({ ...NOTE, embeds: [{ ...NOTE.embeds[0]!, status: "drawing" }], svgs: {} }) },
   { label: "Draft component preview", state: shown(COMPONENT), preview: { status: "shown", message: null, frame: <ComponentSample /> } },
   {
     label: "Link in a preview",

@@ -28,6 +28,12 @@
  * makes a quiet pencil sound, which the person can mute. Once a live card
  * settles it tells the server, once, whether the host sent the input as it
  * was written (card_report), for the server's log.
+ *
+ * A D2 diagram the app has not drawn from its source yet (no canvas, or its
+ * source changed since) is drawn in the card from its source, with the app's
+ * D2 engine (cardDiagrams.ts), where the host allows it. A diagram being
+ * written starts the engine while it comes in, and its drawing takes the
+ * source's place when the result comes.
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
@@ -35,6 +41,7 @@ import { z } from "zod/mini"
 import { DottedPage } from "@/components/panel"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
+import { drawDiagrams, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
 import { CardNote, READING_CLASS } from "./cardNote"
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
@@ -131,6 +138,12 @@ function liveFeed(): LiveFeed {
 /** How long input that came with no partial input waits for the result: a result that comes with it shows the saved card at once. */
 const LIVE_GRACE_MS = 100
 
+/** How long a live card waits for its result's diagrams to be drawn before the saved card shows them being laid out. */
+const LIVE_DRAW_MS = 4000
+
+/** Waits for the file's diagrams to be drawn, at most `ms`. */
+const drawnWithin = (file: CardFile, ms: number) => Promise.race([drawDiagrams(file), new Promise((resolve) => window.setTimeout(resolve, ms))])
+
 /**
  * The app's highlighter for a note's code blocks, loaded the first time a
  * shown note has a code block with a language, after the note shows. Where
@@ -152,6 +165,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
   // update_and_show's card asked for the file as saved; the card went live, as which tool, and said so to the server.
   const savedAsked = useRef(false)
   const live = useRef<{ tool: "create_and_show" | "update_and_show"; reported: boolean } | null>(null)
+  // A diagram being written started D2's engine.
+  const engineStarted = useRef(false)
   // The pencil sound of a drawing drawing in: on unless this viewer muted it. Never with reduced motion.
   const [pencilOn, setPencilOn] = useState(pencilSoundOn)
   const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)
@@ -172,9 +187,13 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const expanded = useRef(false)
 
   useEffect(() => {
-    /** Goes live: the first time, notes which tool is writing. */
+    /** Goes live: the first time, notes which tool is writing. A diagram starts D2's engine, for its drawing. */
     const goLive = (draft: LiveDraft) => {
       live.current ??= { tool: draft.update ? "update_and_show" : "create_and_show", reported: false }
+      if (draft.kind === "diagram" && !engineStarted.current) {
+        engineStarted.current = true
+        startDiagramEngine()
+      }
       dispatch({ type: "live", path: draft.path, kind: draft.kind })
     }
     /**
@@ -244,15 +263,20 @@ export function ChatCard({ host }: { host: HostBridge }) {
           }
           // A live view that has drawn finishes drawing quickly first, then the saved card takes its place:
           // read again then, with _meta that ChatGPT's globals may have brought meanwhile, unless a newer result came.
+          // A diagram the card draws takes the live view's place once drawn, or after a short while as it is laid out.
           const view = feed.view
           if (!view) {
             dispatch({ type: "result", file: shown.file })
             return report()
           }
-          void view.finish().then(() => {
+          void view.finish().then(async () => {
             if (lastResult.current !== event.result) return
             const latest = parseShowResult(event.result, host.openaiMeta())
-            if (latest.ok) dispatch({ type: "result", file: latest.file })
+            if (latest.ok) {
+              await drawnWithin(latest.file, LIVE_DRAW_MS)
+              if (lastResult.current !== event.result) return
+              dispatch({ type: "result", file: latest.file })
+            }
             report()
           })
           return
@@ -283,6 +307,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
   }, [host, feed])
 
   const shown = state.phase === "shown" ? state : null
+  // The file with the diagrams the card draws itself, as they are drawn.
+  const drawn = useDrawnFile(shown?.file ?? null)
   const editing = shown !== null && shown.mode !== "read"
   useEffect(() => {
     if (editing || !expanded.current) return
@@ -298,6 +324,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
         frame: (
           <ComponentPreview
             file={previewFile}
+            drawn={drawn ?? previewFile}
             held={held}
             onOutcome={(next) => {
               setPreviewed({ file: previewFile, outcome: next })
@@ -389,7 +416,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
     // The page's one landmark; it handles Save's shortcut and every link in the card.
     <main onKeyDown={onKeyDown} onClick={onClick}>
       <CardView
-        state={state}
+        state={shown && drawn ? { ...shown, file: drawn } : state}
         canEdit={canCallTools && !editorBlocked}
         editNote={canCallTools && editorBlocked ? CARD_TEXT.editorNotLoaded : null}
         live={state.phase === "live" ? <LiveView kind={state.kind} path={state.path} feed={feed} sound={pencilOn} reducedMotion={reducedMotion} /> : undefined}
@@ -408,7 +435,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
         editor={
           shown && shown.mode !== "read" && shown.file.source !== null ? (
             <NoteEditor
-              file={shown.file}
+              file={drawn ?? shown.file}
               onReady={(started) => {
                 editor.current = started
                 dispatch({ type: "editor-ready" })
@@ -589,7 +616,14 @@ function NoteEditor({
   return (
     <EditorFrame>
       <div ref={mount} />
-      {islands.map((island) => createPortal(<EmbedFigure embed={island.embed} svgs={file.svgs} />, island.host, String(island.id)))}
+      {islands.map((island) =>
+        createPortal(
+          // As the file has it now: a diagram the card draws may have been drawn since.
+          <EmbedFigure embed={file.embeds.find((entry) => entry?.path === island.embed.path) ?? island.embed} svgs={file.svgs} />,
+          island.host,
+          String(island.id),
+        ),
+      )}
     </EditorFrame>
   )
 }

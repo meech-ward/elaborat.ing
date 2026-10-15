@@ -6,7 +6,11 @@
 
 export type FileKind = "note" | "drawing" | "diagram" | "file" | "component"
 
-/** How a drawing or diagram came out (fileView.ts EmbedStatus); anything else reads as drawn. */
+/**
+ * How a drawing or diagram came out (fileView.ts EmbedStatus); anything else
+ * reads as drawn. `drawing` is the card's own: a diagram it is drawing from
+ * its source (cardDiagrams.ts).
+ */
 export type EmbedStatus =
   | "drawn"
   | "stale"
@@ -17,8 +21,16 @@ export type EmbedStatus =
   | "too_big"
   | "not_shown"
   | "unsupported"
+  | "drawing"
 
 export type CardEmbed = { kind: FileKind; path: string; url: string | null; status: EmbedStatus }
+
+/**
+ * What the card draws a diagram from where the app has not drawn it from its
+ * source yet (fileView.ts D2_META_KEY): its D2 source, and the canvas and
+ * layout record the app saved, if it did.
+ */
+export type DiagramSource = { source: string; canvas?: string; layout?: string }
 
 /** The drawing to show for an embed: SVG markup when it was drawn (or drawn from older source), else null. */
 export function svgFor(embed: CardEmbed, svgs: Record<string, string>): string | null {
@@ -38,6 +50,7 @@ export const EMBED_NOTES: Record<EmbedStatus, string> = {
   too_big: "Too big to show here. Open it in elaborat.ing.",
   not_shown: "Open the note in elaborat.ing to see it.",
   unsupported: "Only drawings and diagrams are shown here.",
+  drawing: "Laying it out…",
 }
 
 /** What the card says for a file it does not show. */

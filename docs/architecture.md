@@ -826,10 +826,45 @@ The production server's tools are unchanged.
   previewed with them (below). The server draws them as SVG from the saved
   scene (a diagram from its `.excalidraw` companion) with roughjs, the library
   Excalidraw uses (`tools/drawingSvg.ts`), and sends the SVG in the result's
-  `_meta`, which reaches the view but not the model. Limits: 8 different files
-  drawn per note, 200,000 characters of SVG each and 600,000 per result, 3,000
+  `_meta`, which reaches the view but not the model. A diagram the app has not
+  drawn from its source yet is drawn by the card (below). Limits: 8 different
+  files drawn per note, 200,000 characters of SVG each and 600,000 per result
+  (what the card draws a diagram from comes out of what the SVG leaves), 3,000
   elements per scene. The view is on its own tool, not on `read_file`, so
   agents can read files without filling the chat with views.
+- **Decision: the card draws a D2 diagram the app has not drawn from its
+  source yet.** A diagram's canvas is saved by the app when someone opens it,
+  so a new diagram has none (`not_drawn`), and one whose source changed since
+  is out of date (`stale`). For each such diagram, `show_file` (and so
+  `create_and_show` and `update_and_show`) sends its source, with the canvas
+  and layout record the app saved if it did, in `_meta["elaborat.ing/d2"]`,
+  only for those diagrams and only in what the 600,000 characters leave once
+  the SVG is in. The card (`src/chat-card/cardDiagrams.ts`) then loads its
+  `diagram` module, which lays the diagram out with the app's own code, as the
+  app does when it opens it (`compileD2Diagram` and `projectDiagramArtifact`,
+  so shapes moved by hand and drawings added on the canvas stay), and draws
+  the scene with the server's `drawingSvg`, as the server draws the canvas the
+  app saves: the same hand-drawn picture in the chat and in the app. It never
+  saves. D2's engine runs in a worker the card starts from a `blob:` URL, from
+  two classic scripts on elaborat.ing (`importScripts`): the package's own
+  files (Go's `wasm_exec.js`, ELK and its setup, run as the package runs them)
+  with the 22 MB wasm brotli-compressed at quality 11 as base64, and the
+  worker's code, which unpacks it with brotli.js and compiles it there, off
+  the card's page; it answers the same compile requests as the app's worker
+  (`d2EngineClient.ts`, `d2EngineServe.ts`). The first diagram in a chat
+  downloads about 6 MB (cached after that), only when a card has a diagram to
+  draw, or as a `.d2` file is written live, so the engine is ready when the
+  result comes, and the drawing then takes the source's place (the live card
+  waits for it up to 4 s). **The view's CSP is unchanged:** everything comes
+  as scripts from the origin it already declares for them (`resourceDomains`,
+  no connect or frame domains), since a fetch of the wasm (the app's way since
+  it got its own file) would need `connect-src`. D2's engine is WebAssembly,
+  and it runs ELK's JavaScript from strings, so the card draws diagrams where
+  the host's policy allows blob: workers, WebAssembly and code from strings,
+  as ChatGPT's view does; where it does not (Claude's view is untested), or
+  the engine does not load or a source does not compile, the card shows the
+  diagram as the server sent it: a new one says to open it in elaborat.ing,
+  and one out of date shows its last drawing with a line that says so.
 - **Notes are edited in the card.** Where the host lets views call tools, a
   note's card has Edit: it runs the app's own rendered editor
   (`FluidEditor` and `prepareFluidTransaction`, so each edit is an exact
@@ -857,7 +892,8 @@ The production server's tools are unchanged.
   drawn in one after another, each line along its length, hachure scribbled
   in, solid fills faded in and text written left to right, in a fixed-height
   view that eases out to hold them; a note rendered at most ten times a
-  second, new blocks fading in under a caret; a diagram's D2 source as text.
+  second, new blocks fading in under a caret; a diagram's D2 source as text,
+  whose drawing takes its place once the result comes (above).
   When the result comes, what is left draws within 400 ms and the saved
   card takes its place; an error leaves nothing of the unsaved file, only
   the problem. A host that sends no partial input gets the same drawing in
@@ -1037,7 +1073,7 @@ The production server's tools are unchanged.
   deploy without building the app. Rebuild it after changing the card or the
   modules it uses, and give the view a new `ui://` URI. Zod runs jitless.
 - **Decision: the view is a small shell, and the rest loads when it is
-  needed.** The inline script (about 355 kB, 106 kB gzip) shows the file
+  needed.** The inline script (about 360 kB, 108 kB gzip) shows the file
   from the server's HTML and drawings with no network requests. The same
   build writes the rest to `public/chat-card/`, which every app deploy
   serves at `https://elaborat.ing/chat-card/` with CORS
@@ -1047,10 +1083,14 @@ The production server's tools are unchanged.
   code highlighter, after a note with a code block shows (where it does not
   load, the code stays plain); the
   component compiler and the preview frame's runtime, for a note with
-  components or a component file; and the charts' library, which the frame
-  imports only for a note with a chart. The view declares that origin in
-  `_meta.ui.csp.resourceDomains` (and ChatGPT's `openai/widgetCSP`), which
-  adds it to `script-src`, `style-src` and `font-src`. It also names
+  components or a component file; the charts' library, which the frame
+  imports only for a note with a chart; and the diagram module with D2's
+  engine, for a diagram the card draws (above). The build keeps the engine's
+  script it finds there while its wasm is the package's, byte for byte,
+  since compressing it again takes about a minute. The view declares that
+  origin in `_meta.ui.csp.resourceDomains` (and ChatGPT's
+  `openai/widgetCSP`), which adds it to `script-src`, `style-src` and
+  `font-src`. It also names
   `openai/widgetDomain`, the dedicated origin ChatGPT serves the view from,
   which a listed plugin needs. That is ChatGPT's name for the spec's
   `ui.domain`, used instead of it because each host has its own format for

@@ -90,10 +90,12 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  */
 export function CardView({ state, canEdit, editNote = null, editor, live, sound = null, preview = null, highlighter, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
+  // A diagram the card draws itself is being laid out.
+  const drawing = shown?.file.embeds.some((embed) => embed?.status === "drawing") ?? false
   return (
     <section
       data-slot="chat-card"
-      aria-busy={state.phase === "loading" || state.phase === "live" || undefined}
+      aria-busy={state.phase === "loading" || state.phase === "live" || drawing || undefined}
       className={cn("flex min-w-0 flex-col overflow-hidden rounded-panel border border-border bg-panel text-foreground", className)}
       {...props}
     >

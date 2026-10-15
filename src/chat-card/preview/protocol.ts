@@ -45,6 +45,8 @@ export type PreviewPlan =
 export type CardToFrame =
   | { type: "setup"; plan: PreviewPlan; appearance: PreviewAppearance; fonts: readonly FontSource[] }
   | { type: "appearance"; appearance: PreviewAppearance }
+  /** A note's drawings and diagrams as the card has them now: a diagram it draws itself (cardDiagrams.ts) comes later. */
+  | { type: "drawings"; embeds: CardEmbed[]; svgs: Record<string, string> }
 
 /** A component that threw while it rendered, shown as an error in its place. */
 export type ComponentError = { name: string; message: string }

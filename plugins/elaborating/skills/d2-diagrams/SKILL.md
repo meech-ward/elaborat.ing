@@ -29,9 +29,11 @@ sketch or diagram something else, make a drawing (the drawings skill).
   must exist, so create it first or in the same `save_files` call.
 - To make a new diagram the user should watch being written, use
   `create_and_show`, before the note that embeds it.
-- `show_file` draws a diagram from its canvas. A new diagram has no canvas
-  until it is opened in the app, and after a source change the card may say
-  it is out of date. Give the user the link to open it.
+- The card of `show_file`, `create_and_show` and `update_and_show` shows the
+  diagram drawn. A new diagram, which has no canvas until it is opened in the
+  app, and one whose source changed are laid out from the source in the chat,
+  where the chat allows that. Where it does not, the card says to open the
+  diagram in elaborat.ing: give the user the link.
 - Comments on a diagram's shapes are on its canvas: to add one, use the
   `.excalidraw` path and the shape's `element_id` with `add_comment`.
 

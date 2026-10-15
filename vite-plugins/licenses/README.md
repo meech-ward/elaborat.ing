@@ -23,3 +23,7 @@ scope, for scopes published from one repository under one license.
 - `@terrastruct__d2.txt`: @terrastruct/d2 0.1.33, MPL-2.0, from
   https://github.com/terrastruct/d2/blob/master/LICENSE.txt. The ELK layout
   engine its browser build embeds is noted in `src/features/structured/compiler.ts`.
+- `brotli.txt`: brotli 1.3.3, MIT, from the License section of its README
+  (https://github.com/foliojs/brotli.js), with the Apache-2.0 notice its
+  decoder's files carry. The chat card's D2 engine worker unpacks D2's wasm
+  with it (`src/chat-card/diagram/engine.worker.ts`).

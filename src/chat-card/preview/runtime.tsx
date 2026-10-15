@@ -21,7 +21,7 @@
  * which falls back to what it showed before.
  */
 import "./runtime.css"
-import { Component, useEffect, type ReactNode } from "react"
+import { Component, useEffect, useSyncExternalStore, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import * as jsxRuntime from "react/jsx-runtime"
 import { Banner } from "@/features/design-system/ui/Banner"
@@ -167,11 +167,28 @@ function watchLinks() {
   )
 }
 
-/** A drawing or diagram the note embeds, drawn from the server's picture as the card draws it. */
-function Embed({ kind, src, plan }: { kind: "drawing" | "diagram"; src?: unknown; plan: Extract<PreviewPlan, { kind: "note" }> }) {
+/** The note's drawings and diagrams as the card has them: from setup, then as the card draws a diagram itself. */
+let drawings: { embeds: CardEmbed[]; svgs: Record<string, string> } = { embeds: [], svgs: {} }
+const drawingListeners = new Set<() => void>()
+
+function setDrawings(next: typeof drawings) {
+  drawings = next
+  for (const listener of drawingListeners) listener()
+}
+
+const subscribeDrawings = (listener: () => void) => {
+  drawingListeners.add(listener)
+  return () => {
+    drawingListeners.delete(listener)
+  }
+}
+
+/** A drawing or diagram the note embeds, drawn from the card's picture as the card draws it. */
+function Embed({ kind, src }: { kind: "drawing" | "diagram"; src?: unknown }) {
+  const { embeds, svgs } = useSyncExternalStore(subscribeDrawings, () => drawings)
   const path = typeof src === "string" ? src : ""
-  const embed: CardEmbed = plan.embeds.find((entry) => entry.path === path) ?? { kind, path, url: null, status: "not_shown" }
-  return <EmbedFigure embed={embed} svgs={plan.svgs} />
+  const embed: CardEmbed = embeds.find((entry) => entry.path === path) ?? { kind, path, url: null, status: "not_shown" }
+  return <EmbedFigure embed={embed} svgs={svgs} />
 }
 
 /** Runs the compiled files in order, each with the ones it imports. */
@@ -211,8 +228,8 @@ async function start(plan: PreviewPlan, registry: Registry) {
       ...PREVIEW_COMPONENTS,
       ...(await charts),
       [GUARD_NAME]: Guard,
-      Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} plan={plan} />,
-      Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} plan={plan} />,
+      Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} />,
+      Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} />,
     }
     root.render(
       <Root>
@@ -268,8 +285,13 @@ export function open(registry: Registry) {
     if (event.source !== window.parent || typeof event.data !== "object" || event.data === null) return
     const message = event.data
     if (message.type === "appearance") return applyAppearance(message.appearance)
+    if (message.type === "drawings") {
+      if (started) setDrawings({ embeds: message.embeds, svgs: message.svgs })
+      return
+    }
     if (message.type !== "setup" || started) return
     started = true
+    if (message.plan.kind === "note") setDrawings({ embeds: message.plan.embeds, svgs: message.plan.svgs })
     applyAppearance(message.appearance)
     addFonts(message.fonts)
     start(message.plan, registry).catch((error: unknown) => post({ type: "failed", run, message: messageOf(error) }))

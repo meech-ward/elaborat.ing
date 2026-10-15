@@ -8,7 +8,8 @@
  * sandbox="allow-scripts"
  * only: an opaque origin, so the note's code cannot reach the card's page or
  * its bridge to the host, and cannot call tools. The card then sends it data
- * only (what to show, the server's drawings, props, colours and fonts), and
+ * only (what to show, the drawings, props, colours and fonts; a diagram the
+ * card draws itself as it is drawn: `drawn`), and
  * reads back only its height, whether it drew, and a clicked link, which the
  * card offers to open and opens through the host only when the person says so.
  *
@@ -89,13 +90,19 @@ async function prepare(file: CardFile): Promise<Prepared> {
   return { file, run, srcdoc, plan, code }
 }
 
+/** A note's drawings and diagrams, as the frame takes them. */
+const drawingsOf = (file: CardFile) => ({ embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs })
+
 export function ComponentPreview({
   file,
+  drawn = file,
   held = false,
   onOutcome,
   onLink,
 }: {
   file: CardFile
+  /** The file with the diagrams the card draws itself, as they are drawn (cardDiagrams.ts). */
+  drawn?: CardFile
   /** Wait for the person before running custom code (from a project shared with them). */
   held?: boolean
   onOutcome: (outcome: PreviewOutcome) => void
@@ -108,6 +115,7 @@ export function ComponentPreview({
   const shownHeight = useRef(0)
   const outcome = useEffectEvent(onOutcome)
   const link = useEffectEvent(onLink)
+  const drawings = useEffectEvent(() => drawingsOf(drawn))
   const waiting = held && prepared !== null && prepared.code.length > 0
 
   // Compiled once for each file the card shows.
@@ -145,7 +153,12 @@ export function ComponentPreview({
       if (!message || message.run !== prepared.run) return
       switch (message.type) {
         case "ready":
-          return send({ type: "setup", plan: prepared.plan, appearance: currentAppearance(), fonts: cardFonts() })
+          return send({
+            type: "setup",
+            plan: prepared.plan.kind === "note" ? { ...prepared.plan, ...drawings() } : prepared.plan,
+            appearance: currentAppearance(),
+            fonts: cardFonts(),
+          })
         case "size":
           shownHeight.current = Math.min(message.height, MAX_HEIGHT)
           return setHeight(shownHeight.current)
@@ -173,6 +186,13 @@ export function ComponentPreview({
       document.removeEventListener("securitypolicyviolation", onViolation)
     }
   }, [prepared, waiting])
+
+  // A diagram the card draws reaches a note's preview once drawn; a frame not set up yet gets it with setup.
+  useEffect(() => {
+    if (prepared?.plan.kind !== "note") return
+    const message: CardToFrame = { type: "drawings", ...drawingsOf(drawn) }
+    frame.current?.contentWindow?.postMessage(message, "*")
+  }, [drawn, prepared])
 
   if (!prepared || prepared.file !== file || waiting) return null
   return (

@@ -16,6 +16,11 @@
 // - compile: the component compiler, for a note with components or a component file
 // - frame: the component preview frame's runtime and stylesheet, which the
 //   frame itself loads; it loads the charts' library only for a note with a chart
+// - diagram: the app's D2 code, for a D2 diagram the app has not drawn from
+//   its source yet (src/chat-card/lazy/diagram.ts), with D2's engine, which
+//   runs in a worker of the card's own from two classic scripts: D2's files,
+//   with its wasm brotli-compressed as base64 (d2-engine), and the worker's
+//   code (d2-worker, src/chat-card/diagram/engine.worker.ts)
 //
 // The modules are ES modules with content-hashed names, and the shell loads
 // them with import(). The view declares their origin in its CSP
@@ -32,10 +37,10 @@
 //   bun run build:chat-card --visualize   also writes treemaps to dist-visualize/chat-card/
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
-import { brotliCompressSync, constants, gzipSync } from "node:zlib"
+import { brotliCompressSync, brotliDecompressSync, constants, gzipSync } from "node:zlib"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { visualizer } from "rollup-plugin-visualizer"
@@ -54,8 +59,13 @@ const MODULE_ENTRIES = {
   live: path.join(REPO, "src/chat-card/lazy/live.ts"),
   compile: path.join(REPO, "src/chat-card/lazy/compile.ts"),
   highlight: path.join(REPO, "src/chat-card/lazy/highlight.ts"),
+  diagram: path.join(REPO, "src/chat-card/lazy/diagram.ts"),
   frame: path.join(REPO, "src/chat-card/preview/runtime.tsx"),
 }
+/** The worker that runs D2's engine for the card, built as a classic script. */
+const ENGINE_WORKER = path.join(REPO, "src/chat-card/diagram/engine.worker.ts")
+/** D2 in the card's build: the card's engine, as the app's build has its own (vite-plugins/d2-engine.ts). */
+const CARD_D2 = path.join(REPO, "src/chat-card/diagram/d2Engine.ts")
 const OUT = path.join(REPO, "supabase/functions/mcp-server/tools/cardEditorScript.ts")
 const MODULES_DIR = path.join(REPO, "public/chat-card")
 const BUILDS = path.join(MODULES_DIR, "builds.json")
@@ -109,7 +119,7 @@ type Output = { output: Array<OutputChunk | OutputAsset> }
  */
 function appModuleSideEffects(id: string): boolean | undefined {
   if (!id.startsWith(SRC) || !/\.tsx?$/.test(id)) return undefined
-  return id === `${SRC}chat-card/main.tsx` || id === `${SRC}chat-card/jitless.ts`
+  return id === `${SRC}chat-card/main.tsx` || id === `${SRC}chat-card/jitless.ts` || id === `${SRC}chat-card/diagram/engine.worker.ts`
 }
 
 const visualize = (name: string): PluginOption[] =>
@@ -134,7 +144,12 @@ async function run(entry: string | Record<string, string>, name: string, format:
     mode: "production",
     logLevel: "warn",
     define: { "process.env.NODE_ENV": JSON.stringify("production"), ...define },
-    resolve: { alias: { "@": path.join(REPO, "src") } },
+    resolve: {
+      alias: [
+        { find: /^@terrastruct\/d2$/, replacement: CARD_D2 },
+        { find: "@", replacement: path.join(REPO, "src") },
+      ],
+    },
     plugins: [npmSpecifiers, react(), tailwindcss(), ...visualize(name)],
     build: {
       write: false,
@@ -168,13 +183,71 @@ const palette =
   `:root{${scheme("light")}}:root[data-scheme="dark"]{${scheme("dark")}}` +
   `@media (prefers-color-scheme:dark){:root:not([data-scheme]){${scheme("dark")}}}`
 
-// The modules first: the shell carries their addresses. None of them makes
-// requests or evaluates strings; the frame's modules run under the view's
-// policy too, which has no 'unsafe-eval'.
-const modules = await run(MODULE_ENTRIES, "modules", "es", {})
+// D2's engine for the card's diagrams, as the two classic scripts its worker
+// imports (src/chat-card/diagram/d2Engine.ts). The first is D2's own files,
+// from the package's Node build (byte for byte the ones its browser build
+// embeds: vite-plugins/d2-engine.ts): Go's wasm_exec.js, ELK and its setup,
+// each run as the package runs them (a function called on the global
+// scope), then the wasm, brotli-compressed at the highest quality, as base64.
+// Compressing it takes about a minute, so a build keeps the engine script it
+// finds in public/chat-card when that unpacks to the package's wasm, byte for
+// byte. The second is the worker's own code (engine.worker.ts), which unpacks
+// the wasm off the card's page, with the brotli decoder.
+const d2Files = path.dirname(createRequire(path.join(REPO, "package.json")).resolve("@terrastruct/d2"))
+const d2Version = JSON.parse(readFileSync(path.join(d2Files, "../../package.json"), "utf8")).version as string
+const d2Wasm = readFileSync(path.join(d2Files, "d2.wasm"))
+const runAsPackage = (file: string) => `(function(){${readFileSync(path.join(d2Files, file), "utf8")}\n}).call(globalThis);\n`
+const engineHead =
+  `// D2 ${d2Version} (https://github.com/terrastruct/d2/tree/master/d2js/js, MPL-2.0), with ELK (EPL-2.0) and Go's wasm_exec.js (BSD-3-Clause),\n` +
+  "// for the elaborat.ing chat card's diagrams. Third-party licenses: https://elaborat.ing/third-party-notices.txt\n" +
+  runAsPackage("wasm_exec.js") +
+  runAsPackage("elk.js") +
+  runAsPackage("setup.js") +
+  `self.d2Wasm={size:${d2Wasm.length},brotli:"`
+const engineTail = '"};\n'
+
+/** The engine script whose wasm unpacks to the package's, already in public/chat-card; null for none. */
+function builtEngine(): string | null {
+  for (const name of existsSync(MODULES_DIR) ? readdirSync(MODULES_DIR) : []) {
+    if (!/^d2-engine-[\w-]{8}\.js$/.test(name)) continue
+    const text = readFileSync(path.join(MODULES_DIR, name), "utf8")
+    if (!text.startsWith(engineHead) || !text.endsWith(engineTail)) continue
+    try {
+      if (brotliDecompressSync(Buffer.from(text.slice(engineHead.length, -engineTail.length), "base64")).equals(d2Wasm)) return text
+    } catch {
+      // Not brotli: made another way.
+    }
+  }
+  return null
+}
+
+const engineScript =
+  builtEngine() ??
+  engineHead +
+    brotliCompressSync(d2Wasm, {
+      params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_LGWIN]: 24, [constants.BROTLI_PARAM_SIZE_HINT]: d2Wasm.length },
+    }).toString("base64") +
+    engineTail
+const engineFile = `d2-engine-${hashOf(engineScript)}.js`
+const workerChunk = (await run(ENGINE_WORKER, "d2-worker", "iife", {})).find((item): item is OutputChunk => item.type === "chunk")
+if (!workerChunk) throw new Error("The chat card's D2 engine worker built no script.")
+const workerScript = "// The elaborat.ing chat card's D2 engine worker. Third-party licenses: https://elaborat.ing/third-party-notices.txt\n" + workerChunk.code
+const workerFile = `d2-worker-${hashOf(workerScript)}.js`
+
+// The modules next: the shell carries their addresses. None of them, and
+// neither of D2's engine scripts, makes requests or evaluates strings: the
+// card runs under the host's policy for the view, which may have no
+// 'unsafe-eval' (the spec's default has none), and the frame's modules too.
+// D2's engine itself is WebAssembly that runs ELK's JavaScript from strings,
+// so it draws only where the host allows both, as ChatGPT does; elsewhere the
+// card shows a diagram as the server sent it.
+const modules = await run(MODULE_ENTRIES, "modules", "es", {
+  CARD_D2_ENGINE: JSON.stringify([MODULES_URL + engineFile, MODULES_URL + workerFile]),
+})
 const chunks = modules.filter((item): item is OutputChunk => item.type === "chunk")
-for (const chunk of chunks) {
-  if (/\beval\(|new Function\b|\bfetch\(|XMLHttpRequest/.test(chunk.code)) throw new Error(`The chat card module ${chunk.fileName} evaluates strings or makes requests.`)
+const STRINGS_OR_REQUESTS = /\beval\(|new Function\b|\bfetch\(|XMLHttpRequest/
+for (const [fileName, code] of [...chunks.map((chunk) => [chunk.fileName, chunk.code]), [engineFile, engineScript], [workerFile, workerScript]]) {
+  if (STRINGS_OR_REQUESTS.test(code)) throw new Error(`The chat card module ${fileName} evaluates strings or makes requests.`)
 }
 // One stylesheet, the frame's (preview/runtime.css), with the palette first. Named by its content, like the scripts.
 const sheets = modules.filter((item): item is OutputAsset => item.type === "asset" && item.fileName.endsWith(".css"))
@@ -185,6 +258,8 @@ const files = new Map<string, string | Uint8Array>([
   ...chunks.map((chunk) => [chunk.fileName, chunk.code] as const),
   [frameStyle, frameCss],
   ...fonts.map((font) => [font.fileName, font.bytes] as const),
+  [engineFile, engineScript],
+  [workerFile, workerScript],
 ])
 const entryFile = (name: keyof typeof MODULE_ENTRIES) => {
   const chunk = chunks.find((item) => item.isEntry && item.name === name)
@@ -196,6 +271,7 @@ const addresses = {
   live: MODULES_URL + entryFile("live"),
   compile: MODULES_URL + entryFile("compile"),
   highlight: MODULES_URL + entryFile("highlight"),
+  diagram: MODULES_URL + entryFile("diagram"),
   frame: MODULES_URL + entryFile("frame"),
   frameStyle: MODULES_URL + frameStyle,
 }
@@ -251,7 +327,11 @@ const graph = (file: string, seen = new Set<string>()): Set<string> => {
   return seen
 }
 const frameFiles = graph(entryFile("frame"))
-const charts = [...frameFiles].flatMap((file) => chunks.find((chunk) => chunk.fileName === file)?.dynamicImports ?? [])
+const later = (files: Set<string>) => [...files].flatMap((file) => chunks.find((chunk) => chunk.fileName === file)?.dynamicImports ?? [])
+const charts = later(frameFiles)
+// A diagram: the module, the parts it loads to compile (the engine's page side, the measuring font), and the engine's scripts.
+const diagramFiles = graph(entryFile("diagram"))
+for (const file of later(diagramFiles)) graph(file, diagramFiles)
 const loads = (list: Iterable<string>) => Buffer.concat([...list].map((file) => Buffer.from(files.get(file) ?? "")))
 const lines: Array<[string, string | Uint8Array]> = [
   ["The view (inline script and style)", code + css],
@@ -262,6 +342,7 @@ const lines: Array<[string, string | Uint8Array]> = [
   ["Components: compiler", loads(graph(entryFile("compile")))],
   ["Components: the frame", loads([...frameFiles, frameStyle])],
   ["A chart in the note", loads(new Set(charts.flatMap((file) => [...graph(file)]).filter((file) => !frameFiles.has(file))))],
+  ["A diagram: D2 and its engine", loads([...diagramFiles, engineFile, workerFile])],
 ]
 console.log(`Wrote ${path.relative(REPO, OUT)} and ${files.size} modules in ${path.relative(REPO, MODULES_DIR)}`)
 console.log(`${"".padEnd(36)}       raw       gzip     brotli`)

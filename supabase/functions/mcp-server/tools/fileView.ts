@@ -31,7 +31,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v34.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v35.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -67,6 +67,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v31.html',
   'ui://elaborating/file-view-v32.html',
   'ui://elaborating/file-view-v33.html',
+  'ui://elaborating/file-view-v34.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -74,10 +75,10 @@ const APP_ORIGIN = 'https://elaborat.ing'
 
 /**
  * The view's policy: the spec's default, plus scripts, styles and fonts from
- * the app's site, where the view loads its editor and component previews when
- * they are first needed (public/chat-card, served with CORS). ChatGPT also
- * reads its older `openai/widgetCSP`. A host that does not allow the origin
- * still shows the card, read-only.
+ * the app's site, where the view loads its editor, component previews and
+ * diagram engine when they are first needed (public/chat-card, served with
+ * CORS). ChatGPT also reads its older `openai/widgetCSP`. A host that does
+ * not allow the origin still shows the card, read-only.
  *
  * `openai/widgetDomain` gives the view a dedicated origin of its own in
  * ChatGPT, which a listed plugin needs. It is ChatGPT's name for the spec's
@@ -101,7 +102,11 @@ const DAY_MS = 86_400_000
 const PREVIEW_LIMIT = 40_000
 /** Different drawings and diagrams drawn for one note; later ones show as links. */
 export const MAX_EMBEDS = 8
-/** SVG characters in one result, over all its drawings (each is at most MAX_SVG_CHARS). */
+/**
+ * Characters of drawings in one result: the SVG of each file drawn here
+ * (each at most MAX_SVG_CHARS), then, in what is left, what the view draws a
+ * diagram from (D2_META_KEY).
+ */
 export const MAX_TOTAL_SVG_CHARS = 600_000
 /** A drawing file longer than this is not read to draw it. */
 const MAX_SCENE_CHARS = 5_000_000
@@ -111,6 +116,17 @@ export const SVG_META_KEY = 'elaborat.ing/svg'
 export const HTML_META_KEY = 'elaborat.ing/html'
 /** The result `_meta` key holding a note's source, which the view edits. */
 export const SOURCE_META_KEY = 'elaborat.ing/source'
+/**
+ * The result `_meta` key holding, by path, what the view draws a diagram
+ * from when its canvas is missing (not_drawn) or out of date (stale): its D2
+ * source, and the canvas and layout record the app saved, if it did. The
+ * view lays the diagram out with the app's own D2 engine and keeps what the
+ * canvas changed by hand, as the app does when it opens it.
+ */
+export const D2_META_KEY = 'elaborat.ing/d2'
+
+/** What the view draws a diagram from (D2_META_KEY). */
+export type DiagramSource = { source: string; canvas?: string; layout?: string }
 
 export type FileKind = 'note' | 'drawing' | 'diagram' | 'file' | 'component'
 
@@ -185,17 +201,26 @@ function drawOne(path: string, files: Map<string, string>, budget: number): { st
   return { status: kind === 'diagram' && drawnFromOtherSource(path, files) ? 'stale' : 'drawn', svg: drawn.svg }
 }
 
+/** What the view draws a diagram from: its source, with its canvas and layout record where they exist. */
+function diagramSource(path: string, files: Map<string, string>): DiagramSource {
+  const canvas = files.get(companionPath(path))
+  const layout = files.get(sidecarPath(path))
+  return { source: files.get(path) ?? '', ...(canvas !== undefined ? { canvas } : {}), ...(layout !== undefined ? { layout } : {}) }
+}
+
 /**
  * Draws the first MAX_EMBEDS different files the refs name, reading them
  * (and each diagram's companion) as the user in one query. `known` holds
- * contents already read.
+ * contents already read. A diagram whose canvas is missing or out of date
+ * goes to the view to draw from its source (`diagrams`), in what is left of
+ * the budget once the SVG is in.
  */
 async function drawEmbeds(
   supabase: SupabaseClient,
   projectId: string,
   refs: EmbedRef[],
   known: Record<string, string> = {}
-): Promise<{ embeds: EmbedView[]; svgs: Record<string, string> }> {
+): Promise<{ embeds: EmbedView[]; svgs: Record<string, string>; diagrams: Record<string, DiagramSource> }> {
   const drawn = [...new Set(refs.map((ref) => ref.path))].slice(0, MAX_EMBEDS)
   const files = new Map(Object.entries(known))
   const wanted = new Set(drawn.flatMap((path) => (fileKind(path) === 'diagram' ? [path, companionPath(path), sidecarPath(path)] : [path])))
@@ -220,8 +245,18 @@ async function drawEmbeds(
       budget -= svg.length
     }
   }
+  const diagrams: Record<string, DiagramSource> = {}
+  for (const path of drawn) {
+    const status = statuses.get(path)
+    if (status !== 'not_drawn' && status !== 'stale') continue
+    const sent = diagramSource(path, files)
+    const size = sent.source.length + (sent.canvas?.length ?? 0) + (sent.layout?.length ?? 0)
+    if (size > budget) continue
+    diagrams[path] = sent
+    budget -= size
+  }
   const embeds = refs.map((ref) => ({ ...ref, url: fileUrl(projectId, ref.path), status: statuses.get(ref.path) ?? 'not_shown' }))
-  return { embeds, svgs }
+  return { embeds, svgs, diagrams }
 }
 
 function preview(content: string): { source: string; truncated: boolean } {
@@ -257,7 +292,9 @@ export async function showFilePayload(
     const note = kind === 'note' ? preview(content) : null
     const rendered = note ? renderNote(note.source) : null
     const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
-    const { embeds, svgs } = refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {} }
+    const { embeds, svgs, diagrams } =
+      refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {}, diagrams: {} }
+    const drawings = Object.keys(svgs).length > 0 || Object.keys(diagrams).length > 0
     // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
     const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
     const modules = previewed ? await componentSources(supabase, project_id, content) : null
@@ -287,11 +324,12 @@ export async function showFilePayload(
         embeds,
         ...(modules ? { shared } : {}),
       },
-      ...(rendered || Object.keys(svgs).length > 0
+      ...(rendered || drawings
         ? {
             _meta: {
               ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
               ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
+              ...(Object.keys(diagrams).length > 0 ? { [D2_META_KEY]: diagrams } : {}),
               // The whole note, for editing in the view; a note too long to show whole is not edited there.
               ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
               ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),

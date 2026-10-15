@@ -3,9 +3,11 @@
  * the note editor (on Edit), the live view (for a new file or a change to
  * one, shown while it is written), the code highlighter (for a note with a
  * code block), the component compiler (for a note with
- * components, or a component file) and the component preview frame's
+ * components, or a component file), the component preview frame's
  * runtime, which the frame loads itself and which loads the charts' library
- * only for a note with a chart. `bun run build:chat-card` builds them as ES
+ * only for a note with a chart, and the diagram drawing (for a D2 diagram
+ * the app has not drawn from its source yet: cardDiagrams.ts), which loads
+ * D2's engine. `bun run build:chat-card` builds them as ES
  * modules into public/chat-card, which the app's deploy serves at
  * https://elaborat.ing/chat-card/ with CORS (public/_headers), and sets their
  * addresses here.
@@ -16,14 +18,15 @@
  * with the server's HTML, as it is without them.
  */
 import type * as Compile from "./lazy/compile"
+import type * as Diagram from "./lazy/diagram"
 import type * as Editor from "./lazy/editor"
 import type * as Highlight from "./lazy/highlight"
 import type * as Live from "./lazy/live"
 
 /** The modules' addresses, which scripts/build-chat-card.ts sets. */
-declare const CARD_MODULES: { editor: string; live: string; compile: string; highlight: string; frame: string; frameStyle: string }
+declare const CARD_MODULES: { editor: string; live: string; compile: string; highlight: string; diagram: string; frame: string; frameStyle: string }
 
-type Modules = { editor: typeof Editor; live: typeof Live; compile: typeof Compile; highlight: typeof Highlight }
+type Modules = { editor: typeof Editor; live: typeof Live; compile: typeof Compile; highlight: typeof Highlight; diagram: typeof Diagram }
 
 let known: typeof CARD_MODULES | undefined
 /** The addresses, read once: the build writes them where CARD_MODULES is named. */

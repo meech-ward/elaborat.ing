@@ -43,10 +43,11 @@ test("the build's notices cover every bundled package and the adapted code", asy
   })
   expect(withoutNotice).toEqual([])
 
-  // The Workbox modules the generated service worker ships outside the bundle.
-  for (const name of ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"]) {
+  // The Workbox modules the generated service worker ships outside the bundle, and the chat card's D2 engine worker's packages.
+  for (const name of ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies", "brotli", "base64-js"]) {
     expect(text).toContain(`\n## ${name} - `)
   }
+  expect(text).toContain("Its decoder is ported from Google's Brotli")
   expect(text).toContain("\n## src/features/comments/anchoring.ts (adapted code)\n")
   expect(text).toContain("Copyright (c) 2013-2019 Hypothes.is Project and contributors")
   expect(text).toContain("2. Redistributions in binary form must reproduce the above copyright notice,")

@@ -5,8 +5,8 @@ import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 // component library (src/chat-card, built into cardEditorScript.ts by
 // `bun run build:chat-card`). An inline stylesheet and script (which carries
 // the app's fonts as bytes) show the note, drawing or diagram with no network
-// requests. The editor and the component previews load as modules from
-// https://elaborat.ing/chat-card/ when first needed, which the view's
+// requests. The editor, the component previews and the diagram engine load
+// from https://elaborat.ing/chat-card/ when first needed, which the view's
 // `_meta.ui.csp` declares (fileView.ts); where a host does not allow them the
 // card stays read-only, as it runs under the spec's default policy. It
 // talks to the host over the MCP Apps postMessage bridge: ui/initialize,

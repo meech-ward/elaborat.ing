@@ -9,45 +9,16 @@ import wasmUrl from 'd2-engine:d2.wasm?url';
 import elkUrl from 'd2-engine:elk.js?url';
 import wasmExec from 'd2-engine:wasm_exec.js?raw';
 import setup from 'd2-engine:setup.js?raw';
-import type { D2CompileRequest } from './compiler.ts';
-import type { D2Diagram } from './types.ts';
-import type { D2EngineReply, D2EngineRequest } from './d2Engine.worker.ts';
+import { D2EngineClient } from './d2EngineClient.ts';
+import type { D2EngineInit } from './d2Engine.worker.ts';
 
-type Pending = { resolve: (data: { diagram: D2Diagram }) => void; reject: (error: Error) => void };
-
-export class D2 {
-  readonly worker = new Worker(new URL('./d2Engine.worker.ts', import.meta.url), { type: 'module' });
-  private readonly pending = new Map<number, Pending>();
-  private nextId = 0;
-  private stopped: Error | null = null;
-
+export class D2 extends D2EngineClient<D2EngineInit> {
   constructor() {
-    this.worker.onmessage = ({ data }: MessageEvent<D2EngineReply>) => {
-      const request = this.pending.get(data.id);
-      this.pending.delete(data.id);
-      if ('error' in data) request?.reject(new Error(data.error));
-      else request?.resolve(data.data as { diagram: D2Diagram });
-    };
-    // The worker's own file did not load, or it stopped.
-    this.worker.onerror = (event) => {
-      event.preventDefault();
-      this.stopped = new Error(event.message || 'The diagram engine stopped.');
-      for (const request of this.pending.values()) request.reject(this.stopped);
-      this.pending.clear();
-    };
-    this.post({ type: 'init', wasmUrl: new URL(wasmUrl, location.href).href, elkUrl: new URL(elkUrl, location.href).href, wasmExec, setup });
-  }
-
-  compile(request: D2CompileRequest): Promise<{ diagram: D2Diagram }> {
-    if (this.stopped) return Promise.reject(this.stopped);
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.post({ type: 'compile', id, request });
+    super(new Worker(new URL('./d2Engine.worker.ts', import.meta.url), { type: 'module' }), {
+      wasmUrl: new URL(wasmUrl, location.href).href,
+      elkUrl: new URL(elkUrl, location.href).href,
+      wasmExec,
+      setup,
     });
-  }
-
-  private post(message: D2EngineRequest): void {
-    this.worker.postMessage(message);
   }
 }

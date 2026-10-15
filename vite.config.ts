@@ -137,9 +137,11 @@ export default defineConfig({
     // wrangler.sandbox.jsonc serves (docs/architecture.md, Component isolation).
     previewFrame({ sandboxDir: path.resolve(import.meta.dirname, "dist-sandbox") }),
     // The generated service worker ships these Workbox modules in its own
-    // workbox-*.js file, outside the bundle (checked by offline.spec.ts).
+    // workbox-*.js file, outside the bundle (checked by offline.spec.ts), and
+    // the chat card's D2 engine worker brotli's decoder and base64-js, in
+    // public/chat-card (scripts/build-chat-card.ts).
     thirdPartyNotices({
-      packages: ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies"],
+      packages: ["workbox-cacheable-response", "workbox-core", "workbox-precaching", "workbox-routing", "workbox-strategies", "brotli", "base64-js"],
     }),
     VitePWA({
       // A new version waits until the person chooses "Update ready"

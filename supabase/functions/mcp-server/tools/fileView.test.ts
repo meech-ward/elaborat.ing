@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 import { COMPONENTS_META_KEY, importedPaths } from './componentSources.ts'
-import { FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
+import { D2_META_KEY, FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MAX_TOTAL_SVG_CHARS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { renderMarkdown, renderNote } from './markdown.ts'
@@ -157,10 +157,10 @@ Deno.test('the card script makes no requests, runs no code from strings, and sta
   }
   // The modules it imports when needed, and its fonts, are the app's own, from the origin the view declares.
   const modules = new Set([...CARD_SCRIPT.matchAll(/["'`](https:\/\/[^"'`]+\.(?:js|css|woff2))["'`]/g)].map((match) => match[1]))
-  assertEquals(modules.size, 9)
+  assertEquals(modules.size, 10)
   for (const url of modules) assert(url.startsWith('https://elaborat.ing/chat-card/'), url)
   // What hosts load for the view: the card and its stylesheet. Its fonts, the editor, the code
-  // highlighter and the component previews are files it loads when it needs them.
+  // highlighter, the component previews and the diagram drawing are files it loads when it needs them.
   assert(FILE_VIEW_HTML.length < 500_000, `the view is ${FILE_VIEW_HTML.length} characters`)
 })
 
@@ -546,6 +546,8 @@ Deno.test('show_file draws a note\'s drawings and diagrams, and says why when it
   assert(svgs['flows/signup.d2'].startsWith('<svg '))
   assertStringIncludes(svgs['flows/signup.d2'], '>Hello</text>')
   assertFalse(JSON.stringify(result.structuredContent).includes('<svg'))
+  // The diagram the app has not drawn goes to the view to draw from its source.
+  assertEquals((result._meta as Record<string, unknown>)[D2_META_KEY], { 'flows/new.d2': { source: 'c -> d' } })
 })
 
 Deno.test('show_file draws a drawing or diagram shown on its own', async () => {
@@ -559,10 +561,12 @@ Deno.test('show_file draws a drawing or diagram shown on its own', async () => {
   assertEquals((diagram.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'drawn')
   assert((diagram.result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['flows/signup.d2'].startsWith('<svg '))
 
-  // Never opened in the app, so there is no canvas to draw yet.
+  assertFalse(D2_META_KEY in (diagram.result._meta ?? {}))
+
+  // Never opened in the app, so there is no canvas yet: the view draws it from its source.
   const fresh = await showFile('flows/new.d2', [file('flows/new.d2', 'a -> b')])
   assertEquals((fresh.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'not_drawn')
-  assertEquals(fresh.result._meta, undefined)
+  assertEquals(fresh.result._meta, { [D2_META_KEY]: { 'flows/new.d2': { source: 'a -> b' } } })
   // Only notes are edited in the view.
   assertFalse(SOURCE_META_KEY in (drawing.result._meta ?? {}))
 })
@@ -621,18 +625,37 @@ Deno.test('the card saves with the version it showed, and a note changed since t
   })
 })
 
-Deno.test('show_file marks a diagram drawn before its source changed, and still draws it', async () => {
+Deno.test('show_file marks a diagram drawn before its source changed, still draws it, and sends the view what to draw it from', async () => {
   // The app's fingerprint, as src/features/structured/sourceHash.ts computes it.
   assertEquals(sourceHash('a -> b'), '294b0b8d')
   for (const [recorded, status] of [[sourceHash('a -> b'), 'drawn'], [sourceHash('a -> c'), 'stale']]) {
+    const layout = JSON.stringify({ version: 1, sourceHash: recorded })
     const { result } = await showFile('flows/signup.d2', [
       file('flows/signup.d2', 'a -> b'),
       file('flows/signup.excalidraw', SCENE),
-      file('flows/signup.d2.json', JSON.stringify({ version: 1, sourceHash: recorded })),
+      file('flows/signup.d2.json', layout),
     ])
     assertEquals((result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, status)
     assert((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['flows/signup.d2'].startsWith('<svg '))
+    // Out of date, it goes to the view with its canvas and layout record, which keep what was changed by hand.
+    const sent = (result._meta as Record<string, unknown>)[D2_META_KEY]
+    assertEquals(sent, status === 'stale' ? { 'flows/signup.d2': { source: 'a -> b', canvas: SCENE, layout } } : undefined)
   }
+})
+
+Deno.test('what the view draws a diagram from goes in what is left of the budget once the SVG is in', async () => {
+  const note = '<Drawing src="art/flow.excalidraw" />\n\n<Diagram src="flows/big.d2" />\n\n<Diagram src="flows/small.d2" />\n'
+  const { result } = await showFile('plan.md', [
+    file('plan.md', note),
+    file('art/flow.excalidraw', SCENE),
+    // With the drawing's SVG in, this one no longer fits.
+    file('flows/big.d2', `# ${'x'.repeat(MAX_TOTAL_SVG_CHARS - 10)}\na -> b`),
+    file('flows/small.d2', 'c -> d'),
+  ])
+  const view = result.structuredContent as { embeds: { path: string; status: string }[] }
+  assertEquals(view.embeds.map((embed) => embed.status), ['drawn', 'not_drawn', 'not_drawn'])
+  assert((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['art/flow.excalidraw'].startsWith('<svg '))
+  assertEquals((result._meta as Record<string, unknown>)[D2_META_KEY], { 'flows/small.d2': { source: 'c -> d' } })
 })
 
 Deno.test('a note is marked mdx when the HTML shows or drops some of its MDX, and not for embeds and callouts alone', () => {
