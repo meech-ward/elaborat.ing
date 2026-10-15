@@ -524,6 +524,36 @@ test("a project the server creates while a refresh waits for its list is not tak
   expect(server.content(id, "ideas.mdx")).toBe("And after.")
 })
 
+test("a refresh does not fail on a project that leaves this device while the list is on its way", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const { id } = await a.sync.createProject("Notes")
+  await put(a.files(id), "a.md", "a")
+  await a.sync.sync(id)
+  const remote = server.remote(OWNER)
+  let asked = () => {}
+  let arrive = () => {}
+  const askedFor = new Promise<void>((resolve) => (asked = resolve))
+  const arrived = new Promise<void>((resolve) => (arrive = resolve))
+  const slow: ProjectRemote = {
+    ...remote,
+    listProjects: async () => {
+      const listed = await remote.listProjects()
+      asked()
+      await arrived
+      return listed
+    },
+  }
+  const sync = new ProjectSync(a.db, slow, a.partition)
+
+  const refreshing = sync.refresh()
+  await askedFor
+  await sync.forget(id)
+  arrive()
+  expect((await refreshing).map((entry) => entry.id)).toEqual([id])
+  expect(await a.project(id)).toBeNull()
+})
+
 test("an interrupted download finishes on the next refresh", async () => {
   const server = new FakeProjectServer()
   const [a, b] = [device(server), device(server)]

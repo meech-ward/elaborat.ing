@@ -157,9 +157,14 @@ export class ProjectSync {
     if (entry && entry.revision > local.revision) await this.locked(local.id, () => this.pull(local.id, entry.revision))
   }
 
-  /** A project's title, role and archived state as the server lists them (none: access is gone, or with `deleted` the project). */
+  /**
+   * A project's title, role and archived state as the server lists them
+   * (none: access is gone, or with `deleted` the project). Nothing when the
+   * project has left this device since it was read, as when the person
+   * removes it while a refresh is on its way.
+   */
   private async updateDetails(projectId: string, entry: RemoteProject | null, deleted = false): Promise<void> {
-    await this.updateProject(projectId, (current) => {
+    const updated = await this.updateProject(projectId, (current) => {
       if (!entry) return { ...current, syncError: deleted || current.syncError === "deleted" ? "deleted" : "access-lost" }
       return {
         ...current,
@@ -172,8 +177,8 @@ export class ProjectSync {
             ? null
             : current.syncError,
       }
-    })
-    this.emit({ type: "changed", projectId })
+    }, { ifPresent: true })
+    if (updated) this.emit({ type: "changed", projectId })
   }
 
   /** Bring a project from the server onto this device. */
@@ -331,11 +336,16 @@ export class ProjectSync {
     return { status: "stopped", projectId, reason, message: stopMessage(reason, error.message) }
   }
 
-  private async updateProject(projectId: string, change: (project: LocalProject) => LocalProject): Promise<void> {
-    await this.db.transaction(this.partition, "readwrite", async (tx) => {
+  /** Change a project on this device; true when it did. Missing, it throws, or with `ifPresent` changes nothing. */
+  private async updateProject(projectId: string, change: (project: LocalProject) => LocalProject, { ifPresent = false } = {}): Promise<boolean> {
+    return this.db.transaction(this.partition, "readwrite", async (tx) => {
       const project = await tx.getProject(projectId)
-      if (!project) throw new Error("This project is not on this device.")
+      if (!project) {
+        if (ifPresent) return false
+        throw new Error("This project is not on this device.")
+      }
       await tx.putProject(change(project))
+      return true
     })
   }
 

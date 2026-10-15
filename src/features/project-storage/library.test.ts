@@ -386,6 +386,82 @@ test("a deleted project with unsaved changes stays on this device until they are
   expect(await db.listProjects(partition)).toEqual([])
 })
 
+/** A database whose next list of projects, once read, waits until it is let go, as a slow read would. */
+class HeldDatabase extends MemoryProjectDatabase {
+  private held: { reached: () => void; go: Promise<void> } | null = null
+
+  holdNextList(): { reached: Promise<void>; release: () => void } {
+    let reached = () => {}
+    let release = () => {}
+    const reachedNow = new Promise<void>((resolve) => (reached = resolve))
+    const go = new Promise<void>((resolve) => (release = resolve))
+    this.held = { reached, go }
+    return { reached: reachedNow, release }
+  }
+
+  override async listProjects(partition: string) {
+    const projects = await super.listProjects(partition)
+    const held = this.held
+    if (held) {
+      this.held = null
+      held.reached()
+      await held.go
+    }
+    return projects
+  }
+}
+
+/** Their project, open here with an unsaved draft, which its owner then deleted. */
+async function deletedWithUnsaved(server: FakeProjectServer, db: HeldDatabase) {
+  const id = await othersProject(server, "Their notes")
+  server.share(id, OWNER, "editor")
+  const { library: here } = library(server, db)
+  await here.refresh()
+  await here.open(id)
+  await new ProjectFileStore(db, partition, id).persistDrafts([{ path: "notes/b.md", content: "unsaved", baseRevision: null }])
+  await server.remote(OTHER).deleteProject(id)
+  await here.refresh()
+  expect(here.getState().deleted).toEqual([{ id, title: "Their notes", unsaved: 1 }])
+  return { id, here }
+}
+
+test("a deleted project the person removes while deleted projects are being settled is not reported to them again", async () => {
+  const server = new FakeProjectServer()
+  const db = new HeldDatabase()
+  const { id, here } = await deletedWithUnsaved(server, db)
+
+  // Settling has listed the project when the person removes it, unsaved changes and all.
+  const list = db.holdNextList()
+  const settling = here.syncProject(id)
+  await list.reached
+  await here.removeDeleted(id)
+  list.release()
+  await settling
+  expect(here.getState().deleted).toEqual([])
+})
+
+test("a load that read the projects before the person removed a deleted one does not show it again after", async () => {
+  const server = new FakeProjectServer()
+  const db = new HeldDatabase()
+  const { id, here } = await deletedWithUnsaved(server, db)
+
+  // A load has listed the project when the person removes it.
+  const list = db.holdNextList()
+  const loading = here.load()
+  await list.reached
+  const forgotten = new Promise<void>((resolve) => {
+    const stop = here.sync.subscribe(() => {
+      stop()
+      resolve()
+    })
+  })
+  const removing = here.removeDeleted(id)
+  await forgotten
+  list.release()
+  await Promise.all([loading, removing])
+  expect(here.getState().deleted).toEqual([])
+})
+
 test("a project someone was removed from still says their access ended", async () => {
   const server = new FakeProjectServer()
   const id = await othersProject(server, "Their notes")

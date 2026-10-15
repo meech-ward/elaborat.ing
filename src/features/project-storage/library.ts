@@ -80,6 +80,8 @@ export class ProjectLibrary {
   private catalog: RemoteProject[] = []
   /** Deleted projects removed from this device since this page opened, still to tell the person about. */
   private removed = new Map<string, DeletedProject>()
+  /** The last load asked for, which the next one waits for. */
+  private loading: Promise<void> = Promise.resolve()
   private readonly listeners = new Set<() => void>()
 
   constructor(
@@ -107,8 +109,19 @@ export class ProjectLibrary {
     for (const listener of [...this.listeners]) listener()
   }
 
-  /** Re-read the projects on this device. */
-  async load(): Promise<void> {
+  /**
+   * Re-read the projects on this device. One load at a time, in the order
+   * asked for: a project and its files are read apart, so a load that read a
+   * project before it left this device never lands after one that started
+   * once it had.
+   */
+  load(): Promise<void> {
+    const next = this.loading.then(() => this.read())
+    this.loading = next.catch(() => undefined)
+    return next
+  }
+
+  private async read(): Promise<void> {
     const local = await this.db.listProjects(this.partition)
     const entries: ProjectEntry[] = []
     const deleted: DeletedProject[] = []
@@ -145,10 +158,14 @@ export class ProjectLibrary {
    * `unsavedChanges` and `removeDeleted`).
    */
   private async settleDeleted(): Promise<void> {
-    for (const project of await this.db.listProjects(this.partition)) {
-      if (project.syncError !== "deleted") continue
-      const files = await this.db.transaction(this.partition, "readonly", (tx) => tx.listFiles(project.id))
-      if (waiting(files).length > 0) continue
+    for (const listed of await this.db.listProjects(this.partition)) {
+      if (listed.syncError !== "deleted") continue
+      // Read again with its files: the person may have removed it since, files and all, which is not having nothing unsaved.
+      const project = await this.db.transaction(this.partition, "readonly", async (tx) => {
+        const current = await tx.getProject(listed.id)
+        return current && waiting(await tx.listFiles(current.id)).length === 0 ? current : null
+      })
+      if (!project) continue
       this.removed.set(project.id, { id: project.id, title: project.pendingTitle ?? project.title, unsaved: 0 })
       await this.sync.forget(project.id)
     }
