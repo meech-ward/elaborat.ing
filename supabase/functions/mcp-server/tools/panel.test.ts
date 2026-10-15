@@ -389,7 +389,8 @@ async function openView(hostContext: Record<string, unknown> = { theme: 'light',
 const at = (file: { path: string; kind: string } | null, name = 'Test') => ({ type: LOCATION, project: { id: PROJECT, name }, file })
 const context = (text: string) => ({ content: [{ type: 'text', text }] })
 const OPEN = `The person has elaborat.ing open beside this chat: project "Test" (project_id ${PROJECT})`
-const READ = 'they mean this file: read it with read_file before changing it.'
+const MEANS = 'they mean this file.'
+const CHANGE = 'To change it, read it with read_file, then use write_file with base_version.'
 
 Deno.test('the view tells the model which project and file the person has open, once it settles, and only when it changes', async () => {
   const view = await openView()
@@ -401,9 +402,12 @@ Deno.test('the view tells the model which project and file the person has open, 
   await view.tick(1)
   assertEquals(view.told(), [
     context(
-      `${OPEN}, file "drawings/how-mcp-works.excalidraw", a drawing. When they say "this" or "the drawing", ${READ} ` +
-        'Add to it with draw, one shape with its label and arrows per call, so they can watch it being drawn. ' +
-        'Change or remove elements with write_file and base_version.'
+      `${OPEN}, file "drawings/how-mcp-works.excalidraw", a drawing. When they say "this" or "the drawing", ${MEANS} ` +
+        'Add to it with draw, several shapes per call: a row or a group of related shapes with their arrows, about 4 to 10 elements. ' +
+        "They see each one sketched in turn. Don't add one shape per call. " +
+        'draw only adds, so it needs no read first: read it once with read_file if you need to see where things are, ' +
+        'but not for a new drawing or to add beside what is there. ' +
+        'To change or remove elements, read it with read_file, then use write_file with base_version.'
     ),
   ])
 
@@ -416,17 +420,18 @@ Deno.test('the view tells the model which project and file the person has open, 
   await view.tick(300)
   assertEquals(view.told().slice(1), [
     context(
-      `${OPEN}, file "notes/plan.md", a note. When they say "this" or "the note", ${READ} ` +
+      `${OPEN}, file "notes/plan.md", a note. When they say "this" or "the note", ${MEANS} ` +
         'Add to it with append_to_note, a section per call, so they can watch it being written. ' +
-        'Change or remove text with write_file and base_version.'
+        'append_to_note only adds to the end, so it needs no read first. ' +
+        'To change or remove text, read it with read_file, then use write_file with base_version.'
     ),
   ])
 
   // A diagram, another file and an Obsidian drawing are changed with write_file; a project with no file open is named alone.
   const rest: [Record<string, unknown>, string][] = [
-    [at({ path: 'diagrams/flow.d2', kind: 'diagram' }), `${OPEN}, file "diagrams/flow.d2", a diagram. When they say "this" or "the diagram", ${READ} Change it with write_file and base_version.`],
-    [at({ path: 'data/list.json', kind: 'other' }), `${OPEN}, file "data/list.json", a file. When they say "this" or "the file", ${READ} Change it with write_file and base_version.`],
-    [at({ path: 'Sketch.excalidraw.md', kind: 'drawing' }), `${OPEN}, file "Sketch.excalidraw.md", a drawing. When they say "this" or "the drawing", ${READ} Change it with write_file and base_version.`],
+    [at({ path: 'diagrams/flow.d2', kind: 'diagram' }), `${OPEN}, file "diagrams/flow.d2", a diagram. When they say "this" or "the diagram", ${MEANS} ${CHANGE}`],
+    [at({ path: 'data/list.json', kind: 'other' }), `${OPEN}, file "data/list.json", a file. When they say "this" or "the file", ${MEANS} ${CHANGE}`],
+    [at({ path: 'Sketch.excalidraw.md', kind: 'drawing' }), `${OPEN}, file "Sketch.excalidraw.md", a drawing. When they say "this" or "the drawing", ${MEANS} ${CHANGE}`],
     [at(null), `${OPEN}, with no file open. When they say "this" or "the project", they mean this project.`],
     [at(null, 'Plan "B"'), `The person has elaborat.ing open beside this chat: project "Plan \\"B\\"" (project_id ${PROJECT}), with no file open. When they say "this" or "the project", they mean this project.`],
   ]

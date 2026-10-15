@@ -31,14 +31,19 @@ import type { ToolContext } from './types.ts'
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v4.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v5.html'
 /**
  * Earlier names of the panel view. A host keeps the tool list it last read, so
  * it asks for the name that list carries until it refreshes; serving the
  * earlier names too means a rename never shows "App unavailable" meanwhile.
  * The content is always the current view.
  */
-export const OLD_PANEL_VIEW_URIS = ['ui://elaborating/panel-v3.html', 'ui://elaborating/panel-v2.html', 'ui://elaborating/panel-v1.html']
+export const OLD_PANEL_VIEW_URIS = [
+  'ui://elaborating/panel-v4.html',
+  'ui://elaborating/panel-v3.html',
+  'ui://elaborating/panel-v2.html',
+  'ui://elaborating/panel-v1.html',
+]
 /** The result `_meta` key holding the app's page to frame, such as /embed/projects/<id>. `_meta` reaches the view, not the model. */
 export const PANEL_META_KEY = 'elaborat.ing/embed'
 /** The result `_meta` key holding a one-time pass for the page the view frames. */
@@ -234,20 +239,25 @@ const SCRIPT = String.raw`
     if (KINDS.indexOf(file.kind) === -1) return undefined;
     return { id: project.id, name: name, path: file.path, kind: file.kind };
   }
-  // What the model hears about it, and which tools change it so the person watches: "" for nothing open.
+  // What the model hears about it, which tools change it so the person watches, and when to read it first: "" for nothing open.
+  // draw and append_to_note only add, so they need no read, which would cost the chat a tool call before anything shows.
   function contextText(place) {
     if (!place) return "";
     var text = "The person has elaborat.ing open beside this chat: project " + JSON.stringify(place.name) + " (project_id " + place.id + ")";
     if (!place.path) return text + ", with no file open. When they say \"this\" or \"the project\", they mean this project.";
     var noun = place.kind === "other" ? "file" : place.kind;
-    text += ", file " + JSON.stringify(place.path) + ", a " + noun + ". When they say \"this\" or \"the " + noun + "\", they mean this file: read it with read_file before changing it.";
+    text += ", file " + JSON.stringify(place.path) + ", a " + noun + ". When they say \"this\" or \"the " + noun + "\", they mean this file.";
     if (place.kind === "drawing" && /\.excalidraw$/i.test(place.path)) {
-      return text + " Add to it with draw, one shape with its label and arrows per call, so they can watch it being drawn. Change or remove elements with write_file and base_version.";
+      return text + " Add to it with draw, several shapes per call: a row or a group of related shapes with their arrows, about 4 to 10 elements." +
+        " They see each one sketched in turn. Don't add one shape per call." +
+        " draw only adds, so it needs no read first: read it once with read_file if you need to see where things are, but not for a new drawing or to add beside what is there." +
+        " To change or remove elements, read it with read_file, then use write_file with base_version.";
     }
     if (place.kind === "note" && /\.mdx?$/i.test(place.path)) {
-      return text + " Add to it with append_to_note, a section per call, so they can watch it being written. Change or remove text with write_file and base_version.";
+      return text + " Add to it with append_to_note, a section per call, so they can watch it being written. append_to_note only adds to the end, so it needs no read first." +
+        " To change or remove text, read it with read_file, then use write_file with base_version.";
     }
-    return text + " Change it with write_file and base_version.";
+    return text + " To change it, read it with read_file, then use write_file with base_version.";
   }
   // Tells the model a moment after it settles, and only what it wasn't told last; each context replaces the one before.
   function tellModel(place) {

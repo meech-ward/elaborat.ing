@@ -15,11 +15,27 @@ The user's instructions win over this skill when they differ.
 - For boxes and arrows that should lay themselves out, a D2 diagram is usually
   the better choice. Use a drawing for sketches and hand-placed layouts.
 - To make or extend a drawing the user can watch in elaborat.ing, or in its
-  panel beside the chat, call `draw` several times with a few elements each,
-  in reading order: a shape, its label, then its arrows. Not one big
-  `write_file`: each `draw` saves, and the app draws each save in. Every
-  element needs a new id; `draw` fills in the fields you leave out and lists
-  each label and arrow in its shape's `boundElements`.
+  panel beside the chat, use `draw`, not one big `write_file`. Add several
+  shapes per call, a row or a group of related shapes with their arrows,
+  about 4 to 10 elements, in reading order: the user sees each one sketched
+  in turn. Don't add one shape per call. Every element needs a new id;
+  `draw` fills in the fields you leave out and lists each label and arrow in
+  its shape's `boundElements`.
+- In `draw`, give a rectangle, ellipse or diamond a `label` and leave out
+  its size: `draw` adds the label as a text with the id `<shape id>-label`,
+  centred, and sizes the shape to fit it. Join two shapes with an arrow's
+  `from` and `to`, their ids, instead of `x`, `y` and `points`: `draw` runs
+  it straight between their outlines and binds both ends. An arrow can have
+  a `label` too. Leave about 150 px between shapes for the arrows and their
+  labels. For example:
+
+  ```json
+  {"path": "drawings/flow.excalidraw", "elements": [
+    {"id": "api", "type": "rectangle", "x": 0, "y": 0, "label": "API"},
+    {"id": "db", "type": "ellipse", "x": 300, "y": 0, "label": "Database"},
+    {"id": "api-to-db", "type": "arrow", "from": "api", "to": "db", "label": "SQL"}
+  ]}
+  ```
 - To change or remove elements, read the drawing, change only what you need,
   and keep every other element and field as it is, ids included. Save once
   with `write_file` and the `base_version` you read, then add anything new
@@ -56,8 +72,9 @@ The user's instructions win over this skill when they differ.
 ```
 
 - Every element needs a unique `id`, a `type`, `x`, `y`, `width` and
-  `height`. The app fills in the fields you leave out. `draw` takes the
-  elements alone, such as the ones above, a few at a time.
+  `height`. The app fills in the fields you leave out. `draw` takes full
+  elements too, such as the ones above, but its `label`, `from` and `to` are
+  quicker to write.
 - Types: rectangle, ellipse, diamond, text, arrow, line and freedraw.
 - Style: `strokeColor`, `backgroundColor` (`"transparent"` or a colour),
   `fillStyle` (`"solid"` or `"hachure"`), `strokeWidth` (1, 2 or 4),

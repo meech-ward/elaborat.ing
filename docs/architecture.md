@@ -852,18 +852,41 @@ The production server's tools are unchanged.
   skeleton; with reduced motion nothing animates. `write_file` and
   `save_files` keep no view, so ordinary saves stay plain, and the app and
   the panel update when the save lands, as for any save.
-- **Decision: a drawing grows in small saves the person can watch (`draw`).**
-  Nothing can show while a model writes one tool call, and ChatGPT sends no
-  partial input, so a drawing written in one `write_file` appears all at
-  once. `draw` (`tools/draw.ts`) adds 1 to 50 elements to a `.excalidraw`
-  drawing, creating it if there is none, and saves through `save_files` with
-  the version it read, as `write_file` does; the server's instructions and
-  the drawings skill tell agents to call it several times with a few
-  elements each. It only adds, so it is not destructive: every id must be
-  new, and an existing element changes only to list a new label or arrow in
-  its `boundElements`. Fields left out get Excalidraw 0.18.1's defaults, and
-  indices continue after the scene's last with `fractional-indexing`,
-  Excalidraw's own library, so the app and `drawingSvg.ts` draw the result.
+- **Decision: a drawing grows in small saves the person can watch
+  (`draw`).** Nothing can show while a model writes one tool call, and
+  ChatGPT sends no partial input, so a drawing written in one `write_file`
+  appears all at once. `draw` (`tools/draw.ts`) adds 1 to 50 elements to a
+  `.excalidraw` drawing, the labels it makes included, creating it if there
+  is none, and saves through `save_files` with the version it read, as
+  `write_file` does. Each call costs a model about 5 to 8 s however many
+  elements it adds, and the canvas sketches each new element in turn, so the
+  server's instructions, the tool's description, the panel's model context
+  and the drawings skill tell agents to add several shapes per call, a row
+  or a group of related shapes with their arrows, about 4 to 10 elements,
+  and not one shape per call. Like Excalidraw's element skeletons
+  (`convertToExcalidrawElements`), it takes two shortcuts, so a model writes
+  less and works out no coordinates: a rectangle, ellipse, diamond or arrow
+  may take `label`, which adds a text bound to it, right after it, with the
+  id `<id>-label`, centred; a labelled shape sent without a width or height
+  is sized to fit: the label's estimated box with 20 px each side and 10
+  above and below, inside the largest box the shape holds (all of a
+  rectangle, 1/√2 of an ellipse, half of a diamond), at least 140 by 70. An
+  arrow may take `from` and `to`, the ids of two shapes in the drawing or
+  the same call, instead of `x`, `y` and points: it runs straight along the
+  line between their middles, clipped to each outline (a rectangle, ellipse
+  or diamond, turned with the shape; any other shape as its box, and a
+  rounded rectangle as a square-cornered one) and 8 px short of it,
+  Excalidraw's gap, with both bindings set (focus 0). Each shortcut becomes
+  the full elements a call could send, and full elements still work as
+  before. A label on a text or line, an empty label, a label id already
+  used, an end that is not in the drawing, is a label or is the arrow's
+  other end, points or bindings given with `from` and `to`, and shapes too
+  close for an arrow are refused, saving nothing. It only adds, so it is not
+  destructive: every id must be new, and an existing element changes only to
+  list a new label or arrow in its `boundElements`. Fields left out get
+  Excalidraw 0.18.1's defaults, and indices continue after the scene's last
+  with `fractional-indexing`, Excalidraw's own library, so the app and
+  `drawingSvg.ts` draw the result.
   A save that conflicts is read again and applied once more; with
   `base_version`, a drawing changed since is a conflict. An Obsidian
   `.excalidraw.md` is refused (`write_file` changes it). In the app, and so
@@ -1027,7 +1050,7 @@ The production server's tools are unchanged.
   `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
   sidebar (global entrypoint), a conversation's side panel (thread
   entrypoint), or a model's call with a project and file; `{}` opens the
-  projects list. Its view (`ui://elaborating/panel-v4.html`, earlier names still answering) is a small
+  projects list. Its view (`ui://elaborating/panel-v5.html`, earlier names still answering) is a small
   hand-written page, not the card's build: it declares
   `https://elaborat.ing` in `frameDomains` (and `frame_domains` and
   `redirect_domains` in `openai/widgetCSP`), uses the card's widget domain so
@@ -1061,8 +1084,11 @@ The production server's tools are unchanged.
   settled for 300 ms and differs from the last, gives the chat's model one
   short text with `ui/update-model-context`: the project and file, that
   "this" means that file, how to add to it so the person can watch (`draw`
-  for a drawing, `append_to_note` for a note) and that changes go through
-  `write_file` with `base_version`; with nothing open, an empty list. Each
+  for a drawing, several shapes a call; `append_to_note` for a note), that
+  adding needs no `read_file` first (both only add, and a read costs the
+  chat a tool call before anything shows; a drawing may be read once to see
+  where things are), and that changes and removals are read first and go
+  through `write_file` with `base_version`; with nothing open, an empty list. Each
   page the view frames carries a one-time pass in its fragment
   (`#pass=<64 hex characters>`, never the query string): `open_panel`'s
   result has one in `_meta` (`elaborat.ing/pass`, which reaches the view and

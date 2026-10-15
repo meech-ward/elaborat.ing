@@ -28,7 +28,7 @@ The user's instructions win over this skill when they differ.
   the note, use `write_file` with `base_version`.
 - To make a new note the user should watch being written in the chat, use
   `create_and_show` instead of `write_file`. Create any drawing or diagram it
-  embeds first: build a drawing with `draw`, a few elements a call, so the
+  embeds first: build a drawing with `draw`, several shapes a call, so the
   user can watch it in elaborat.ing (see the drawings skill).
 - When the user should watch a change to a note happen in the chat, use
   `update_and_show` with the `base_version` from `read_file`: the card shows

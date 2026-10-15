@@ -53,11 +53,15 @@ const SERVER_INSTRUCTIONS =
   // app; the in-app assistant's instructions use the same text.
   FILE_FORMAT_INSTRUCTIONS +
   'To show a file to the user, use show_file; to show the user a component you are writing, use preview_component. ' +
-  // A model's one big tool call shows nothing until it is done; small draw
-  // and append_to_note saves show in the app, and in its panel beside the
-  // chat, as they land.
-  'To make or extend a drawing the user can watch in elaborat.ing or in its panel beside the chat, call draw several times ' +
-  'with a few elements each (a shape, its label, then its arrows, in reading order), not one big write_file. ' +
+  // A model's one big tool call shows nothing until it is done; draw and
+  // append_to_note saves show in the app, and in its panel beside the chat,
+  // as they land. Each call costs the model seconds whatever its size, and
+  // the app sketches a drawing's new elements in turn, so a draw call adds
+  // several shapes.
+  'To make or extend a drawing the user can watch in elaborat.ing or in its panel beside the chat, use draw, not one big write_file. ' +
+  'Add several shapes per call, a row or a group of related shapes with their arrows, about 4 to 10 elements: ' +
+  "the user sees each one sketched in turn. Don't add one shape per call. " +
+  "Give a shape a label and join two shapes with an arrow's from and to, and draw sizes and places them. " +
   "To change or remove a drawing's elements, use write_file once with base_version, then draw what is new. " +
   'To write a note the user can watch in elaborat.ing or in its panel beside the chat, call append_to_note several times, ' +
   'a section each (a heading and its paragraphs, in reading order), not one big write_file. ' +
