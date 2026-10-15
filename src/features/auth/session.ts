@@ -1,4 +1,4 @@
-import type { Session, User } from "@supabase/supabase-js"
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js"
 
 /**
  * The signed-in state, as a small state machine with no React in it, so its
@@ -16,7 +16,7 @@ export interface AuthClientLike {
   auth: {
     getSession(): Promise<{ data: { session: Session | null }; error?: { status?: number } | null }>
     getUser(): Promise<{ data: { user: User | null }; error?: { status?: number } | null }>
-    onAuthStateChange(callback: () => void): { data: { subscription: { unsubscribe(): void } } }
+    onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): { data: { subscription: { unsubscribe(): void } } }
     signOut(): Promise<{ error: { message: string } | null }>
   }
 }
@@ -58,14 +58,30 @@ export class AuthController {
     this.setState(this.state.status === "ready" ? { ...this.state, connectivityError: UNREACHABLE } : { status: "error", message: UNREACHABLE })
   }
 
-  /** Listen for sign-in and sign-out events and load the current session. */
+  /** Listen for sign-in and sign-out events and load the current session. Every event loads it again, except a token refresh. */
   start(): void {
     if (!this.subscription) {
-      this.subscription = this.client.auth.onAuthStateChange(() => {
-        void this.refresh()
+      this.subscription = this.client.auth.onAuthStateChange((event, session) => {
+        if (event === "TOKEN_REFRESHED") this.tokenRefreshed(session)
+        else void this.refresh()
       }).data.subscription
     }
     void this.refresh()
+  }
+
+  /**
+   * A new token for the same session, so nothing is loaded again: a load reads
+   * the session, and supabase-js refreshes a token it reads within 90 s of
+   * expiring by the device's clock. Where that clock runs an hour ahead, every
+   * new token looks that close, and each load would refresh it and come back
+   * here. The refresh reached the Auth server, so someone it could not reach
+   * before is signed in again with the session it carries. Anyone else keeps
+   * their state: a signed-out page stays signed out, and a load in flight
+   * still decides.
+   */
+  private tokenRefreshed(session: Session | null): void {
+    const unreachable = this.state.status === "error" || (this.state.status === "ready" && this.state.connectivityError !== undefined)
+    if (unreachable && session?.user) this.setState({ status: "ready", user: session.user, email: session.user.email ?? null })
   }
 
   stop(): void {

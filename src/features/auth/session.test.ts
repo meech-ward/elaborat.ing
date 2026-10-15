@@ -1,3 +1,4 @@
+import type { AuthChangeEvent } from "@supabase/supabase-js"
 import { expect, test } from "bun:test"
 import { AuthController, type AuthClientLike } from "./session"
 
@@ -20,7 +21,7 @@ function fakeClient(initial: { session: unknown; user: unknown }) {
         }
       })
     })
-  let onChange: (() => void) | null = null
+  let onChange: ((event: AuthChangeEvent, session: never) => void) | null = null
   let failing = false
   const client: AuthClientLike = {
     auth: {
@@ -69,7 +70,10 @@ function fakeClient(initial: { session: unknown; user: unknown }) {
     fail(value: boolean) {
       failing = value
     },
-    emit: () => onChange?.(),
+    /** Tell the controller of an auth event, as the client does. */
+    emit: (event: AuthChangeEvent = "SIGNED_IN", eventSession: unknown = null) => onChange?.(event, eventSession as never),
+    /** How many reads wait for an answer. */
+    waiting: () => pending.length,
   }
 }
 
@@ -136,4 +140,48 @@ test("a first load that cannot reach the Auth server is an error that can be ret
   await fake.release()
   await retry
   expect(auth.getState().status).toBe("ready")
+})
+
+/** The session a token refresh carries, with the user Auth sent back. */
+const refreshed = { access_token: "refreshed token", user }
+
+test("a token refresh reads nothing again, so where the device's clock runs ahead its reads cannot refresh the token over and over", async () => {
+  const fake = fakeClient({ session, user })
+  const auth = new AuthController(fake.client)
+  auth.start()
+  await fake.release()
+  const ready = auth.getState()
+  fake.emit("TOKEN_REFRESHED", refreshed)
+  expect(fake.waiting()).toBe(0)
+  expect(auth.getState()).toBe(ready)
+})
+
+test("a token refresh after the Auth server could not be reached signs in again with the session it carries", async () => {
+  // A first load that could not reach it...
+  const fake = fakeClient({ session, user })
+  fake.fail(true)
+  const auth = new AuthController(fake.client)
+  auth.start()
+  await fake.release()
+  expect(auth.getState().status).toBe("error")
+  fake.emit("TOKEN_REFRESHED", refreshed)
+  expect(auth.getState()).toEqual({ status: "ready", user, email: "person@example.com" })
+  // ...and a later one.
+  fake.emit()
+  await fake.release()
+  expect(auth.getState()).toMatchObject({ status: "ready", connectivityError: expect.stringContaining("Could not reach") })
+  fake.emit("TOKEN_REFRESHED", refreshed)
+  expect(auth.getState()).toEqual({ status: "ready", user, email: "person@example.com" })
+  expect(fake.waiting()).toBe(0)
+})
+
+test("a token refresh that arrives after signing out does not sign in again", async () => {
+  const fake = fakeClient({ session, user })
+  const auth = new AuthController(fake.client)
+  auth.start()
+  await fake.release()
+  await auth.signOut()
+  fake.emit("TOKEN_REFRESHED", refreshed)
+  expect(auth.getState().status).toBe("signed-out")
+  expect(fake.waiting()).toBe(0)
 })
