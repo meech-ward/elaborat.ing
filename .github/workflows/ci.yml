@@ -26,12 +26,11 @@ jobs:
       - run: bun install --frozen-lockfile
       # The build generates src/routeTree.gen.ts, which typecheck and lint need.
       - run: bun run build
-      - run: bun run typecheck
-      - run: bun run lint
-      - run: bun run test
       # The chat card is built from the app's components and committed: the
       # view's script, because the functions deploy without building the app,
       # and the modules it loads from the site, which every app deploy serves.
+      # Before the tests, whose checks of the committed card fail without saying
+      # how to fix it.
       - name: Check that the chat card is up to date
         run: |
           bun run build:chat-card
@@ -41,6 +40,9 @@ jobs:
             echo "$changes"
             exit 1
           fi
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run test
       # The loading rule (docs/architecture.md, Principles): each page's first
       # paint and the chat card's view within its budget in
       # scripts/bundle-budget.json, and no heavy library before a first paint.
