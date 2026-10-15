@@ -157,6 +157,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       // Explicit formatting only: never format on type, paste, or save.
       formatOnType: false,
       formatOnPaste: false,
+      // This is prose: curly quotes and other look-alike letters are
+      // ordinary text here, not boxed as suspicious. Invisible characters
+      // still show.
+      unicodeHighlight: { ambiguousCharacters: false },
     });
     editorRef.current = editor;
     let renderedGroup: string | undefined;

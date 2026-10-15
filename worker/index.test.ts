@@ -36,6 +36,21 @@ describe("handle", () => {
     expect(seen!.method).toBe("POST");
     expect(seen!.headers.get("Authorization")).toBe("Bearer t");
     expect(await seen!.text()).toBe("{}");
+    // No region asked for unless one is set.
+    expect(seen!.headers.get("x-region")).toBeNull();
+  });
+
+  test("asks Supabase to run the MCP function in MCP_REGION", async () => {
+    let seen: Request | null = null;
+    await handle(
+      new Request("https://site.test/mcp", { method: "POST", body: "{}" }),
+      { ASSETS: assets, MCP_UPSTREAM: UPSTREAM, MCP_REGION: " us-east-1\n" },
+      (async (input: Request) => {
+        seen = input;
+        return new Response("ok");
+      }) as unknown as typeof fetch,
+    );
+    expect(seen!.headers.get("x-region")).toBe("us-east-1");
   });
 
   test("names this site's /mcp in the resource metadata and the 401 challenge", async () => {

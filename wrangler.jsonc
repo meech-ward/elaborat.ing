@@ -31,6 +31,9 @@
   // MCP_PROBE_UPSTREAM: temporary host capability probe, remove after testing.
   "vars": {
     "MCP_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-server",
+    // The database's region: the MCP function runs there, so its several
+    // database round trips per tool call stay in one region.
+    "MCP_REGION": "us-east-1",
     "EMBED_FRAME_ANCESTORS": "https://*.web-sandbox.oaiusercontent.com https://chatgpt.com",
     "MCP_PROBE_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-probe"
   },

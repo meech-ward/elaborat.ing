@@ -26,6 +26,12 @@ import { frameAncestors } from "./frameAncestors.ts";
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   MCP_UPSTREAM?: string;
+  /**
+   * The region the MCP function runs in, sent as Supabase's `x-region`
+   * header: the database's region, since each tool call makes several
+   * round trips to the database. Unset, the function runs nearest the caller.
+   */
+  MCP_REGION?: string;
   /** The token OpenAI gives to verify this domain for a plugin listing. */
   OPENAI_APPS_CHALLENGE?: string;
   /**
@@ -90,7 +96,10 @@ export async function handle(request: Request, env: Env, fetcher: typeof fetch =
   if (!upstream || path === null) return env.ASSETS.fetch(request);
 
   const publicUrl = `${url.origin}${PREFIX}`;
-  const response = await fetcher(new Request(`${upstream}${path}${url.search}`, request));
+  const forwarded = new Request(`${upstream}${path}${url.search}`, request);
+  const region = env.MCP_REGION?.trim();
+  if (region) forwarded.headers.set("x-region", region);
+  const response = await fetcher(forwarded);
 
   if (path === METADATA && request.method === "GET" && response.ok) {
     const metadata = (await response.json()) as Record<string, unknown>;

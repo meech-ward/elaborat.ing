@@ -9,4 +9,5 @@ export const FILE_FORMAT_INSTRUCTIONS =
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. ' +
   'Create a drawing before the note that embeds it. ' +
-  'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. '
+  'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. ' +
+  "Write straight quotes and apostrophes (' and \"), never curly ones: files are plain text people edit as source. "
