@@ -225,7 +225,8 @@ test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved s
  * with these texts the note's frame does not draw (null while one is not
  * there) and whether it shows the caret that writes; and, on the page,
  * whether the note says it has unsaved changes, how many characters Source
- * does not draw, and whether it shows its caret.
+ * does not draw, whether it shows its caret, the line the caret is on, and
+ * Source's line numbers, shown or not.
  */
 async function watchWriting(page: Page, texts: string[]) {
   await noteFrame(page).locator("body").evaluate((_, texts) => {
@@ -252,7 +253,7 @@ async function watchWriting(page: Page, texts: string[]) {
     requestAnimationFrame(tick)
   }, texts)
   await page.evaluate(() => {
-    const frames: { unsaved: boolean; hidden: number; caret: boolean }[] = []
+    const frames: SourceFrame[] = []
     Object.assign(window, { writing: frames })
     const tick = () => {
       let hidden = 0
@@ -261,10 +262,21 @@ async function watchWriting(page: Page, texts: string[]) {
         for (let node = walker.nextNode(); node; node = walker.nextNode())
           if (getComputedStyle(node.parentElement!).visibility !== "visible") hidden += node.textContent!.length
       }
+      // A line's number is drawn at the top of its first row, a wrapped line's rows below it.
+      const numbers = [...document.querySelectorAll<HTMLElement>(".monaco-editor .margin-view-overlays > div")]
+        .flatMap((line) => {
+          const number = line.querySelector(".line-numbers")
+          return number?.textContent ? [{ line: Number(number.textContent), top: parseFloat(line.style.top), shown: getComputedStyle(number).visibility === "visible" }] : []
+        })
+        .sort((a, b) => a.top - b.top)
+      const caretRow = document.querySelector(".monaco-editor .source-writing-caret")?.closest<HTMLElement>(".view-line")
+      const caretTop = caretRow ? parseFloat(caretRow.style.top) : NaN
       frames.push({
         unsaved: Boolean(document.querySelector(".wb-session [aria-live]")?.textContent?.includes("Unsaved changes")),
         hidden,
         caret: document.querySelector(".monaco-editor .source-writing-caret") !== null,
+        caretLine: numbers.filter(({ top }) => top <= caretTop).at(-1)?.line ?? null,
+        numbers: numbers.map(({ line, shown }) => ({ line, shown })),
       })
       if (frames.length < 1_500) requestAnimationFrame(tick)
     }
@@ -273,8 +285,9 @@ async function watchWriting(page: Page, texts: string[]) {
 }
 const renderedWriting = (page: Page) =>
   noteFrame(page).locator("body").evaluate(() => (window as unknown as { writing: { hidden: (number | null)[]; caret: boolean }[] }).writing)
-const sourceWriting = (page: Page) =>
-  page.evaluate(() => (window as unknown as { writing: { unsaved: boolean; hidden: number; caret: boolean }[] }).writing)
+type SourceFrame = { unsaved: boolean; hidden: number; caret: boolean; caretLine: number | null; numbers: { line: number; shown: boolean }[] }
+const sourceWriting = (page: Page) => page.evaluate(() => (window as unknown as { writing: SourceFrame[] }).writing)
+const allNumbersShown = (frame: SourceFrame | undefined) => frame?.numbers.every(({ shown }) => shown)
 
 test("a paragraph an agent adds to the open note types in behind a caret in Rendered and Source, leaves nothing unsaved or to undo, and with reduced motion appears at once", async ({ page }) => {
   const NOTE = "# Launch plan\n\nWhat ships on day one.\n"
@@ -290,18 +303,24 @@ test("a paragraph an agent adds to the open note types in behind a caret in Rend
   // The agent adds a paragraph (append_to_note), which reaches the open note through Realtime.
   await watchWriting(page, ["What ships on day one.", SLOW])
   await agentSaves(fake, id, WITH_SLOW)
-  // All of it shows, shortly after, with no caret left.
+  // All of it shows, shortly after, with no caret left, and every line's number.
   await expect
     .poll(async () => {
       const [rendered, source] = [(await renderedWriting(page)).at(-1), (await sourceWriting(page)).at(-1)]
-      return [rendered?.hidden[1], rendered?.caret, source?.hidden, source?.caret]
+      return [rendered?.hidden[1], rendered?.caret, source?.hidden, source?.caret, allNumbersShown(source)]
     }, { timeout: 10_000 })
-    .toEqual([0, false, 0, false])
+    .toEqual([0, false, 0, false, true])
   // Part way through, some of it showed, the rest was hidden in its place, and a caret wrote it, in both views.
   const rendered = await renderedWriting(page)
   const source = await sourceWriting(page)
   expect(rendered.some(({ hidden: [, paragraph], caret }) => paragraph !== null && paragraph > 0 && paragraph < SLOW.length && caret)).toBe(true)
   expect(source.some(({ hidden, caret }) => hidden > 0 && hidden < SLOW.length && caret)).toBe(true)
+  // Source had every line of the end from the start, and a line's number showed once the caret reached the line.
+  const writing = source.filter(({ caret }) => caret)
+  const lines = (frame: SourceFrame) => frame.numbers.map(({ line }) => line).join()
+  expect(new Set(writing.map(lines))).toEqual(new Set([lines(source.at(-1)!)]))
+  expect(writing.some(({ numbers }) => numbers.some(({ shown }) => !shown))).toBe(true)
+  expect(writing.filter(({ caretLine, numbers }) => caretLine === null || numbers.some(({ line, shown }) => shown !== line <= caretLine))).toEqual([])
   // What was there before showed all along.
   expect(rendered.filter(({ hidden: [before] }) => before !== 0)).toEqual([])
 
@@ -329,6 +348,7 @@ test("a paragraph an agent adds to the open note types in behind a caret in Rend
   expect((await sourceWriting(page)).at(-1)?.hidden).toBeGreaterThan(0)
   await sourceLine(page, "What ships on day one.").click()
   await expect.poll(async () => (await sourceWriting(page)).at(-1), { timeout: 400 }).toMatchObject({ hidden: 0, caret: false })
+  expect(allNumbersShown((await sourceWriting(page)).at(-1))).toBe(true)
 
   // With reduced motion the next paragraph appears at once, in both views.
   await page.emulateMedia({ reducedMotion: "reduce" })

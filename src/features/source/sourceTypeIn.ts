@@ -95,6 +95,10 @@ export function typeInSource(editor: monaco.editor.IStandaloneCodeEditor, from: 
     const at = model.getPositionAt(from + next);
     decorations.set([
       { range: monaco.Range.fromPositions(at, end), options: { inlineClassName: "source-unwritten" } },
+      // The numbers of the lines it has not reached yet.
+      ...(at.lineNumber < end.lineNumber
+        ? [{ range: new monaco.Range(at.lineNumber + 1, 1, end.lineNumber, end.column), options: { lineNumberClassName: "source-unwritten-line" } }]
+        : []),
       // A new caret each time it moves: it stays lit while writing.
       { range: monaco.Range.fromPositions(at), options: { beforeContentClassName: "source-writing-caret" } },
     ]);
