@@ -47,6 +47,12 @@ const MAX_ADDED = 50
 const GAP = 8
 /** A shape sized to its label is at least this big. */
 const MIN_SIZE = { width: 140, height: 70 }
+/**
+ * A shape sized to its label is at most this wide: its label wraps at its
+ * spaces to fit, and the shape grows taller instead, so shapes 300 apart
+ * leave room for an arrow. Only a word longer than a line makes it wider.
+ */
+const MAX_SIZED_WIDTH = 240
 /** The room around a label in a shape sized to it: each side, and above and below. */
 const LABEL_ROOM = { x: 20, y: 10 }
 /** How much bigger than the box it holds a shape is: the largest box inside an ellipse is 1/√2 of it each way, inside a diamond half. */
@@ -89,22 +95,58 @@ function pointsSize(points: Point[]): { width: number; height: number } {
   return { width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
 }
 
-/** The box text takes. Excalidraw measures text with its font; this is near enough until it does. */
+/** How wide one line of text is. Excalidraw measures text with its font; this is near enough until it does. */
+const lineWidth = (line: string, fontSize: number) => [...line].length * fontSize * 0.55
+
+/** The box text takes. */
 function textBox(text: string, fontSize: number, lineHeight: number): { width: number; height: number } {
   const lines = text.split('\n')
   return {
-    width: round2(Math.max(...lines.map((line) => [...line].length)) * fontSize * 0.55),
+    width: round2(Math.max(...lines.map((line) => lineWidth(line, fontSize)))),
     height: round2(lines.length * fontSize * lineHeight),
   }
 }
 
-/** A shape's size for its label: the label's box with room around it, inside the largest box the shape holds, and at least MIN_SIZE. */
-function sizeFor(type: string, label: string): { width: number; height: number } {
-  const box = textBox(label, 20, LINE_HEIGHT[5])
+/**
+ * A label wrapped at its spaces into lines `width` wide, as Excalidraw wraps
+ * a label to its shape: a line that fits stays as it was given, line breaks
+ * included. A word longer than `width` makes every line as wide as it, so it
+ * fits on a line of its own.
+ */
+function wrapLabel(label: string, width: number, fontSize: number): string {
+  const longest = Math.max(...label.split(/\s+/).map((word) => lineWidth(word, fontSize)))
+  const fits = (line: string) => lineWidth(line, fontSize) <= Math.max(width, longest)
+  return label
+    .split('\n')
+    .flatMap((given) => {
+      if (fits(given)) return [given]
+      const lines: string[] = []
+      let line = ''
+      for (const [, space, word] of given.matchAll(/(\s*)(\S+)/g)) {
+        if (line !== '' && !fits(line + space + word)) {
+          lines.push(line)
+          line = word
+        } else line += space + word
+      }
+      return [...lines, line]
+    })
+    .join('\n')
+}
+
+/**
+ * A shape's size for its label, and the label wrapped to fit it: to the
+ * width the shape was given, or else to keep it at most MAX_SIZED_WIDTH
+ * wide. The label's box with room around it, inside the largest box the
+ * shape holds, and at least MIN_SIZE.
+ */
+function sizeFor(type: string, label: string, width?: number): { width: number; height: number; text: string } {
   const holds = HOLDS[type] ?? 1
+  const text = wrapLabel(label, (width ?? MAX_SIZED_WIDTH) / holds - 2 * LABEL_ROOM.x, 20)
+  const box = textBox(text, 20, LINE_HEIGHT[5])
   return {
     width: Math.max(MIN_SIZE.width, Math.ceil((box.width + 2 * LABEL_ROOM.x) * holds)),
     height: Math.max(MIN_SIZE.height, Math.ceil((box.height + 2 * LABEL_ROOM.y) * holds)),
+    text,
   }
 }
 
@@ -263,6 +305,8 @@ function plan(elements: NewElement[]): Planned[] {
       if (from === to) throw new DrawError(`The arrow "${id}" goes from "${from}" to itself. Nothing was saved. Give from and to two different shapes.`)
       ends = { from, to }
     }
+    // The lines a label shows: wrapped to fit a shape sized to it, else as it was given.
+    let text = label
     if (label !== undefined) {
       if (!CONTAINERS.has(type)) {
         throw new DrawError(
@@ -271,15 +315,17 @@ function plan(elements: NewElement[]): Planned[] {
         )
       }
       if (label.trim() === '') throw new DrawError(`The label of the ${type} "${id}" is empty. Nothing was saved. Give it some text, or leave label out.`)
-      if (SHAPES.has(type)) {
-        const size = sizeFor(type, label)
+      if (SHAPES.has(type) && (input.width === undefined || input.height === undefined)) {
+        const size = sizeFor(type, label, input.width)
         input.width ??= size.width
         input.height ??= size.height
+        text = size.text
       }
     }
     planned.push({ input, ends, labelOf: null })
     if (label !== undefined) {
-      planned.push({ input: { id: `${id}-label`, type: 'text', x: 0, y: 0, text: label, containerId: id }, ends: null, labelOf: id })
+      // As Excalidraw keeps a label: its lines in text, and in originalText the label as given, which it wraps again when the shape is resized.
+      planned.push({ input: { id: `${id}-label`, type: 'text', x: 0, y: 0, text, originalText: label, containerId: id }, ends: null, labelOf: id })
     }
   }
   return planned
@@ -510,6 +556,7 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
         "Don't add one shape per call. " +
         "Give a shape a label and leave out its size, and join two shapes with an arrow's from and to: " +
         'draw sizes the shape to its label and places and binds the arrow. ' +
+        `A long label wraps, so a shape sized to it is at most about ${MAX_SIZED_WIDTH} px wide: shapes 300 apart leave room for an arrow. ` +
         `For example, elements: ${JSON.stringify(EXAMPLE)}. ` +
         'It only adds: each element needs a new id. To change or remove elements, use write_file once with base_version, then draw what is new.',
       inputSchema: z.object({

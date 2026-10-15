@@ -936,7 +936,12 @@ The production server's tools are unchanged.
   id `<id>-label`, centred; a labelled shape sent without a width or height
   is sized to fit: the label's estimated box with 20 px each side and 10
   above and below, inside the largest box the shape holds (all of a
-  rectangle, 1/√2 of an ellipse, half of a diamond), at least 140 by 70. An
+  rectangle, 1/√2 of an ellipse, half of a diamond), at least 140 by 70.
+  The label wraps at its spaces, as Excalidraw wraps a label to its shape,
+  to the width the shape was sent or else to keep it at most 240 px wide
+  (wider only for a word longer than a line), so shapes 300 apart leave
+  room for an arrow: its text holds the lines, and `originalText` the label
+  as given, which Excalidraw wraps again when the shape is resized. An
   arrow may take `from` and `to`, the ids of two shapes in the drawing or
   the same call, instead of `x`, `y` and points: it runs straight along the
   line between their middles, clipped to each outline (a rectangle, ellipse

@@ -402,9 +402,9 @@ Deno.test('a shape sent with a label and no size is sized to fit the label, whic
   assertEquals(elements.map((element) => element.id), ['api', 'api-label', 'auth', 'auth-label', 'db', 'db-label', 'valid', 'valid-label', 'queue', 'queue-label'])
   const byId = new Map(elements.map((element) => [element.id, element]))
   const size = (id: string) => [byId.get(id)!.width, byId.get(id)!.height]
-  // At least 140 by 70; a long label (estimated 242 wide) gets 20 px each side.
+  // At least 140 by 70; a long label (estimated 242 wide) wraps into two lines, the longer 154 wide, with 20 px each side.
   assertEquals(size('api'), [140, 70])
-  assertEquals(size('auth'), [282, 70])
+  assertEquals(size('auth'), [194, 70])
   // The largest box inside an ellipse is 1/√2 of it, inside a diamond half: 'Database' is 88 by 25, 'Valid?' 66 by 25.
   assertEquals(size('db'), [182, 70])
   assertEquals(size('valid'), [212, 90])
@@ -427,7 +427,45 @@ Deno.test('a shape sent with a label and no size is sized to fit the label, whic
 
   const drawn = drawingSvg(parseDrawing(files[PATH].content))
   assert('svg' in drawn)
-  for (const words of ['API', 'Authentication service', 'Database', 'Valid?', 'Queue']) assertStringIncludes(drawn.svg, `>${words}</text>`)
+  for (const words of ['API', 'Authentication', 'service', 'Database', 'Valid?', 'Queue']) assertStringIncludes(drawn.svg, `>${words}</text>`)
+})
+
+Deno.test('a long label wraps at its spaces, so a shape sized to it is at most 240 px wide', () => {
+  // [element, the label's lines, the shape's size]
+  const cases: [Element, string, number[]][] = [
+    // At most 18 characters a line in a rectangle (198 px estimated), 11 in an ellipse and 7 in a diamond, which hold less.
+    [{ id: 'enter', type: 'rectangle', x: 0, y: 0, label: 'User enters their email' }, 'User enters their\nemail', [227, 70]],
+    [{ id: 'hash', type: 'ellipse', x: 300, y: 0, label: 'Check the password hash' }, 'Check the\npassword\nhash', [197, 135]],
+    [{ id: 'valid', type: 'diamond', x: 600, y: 0, label: 'Is the email valid?' }, 'Is the\nemail\nvalid?', [212, 190]],
+    // The lines it was given stay.
+    [{ id: 'magic', type: 'rectangle', x: 0, y: 200, label: 'Sign in\nwith a magic link sent by email' }, 'Sign in\nwith a magic link\nsent by email', [227, 95]],
+    // A word longer than a line widens the shape for it.
+    [{ id: 'i18n', type: 'rectangle', x: 300, y: 200, label: 'Load internationalization files' }, 'Load\ninternationalization\nfiles', [260, 95]],
+    // A shape given its width wraps the label to it.
+    [{ id: 'queue', type: 'rectangle', x: 600, y: 200, width: 160, label: 'Jobs wait here for a worker' }, 'Jobs wait\nhere for a\nworker', [160, 95]],
+    // A shape given its whole size, and an arrow, keep the label on one line, as before.
+    [{ id: 'note', type: 'rectangle', x: 0, y: 400, width: 400, height: 80, label: 'A note given its own size' }, 'A note given its own size', [400, 80]],
+    [{ id: 'link', type: 'arrow', from: 'enter', to: 'hash', label: 'then its password is checked' }, 'then its password is checked', []],
+  ]
+  const { content } = addElements(null, cases.map(([element]) => element) as NewElement[])
+  const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
+  for (const [{ id, label: given }, lines, size] of cases) {
+    const [shape, label] = [byId.get(id as string)!, byId.get(`${id}-label`)!]
+    // Excalidraw shows the lines in text and wraps originalText again when the shape is resized.
+    assertEquals([label.text, label.originalText], [lines, given], `${id}'s label`)
+    if (shape.type === 'arrow') continue
+    assertEquals([shape.width, shape.height], size, `${id}'s size`)
+    // The label's box is its lines', centred in the shape.
+    const longest = Math.max(...lines.split('\n').map((line) => line.length))
+    assertEquals([label.width, label.height], [longest * 11, lines.split('\n').length * 25], `${id}'s label box`)
+    assertEquals(middleOf(label), middleOf(shape), `${id}'s label is centred`)
+  }
+  for (const id of ['enter', 'hash', 'valid', 'magic']) assert((byId.get(id)!.width as number) <= 240, `${id} is at most 240 wide`)
+
+  // The server draws each line.
+  const drawn = drawingSvg(parseDrawing(content))
+  assert('svg' in drawn)
+  for (const line of ['User enters their', 'email', 'Check the', 'password', 'hash']) assertStringIncludes(drawn.svg, `>${line}</text>`)
 })
 
 Deno.test('an arrow sent with from and to runs between two boxes side by side, 8 px off their facing edges, bound to both', async () => {
