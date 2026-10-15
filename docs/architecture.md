@@ -928,9 +928,13 @@ The production server's tools are unchanged.
   islands), the view first follows them with Excalidraw's `scrollToContent`:
   they go to the middle at the same zoom, zooming out only as far as it takes
   to fit them (not below the readable zoom a drawing opens at), over 500 ms
-  or at once with reduced motion, and the sketch starts once the view holds
-  still. It stays put while the person draws a shape or line or edits text,
-  and for 3 s after they last pressed, scrolled or typed on the canvas.
+  or at once with reduced motion. When the first element is due, the same
+  `scrollToContent` without animation puts the view where the move ends and
+  cancels the rest of it (React commits each step of the move in a later
+  task, so on a busy page a frame can show no step while it still goes on),
+  and the sketch starts once the view holds still. It stays put while the
+  person draws a shape or line or edits text, and for 3 s after they last
+  pressed, scrolled or typed on the canvas.
 - **Decision: a note grows in sections the person can watch
   (`append_to_note`).** As with a drawing, a note written in one
   `write_file` appears all at once. `append_to_note` (`tools/appendToNote.ts`,

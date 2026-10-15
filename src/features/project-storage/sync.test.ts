@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import type { ProjectRemote } from "./remote"
+import { ProjectSync } from "./sync"
 import { OTHER, OWNER, device, FakeProjectServer, put, shared } from "./testing"
 
 test("a project made offline reaches the server with one save per local save", async () => {
@@ -484,6 +486,42 @@ test("a sync that no longer finds the project listed stops it, as a refresh does
   await server.remote(OWNER).shareProject(project.id, OTHER, null)
   expect(await viewer.sync.sync(project.id)).toMatchObject({ status: "stopped", reason: "access-lost" })
   expect(await viewer.project(project.id)).toMatchObject({ syncError: "access-lost" })
+})
+
+test("a project the server creates while a refresh waits for its list is not taken for one the person lost access to", async () => {
+  const server = new FakeProjectServer()
+  const a = device(server)
+  const remote = server.remote(OWNER)
+  // The first list is read as the server has it when asked for, and arrives later.
+  let asked = () => {}
+  let arrive = () => {}
+  const askedFor = new Promise<void>((resolve) => (asked = resolve))
+  const arrived = new Promise<void>((resolve) => (arrive = resolve))
+  let lists = 0
+  const slow: ProjectRemote = {
+    ...remote,
+    listProjects: async () => {
+      const listed = await remote.listProjects()
+      if (lists++ === 0) {
+        asked()
+        await arrived
+      }
+      return listed
+    },
+  }
+  const sync = new ProjectSync(a.db, slow, a.partition)
+  const { id } = await sync.createProject("Local project")
+  await put(a.files(id), "ideas.mdx", "Written before signing up.")
+
+  const refreshing = sync.refresh()
+  await askedFor
+  expect((await sync.sync(id)).status).toBe("synced")
+  arrive()
+  await refreshing
+  expect(await a.project(id)).toMatchObject({ created: true, syncError: null })
+  await put(a.files(id), "ideas.mdx", "And after.")
+  expect((await sync.sync(id)).status).toBe("synced")
+  expect(server.content(id, "ideas.mdx")).toBe("And after.")
 })
 
 test("an interrupted download finishes on the next refresh", async () => {

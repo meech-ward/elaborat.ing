@@ -92,6 +92,13 @@ export interface SketchCanvas<E extends SketchElement> {
   reveal: (ids: readonly string[], now: boolean) => void;
   /** How long after now the first element starts, in ms (the view moves to them first). */
   delay: number;
+  /**
+   * Puts the view where its move to them ends, before the next paint, and
+   * ends what is left of the move; null when the view does not move. The
+   * move's steps reach the canvas only as React gets to them, so a frame
+   * that shows none does not mean the view is there.
+   */
+  arrive: (() => void) | null;
   /** The pencil, or null where it stays silent. */
   pen: () => Pencil | null;
   /** The sketch ended: every element is on the canvas, or it was stopped. */
@@ -257,8 +264,15 @@ export function sketchIn<E extends SketchElement>(canvas: SketchCanvas<E>): Sket
     canvas.onDone();
   };
 
+  let arrive = canvas.arrive;
+
   const tick = (now: number) => {
     frame = 0;
+    // When the first element is due, the view goes where it was going.
+    if (arrive && queue.length > 0 && now >= nextAt) {
+      arrive();
+      arrive = null;
+    }
     // An element starts once the view holds still, so it is drawn where it lands.
     const moving = follow();
     while (queue.length > 0 && now >= nextAt && !moving) {

@@ -235,25 +235,29 @@ const FOLLOW_MS = 500;
  * same zoom, zooming out only as far as it takes to fit them, and not below a
  * readable zoom. Not while the person is drawing a shape or line or editing
  * text. Animated over FOLLOW_MS unless `animate` is false. Only the view
- * moves: nothing is recorded for undo, and the file does not change. True
- * when the view moved.
+ * moves: nothing is recorded for undo, and the file does not change. When
+ * the view moved, returns what puts it where the move ends at once (the same
+ * scrollToContent, unanimated, which also cancels the rest of the move);
+ * else null.
  */
-function followArrivals(api: NativeAPI, ids: ReadonlyMap<string, number>, area: CanvasArea, margin: OpeningMargin, animate: boolean): boolean {
+function followArrivals(api: NativeAPI, ids: ReadonlyMap<string, number>, area: CanvasArea, margin: OpeningMargin, animate: boolean): (() => void) | null {
   const state = api.getAppState();
-  if (!boundsNative || state.newElement || state.multiElement || state.editingTextElement || state.editingLinearElement) return false;
+  if (!boundsNative || state.newElement || state.multiElement || state.editingTextElement || state.editingLinearElement) return null;
   const arrived = api.getSceneElements().filter((element) => ids.has(element.id));
-  if (arrived.length === 0) return false;
+  if (arrived.length === 0) return null;
   const zoom = state.zoom.value;
-  if (boundsInView(boundsNative(arrived), { zoom, scrollX: state.scrollX, scrollY: state.scrollY }, area, margin)) return false;
-  api.scrollToContent(arrived, {
-    fitToViewport: true,
-    maxZoom: zoom,
-    minZoom: Math.min(zoom, READABLE_ZOOM),
-    canvasOffsets: areaOffsets(state, area, margin),
-    animate,
-    duration: FOLLOW_MS,
-  });
-  return true;
+  if (boundsInView(boundsNative(arrived), { zoom, scrollX: state.scrollX, scrollY: state.scrollY }, area, margin)) return null;
+  const follow = (animated: boolean) =>
+    api.scrollToContent(arrived, {
+      fitToViewport: true,
+      maxZoom: zoom,
+      minZoom: Math.min(zoom, READABLE_ZOOM),
+      canvasOffsets: areaOffsets(state, area, margin),
+      animate: animated,
+      duration: FOLLOW_MS,
+    });
+  follow(animate);
+  return () => follow(false);
 }
 
 /** The scene as the canvas shows it; raw when nothing is presented over it. */
@@ -547,7 +551,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         }
         const area = visibleAreaOf(wrapperRef.current, areaRef.current);
         const leftAlone = heldRef.current.size === 0 && performance.now() - usedAtRef.current >= LEFT_ALONE_MS;
-        const moved = arriving !== null && arriving.size > 0 && area !== null && leftAlone && followArrivals(api, arriving, area, OPENING_MARGIN[compact ? 'touch' : 'default'], motion);
+        const moved = arriving !== null && arriving.size > 0 && area !== null && leftAlone ? followArrivals(api, arriving, area, OPENING_MARGIN[compact ? 'touch' : 'default'], motion) : null;
         if (sketching) {
           penRef.current ??= pencil(sketchSound.get().on);
           const sketch: Sketch = sketchIn({
@@ -579,8 +583,9 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               if (now) flushSync(show);
               else show();
             },
-            // The view moves to them first.
+            // The view moves to them first, and is where it was going before the first one starts.
             delay: moved ? FOLLOW_MS : 0,
+            arrive: moved ? () => flushSync(moved) : null,
             pen: () => penRef.current,
             onDone: () => {
               if (drawingInRef.current?.sketch === sketch) drawingInRef.current = null;

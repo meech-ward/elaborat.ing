@@ -134,9 +134,10 @@ export class ProjectSync {
    * projects on this device. Projects not yet on this device are only listed.
    */
   async refresh(): Promise<RemoteProject[]> {
+    // Read before asking for the list: a project the server creates while the list is on its way is not in it.
+    const local = (await this.db.listProjects(this.partition)).filter((project) => project.created)
     const remote = await this.remote.listProjects()
     const byId = new Map(remote.map((entry) => [entry.id, entry]))
-    const local = (await this.db.listProjects(this.partition)).filter((project) => project.created)
     // A project no longer listed was deleted by its owner, or the person's access ended.
     const gone = local.filter((project) => !byId.has(project.id) && project.syncError !== "deleted").map((project) => project.id)
     const deleted = new Set(gone.length > 0 ? await this.remote.deletedProjects(gone) : [])
