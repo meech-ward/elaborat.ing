@@ -1,16 +1,25 @@
-name: Deploy Supabase
+name: Deploy
 
-# Applies supabase/ to the hosted project: Edge Functions, then migrations and
-# Vault secrets, then config.toml (Auth, email, storage and API settings).
-# See docs/architecture.md, Deploys. Forks skip it until they set the
-# SUPABASE_PROJECT_ID variable.
+# Deploys supabase/ to the hosted project and the app to Cloudflare Workers.
+# The jobs run in this order, each once the one before it has passed:
 #
-# Runs once CI has passed on main, on the newest commit CI has passed there
-# (like Deploy app), so a failing build never ships half a release and an older
-# commit never replaces a newer one; every step is safe to repeat
-# (functions redeploy, db push applies only new migrations, config push only
-# changes). Also by hand, where pushing config is a choice: config push is not
-# atomic, so a diff can be read first.
+# 1. supabase: every Edge Function but mcp-server, then migrations and Vault
+#    secrets.
+# 2. app: the sandbox domain, then the app's Worker (wrangler.jsonc). After the
+#    migrations, so new app code never runs before the schema it needs.
+# 3. mcp-server: last, because the chat card it sends names files in
+#    public/chat-card, which the app's Worker serves.
+#
+# config pushes config.toml (Auth, email, storage and API settings) after the
+# supabase job, beside the app. See docs/architecture.md, Deploys. Forks skip
+# it all until they set the SUPABASE_PROJECT_ID variable.
+#
+# Runs once CI has passed on main, on the newest commit CI has passed there, so
+# a failing build never ships half a release and an older commit never
+# replaces a newer one; every step is safe to repeat (functions redeploy, db
+# push applies only new migrations, config push only changes). Also by hand,
+# where pushing config is a choice: config push is not atomic, so a diff can
+# be read first.
 on:
   workflow_run:
     workflows: [CI]
@@ -27,8 +36,10 @@ permissions:
   contents: read
   actions: read
 
+# One deploy at a time. Each one deploys the newest commit CI has passed on
+# main, not the commit that triggered it (see the first step).
 concurrency:
-  group: supabase-deploy
+  group: deploy
   cancel-in-progress: false
 
 env:
@@ -36,7 +47,7 @@ env:
 
 jobs:
   # Scoped token: Edge Functions Read-write and Connection Pooling Read.
-  deploy:
+  supabase:
     if: vars.SUPABASE_PROJECT_ID != '' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     # Pinned: ubuntu-latest moves to a new Ubuntu release from 2026-10-19, and a
     # runner image change shouldn't break CI (and so stop deploys) unannounced.
@@ -55,7 +66,8 @@ jobs:
       # commit CI has passed on main (the list is newest first, in push order),
       # so whichever deploy runs last ships it and an older commit never
       # replaces a newer one. A hand run deploys it too. The triggering run
-      # counts in case the list does not show it yet.
+      # counts in case the list does not show it yet. Every job deploys the
+      # commit found here.
       - name: Find the newest commit CI passed on main
         id: commit
         env:
@@ -82,16 +94,77 @@ jobs:
         with:
           version: 2.118.0
       # Functions first, so embed exists before Vault gives the database its key.
-      - run: supabase functions deploy --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
+      # All but mcp-server, which has its own job. The list is every folder with
+      # an index.ts, as the CLI finds functions when given no names, so a new
+      # function is never left out.
+      - name: Deploy every Edge Function but mcp-server
+        run: |
+          names=$(printf '%s\n' supabase/functions/*/index.ts | cut -d/ -f3 | grep -vx mcp-server)
+          mapfile -t functions <<< "$names"
+          supabase functions deploy "${functions[@]}" --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
       # No `supabase link`: it needs a token that can read every secret API key.
       # The --project-ref flag makes db push use the IPv4 pooler, since runners
       # have no IPv6. It also writes [db.vault] when it applies a migration.
       - run: supabase db push --yes --project-ref "$SUPABASE_PROJECT_ID"
 
+  app:
+    needs: supabase
+    runs-on: ubuntu-24.04
+    env:
+      # Public values the build inlines. Supplied here, not committed, so forks
+      # never build against the hosted project.
+      VITE_SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT_ID }}.supabase.co
+      # A repository variable, or a repository secret of the same name.
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY }}
+      # The note frame's sandbox domain (wrangler.sandbox.jsonc). Forks: your
+      # own, or empty to keep the frame in the page and skip that deploy.
+      VITE_SANDBOX_ORIGIN: https://elaboratingusercontent.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check that the settings are there
+        run: |
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || { echo "::error::Set SUPABASE_PUBLISHABLE_KEY (the project's publishable key) as a repository variable or repository secret, not an environment one"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not set"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not set"; exit 1; }
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.supabase.outputs.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # The sandbox domain first, so the frame page the new app names is
+      # there when the app goes live. It keeps the last few frame versions it
+      # serves now, for tabs still on an earlier app version.
+      - if: env.VITE_SANDBOX_ORIGIN != ''
+        run: bun scripts/keep-frame-versions.ts "$VITE_SANDBOX_ORIGIN"
+      - if: env.VITE_SANDBOX_ORIGIN != ''
+        run: bunx wrangler deploy --config wrangler.sandbox.jsonc
+      - run: bunx wrangler deploy
+
+  # The chat card this function sends names the files of its build in
+  # public/chat-card, so it goes live only once the app's Worker serves them.
+  # The deploy token, as in the supabase job.
+  mcp-server:
+    needs: [supabase, app]
+    runs-on: ubuntu-24.04
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_DEPLOY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.supabase.outputs.sha }}
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.118.0
+      - run: supabase functions deploy mcp-server --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
+
   # Scoped token: Project Settings and Auth Config Read-write, Add-ons Read, and
   # the config reads. Only this job's environment holds it.
   config:
-    needs: deploy
+    needs: supabase
     runs-on: ubuntu-24.04
     environment: supabase-config
     env:
@@ -113,8 +186,8 @@ jobs:
           test -n "$SES_SMTP_PASSWORD" || { echo "::error::SES_SMTP_PASSWORD is not set"; exit 1; }
       - uses: actions/checkout@v5
         with:
-          # The commit the deploy job deployed.
-          ref: ${{ needs.deploy.outputs.sha }}
+          # The commit the supabase job deployed.
+          ref: ${{ needs.supabase.outputs.sha }}
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0

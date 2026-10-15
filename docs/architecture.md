@@ -114,25 +114,40 @@ supabase/
 
 ## Deploys
 
-**Decision:** GitHub Actions run the pinned Supabase CLI against the hosted
-project (`.github/workflows/deploy-supabase.yml`): `supabase functions deploy
---use-api`, then `supabase db push`, then `supabase config diff` and `supabase
-config push`. It works on every plan, and self-hosters can run the same steps
-from their own fork. Like the app deploy, it runs only after CI passes on
-`main`, and deploys the newest commit CI has passed there, not the one that
-triggered it: CI runs can finish out of order, so whichever deploy runs last
-ships the newest green commit and an older one never replaces it. A failing
+**Decision:** one GitHub Actions workflow (`.github/workflows/deploy.yml`)
+deploys the hosted project with the pinned Supabase CLI, and the app. Its jobs
+run in this order, each once the one before it has passed:
+
+1. `supabase`: every Edge Function but `mcp-server` (`supabase functions
+   deploy --use-api`), then `supabase db push`. The functions are named from
+   the folders with an `index.ts`, the way the CLI finds them itself, so a new
+   one is never left out. Functions first, so `embed` exists before Vault
+   gives the database its key.
+2. `app`: the sandbox domain, then the app's Worker (Frontend hosting). After
+   the migrations, so new app code never runs before the schema it needs.
+3. `mcp-server`, last. The chat card it sends (under Agents (MCP)) names files
+   of its build in `public/chat-card`, which the app's Worker serves, so the
+   function goes live only once the site serves them.
+
+The `config` job (`supabase config diff` and `supabase config push`) runs
+after the `supabase` job, beside the app. The CLI works on every plan, and
+self-hosters can run the same workflow from their own fork. The workflow runs
+only after CI passes on `main`, and deploys the newest commit CI has passed
+there, not the one that triggered it: CI runs can finish out of order, so
+whichever deploy runs last ships the newest green commit and an older one
+never replaces it. Every job deploys the commit the first one found. A failing
 build never ships half a release; every step is safe to repeat.
 
 - **No `supabase link`.** Linking reads the project's API keys, which needs a
   token that can see every secret key. Each command takes `--project-ref`
   instead, which also makes `db push` connect through the IPv4 pooler.
-- **Two scoped access tokens**, one per job. The deploy token has Edge
-  Functions Read-write and Connection Pooling Read. The config token has
-  Project Settings and Auth Config Read-write, Add-ons Read, and Read on
-  Database Config, Database, SSL Enforcement, Network Restrictions, Data API
-  Config, Realtime Config and Storage Config. Project Settings Read-write can
-  also delete or pause the project, so it stays out of the deploy job.
+- **Two scoped access tokens.** The deploy token, which the `supabase` and
+  `mcp-server` jobs use, has Edge Functions Read-write and Connection Pooling
+  Read. The config token has Project Settings and Auth Config Read-write,
+  Add-ons Read, and Read on Database Config, Database, SSL Enforcement,
+  Network Restrictions, Data API Config, Realtime Config and Storage Config.
+  Project Settings Read-write can also delete or pause the project, so only
+  the `config` job has it.
 - **Where the values live.** The config token and the SMTP credentials are
   secrets of a `supabase-config` environment limited to `main`, which only the
   config job uses. The deploy token, database password and embed secret key are
@@ -1043,9 +1058,10 @@ The production server's tools are unchanged.
   preview could not load. The files have content-hashed names and are
   committed too, since the functions and the app deploy separately. The
   folder keeps the files of the last ten builds, listed newest first in
-  `builds.json`, for a view whose function deploys before the app or that a
-  host cached (ChatGPT for up to about an hour, through several rebuilds in
-  a busy hour); a file the builds share is stored once.
+  `builds.json`, for a view whose function is not deployed yet (it goes live
+  after the app, under Deploys) or that a host cached (ChatGPT for up to
+  about an hour, through several rebuilds in a busy hour); a file the builds
+  share is stored once.
 - **Decision: the app itself beside the chat, framed from `/embed`.** The
   `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
   sidebar (global entrypoint), a conversation's side panel (thread
@@ -1268,7 +1284,7 @@ frame in its place, or stops the preview, with a notice, when it happens
 again within seconds.
 
 The app's build names the domain in `VITE_SANDBOX_ORIGIN` (set in
-`deploy-app.yml`). Without it (local dev, the browser tests, a self-host that
+`deploy.yml`). Without it (local dev, the browser tests, a self-host that
 sets none) the frame is the `srcdoc` below, as before.
 
 **Decision: when the sandbox domain's page cannot load, the frame is a
@@ -1407,7 +1423,7 @@ match paths, not hosts, so a Worker that answered only frame files on one of
 its domains would have to run first for every request on all of them, and
 those requests are billed (on the free plan, refused past its limit). As a
 Worker of its own it runs first for every request on the sandbox domain only,
-and the app's files stay plain static assets. `deploy-app.yml` deploys it
+and the app's files stay plain static assets. `deploy.yml` deploys it
 before the app, so the page the new app names is there when it goes live.
 
 **Decision: the sandbox domain keeps the last five frame versions.** A
@@ -1425,8 +1441,9 @@ goes ahead: those tabs use the `srcdoc` frame.
 The build only needs public values (the Supabase URL and publishable key, and
 the sandbox domain's origin).
 Self-hosters can deploy the same static build to any host.
-`.github/workflows/deploy-app.yml` deploys it after CI passes on `main` (the
-newest commit CI has passed there, as under Deploys), with
+`.github/workflows/deploy.yml` deploys it after CI passes on `main`, once the
+migrations are applied (the newest commit CI has passed there, as under
+Deploys), with
 the `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` repository variables
 and the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 

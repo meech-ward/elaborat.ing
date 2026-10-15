@@ -65,7 +65,7 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | `wrangler.jsonc` | `vars.MCP_UPSTREAM` | `https://<ref>.supabase.co/functions/v1/mcp-server` |
 | `wrangler.jsonc` | `routes` | Your domain, or remove it to serve from `workers.dev`. You may rename `name` too. |
 | `wrangler.sandbox.jsonc` | `routes`, `vars.FRAME_ANCESTORS` | Your sandbox domain and `<site>`, if you use one (step 4). |
-| `.github/workflows/deploy-app.yml` | `VITE_SANDBOX_ORIGIN` | Your sandbox domain's origin, or empty for none. |
+| `.github/workflows/deploy.yml` | `VITE_SANDBOX_ORIGIN` | Your sandbox domain's origin, or empty for none. |
 | `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here, and its view's policy lets it load its editor, previews and fonts from here. |
 | `src/chat-card/toolResult.ts` | `APP_ORIGIN` | `<site>/`, then `bun run build:chat-card`. The chat card follows only links to this origin. |
 | `scripts/build-chat-card.ts` | `MODULES_URL` | `<site>/chat-card/`, then `bun run build:chat-card`. Where the chat card loads its editor, previews and fonts from (`public/chat-card`). |
@@ -131,9 +131,10 @@ email. See [Supabase's SMTP guide](https://supabase.com/docs/guides/auth/auth-sm
 
 ## 3. Deploy the backend
 
-Run these from the repository root, in this order. They are the same commands
-`.github/workflows/deploy-supabase.yml` runs. Each `read -rs` line waits for
-you to paste a value without showing it.
+Run these from the repository root, in this order. They are the commands
+`.github/workflows/deploy.yml` runs, except that it deploys `mcp-server` on its
+own once the app is live, since the chat card it sends loads files from the
+site. Each `read -rs` line waits for you to paste a value without showing it.
 
 ```sh
 export SUPABASE_PROJECT_ID=<ref>
@@ -307,20 +308,20 @@ Either way, once you know `<site>`, make sure `site_url` and
 ## 6. Deploy from GitHub Actions (optional)
 
 A fork can deploy itself the way the hosted instance does. GitHub turns
-workflows off in a new fork: enable them on the fork's Actions tab. Both deploy
-workflows skip until `SUPABASE_PROJECT_ID` is set.
+workflows off in a new fork: enable them on the fork's Actions tab. The deploy
+workflow skips until `SUPABASE_PROJECT_ID` is set.
 
 In the fork's Settings > Secrets and variables > Actions:
 
 | Name | Kind | Value | Read by |
 | --- | --- | --- | --- |
-| `SUPABASE_PROJECT_ID` | Repository variable | `<ref>` | both deploy workflows |
-| `SUPABASE_PUBLISHABLE_KEY` | Repository variable (or repository secret) | The publishable key | Deploy app |
-| `SUPABASE_DEPLOY_TOKEN` | Repository secret | An access token (see below) | Deploy Supabase, `deploy` job |
-| `SUPABASE_DB_PASSWORD` | Repository secret | The database password | Deploy Supabase, `deploy` job |
-| `EMBED_SECRET_KEY` | Repository secret | The secret key from step 1 | Deploy Supabase, `deploy` job |
-| `CLOUDFLARE_API_TOKEN` | Repository secret | A token from Cloudflare's "Edit Cloudflare Workers" template, limited to your account (and zones, with custom domains: the sandbox domain's too) | Deploy app |
-| `CLOUDFLARE_ACCOUNT_ID` | Repository secret | Your Cloudflare account id | Deploy app |
+| `SUPABASE_PROJECT_ID` | Repository variable | `<ref>` | Deploy, every job |
+| `SUPABASE_PUBLISHABLE_KEY` | Repository variable (or repository secret) | The publishable key | Deploy, `app` job |
+| `SUPABASE_DEPLOY_TOKEN` | Repository secret | An access token (see below) | Deploy, `supabase` and `mcp-server` jobs |
+| `SUPABASE_DB_PASSWORD` | Repository secret | The database password | Deploy, `supabase` job |
+| `EMBED_SECRET_KEY` | Repository secret | The secret key from step 1 | Deploy, `supabase` job |
+| `CLOUDFLARE_API_TOKEN` | Repository secret | A token from Cloudflare's "Edit Cloudflare Workers" template, limited to your account (and zones, with custom domains: the sandbox domain's too) | Deploy, `app` job |
+| `CLOUDFLARE_ACCOUNT_ID` | Repository secret | Your Cloudflare account id | Deploy, `app` job |
 
 Then, under Settings > Environments, create an environment named
 `supabase-config`, limit its deployment branches to `main`, and add these
@@ -342,7 +343,7 @@ Enforcement, Network Restrictions, Data API Config, Realtime Config and Storage
 Config. Scoped tokens expire within a year.
 
 **Without SMTP**, the `config` job stops at "Check that the secrets are set".
-Delete its two `SES_SMTP_*` lines in `.github/workflows/deploy-supabase.yml`.
+Delete its two `SES_SMTP_*` lines in `.github/workflows/deploy.yml`.
 
 **GitHub or Google sign-in**: the `config` job passes only the SMTP secrets to
 `config push` today. Add the provider's two variables to that job's `env`,
@@ -352,20 +353,23 @@ What runs when:
 
 - **CI** (`ci.yml`) on every push: build, typecheck, lint, unit tests, browser
   tests, the migrations check and the Edge Function checks.
-- **Deploy Supabase** (`deploy-supabase.yml`) after CI passes on `main`, on
-  the newest commit CI has passed there: functions, `db push`, then
-  `config diff` and `config push` (each safe to repeat). Run it by hand from
-  the Actions tab for the first deploy; a hand run pushes the config only when
-  you tick "Push config.toml after showing the diff".
-- **Deploy app** (`deploy-app.yml`) after CI passes on `main`, or by hand, on
-  the newest commit CI has passed there: builds with
-  `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your publishable key and
-  `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain (`wrangler.sandbox.jsonc`,
-  keeping its last few frame versions) when that is set, then runs
-  `wrangler deploy`.
-  The workflow sets `VITE_SANDBOX_ORIGIN` to the hosted instance's sandbox
-  domain: change it to yours, or empty it to keep the `srcdoc` frame and skip
-  that deploy.
+- **Deploy** (`deploy.yml`) after CI passes on `main`, or by hand, on the
+  newest commit CI has passed there. Its jobs run one after another, each
+  once the one before it has passed, and each is safe to repeat:
+  1. `supabase`: every function but `mcp-server`, then `db push`.
+  2. `app`: builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your
+     publishable key and `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain
+     (`wrangler.sandbox.jsonc`, keeping its last few frame versions) when
+     that is set, then runs `wrangler deploy`.
+  3. `mcp-server`: that function, once the site serves the chat card files
+     it names.
+
+  The `config` job runs `config diff` and `config push` after the `supabase`
+  job. Run the workflow by hand from the Actions tab for the first deploy; a
+  hand run pushes the config only when you tick "Push config.toml after
+  showing the diff". The workflow sets `VITE_SANDBOX_ORIGIN` to the hosted
+  instance's sandbox domain: change it to yours, or empty it to keep the
+  `srcdoc` frame and skip that deploy.
 
 CI runs can finish out of order, so a deploy takes the newest green commit
 rather than the one that started it, and an older commit never replaces a

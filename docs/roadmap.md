@@ -19,8 +19,8 @@ user's files through MCP, on the hosted Supabase project.
    archive and unarchive, permanently delete (people only, never OAuth
    clients), invite, accept (people only) and leave. RLS, explicit grants and
    70 pgTAP tests, passing on the hosted project.
-2. **Deploys from GitHub.** Done: `.github/workflows/deploy-supabase.yml`
-   runs `supabase functions deploy --use-api`, `supabase db push`, then
+2. **Deploys from GitHub.** Done: `.github/workflows/deploy.yml` runs
+   `supabase functions deploy --use-api`, `supabase db push`, then
    `supabase config diff` and `supabase config push` with Supabase CLI 2.118.0,
    two scoped tokens and no `supabase link`, on merge to `main` (see Deploys
    in `architecture.md`). (The pull request check that fails when committed
