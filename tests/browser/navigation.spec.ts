@@ -22,7 +22,11 @@ test("a link to a page whose code is still downloading shows the loading state, 
   const signInEmail = page.getByLabel("Email", { exact: true })
   await signInEmail.fill("someone@example.com")
 
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  // The clock runs until the pause reaches the page, and pauseAt refuses a
+  // time the clock has passed, as a second ahead could be on a busy machine.
+  // An hour ahead of the page's own time, it cannot be: the test times out
+  // long before.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60 * 60_000))
   await page.getByRole("link", { name: "Forgot your password?" }).click()
   // Sign-in is still drawn, and its field takes neither focus nor typing.
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()

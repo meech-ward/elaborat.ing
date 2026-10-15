@@ -355,7 +355,15 @@ test("a paragraph an agent adds to the open note types in behind a caret in Rend
   const sourceArea = (await page.locator(".monaco-editor:visible .editor-scrollable").first().boundingBox())!
   const renderedArea = (await page.locator('iframe[title="Isolated document preview"]').boundingBox())!
   await watchWriting(page, [STEPS])
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000))
+  // The clock runs until the pause reaches the page, and pauseAt refuses a time the clock has passed,
+  // as a second ahead could be on a busy machine. The page's date is held at the time asked for first,
+  // so it cannot pass it: the clock stops where it is, and then its date goes on with it again. A jump
+  // ahead would fire every timer due by then, and an hour's (local-project.spec.ts) would leave the
+  // session expired by the page's clock, its token refreshed over and over while the test looks.
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.setFixedTime(now)
+  await page.clock.pauseAt(now)
+  await page.clock.setSystemTime(now)
   const frames = (count: number) => page.clock.runFor(16 * count)
   await agentSaves(fake, id, WITH_STEPS)
   // A few frames at a time until both views write it, well short of the time writing it takes (writeIn.ts).
