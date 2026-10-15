@@ -1,4 +1,5 @@
 import type { LiveHandle, LiveKind } from "@/chat-card/live/mount"
+import { pencilSoundOn } from "@/features/sketch/pencilSetting"
 import { kindForPath } from "@/features/workbench/session"
 import { moduleLoader } from "@/lib/moduleLoader"
 import type { LiveDriver } from "./chat"
@@ -58,7 +59,8 @@ export function liveDriver(container: () => HTMLElement | null): LiveDriver {
       view.ready = mountModule.load().then(
         ({ mountLive }) => {
           if (views.get(id) !== view) return
-          view.handle = mountLive(target, { kind, path, reducedMotion })
+          // The pencil sound as this viewer last set it on a drawing's canvas.
+          view.handle = mountLive(target, { kind, path, reducedMotion, sound: pencilSoundOn() })
           view.handle.update(view.latest)
         },
         () => {
