@@ -1,11 +1,14 @@
 // A note open in the workbench that takes a newer version saved elsewhere,
 // such as an agent adding a section with append_to_note, writes in what the
-// new version added at its end: the rendered note's new blocks come in one
-// after another, and the source's new lines are highlighted for a moment.
-// Display only, like a drawing's draw-in (src/features/drawings/drawIn.ts).
-// The person's caret and selection stay where they were, mapped through what
-// changed (mapThroughText, mapThroughDoc). The editors that show it load on
-// first use, so this module stays out of the workbench's first paint.
+// new version added at its end, as a model streams an answer: in Rendered
+// (src/preview/typeIn.ts) and Source (src/features/source/sourceTypeIn.ts)
+// the added text has its place from the start, unseen, and shows a few
+// characters at a time behind a caret, at the pace set here (writeInMs,
+// writeInStops). Display only, like a drawing's draw-in
+// (src/features/drawings/drawIn.ts). The person's caret and selection stay
+// where they were, mapped through what changed (mapThroughText,
+// mapThroughDoc). The editors that show it load on first use, so this module
+// stays out of the workbench's first paint.
 
 import type { Fragment, Node as PMNode } from "prosemirror-model";
 
@@ -30,6 +33,33 @@ export function appendedFrom(before: string, after: string): number | null {
   if (start === -1) return null;
   const from = kept.length + start;
   return kept === "" || after.slice(kept.length, from).includes("\n") ? from : null;
+}
+
+/** The longest an addition takes to write in, and how many characters a second it starts at. */
+const WRITE_IN_MAX_MS = 4000;
+const WRITE_IN_PER_SECOND = 80;
+
+/**
+ * How long an addition `length` characters long takes to write in, in
+ * milliseconds: about 80 characters a second for a short one, as a model
+ * streams, so a line takes about a second and a short section two; faster as
+ * it grows, so even the longest takes no more than 4 seconds.
+ */
+export function writeInMs(length: number): number {
+  if (length <= 0) return 0;
+  return WRITE_IN_MAX_MS * (1 - Math.exp(-length / ((WRITE_IN_PER_SECOND * WRITE_IN_MAX_MS) / 1000)));
+}
+
+/**
+ * Where the writing of `text` may pause, as offsets: after each word with the
+ * spaces before it (a long one every eight characters), as a model streams a
+ * few characters at a time, and at the end.
+ */
+export function writeInStops(text: string): number[] {
+  const stops: number[] = [];
+  for (const word of text.matchAll(/\s*\S{1,8}/g)) stops.push(word.index + word[0].length);
+  if (stops.at(-1) !== text.length) stops.push(text.length);
+  return stops;
 }
 
 /**

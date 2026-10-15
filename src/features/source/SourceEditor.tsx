@@ -70,7 +70,7 @@ export interface SourceEditorProps {
    * A newer saved version the note took while open, such as an agent's
    * section (src/features/document/writeIn.ts). When the editor shows that
    * version and it added to the end of the text shown before, the added
-   * lines are highlighted for a moment. Display only.
+   * text types in (sourceTypeIn.ts). Display only.
    */
   writeIn?: WriteIn | null;
 }

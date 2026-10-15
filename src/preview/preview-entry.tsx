@@ -35,6 +35,7 @@ import { createRoot } from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { captureDraftsBeforeRender, setSourceDraftContext, finishSourceDraftRender, queueRangeEdit, queueComponentValueEdit, settleSourceDraft } from './sourceDrafts';
 import { FluidEditor } from "./fluidEditor";
+import { typeIn, typeInPlugin, type TypeIn } from "./typeIn";
 import { TextSelection, type EditorState } from "prosemirror-state";
 import { mapThroughDoc } from "../features/document/writeIn";
 import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, ExampleCard, Tabs, Tab, type SideBySideProps } from '../features/rendered/documentBlocks';
@@ -546,6 +547,8 @@ const subscribeIslands = (listener: () => void) => {
 let fluidEditor: FluidEditor | null = null;
 /** The fluid render epoch the editor shows; -1 before its first render. */
 let shownEpoch = -1;
+/** What a newer saved version added, writing in (typeIn.ts). */
+let typing: TypeIn | null = null;
 let runtimeKey: string | null = null;
 /** The commented text to mark, as the parent last sent it for a revision. */
 let commentMarks: CommentMarksMessage | null = null;
@@ -675,7 +678,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
             for (const listener of islandListeners) listener();
           },
           postToParent,
-          { codeFences: true },
+          { codeFences: true, plugins: [typeInPlugin] },
         ));
         setCodeBlockHooks({
           typed: () => editor.typedForCodeBlock,
@@ -699,18 +702,21 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       const projection = pending.fluid;
       const editor = fluidEditor;
       const Content = fluidContent;
+      const shown = editor.view.state;
       // A new document that replaces the one on screen without placing the
       // caret (such as a newer saved version an agent saved) keeps the
       // person's caret and selection where they were in it.
       const replaced =
         shownEpoch !== -1 && (projection.reset || projection.epoch !== shownEpoch) && !projection.selection
-          ? editor.view.state
+          ? shown
           : null;
-      // Blocks a newer saved version added, the first time this frame shows
-      // it (as the editor writes them in), come into view if the reader is
-      // following the note's end.
+      // What a newer saved version added, the first time this frame shows
+      // it, writes in (typeIn.ts), from where the one before is still
+      // writing, if it is. It comes into view if the reader is following
+      // the note's end, or the writing.
       const writtenIn = projection.writeIn !== undefined && shownEpoch !== -1 && projection.epoch !== shownEpoch ? projection.writeIn : undefined;
-      const follow = writtenIn !== undefined && followingEnd(editor) ? writtenIn : null;
+      const writing = writtenIn === undefined ? null : (typing?.position ?? null);
+      const follow = writtenIn !== undefined && ((writing !== null && followed !== null) || followingEnd(editor));
       shownEpoch = projection.epoch;
       flushSync(() => {
       captureDraftsBeforeRender();
@@ -731,7 +737,19 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       );
       });
       finishSourceDraftRender(pending.slots.flatMap(slot => [...slot.props, ...(slot.titleInsertion ? [slot.titleInsertion] : [])]));
-      if (follow !== null) revealWrittenIn(editor, follow);
+      // Writing in stops with the document it was writing into.
+      if (editor.view.state.doc !== shown.doc) {
+        typing?.finish();
+        typing = null;
+      }
+      if (writtenIn !== undefined) {
+        const { doc } = editor.view.state;
+        const start = writing === null ? writtenIn : Math.min(writtenIn, mapThroughDoc(shown.doc, doc)(writing));
+        const $start = doc.resolve(start);
+        followed = follow ? { top: document.scrollingElement?.scrollTop ?? 0, target: -Infinity } : null;
+        if (follow) revealWrittenIn(editor, $start.parent.isTextblock ? $start.before() : start);
+        typing = typeIn(editor.view, start, keepWritingInView);
+      }
       return;
     }
     // The JSX runtime stays in evaluation scope; document components arrive
@@ -958,18 +976,31 @@ if (typeof IntersectionObserver !== "undefined" && document.documentElement) {
  * Following what an agent adds. When a newer saved version adds blocks at the
  * end of the note (`fluid.writeIn`), the first of them comes into view if the
  * reader was following: the end of the note was on screen, or within about a
- * line of it, before they came (always so for a note that fitted). A reader
- * who scrolled up to read, typed in the frame in the last few seconds, or has
- * text selected stays where they are. Only this document scrolls, never the
- * page around the frame: smoothly, or at once with reduced motion.
+ * line of it, before they came (always so for a note that fitted), or they
+ * were following the writing in of the one before. While it writes in, the
+ * writing stays in view. A reader who scrolled up to read, typed in the frame
+ * in the last few seconds, or has text selected stays where they are, and one
+ * who scrolls up stops it. Only this document scrolls, never the page around
+ * the frame: smoothly, or at once with reduced motion.
  */
 const TYPING_MS = 3000;
-/** Room kept above the first new block when there is more after it than fits. */
+/** Room kept above the first new block when there is more after it than fits, and below the writing. */
 const FOLLOW_MARGIN = 16;
 let typedAt = -Infinity;
 window.addEventListener("keydown", () => {
   typedAt = performance.now();
 }, true);
+/** While the reader follows what writes in: where the frame was last scrolled to, and the furthest it was sent. */
+let followed: { top: number; target: number } | null = null;
+window.addEventListener(
+  "scroll",
+  () => {
+    const top = document.scrollingElement?.scrollTop ?? 0;
+    if (followed && top < followed.top - 1) followed = null;
+    else if (followed) followed.top = top;
+  },
+  { passive: true },
+);
 
 /** Whether the reader follows the note's end: its end on screen, and nothing typed or selected. */
 function followingEnd(editor: FluidEditor): boolean {
@@ -980,18 +1011,32 @@ function followingEnd(editor: FluidEditor): boolean {
   return editor.view.dom.getBoundingClientRect().bottom <= document.documentElement.clientHeight + line;
 }
 
-/** Scroll the block at `from` up toward the top, as far as the note goes; never back up. */
+/** Scroll down to `top`, as far as the note goes; never back up, nor short of where a scroll on its way goes. */
+function followTo(top: number): void {
+  const scroller = document.scrollingElement;
+  if (!followed || !scroller) return;
+  const target = Math.min(scroller.scrollHeight - scroller.clientHeight, top);
+  if (target <= Math.max(scroller.scrollTop, followed.target)) return;
+  followed.target = target;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  scroller.scrollTo({ top: target, behavior: reduce ? "instant" : "smooth" });
+}
+
+/** Scroll the block at `from` up toward the top. */
 function revealWrittenIn(editor: FluidEditor, from: number): void {
   const block = editor.view.nodeDOM(from);
   const scroller = document.scrollingElement;
   if (!(block instanceof Element) || !scroller) return;
-  const top = Math.min(
-    scroller.scrollHeight - scroller.clientHeight,
-    scroller.scrollTop + block.getBoundingClientRect().top - FOLLOW_MARGIN,
-  );
-  if (top <= scroller.scrollTop) return;
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  scroller.scrollTo({ top, behavior: reduce ? "instant" : "smooth" });
+  followTo(scroller.scrollTop + block.getBoundingClientRect().top - FOLLOW_MARGIN);
+}
+
+/** The writing, at `at` (its caret or a block coming in), comes up into view when it goes below the bottom: as much of it as fits. */
+function keepWritingInView(at: Element): void {
+  const scroller = document.scrollingElement;
+  if (!followed || !scroller) return;
+  const box = at.getBoundingClientRect();
+  const below = Math.min(box.bottom + FOLLOW_MARGIN - scroller.clientHeight, box.top - FOLLOW_MARGIN);
+  if (below > 0) followTo(scroller.scrollTop + below);
 }
 
 /**

@@ -1,0 +1,29 @@
+/*
+ * What a newer saved version added, writing into Source (sourceTypeIn.ts):
+ * the text not written yet keeps its place, unseen, and the chat card's caret
+ * (src/chat-card/live/mount.ts, .live-caret and .live-blink) shows where it
+ * writes, taking no room. Decorations: an inline class on the text, and an
+ * empty span before the writing's position.
+ */
+.monaco-editor .source-unwritten {
+  visibility: hidden;
+}
+.monaco-editor .source-writing-caret {
+  position: relative;
+}
+.monaco-editor .source-writing-caret::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 2px;
+  height: 1.05em;
+  margin-top: -0.525em;
+  background: var(--accent);
+  animation: source-writing-blink 1.05s steps(1) infinite;
+}
+@keyframes source-writing-blink {
+  50% {
+    opacity: 0;
+  }
+}

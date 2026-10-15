@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Node as PMNode } from "prosemirror-model";
 import { fluidSchema } from "../rendered/fluidSchema";
-import { appendedFrom, mapThroughDoc, mapThroughText } from "./writeIn";
+import { appendedFrom, mapThroughDoc, mapThroughText, writeInMs, writeInStops } from "./writeIn";
 
 describe("appendedFrom", () => {
   test("finds where text added on new lines starts, as append_to_note adds it", () => {
@@ -22,6 +22,26 @@ describe("appendedFrom", () => {
     expect(appendedFrom(before, "# Plan\n\nFirst.\n\n\n")).toBeNull();
     expect(appendedFrom(before, before)).toBeNull();
     expect(appendedFrom(before, "# Plan\n")).toBeNull();
+  });
+});
+
+describe("the pace of writing in", () => {
+  test("a line takes about a second, a short section about two, and nothing more than four", () => {
+    expect(writeInMs(0)).toBe(0);
+    expect(writeInMs(80)).toBeGreaterThan(800);
+    expect(writeInMs(80)).toBeLessThan(1000);
+    expect(writeInMs(200)).toBeGreaterThan(1500);
+    expect(writeInMs(200)).toBeLessThan(2000);
+    expect(writeInMs(4_000)).toBeLessThanOrEqual(4000);
+    expect(writeInMs(4_000)).toBeGreaterThan(3990);
+    // A longer addition goes faster.
+    expect(writeInMs(1_000) / 1_000).toBeLessThan(writeInMs(100) / 100);
+  });
+
+  test("pauses after each word with the spaces before it, in a long word every eight characters, and at the end", () => {
+    expect(writeInStops("Hello world, again")).toEqual([5, 12, 18]);
+    expect(writeInStops("## Next\n\n- one ")).toEqual([2, 7, 10, 14, 15]);
+    expect(writeInStops("see https://example.com/a")).toEqual([3, 12, 20, 25]);
   });
 });
 

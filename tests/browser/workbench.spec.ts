@@ -221,88 +221,124 @@ test("an edit in the rendered view undone with Ctrl+Z there clears the unsaved s
 })
 
 /**
- * From now on, records every frame how opaque the note's frame draws the
- * blocks with these texts (null while one is not there) and, on the page,
- * whether the note says it has unsaved changes and how many lines Source
- * highlights as just added.
+ * From now on, records every frame how many characters of the paragraphs
+ * with these texts the note's frame does not draw (null while one is not
+ * there) and whether it shows the caret that writes; and, on the page,
+ * whether the note says it has unsaved changes, how many characters Source
+ * does not draw, and whether it shows its caret.
  */
-async function watchNote(page: Page, texts: string[]) {
-  await page.frameLocator('iframe[title="Isolated document preview"]').locator("body").evaluate((_, texts) => {
-    const frames: (number | null)[][] = []
-    Object.assign(window, { noteFrames: frames })
+async function watchWriting(page: Page, texts: string[]) {
+  await noteFrame(page).locator("body").evaluate((_, texts) => {
+    const hidden = (root: Element) => {
+      let count = 0
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode())
+        if (getComputedStyle(node.parentElement!).visibility !== "visible") count += node.textContent!.length
+      return count
+    }
+    const frames: { hidden: (number | null)[]; caret: boolean }[] = []
+    Object.assign(window, { writing: frames })
     const tick = () => {
-      const blocks = [...document.querySelectorAll("h1, h2, p")]
-      frames.push(texts.map((text) => {
-        const block = blocks.find((element) => element.textContent === text)
-        return block ? Number(getComputedStyle(block).opacity) : null
-      }))
+      const paragraphs = [...document.querySelectorAll(".ProseMirror p")]
+      frames.push({
+        hidden: texts.map((text) => {
+          const paragraph = paragraphs.find((element) => element.textContent === text)
+          return paragraph ? hidden(paragraph) : null
+        }),
+        caret: document.querySelector(".ProseMirror .type-in-caret") !== null,
+      })
       if (frames.length < 1_500) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
   }, texts)
   await page.evaluate(() => {
-    const frames: number[][] = []
-    Object.assign(window, { pageFrames: frames })
+    const frames: { unsaved: boolean; hidden: number; caret: boolean }[] = []
+    Object.assign(window, { writing: frames })
     const tick = () => {
-      const unsaved = document.querySelector(".wb-session [aria-live]")?.textContent?.includes("Unsaved changes")
-      frames.push([unsaved ? 1 : 0, document.querySelectorAll(".monaco-editor .source-arrived").length])
+      let hidden = 0
+      for (const lines of document.querySelectorAll(".monaco-editor .view-lines")) {
+        const walker = document.createTreeWalker(lines, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node; node = walker.nextNode())
+          if (getComputedStyle(node.parentElement!).visibility !== "visible") hidden += node.textContent!.length
+      }
+      frames.push({
+        unsaved: Boolean(document.querySelector(".wb-session [aria-live]")?.textContent?.includes("Unsaved changes")),
+        hidden,
+        caret: document.querySelector(".monaco-editor .source-writing-caret") !== null,
+      })
       if (frames.length < 1_500) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
   })
 }
-const noteFrames = (page: Page) =>
-  page.frameLocator('iframe[title="Isolated document preview"]').locator("body").evaluate(() => (window as unknown as { noteFrames: (number | null)[][] }).noteFrames)
-const pageFrames = (page: Page) => page.evaluate(() => (window as unknown as { pageFrames: number[][] }).pageFrames)
+const renderedWriting = (page: Page) =>
+  noteFrame(page).locator("body").evaluate(() => (window as unknown as { writing: { hidden: (number | null)[]; caret: boolean }[] }).writing)
+const sourceWriting = (page: Page) =>
+  page.evaluate(() => (window as unknown as { writing: { unsaved: boolean; hidden: number; caret: boolean }[] }).writing)
 
-test("a section an agent adds to the open note writes in, leaves nothing unsaved or to undo, and with reduced motion appears at once", async ({ page }) => {
+test("a paragraph an agent adds to the open note types in behind a caret in Rendered and Source, leaves nothing unsaved or to undo, and with reduced motion appears at once", async ({ page }) => {
   const NOTE = "# Launch plan\n\nWhat ships on day one.\n"
-  const RISKS = `${NOTE}\n## Risks\n\nThe import is slow.\n`
+  const SLOW = "The import is slow: every row is checked twice, once as it is read and again before it is saved, so a large file can take several minutes to finish."
+  const WITH_SLOW = `${NOTE}\n${SLOW}\n`
   const { fake, id } = await openProject(page, { "notes/launch.md": NOTE }, "notes/launch.md")
   await page.getByRole("button", { name: "Split", exact: true }).click()
-  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const frame = noteFrame(page)
   await expect(frame.getByRole("heading", { name: "Launch plan" })).toBeVisible({ timeout: 15_000 })
   await expect(editorText(page)).toContainText("What ships on day one.")
   const saves = fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length
 
-  // The agent adds a section (append_to_note), which reaches the open note through Realtime.
-  await watchNote(page, ["Launch plan", "Risks", "The import is slow."])
-  await fake.agentChanges.save(person.id, id, "notes/launch.md", RISKS)
-  fake.signal(id, fake.server.projects.get(id)!.revision)
-  await expect(frame.getByText("The import is slow.")).toBeVisible()
-  await expect.poll(async () => (await noteFrames(page)).at(-1)).toEqual([1, 1, 1])
-  const written = await noteFrames(page)
-  // The new heading came in part way, and its paragraph after it; what was there stayed as it was.
-  expect(written.some(([, heading]) => heading !== null && heading > 0 && heading < 1)).toBe(true)
-  expect(written.some(([, heading, paragraph]) => heading !== null && paragraph !== null && heading > paragraph + 0.2)).toBe(true)
-  expect(written.filter(([old]) => old !== 1)).toEqual([])
-  // Source highlighted the new lines for a moment.
-  expect((await pageFrames(page)).some(([, highlighted]) => highlighted > 0)).toBe(true)
-  await expect.poll(async () => (await pageFrames(page)).at(-1)?.[1]).toBe(0)
+  // The agent adds a paragraph (append_to_note), which reaches the open note through Realtime.
+  await watchWriting(page, ["What ships on day one.", SLOW])
+  await agentSaves(fake, id, WITH_SLOW)
+  // All of it shows, shortly after, with no caret left.
+  await expect
+    .poll(async () => {
+      const [rendered, source] = [(await renderedWriting(page)).at(-1), (await sourceWriting(page)).at(-1)]
+      return [rendered?.hidden[1], rendered?.caret, source?.hidden, source?.caret]
+    }, { timeout: 10_000 })
+    .toEqual([0, false, 0, false])
+  // Part way through, some of it showed, the rest was hidden in its place, and a caret wrote it, in both views.
+  const rendered = await renderedWriting(page)
+  const source = await sourceWriting(page)
+  expect(rendered.some(({ hidden: [, paragraph], caret }) => paragraph !== null && paragraph > 0 && paragraph < SLOW.length && caret)).toBe(true)
+  expect(source.some(({ hidden, caret }) => hidden > 0 && hidden < SLOW.length && caret)).toBe(true)
+  // What was there before showed all along.
+  expect(rendered.filter(({ hidden: [before] }) => before !== 0)).toEqual([])
 
   // The note took the saved version: nothing unsaved at any point, nothing saved again, and nothing to undo.
-  expect((await pageFrames(page)).filter(([unsaved]) => unsaved)).toEqual([])
+  expect(source.filter(({ unsaved }) => unsaved)).toEqual([])
   await expect(page.getByRole("tab", { name: "launch.md, unsaved changes" })).toHaveCount(0)
-  await frame.getByText("The import is slow.").click()
+  await frame.getByText(SLOW).click()
   await page.keyboard.press("ControlOrMeta+z")
   await page.waitForTimeout(500)
-  await expect(frame.getByRole("heading", { name: "Risks" })).toBeVisible()
-  await expect(editorText(page)).toContainText("The import is slow.")
+  await expect(frame.getByText(SLOW)).toBeVisible()
+  await expect(editorText(page)).toContainText("The import is slow")
   await expect(page.getByRole("tab", { name: "launch.md, unsaved changes" })).toHaveCount(0)
-  expect((await pageFrames(page)).filter(([unsaved]) => unsaved)).toEqual([])
+  expect((await sourceWriting(page)).filter(({ unsaved }) => unsaved)).toEqual([])
   expect(fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length).toBe(saves)
-  expect(serverContent(fake, id, "notes/launch.md")).toBe(RISKS)
+  expect(serverContent(fake, id, "notes/launch.md")).toBe(WITH_SLOW)
 
-  // With reduced motion the next section appears at once, and Source highlights nothing.
+  // A click in a view while it writes shows the rest there at once.
+  const STEPS = `First, the rows are read in batches of a thousand. ${SLOW} Then each batch is checked once, and only what changed is saved again, which leaves the slow part to the rows that really did change since the last import.`
+  const WITH_STEPS = `${WITH_SLOW}\n${STEPS}\n`
+  await watchWriting(page, [STEPS])
+  await agentSaves(fake, id, WITH_STEPS)
+  await expect.poll(async () => ((await renderedWriting(page)).at(-1)?.hidden[0] ?? 0) > 0).toBe(true)
+  await frame.getByText("What ships on day one.").click()
+  await expect.poll(async () => (await renderedWriting(page)).at(-1), { timeout: 400 }).toEqual({ hidden: [0], caret: false })
+  expect((await sourceWriting(page)).at(-1)?.hidden).toBeGreaterThan(0)
+  await sourceLine(page, "What ships on day one.").click()
+  await expect.poll(async () => (await sourceWriting(page)).at(-1), { timeout: 400 }).toMatchObject({ hidden: 0, caret: false })
+
+  // With reduced motion the next paragraph appears at once, in both views.
   await page.emulateMedia({ reducedMotion: "reduce" })
-  await watchNote(page, ["Owners", "Ada runs the launch."])
-  await fake.agentChanges.save(person.id, id, "notes/launch.md", `${RISKS}\n## Owners\n\nAda runs the launch.\n`)
-  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await watchWriting(page, ["Ada runs the launch."])
+  await agentSaves(fake, id, `${WITH_STEPS}\nAda runs the launch.\n`)
   await expect(frame.getByText("Ada runs the launch.")).toBeVisible()
-  // Twenty frames with both shown, any of which would catch them on the way in.
-  await expect.poll(async () => (await noteFrames(page)).filter(([heading, paragraph]) => heading !== null && paragraph !== null).length).toBeGreaterThan(20)
-  expect((await noteFrames(page)).filter(([heading, paragraph]) => (heading !== null && heading < 1) || (paragraph !== null && paragraph < 1))).toEqual([])
-  expect((await pageFrames(page)).filter(([unsaved, highlighted]) => unsaved || highlighted)).toEqual([])
+  // Twenty frames with it there, any of which would catch it on the way in.
+  await expect.poll(async () => (await renderedWriting(page)).filter(({ hidden: [paragraph] }) => paragraph !== null).length).toBeGreaterThan(20)
+  expect((await renderedWriting(page)).filter(({ hidden: [paragraph], caret }) => (paragraph !== null && paragraph > 0) || caret)).toEqual([])
+  expect((await sourceWriting(page)).filter(({ unsaved, hidden, caret }) => unsaved || hidden > 0 || caret)).toEqual([])
 })
 
 // A note longer than either view in Split, and the section an agent adds to

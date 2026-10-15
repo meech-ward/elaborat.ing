@@ -12,7 +12,7 @@ import type { RenderedPatchOptions, SourceSelection } from "./renderedHistory";
 import type { SourcePatch } from "@/features/document";
 import { languageForFormat } from "./modelSync";
 import { appendedFrom, mapThroughText } from "../document/writeIn";
-import "./sourceArrived.css";
+import { typeInSource, type SourceTypeIn } from "./sourceTypeIn";
 
 /**
  * VS Code-like Markdown/MDX source editor (Monaco, workers bundled locally).
@@ -35,8 +35,6 @@ import "./sourceArrived.css";
 type RailMarker = { line: number; top: number; ids: string[]; active: boolean; label: string };
 
 const LINE_HEIGHT = 22;
-/** How long the lines a newer saved version added stay highlighted (sourceArrived.css fades them). */
-const ARRIVED_MS = 1600;
 /** A key pressed in the editor this recently counts as typing: the view does not follow what a newer saved version added. */
 const TYPING_MS = 3000;
 
@@ -92,8 +90,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   const [rail, setRail] = useState<{ shown: boolean; markers: RailMarker[] }>({ shown: false, markers: [] });
   const [commentButton, setCommentButton] = useState<{ top: number; left: number } | null>(null);
   const commentMarksRef = useRef<((marks: readonly CommentMark[], source: string) => void) | null>(null);
-  // Highlights the lines from an offset to the end for a moment: what a newer saved version added.
-  const arrivedRef = useRef<((from: number) => void) | null>(null);
+  // What a newer saved version added, writing in (sourceTypeIn.ts).
+  const typingRef = useRef<SourceTypeIn | null>(null);
   // When a key was last pressed in the editor (see TYPING_MS).
   const typedAtRef = useRef(-Infinity);
   // Latest callbacks without rebinding the mount-once editor. Assigned in
@@ -283,16 +281,6 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     // the next marks arrive; markers and the Comment button follow them.
     const markDecorations = editor.createDecorationsCollection();
     const flashDecorations = editor.createDecorationsCollection();
-    const arrivedDecorations = editor.createDecorationsCollection();
-    let arrivedTimer = 0;
-    arrivedRef.current = (from) => {
-      const start = positionAt(model, from).lineNumber;
-      arrivedDecorations.set([
-        { range: new monaco.Range(start, 1, model.getLineCount(), 1), options: { isWholeLine: true, className: "source-arrived" } },
-      ]);
-      window.clearTimeout(arrivedTimer);
-      arrivedTimer = window.setTimeout(() => arrivedDecorations.clear(), ARRIVED_MS);
-    };
     let marked: { decoration: string; mark: CommentMark }[] = [];
     let flashTimer = 0;
     const canCommentKey = editor.createContextKey<boolean>("elaboratingCanComment", false);
@@ -582,8 +570,8 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     return () => {
       handoff.detach();
       commentMarksRef.current = null;
-      arrivedRef.current = null;
-      window.clearTimeout(arrivedTimer);
+      typingRef.current?.finish();
+      typingRef.current = null;
       for (const item of disposables) item.dispose();
       editorRef.current = null;
       modelRef.current = null;
@@ -647,9 +635,11 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     editorRef.current?.updateOptions({
       autoClosingQuotes: language === "markdown" || language === "mdx" ? "never" : "languageDefined",
     });
-    // Whether the person follows the end of the text shown, before it is replaced.
+    // Whether the person follows the end of the text shown, or what is still
+    // writing in (a model offset, which the new text replaces), before it is replaced.
     const editor = editorRef.current;
-    const following = Boolean(editor && live.current.visible && followingEnd(editor, typedAtRef.current));
+    const writing = typingRef.current?.offset ?? null;
+    const following = Boolean(editor && live.current.visible && (typingRef.current?.following || followingEnd(editor, typedAtRef.current)));
     // A newer saved version the note took (src/features/document/writeIn.ts).
     const arrived = writeIn?.documentId === documentId && writeIn.text === documentText;
     // The text shown and the person's selections in it (file offsets), before it is replaced.
@@ -663,13 +653,18 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
             })),
           }
         : null;
+    const bom = bomLength(model);
     const replaced = documentSyncRef.current?.receive(fileModel(model), { text: documentText, docId: documentId });
+    // Writing in stops with the text it was writing into.
+    if (replaced) typingRef.current = null;
     // Replacing the model's value cleared its undo history, as when a file
     // opens, and put the cursor at the top: the person's caret and selections
-    // go back where they were, mapped through what changed. The lines the new
-    // version added to the end are highlighted, unless the person prefers
+    // go back where they were, mapped through what changed. What the new
+    // version added to the end writes in (sourceTypeIn.ts), from where the
+    // one before was still writing, if it was, unless the person prefers
     // reduced motion. Decorations only, outside undo. If the person was
-    // following the end, the first added line comes into view.
+    // following the end or the writing, the line it starts on comes into
+    // view.
     if (replaced && arrived) {
       if (editor && shown && shown.selections.length > 0) {
         const place = mapThroughText(shown.text, documentText);
@@ -682,9 +677,12 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         );
       }
       const from = appendedFrom(writeIn.before, writeIn.text);
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (from !== null && !reduce) arrivedRef.current?.(from);
-      if (from !== null && following && editor) revealNearTop(editor, positionAt(model, from).lineNumber, reduce);
+      if (from !== null && editor && shown) {
+        const start = writing === null ? from : Math.min(from, mapThroughText(shown.text, documentText)(writing + bom));
+        typingRef.current = live.current.visible ? typeInSource(editor, start - bomLength(model), following) : null;
+        // Writing in brings it into view itself.
+        if (following && !typingRef.current) revealNearTop(editor, positionAt(model, start).lineNumber, window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      }
     }
   }, [documentText, docFormat, documentId, editorLanguage, writeIn]);
 

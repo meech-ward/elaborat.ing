@@ -28,6 +28,42 @@
 .ProseMirror > [data-fluid-object] > figure[data-resource] {
   margin-inline: 0;
 }
+/* What a newer saved version added, writing in (typeIn.ts): what the writing
+   has not reached keeps its place, unseen (inline code with nothing written
+   yet hides its box too); an island or a rule fades up as it is reached; and
+   the chat card's caret (src/chat-card/live/mount.ts, .live-caret and
+   .live-blink) shows where it writes, taking no room. */
+.ProseMirror :is(.type-in-unwritten, .type-in-hidden, code:has(> .type-in-hidden-code)) {
+  visibility: hidden;
+}
+.ProseMirror .type-in-arrived {
+  animation: type-in-arrive 0.28s ease-out both;
+}
+@keyframes type-in-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.ProseMirror .type-in-caret {
+  position: relative;
+}
+.ProseMirror .type-in-caret::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 2px;
+  height: 1.05em;
+  margin-top: -0.525em;
+  background: var(--accent);
+  animation: type-in-blink 1.05s steps(1) infinite;
+}
+@keyframes type-in-blink {
+  50% {
+    opacity: 0;
+  }
+}
 :root[data-wide-media="true"]
   .reading-document
   > [data-fluid-object]:has(

@@ -910,17 +910,28 @@ The production server's tools are unchanged.
   drawing, diagram or other file is refused with the tool that changes it. In
   the app, and so in the panel, an open note that takes a newer version saved
   elsewhere whose text extends the one on screen (its trailing whitespace
-  aside) writes the added part in (`src/features/document/writeIn.ts`): in
-  Rendered the frame fades each new block up into place over 280 ms, 120 ms
-  after the one before (the last starts within 1.2 s), told where they start
-  by the render's `fluid.writeIn`; in Source the added lines are highlighted
-  for 1.6 s. Both are display only, outside undo, and never mark the file
-  changed; with reduced motion nothing animates. A reader following the end
-  of the note (it was on screen, within about a line, before the new version
-  came) sees the first new block or line come into view, smoothly or at once
-  with reduced motion: in Rendered the frame scrolls only its own document,
-  and in Source Monaco reveals the line near the top. A reader who scrolled
-  up, has text selected, or typed in that view in the last 3 s stays put.
+  aside) writes the added part in (`src/features/document/writeIn.ts`) as a
+  model streams an answer: in Rendered (the frame's `src/preview/typeIn.ts`,
+  told where the added blocks start by the render's `fluid.writeIn`) and in
+  Source (`src/features/source/sourceTypeIn.ts`) the added text has its
+  final layout from the start, hidden by decorations, and shows a word or a
+  few characters at a time behind the chat card's blinking caret: about 80
+  characters a second for a short addition, so a line takes about a second,
+  faster as it grows, and never more than 4 s (`writeInMs`). In Rendered a
+  code block, an embed or any other island, and a rule, fades up as the
+  writing reaches it. Both are display only, outside undo, and never mark
+  the file changed. A key or a click in that view shows the rest at once, as
+  does any other change to its text; a newer version that comes while one is
+  still writing in carries on from where it is. With reduced motion nothing
+  animates. A reader following the end of the note (it was on screen, within
+  about a line, before the new version came), or the writing of the one
+  before, sees the first new block or line come into view, smoothly or at
+  once with reduced motion: in Rendered the frame scrolls only its own
+  document, and in Source the line comes near the top, where Monaco's
+  reveal near top puts it; then the writing stays in view as it goes down.
+  A reader who scrolled up, has text selected, or typed in that view in the
+  last 3 s stays put, and one who scrolls up while it writes stops it
+  following.
   Whatever a newer version changes, the person's caret and selection stay
   where they were in both views, mapped through the change (`writeIn.ts`):
   kept before it, moved with the text after it, and from replaced text to
