@@ -252,7 +252,7 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
   const frame = frameOf(page)
   await expect(frame.locator("section.release-card h3")).toHaveText("Launch")
   await expect(frame.getByLabel("ReleaseCard title")).toBeVisible()
-  const alert = page.locator("[data-rendered-editor]").getByRole("alert")
+  const alert = page.getByRole("tabpanel", { name: notePath }).getByRole("alert")
 
   // Open the module in another tab, and save it broken.
   await showExplorer(page)

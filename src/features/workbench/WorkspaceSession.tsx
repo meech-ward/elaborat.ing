@@ -750,6 +750,8 @@ export function WorkspaceSession({
           {notice && <span>{notice}</span>}
         </div>
       )}
+      {/* The note's error, in every view. The rendered view reports its errors
+          here instead of in a banner of its own (errorBanner), so each shows once. */}
       {shownRenderError && (
         <Banner tone="danger" className="mt-2">
           Render error: {shownRenderError} Source is unchanged and remains editable.
@@ -901,6 +903,8 @@ export function WorkspaceSession({
                 onPendingChange={handleRenderedPending}
                 onPatch={handlePatch}
                 onError={handleRenderError}
+                // Its errors show in the Render error banner above the views.
+                errorBanner={false}
                 typing={typing}
                 resources={resourcePixels}
                 allowedResourcePaths={refs.map((ref) => ref.path)}

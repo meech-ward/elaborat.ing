@@ -113,6 +113,12 @@ export type RenderedEditorProps = {
   onPendingChange?: (pending: boolean) => void;
   onError?: (message: string | null) => void;
   /**
+   * Whether the view shows its error in a banner of its own, as it does by
+   * default. The workbench shows `onError`'s message above every view of the
+   * note instead, so the error shows once.
+   */
+  errorBanner?: boolean;
+  /**
    * Whether the person is typing in the note's source (WorkspaceSession's
    * useTyping). While they type, a new error in the half-typed note waits,
    * and the frame keeps its last good render (lib/settledError.ts).
@@ -243,6 +249,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPendingChange: onPendingChangeProp,
     onPatch,
     onError,
+    errorBanner = true,
     typing = false,
     resources,
     allowedResourcePaths,
@@ -1247,7 +1254,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     <div ref={rootRef} data-rendered-editor={document.format} style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
       {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
-      {displayedError ? (
+      {displayedError && errorBanner ? (
         <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
           {displayedError} Source is unchanged and remains editable.
         </Banner>
@@ -1272,7 +1279,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           src={frameDoc.hosted ? (pageUrl ?? undefined) : undefined}
           srcDoc={frameDoc.hosted ? undefined : (srcdoc ?? undefined)}
           onLoad={onFrameLoad}
-          aria-describedby={displayedError ? errorId : undefined}
+          aria-describedby={displayedError && errorBanner ? errorId : undefined}
           // The frame fills the space its container gives the editor; the
           // document scrolls inside it. The sandbox stays allow-scripts only,
           // so the frame cannot be styled from here.

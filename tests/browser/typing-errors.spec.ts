@@ -72,7 +72,7 @@ test("typing through text that does not compile shows no error, and text left th
   // the editor closed the tag with, which changes nothing.)
   appErrors.expect(/Expected a closing tag/)
   await page.keyboard.type(" More <i>m")
-  await expect(errorShown(page).first()).toBeVisible()
+  await expect(errorShown(page)).toBeVisible()
   const { keyAt, errorAt, frameHiddenAt } = await times(page)
   expect(errorAt! - keyAt).toBeGreaterThanOrEqual(950)
   // The rendered view kept its last good render until then.
@@ -83,6 +83,54 @@ test("typing through text that does not compile shows no error, and text left th
   await expect(errorShown(page)).toHaveCount(0)
   await expect(paragraph(page, "More more").locator("i")).toHaveText("more")
   expect(fake.server.content(id, PATH)).toBe(NOTE)
+})
+
+/** From now on the page notes the most errors it showed at one moment. */
+async function noteMostErrors(page: Page) {
+  await page.evaluate((shown) => {
+    const noted = { most: 0 }
+    Object.assign(window, { mostErrors: noted })
+    new MutationObserver(() => {
+      const count = [...document.querySelectorAll('[role="alert"]')].filter((alert) => alert.textContent?.includes(shown) && alert.checkVisibility()).length
+      noted.most = Math.max(noted.most, count)
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+  }, SHOWN)
+}
+
+test("a note that does not compile shows its error once in Source, Rendered and Split, and fixing it clears the error", async ({ page, appErrors }) => {
+  appErrors.expect(/Expected a closing tag/)
+  const fake = await fakeSupabase(page)
+  const id = crypto.randomUUID()
+  await fake.server.remote(person.id).createProject(id, "Notes")
+  await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: PATH, content: "# Broken\n\nSome <b>bold words.\n" }])
+  await signedIn(page)
+  await page.goto(projectUrl(id, PATH))
+  await expect(page.getByRole("tabpanel", { name: PATH })).toBeVisible({ timeout: 15_000 })
+  await noteMostErrors(page)
+
+  // Opened broken, the note's error shows in Source at once. Each view shows
+  // it in one banner: Rendered and Split are checked once the rendered view
+  // has hidden the note, when its own banner showed it too.
+  await expect(errorShown(page)).toHaveCount(1)
+  for (const view of ["Rendered", "Split", "Source"] as const) {
+    await page.getByRole("button", { name: view, exact: true }).click()
+    if (view !== "Source") await expect(page.locator(FRAME)).toBeAttached()
+    await expect(page.locator(FRAME)).toBeHidden()
+    await expect(errorShown(page)).toHaveCount(1)
+    await expect(errorShown(page)).toContainText("Expected a closing tag")
+  }
+
+  // Fixed in Split, the error goes and the note renders.
+  await page.getByRole("button", { name: "Split", exact: true }).click()
+  await sourceText(page).click()
+  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.press("ArrowUp")
+  await page.keyboard.press("End")
+  await page.keyboard.type("</b>")
+  await expect(errorShown(page)).toHaveCount(0)
+  await expect(paragraph(page, "Some bold words.").locator("b")).toHaveText("bold words.")
+  // At no moment did the error show twice.
+  expect(await page.evaluate(() => (window as unknown as { mostErrors: { most: number } }).mostErrors.most)).toBe(1)
 })
 
 /** From now on the page notes, for each click, whether the drawing's error is on screen once the click's own update has rendered. */
