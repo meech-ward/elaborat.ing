@@ -224,7 +224,18 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
-    ({ project_id, changes, mutation_id }) => save(project_id, changes, mutation_id)
+    ({ project_id, changes, mutation_id }) => {
+      const completed: typeof changes = []
+      for (const change of changes) {
+        try {
+          // A drawing put in draw's short form is saved completed, as write_file saves it.
+          completed.push(change.op === 'put' ? { ...change, content: completeFile(change.path, change.content) } : change)
+        } catch (error) {
+          return error instanceof DrawError ? errorResult(`${change.path}: ${error.message}`) : runtimeErrorResult(error)
+        }
+      }
+      return save(project_id, completed, mutation_id)
+    }
   )
 
   server.registerTool(

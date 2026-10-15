@@ -461,6 +461,33 @@ Deno.test("a drawing whose short form cannot be completed is not saved, and the 
   }
 })
 
+Deno.test("save_files saves a drawing put in draw's short form as write_file does, and saves nothing when one cannot be completed", async () => {
+  const path = 'art/flow.excalidraw'
+  const written = (await writeWith('write_file', {}, [], path, SHORT_FLOW)).files.find((row) => row.path === path)!.content
+  const saveFiles = (files: Row[], content: string) =>
+    withClient(files, async (client, queries) => ({
+      result: (await client.callTool({ name: 'save_files', arguments: { project_id: PROJECT, changes: [{ op: 'put', path, content }] } })) as CallToolResult,
+      saved: queries.flat().some((step) => step[0] === 'rpc'),
+    }))
+  const files: Row[] = []
+  assertFalse((await saveFiles(files, SHORT_FLOW)).result.isError)
+  assertEquals(files.find((row) => row.path === path)!.content, written)
+
+  const broken = JSON.stringify({
+    type: 'excalidraw',
+    elements: [
+      { id: 'api', type: 'rectangle', x: 0, y: 0, label: 'API' },
+      { id: 'api-to-cache', type: 'arrow', from: 'api', to: 'cache' },
+    ],
+  })
+  const untouched: Row[] = []
+  const { result, saved } = await saveFiles(untouched, broken)
+  assert(result.isError)
+  assertStringIncludes((result.content as { text: string }[])[0].text, `${path}: The arrow "api-to-cache" goes to "cache"`)
+  assertFalse(saved)
+  assertEquals(untouched, [])
+})
+
 Deno.test('update_and_show gives a shape and an arrow written again in the short form their new labels in place of their old ones, and keeps the rest as it was', async () => {
   const path = 'art/flow.excalidraw'
   // The drawing as draw saved it.
