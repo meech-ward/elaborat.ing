@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { partialRelay } from "../bridge"
-import { cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
+import { CARD_TEXT, cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
 import { commonPrefixLength, drawingScanner, elementChange, noteBeingChanged, noteTail, sameElement, type SceneElement } from "../live/partial"
-import type { CardFile } from "../toolResult"
+import { hasDiagramsToDraw } from "../cardDiagrams"
+import type { CardEmbed, CardFile } from "../toolResult"
 
 // The live card: reading a file while the agent writes it, the host's
 // partial input at most once a frame, and the card's live phase.
@@ -222,5 +223,27 @@ describe("the card's live phase", () => {
 
   test("a failed save or a cancel ends it with the problem", () => {
     expect(cardReducer(live, { type: "problem", message: "A file already exists.", tone: "danger" })).toEqual({ phase: "problem", message: "A file already exists.", tone: "danger" })
+  })
+
+  test("once written, a file whose diagrams the card lays out says so in its footer until the saved file shows", () => {
+    const footer = (state: CardState) => (state.phase === "live" ? CARD_TEXT.live(state) : null)
+    expect(footer(live)).toBe("Drawing art/flow.excalidraw")
+    const diagram = cardReducer(INITIAL_CARD_STATE, { type: "live", path: "flows/sign-in.d2", kind: "diagram" })
+    expect(footer(diagram)).toBe("Writing flows/sign-in.d2")
+    const layingOut = cardReducer(diagram, { type: "laying-out" })
+    expect(footer(layingOut)).toBe("Laying out flows/sign-in.d2")
+    expect(cardReducer(layingOut, { type: "result", file })).toMatchObject({ phase: "shown", file })
+    // Only a live card says it.
+    const shown = cardReducer(INITIAL_CARD_STATE, { type: "result", file })
+    expect(cardReducer(shown, { type: "laying-out" })).toBe(shown)
+  })
+
+  test("only a file with a diagram the card draws itself is laid out once written", () => {
+    const embed = (status: CardEmbed["status"]): CardEmbed => ({ kind: "diagram", path: "flows/sign-in.d2", url: null, status })
+    const sent = { "flows/sign-in.d2": { source: "a -> b" } }
+    const note = { path: "notes/plan.md", kind: "note", embeds: [], svgs: {}, diagrams: {} } as unknown as CardFile
+    expect(hasDiagramsToDraw(note)).toBe(false)
+    expect(hasDiagramsToDraw({ ...note, embeds: [embed("drawn")], svgs: { "flows/sign-in.d2": "<svg></svg>" } })).toBe(false)
+    expect(hasDiagramsToDraw({ ...note, embeds: [embed("not_drawn")], diagrams: sent })).toBe(true)
   })
 })

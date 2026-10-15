@@ -41,7 +41,7 @@ import { z } from "zod/mini"
 import { DottedPage } from "@/components/panel"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
-import { drawDiagrams, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
+import { drawDiagrams, hasDiagramsToDraw, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
 import { CardNote, READING_CLASS } from "./cardNote"
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
@@ -263,7 +263,8 @@ export function ChatCard({ host }: { host: HostBridge }) {
           }
           // A live view that has drawn finishes drawing quickly first, then the saved card takes its place:
           // read again then, with _meta that ChatGPT's globals may have brought meanwhile, unless a newer result came.
-          // A diagram the card draws takes the live view's place once drawn, or after a short while as it is laid out.
+          // A diagram the card draws takes the live view's place once drawn, or after a short while as it is laid out;
+          // meanwhile the live footer says it is being laid out.
           const view = feed.view
           if (!view) {
             dispatch({ type: "result", file: shown.file })
@@ -273,6 +274,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
             if (lastResult.current !== event.result) return
             const latest = parseShowResult(event.result, host.openaiMeta())
             if (latest.ok) {
+              if (hasDiagramsToDraw(latest.file)) dispatch({ type: "laying-out" })
               await drawnWithin(latest.file, LIVE_DRAW_MS)
               if (lastResult.current !== event.result) return
               dispatch({ type: "result", file: latest.file })

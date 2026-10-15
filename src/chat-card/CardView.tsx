@@ -16,7 +16,7 @@ import { KindBadge } from "@/features/design-system/ui/KindBadge"
 import { StatusDot } from "@/features/design-system/ui/StatusDot"
 import { cn } from "@/lib/utils"
 import { badgeKind, CardNote, EmbedArt, EmbedFigure, READING_CLASS } from "./cardNote"
-import type { CardState } from "./cardState"
+import { CARD_TEXT, type CardState } from "./cardState"
 import { codeToHighlight, highlightBlock, readingMarkup, type Highlighter } from "./readingMarkup"
 import { EMBED_NOTES, FILE_NOTES, svgFor, type CardEmbed, type CardFile } from "./toolResult"
 
@@ -110,7 +110,7 @@ export function CardView({ state, canEdit, editNote = null, editor, live, sound 
       {state.phase === "live" && (
         <footer className="flex items-center gap-2 border-t border-border px-4 py-3 max-[500px]:px-3">
           <p role="status" className="min-w-0 flex-1 truncate text-[13px] leading-snug text-muted-foreground">
-            {state.kind === "drawing" ? "Drawing" : "Writing"} {state.path}
+            {CARD_TEXT.live(state)}
           </p>
           {sound && (
             <Button

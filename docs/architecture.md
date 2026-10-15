@@ -855,7 +855,8 @@ The production server's tools are unchanged.
   downloads about 6 MB (cached after that), only when a card has a diagram to
   draw, or as a `.d2` file is written live, so the engine is ready when the
   result comes, and the drawing then takes the source's place (the live card
-  waits for it up to 4 s). **The view's CSP is unchanged:** everything comes
+  waits for it up to 4 s, its footer saying the diagram is being laid out).
+  **The view's CSP is unchanged:** everything comes
   as scripts from the origin it already declares for them (`resourceDomains`,
   no connect or frame domains), since a fetch of the wasm (the app's way since
   it got its own file) would need `connect-src`. D2's engine is WebAssembly,

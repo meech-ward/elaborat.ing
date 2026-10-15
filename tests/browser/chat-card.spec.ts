@@ -940,13 +940,16 @@ test("a new D2 diagram writes in as source while its engine starts, and its draw
   test.setTimeout(60_000)
   const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: null, manual: true })
   await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
-  // Notes whether the card ever says it could not draw the diagram.
+  // Notes whether the card ever says it could not draw the diagram, and each thing its footer says.
   await cardFrame(page).evaluate((note) => {
-    const state = window as unknown as { saidNotDrawn: boolean }
+    const state = window as unknown as { saidNotDrawn: boolean; footer: string[] }
     state.saidNotDrawn = false
+    state.footer = []
     const root = document.getElementById("root")!
     new MutationObserver(() => {
       if (root.textContent?.includes(note)) state.saidNotDrawn = true
+      const said = root.querySelector('footer [role="status"]')?.textContent
+      if (said && said !== state.footer.at(-1)) state.footer.push(said)
     }).observe(root, { subtree: true, childList: true, characterData: true })
   }, NOT_DRAWN)
   await writeIn(page, SIGN_IN, SIGN_IN_D2, cutsOf(SIGN_IN_D2, 4))
@@ -961,6 +964,8 @@ test("a new D2 diagram writes in as source while its engine starts, and its draw
   await expect(card.locator(".live-source")).toHaveCount(0)
   await expect(card.getByRole("link", { name: "Open in elaborat.ing" })).toHaveAttribute("href", SIGN_IN_URL)
   expect(await cardFrame(page).evaluate(() => (window as unknown as { saidNotDrawn: boolean }).saidNotDrawn)).toBe(false)
+  // Once its source is in, the footer says the diagram is being laid out while the card waits for its drawing.
+  expect(await cardFrame(page).evaluate(() => (window as unknown as { footer: string[] }).footer)).toEqual([`Writing ${SIGN_IN}`, `Laying out ${SIGN_IN}`])
   expect(await violations(page)).toEqual([])
 })
 

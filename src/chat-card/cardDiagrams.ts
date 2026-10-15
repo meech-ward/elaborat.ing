@@ -28,6 +28,9 @@ function toDraw(file: CardFile): Map<string, DiagramSource> {
   return found
 }
 
+/** Whether `file` has a diagram the card draws itself. */
+export const hasDiagramsToDraw = (file: CardFile): boolean => toDraw(file).size > 0
+
 const keyOf = (path: string, { source, canvas, layout }: DiagramSource) => JSON.stringify([path, source, canvas ?? null, layout ?? null])
 
 /** Each drawing started, and those that have settled: the SVG, or null where it could not be drawn. */

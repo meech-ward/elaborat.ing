@@ -17,8 +17,8 @@ export type LiveKind = "note" | "drawing" | "diagram"
 
 export type CardState =
   | { phase: "loading"; path: string | null }
-  /** A file shown as it is written, until it is saved. */
-  | { phase: "live"; path: string; kind: LiveKind }
+  /** A file shown as it is written, until it is saved; `layingOut`: written, and the card lays out its diagrams. */
+  | { phase: "live"; path: string; kind: LiveKind; layingOut?: true }
   | { phase: "problem"; message: string; tone: CardBannerTone }
   | {
       phase: "shown"
@@ -36,6 +36,8 @@ export type CardEvent =
   | { type: "input"; path: string }
   /** A file's content has started to come in: from loading, the card goes live. */
   | { type: "live"; path: string; kind: LiveKind }
+  /** The live file is written, and the card lays out its diagrams before the saved file shows. */
+  | { type: "laying-out" }
   | { type: "result"; file: CardFile }
   | { type: "problem"; message: string; tone: CardBannerTone }
   | { type: "start-edit" }
@@ -64,6 +66,8 @@ export const CARD_TEXT = {
   conflict: "This note changed since it was loaded, so your edit was not saved. Load the latest version to edit it again.",
   reloadFailed: "The latest version could not be loaded. Open it in elaborat.ing.",
   notSaved: (message: string) => (message ? `Not saved: ${message}` : "Not saved. Try again."),
+  /** What a live card's footer says it is doing with the file. */
+  live: ({ kind, path, layingOut }: Extract<CardState, { phase: "live" }>) => `${layingOut ? "Laying out" : kind === "drawing" ? "Drawing" : "Writing"} ${path}`,
 }
 
 const shownRead = (file: CardFile, status: CardStatus = NONE): CardState => ({
@@ -84,6 +88,8 @@ export function cardReducer(state: CardState, event: CardEvent): CardState {
       return state.phase === "loading" ? { phase: "loading", path: event.path } : state
     case "live":
       return state.phase === "loading" ? { phase: "live", path: event.path, kind: event.kind } : state
+    case "laying-out":
+      return state.phase === "live" ? { ...state, layingOut: true } : state
     case "result":
       return editing(state) ? state : shownRead(event.file)
     case "problem":
