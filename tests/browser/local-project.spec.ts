@@ -78,7 +78,11 @@ test("following a link away leaves the local project on screen while the next pa
   await page.clock.install()
   await startWriting(page)
 
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  // The clock runs until the pause reaches the page, and pauseAt refuses a
+  // time the clock has passed, as a second ahead could be on a busy machine.
+  // An hour ahead of the page's own time, it cannot be: the test times out
+  // after a minute.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60 * 60_000))
   await page.getByRole("link", { name: "Sign up to share" }).click()
   await expect(page).toHaveURL(new URL("sign-up", APP_URL).href)
   await expect(page.getByRole("heading", { level: 1, name: "Local project" })).toBeVisible()
