@@ -9,7 +9,9 @@
  * not load, the host's policy does not allow the engine, or the source does
  * not compile) shows as the server sent it.
  * Each is drawn once for the card, so the same diagram shown again is drawn
- * at once. A card with no diagram to draw never loads the module.
+ * at once. A card with no diagram to draw never loads the module. The engine
+ * stops once it has had nothing to lay out for a while, for its memory, and
+ * starts again for a later diagram (diagram/d2Engine.ts).
  */
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { loadModule } from "./modules"
@@ -65,7 +67,7 @@ export function drawDiagrams(file: CardFile): Promise<void> {
   return Promise.all([...toDraw(file)].map(([path, sent]) => draw(path, sent))).then(() => {})
 }
 
-/** Starts D2's engine for a diagram on its way, such as a .d2 file being written. */
+/** Starts D2's engine for a diagram on its way, such as a .d2 file being written, or keeps it running while it comes. */
 export function startDiagramEngine(): void {
   loadModule("diagram").then(
     (module) => module.startEngine(),

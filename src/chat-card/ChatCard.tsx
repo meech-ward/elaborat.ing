@@ -165,8 +165,6 @@ export function ChatCard({ host }: { host: HostBridge }) {
   // update_and_show's card asked for the file as saved; the card went live, as which tool, and said so to the server.
   const savedAsked = useRef(false)
   const live = useRef<{ tool: "create_and_show" | "update_and_show"; reported: boolean } | null>(null)
-  // A diagram being written started D2's engine.
-  const engineStarted = useRef(false)
   // The pencil sound of a drawing drawing in: on unless this viewer muted it. Never with reduced motion.
   const [pencilOn, setPencilOn] = useState(pencilSoundOn)
   const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)
@@ -187,13 +185,13 @@ export function ChatCard({ host }: { host: HostBridge }) {
   const expanded = useRef(false)
 
   useEffect(() => {
-    /** Goes live: the first time, notes which tool is writing. A diagram starts D2's engine, for its drawing. */
+    /**
+     * Goes live: the first time, notes which tool is writing. A diagram starts D2's engine, for its drawing,
+     * and each part of it that comes in keeps the engine running, however long it takes to write.
+     */
     const goLive = (draft: LiveDraft) => {
       live.current ??= { tool: draft.update ? "update_and_show" : "create_and_show", reported: false }
-      if (draft.kind === "diagram" && !engineStarted.current) {
-        engineStarted.current = true
-        startDiagramEngine()
-      }
+      if (draft.kind === "diagram") startDiagramEngine()
       dispatch({ type: "live", path: draft.path, kind: draft.kind })
     }
     /**

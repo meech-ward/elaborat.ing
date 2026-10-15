@@ -856,6 +856,12 @@ The production server's tools are unchanged.
   draw, or as a `.d2` file is written live, so the engine is ready when the
   result comes, and the drawing then takes the source's place (the live card
   waits for it up to 4 s, its footer saying the diagram is being laid out).
+  The worker holds about 165 MB of the page's memory once the engine runs,
+  and a phone's host can kill a page that takes too much (two cards' engines
+  took about 1 GB in WebKit), so the card stops it once it has had nothing to
+  lay out for 10 s, while a `.d2` being written keeps it running; a later
+  diagram starts it again and is drawn in about 1.8 s instead of 0.2 s
+  (WebKit as an iPhone).
   **The view's CSP is unchanged:** everything comes
   as scripts from the origin it already declares for them (`resourceDomains`,
   no connect or frame domains), since a fetch of the wasm (the app's way since

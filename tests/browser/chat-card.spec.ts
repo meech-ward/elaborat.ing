@@ -529,6 +529,40 @@ test("D2's engine loads only for a card with a diagram to draw", async ({ page }
   expect(asked(page)).toEqual(expect.arrayContaining(DIAGRAM_FILES))
 })
 
+/** The workers running D2's engine on the page: each card starts its own, from a blob: URL. */
+const engines = (page: Page) => page.workers().filter((worker) => worker.url().startsWith("blob:")).length
+
+test("a card stops D2's engine once it has had nothing to lay out for 10 s, and starts it again for a later diagram", async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.clock.install()
+  const result = noteShown({ [SIGN_IN]: SIGN_IN_D2 })
+  const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result })
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS, { timeout: 30_000 })
+  expect(engines(page)).toBe(1)
+  // Its worker holds the engine's memory, a lot for a phone: it stops 10 s after the last layout.
+  await page.clock.fastForward(10_000)
+  await expect.poll(() => engines(page)).toBe(0)
+
+  // The same result shown again keeps its drawing, with no engine.
+  await send(page, "ui/notifications/tool-result", result)
+  await expect(drawnText(card)).toHaveText(SIGN_IN_LABELS)
+  await page.waitForTimeout(500)
+  expect(engines(page)).toBe(0)
+
+  // Edited and saved, the note comes back with its diagram changed since: the engine starts again and draws it.
+  await card.getByRole("button", { name: "Edit" }).click()
+  await card.locator(".ProseMirror").getByText("How someone signs in.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" Then the projects show.")
+  const changed = noteShown({ [SIGN_IN]: CHANGED_D2 })
+  await answer(page, "write_file", { content: [{ type: "text", text: "{}" }], structuredContent: { status: "saved", changes: [{ op: "put", path: "notes/sign-in.mdx", version: 2 }] } })
+  await answer(page, "show_file", { ...changed, structuredContent: { ...changed.structuredContent, version: 2 } })
+  await card.getByRole("button", { name: "Save" }).click()
+  await expect(card.getByText("Saved as v2.")).toBeVisible()
+  await expect(drawnText(card).filter({ hasText: "Audit log" })).toHaveCount(1, { timeout: 30_000 })
+  expect(engines(page)).toBe(1)
+})
+
 // Component previews: a note's built-in and workspace components, and a
 // component file an agent is drafting, drawn in a frame nested in the card
 // (sandbox="allow-scripts", so it cannot reach the card or the host's bridge)

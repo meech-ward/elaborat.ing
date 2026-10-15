@@ -12,10 +12,15 @@ import { compileD2Diagram, getSharedD2 } from "@/features/structured/compiler"
 import { nativePathFor, projectDiagramArtifact } from "@/features/workbench/diagramArtifact"
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from "../../../supabase/functions/mcp-server/tools/drawingSvg.ts"
 import type { DiagramSource } from "../embedText"
+import type { D2 } from "./d2Engine"
 
-/** Starts D2's engine, for a diagram on its way. */
+/** Starts D2's engine, or keeps it running a while longer, for a diagram on its way. */
 export function startEngine(): void {
-  getSharedD2().catch(() => {})
+  // In the card's build the shared instance is the card's own engine (d2Engine.ts).
+  getSharedD2().then(
+    (d2) => (d2 as D2).start(),
+    () => {},
+  )
 }
 
 /** The diagram at `path` as SVG; throws when it cannot be laid out or drawn. */
