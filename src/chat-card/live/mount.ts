@@ -8,7 +8,9 @@
  * live.
  *
  * A drawing's elements draw in one after another as a person would sketch
- * them, each with a quiet pencil sound (src/features/sketch, which the app's
+ * them, completed as the server saves them (an element in draw's short form
+ * sized, labelled and placed, an arrow once both its shapes have come), each
+ * with a quiet pencil sound (src/features/sketch, which the app's
  * canvas shares): each line drawn along its length, hachure fills scribbled
  * in, solid fills faded in after their outline, text written left to right,
  * and the view easing out to hold what is drawn so far. A note renders as
@@ -26,7 +28,7 @@ import { drawElement, MAX_ELEMENTS, MAX_SVG_CHARS, parseDrawing, type Box } from
 import { renderNote } from "../../../supabase/functions/mcp-server/tools/markdown.ts"
 import { pencil } from "@/features/sketch/pencil"
 import { itemMs, NEXT_AT, playSteps, sketchMs, stepsOf, STROKE_GAP_MS, type Step } from "@/features/sketch/steps"
-import { drawingScanner, elementChange, noteBeingChanged, noteTail, type SceneElement } from "./partial"
+import { drawingScanner, elementChange, noteBeingChanged, noteTail, shortFormReader, type SceneElement } from "./partial"
 import { readingMarkup } from "../readingMarkup"
 
 export type LiveKind = "note" | "drawing" | "diagram"
@@ -92,14 +94,14 @@ function moreNote(el: HTMLElement, text: string) {
 
 export function mountLive(el: HTMLElement, options: LiveOptions): LiveHandle {
   addStyle()
-  if (options.kind === "drawing") return mountDrawing(el, options.reducedMotion, options.sound ?? true)
+  if (options.kind === "drawing") return mountDrawing(el, options.path, options.reducedMotion, options.sound ?? true)
   return mountText(el, options)
 }
 
 /** An element waiting to draw in: its parts, what kind it is (for its sound), and the saved one it changes, if any. */
 type Item = { g: SVGGElement; box: Box; steps: Step[]; ms: number; type: string; replaces: SVGGElement | null }
 
-function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): LiveHandle {
+function mountDrawing(el: HTMLElement, path: string, reducedMotion: boolean, sound: boolean): LiveHandle {
   const svg = document.createElementNS(SVG_NS, "svg")
   svg.setAttribute("class", "live-svg")
   svg.setAttribute("aria-hidden", "true")
@@ -119,6 +121,8 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): 
   let retired = false
 
   const scanner = drawingScanner()
+  // A .excalidraw file is saved with its short form completed; an Obsidian .excalidraw.md as it is.
+  const shortForm = /\.excalidraw$/i.test(path) ? shortFormReader() : null
   const types = new Map<unknown, unknown>()
   let drawnCount = 0
   let size = 0
@@ -325,9 +329,10 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): 
       const { added, restarted } = scanner.read(content)
       if (restarted) {
         clear()
+        shortForm?.reset()
         showSaved()
       }
-      for (const element of added) add(element)
+      if (added.length > 0) for (const element of shortForm ? shortForm.read(scanner.elements) : added) add(element)
       if (final) {
         whole = true
         retire()

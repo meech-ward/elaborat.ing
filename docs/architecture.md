@@ -955,8 +955,9 @@ The production server's tools are unchanged.
   close for an arrow are refused, saving nothing. It only adds, so it is not
   destructive: every id must be new, and an existing element changes only to
   list a new label or arrow in its `boundElements`. Fields left out get
-  Excalidraw 0.18.1's defaults, and indices continue after the scene's last
-  with `fractional-indexing`, Excalidraw's own library, so the app and
+  Excalidraw 0.18.1's defaults, but for the seed and version nonce, which
+  come from the element's id (below), and indices continue after the scene's
+  last with `fractional-indexing`, Excalidraw's own library, so the app and
   `drawingSvg.ts` draw the result.
   A save that conflicts is read again and applied once more; with
   `base_version`, a drawing changed since is a conflict. An Obsidian
@@ -991,6 +992,30 @@ The production server's tools are unchanged.
   and the sketch starts once the view holds still. It stays put while the
   person draws a shape or line or edits text, and for 3 s after they last
   pressed, scrolled or typed on the canvas.
+- **Decision: writes take draw's short form.** A drawing written whole is
+  mostly what `draw` works out: a 15-shape flow with its labels and arrows
+  is about 13,100 characters as full elements, which a model takes about a
+  minute to write while the person watches, and about 2,900 in the short
+  form. So `create_and_show`, `update_and_show` and `write_file` (and the
+  in-app assistant's `write_file`) save a `.excalidraw` drawing with its
+  elements in the short form completed: one with a `label`, `from` or `to`,
+  fields no Excalidraw element has, becomes the full elements `draw` would
+  make. One function does it (`tools/drawingCompletion.ts`), for `draw`,
+  the writes and the chat card's live view. In a write, full elements stay
+  as they are, but for a shape listing a label or arrow newly bound to it,
+  and a `label` replaces the label text its shape or arrow had, so a change
+  can give an element a new label in the short form. A file with no
+  short-form element, or not JSON, is saved byte for byte, and an Obsidian
+  `.excalidraw.md` always is. An element that cannot be completed gets
+  `draw`'s message and nothing is saved. A seed and version nonce left out
+  come from the element's id (FNV-1a), not at random, in `draw` too, and an
+  element a write completes gets no order index or update time (Excalidraw
+  gives it those when it opens the drawing), so the same text always saves
+  the same file, which a save retried with its `mutation_id` must. The live
+  view completes the elements as they come with the same function, and so
+  draws the sizes and strokes the saved card shows: an arrow named by
+  `from` and `to` draws once both its shapes have come, and one whose shape
+  never comes is not drawn.
 - **Decision: a note grows in sections the person can watch
   (`append_to_note`).** As with a drawing, a note written in one
   `write_file` appears all at once. `append_to_note` (`tools/appendToNote.ts`,

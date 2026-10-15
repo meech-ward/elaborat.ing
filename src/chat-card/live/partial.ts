@@ -4,6 +4,7 @@
  * time the whole of it (MCP Apps `ui/notifications/tool-input-partial`). No
  * schema library and no DOM, so the tests run them on their own.
  */
+import { completeElements, DrawError } from "../../../supabase/functions/mcp-server/tools/drawingCompletion.ts"
 
 /** A drawing's element, as the scene has it. */
 export type SceneElement = Record<string, unknown>
@@ -158,6 +159,64 @@ export function drawingScanner(): DrawingScanner {
     },
     get compressed() {
       return compressed
+    },
+  }
+}
+
+export type ShortFormReader = {
+  /**
+   * Takes every element read so far, in the file's order, and returns those
+   * to draw that it has not returned before: each as the server saves it
+   * (drawingCompletion.ts), an element in draw's short form completed and
+   * followed by its label, and a full one as it is. An element that cannot
+   * be completed yet waits: an arrow named by `from` and `to` comes once
+   * both its shapes have.
+   */
+  read(elements: readonly SceneElement[]): SceneElement[]
+  /** Forgets what it returned, for a drawing read again from the start. */
+  reset(): void
+}
+
+/**
+ * Completes a drawing's elements as they are written, with the server's own
+ * completion, so the live view draws what the server will save, with the
+ * same sizes and strokes. Each read completes all the elements so far,
+ * leaving out any the completion refuses, until it takes the rest.
+ */
+export function shortFormReader(): ShortFormReader {
+  const returned = new Set<unknown>()
+  return {
+    read(elements) {
+      const waiting = new Set<unknown>()
+      let completed: unknown[]
+      for (;;) {
+        try {
+          completed = completeElements([], waiting.size === 0 ? elements : elements.filter((element) => !waiting.has(element)), { shortFormOnly: true }).elements
+          break
+        } catch (error) {
+          // An element that cannot be completed waits; anything else draws nothing more this time.
+          if (!(error instanceof DrawError) || error.element === undefined || waiting.has(error.element)) return []
+          waiting.add(error.element)
+        }
+      }
+      // Known by id, and by which of the elements with that id it is; one with no id, by itself.
+      const fresh: SceneElement[] = []
+      const ids = new Map<string, number>()
+      for (const element of completed as SceneElement[]) {
+        let key: unknown = element
+        if (typeof element.id === "string") {
+          const before = ids.get(element.id) ?? 0
+          ids.set(element.id, before + 1)
+          key = `${before} ${element.id}`
+        }
+        if (returned.has(key)) continue
+        returned.add(key)
+        fresh.push(element)
+      }
+      return fresh
+    },
+    reset() {
+      returned.clear()
     },
   }
 }

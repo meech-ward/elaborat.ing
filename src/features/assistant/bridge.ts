@@ -3,6 +3,7 @@ import { scenesEqual } from "@/features/drawings/serialize"
 import { byteLength, MAX_FILE_BYTES } from "@/features/project-storage/model"
 import { kindForPath } from "@/features/workbench/session"
 import { toolNameOf, type ToolName } from "../../../supabase/functions/_shared/chatgpt/tools.ts"
+import { completeFile, DrawError } from "../../../supabase/functions/mcp-server/tools/drawingCompletion.ts"
 import type { AssistantHost } from "./host"
 
 /**
@@ -82,7 +83,14 @@ export async function runTool(call: ToolCall, context: BridgeContext): Promise<T
       case "write_file": {
         if (host.readOnly) return failed(tool, path, `This project can't be changed: ${host.readOnly}`)
         if (!path || typeof args.content !== "string") return failed(tool, path, "write_file needs a path and the complete content.")
-        const content = args.content
+        let content: string
+        try {
+          // A drawing's elements in draw's short form are written completed, as the MCP server saves them.
+          content = completeFile(path, args.content)
+        } catch (error) {
+          if (error instanceof DrawError) return failed(tool, path, error.message)
+          throw error
+        }
         if (byteLength(content) > MAX_FILE_BYTES) return failed(tool, path, "That is larger than a file can be (2 MB).")
         if (kindForPath(path) === "drawing") {
           try {

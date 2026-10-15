@@ -45,47 +45,59 @@ The user's instructions win over this skill when they differ.
   with `draw`.
 - To make a new drawing the user should watch being drawn in the chat, use
   `create_and_show`. Put `elements` before `appState`, and write each shape,
-  then its label, then its arrows.
+  then its arrows, in the short form below.
 - To change a drawing while the user watches in the chat, read it and save
   the whole scene with `update_and_show` and the `base_version` you read,
-  keeping every other element and field as it is, ids included: the card
-  shows the drawing as saved, draws in the elements you changed or added, and
-  fades the ones you removed. For quiet changes, and drawings the user isn't
-  watching, use `write_file`.
+  keeping every other element and field as it is, ids included, and writing
+  new or changed shapes and arrows in the short form: the card shows the
+  drawing as saved, draws in the elements you changed or added, and fades
+  the ones you removed. To change a label, give its shape or arrow the new
+  `label`: it replaces the old label text, which you can leave out. For
+  quiet changes, and drawings the user isn't watching, use `write_file`.
 - Embed it in a note with `<Drawing src="drawings/idea.excalidraw" />`, and
   show it with `show_file`. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.
 
 ## The scene
 
+`create_and_show`, `update_and_show` and `write_file` take the same short
+form as `draw`: each shape with a `label` and no size, and each arrow by
+`from` and `to`. The drawing is saved with the full Excalidraw elements
+`draw` would make, so it is a fraction of the JSON to write:
+
 ```json
 {
   "type": "excalidraw",
   "version": 2,
   "elements": [
-    {"id": "draft", "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "strokeColor": "#1e1e1e", "backgroundColor": "#fff3bf", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "draft-label", "type": "text"}, {"id": "draft-to-review", "type": "arrow"}]},
-    {"id": "draft-label", "type": "text", "x": 50, "y": 27.5, "width": 80, "height": 25, "text": "Draft", "fontSize": 20, "fontFamily": 5, "textAlign": "center", "verticalAlign": "middle", "containerId": "draft"},
-    {"id": "review", "type": "ellipse", "x": 300, "y": 0, "width": 180, "height": 80, "strokeColor": "#1e1e1e", "backgroundColor": "transparent", "boundElements": [{"id": "review-label", "type": "text"}, {"id": "draft-to-review", "type": "arrow"}]},
-    {"id": "review-label", "type": "text", "x": 350, "y": 27.5, "width": 80, "height": 25, "text": "Review", "fontSize": 20, "fontFamily": 5, "textAlign": "center", "verticalAlign": "middle", "containerId": "review"},
-    {"id": "draft-to-review", "type": "arrow", "x": 188, "y": 40, "width": 104, "height": 0, "points": [[0, 0], [104, 0]], "endArrowhead": "arrow", "startBinding": {"elementId": "draft", "focus": 0, "gap": 8}, "endBinding": {"elementId": "review", "focus": 0, "gap": 8}}
+    {"id": "draft", "type": "rectangle", "x": 0, "y": 0, "label": "Draft", "backgroundColor": "#fff3bf", "fillStyle": "solid"},
+    {"id": "review", "type": "ellipse", "x": 300, "y": 0, "label": "Review"},
+    {"id": "draft-to-review", "type": "arrow", "from": "draft", "to": "review"}
   ],
   "appState": {"viewBackgroundColor": "#ffffff"},
   "files": {}
 }
 ```
 
-- Every element needs a unique `id`, a `type`, `x`, `y`, `width` and
-  `height`. The app fills in the fields you leave out. `draw` takes full
-  elements too, such as the ones above, but its `label`, `from` and `to` are
-  quicker to write.
+- A rectangle, ellipse or diamond with a `label` and no `width` or `height`
+  is sized to fit the label, which is added as a text with the id
+  `<shape id>-label`, centred. A long label wraps, so the shape is at most
+  about 240 px wide: shapes 300 apart leave room for an arrow.
+- An arrow with `from` and `to`, the ids of two shapes, and no `x`, `y` or
+  `points`, runs straight between their outlines and is bound to both. It
+  can have a `label` too.
+- Full Excalidraw elements still work, also in the same file. Each needs a
+  unique `id`, a `type`, `x`, `y`, `width` and `height`, and the app fills
+  in the fields you leave out. A label is then a text element with
+  `containerId` set to its shape's id, listed in the shape's
+  `boundElements`, and an arrow's `points` are relative to its `x` and `y`;
+  to attach it to shapes, set `startBinding` and `endBinding`
+  (`{"elementId": "draft"}`) and list the arrow in each shape's
+  `boundElements`.
 - Types: rectangle, ellipse, diamond, text, arrow, line and freedraw.
 - Style: `strokeColor`, `backgroundColor` (`"transparent"` or a colour),
   `fillStyle` (`"solid"` or `"hachure"`), `strokeWidth` (1, 2 or 4),
   `roughness` (0 for clean lines, 1 for sketchy), `roundness`
-  (`{"type": 3}` for rounded corners).
+  (`{"type": 3}` for rounded corners, which a rectangle in the short form
+  has unless you give `null`).
 - Text: `text`, `fontSize` and `fontFamily` (5 hand-drawn, 6 plain, 8 code).
-- A label inside a shape is a text element with `containerId` set to the
-  shape's id, and the shape lists it in `boundElements`.
-- An arrow's `points` are relative to its `x` and `y`. To attach it to shapes,
-  set `startBinding` and `endBinding`, and list the arrow in each shape's
-  `boundElements`.

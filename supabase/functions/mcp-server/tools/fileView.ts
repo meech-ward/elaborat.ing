@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { z } from 'npm:zod@4.4.3'
 
 import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser } from './componentSources.ts'
+import { completeFile, DrawError } from './drawingCompletion.ts'
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
@@ -31,7 +32,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v38.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v39.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -71,6 +72,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v35.html',
   'ui://elaborating/file-view-v36.html',
   'ui://elaborating/file-view-v37.html',
+  'ui://elaborating/file-view-v38.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -425,6 +427,9 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         'Create a new note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
         'which draws it while you write it where the chat allows that. It only creates: a file already at the path is not changed. ' +
         'Use it when the user should watch a new note, drawing or diagram being made. ' +
+        "Write a drawing in draw's short form, a fraction of the full JSON to write: give a shape a label and leave out its size, " +
+        "and join two shapes with an arrow's from and to. It is saved as the full elements draw would make: the shape sized to its label, " +
+        'the label a text bound to it, and the arrow placed and bound. ' +
         'To change a file, read it and use update_and_show, or write_file for a quiet change, with base_version.',
       inputSchema: z.object({
         project_id: projectId,
@@ -443,7 +448,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         const { data, error } = await context.supabase.rpc('save_files', {
           project_id,
           mutation_id: mutation_id ?? crypto.randomUUID(),
-          changes: [{ op: 'put', path, content }],
+          changes: [{ op: 'put', path, content: completeFile(path, content) }],
         })
         if (error) throw error
         if (data?.status === 'conflict') {
@@ -451,6 +456,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         }
         return await showFilePayload(context, project_id, path, { made: 'created' })
       } catch (error) {
+        if (error instanceof DrawError) return errorResult(error.message)
         return runtimeErrorResult(error)
       }
     }
@@ -486,7 +492,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         const { data, error } = await context.supabase.rpc('save_files', {
           project_id,
           mutation_id: mutation_id ?? crypto.randomUUID(),
-          changes: [{ op: 'put', path, content, base_version }],
+          changes: [{ op: 'put', path, content: completeFile(path, content), base_version }],
         })
         if (error) throw error
         if (data?.status === 'conflict') {
@@ -504,6 +510,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         }
         return await showFilePayload(context, project_id, path, { made: 'updated' })
       } catch (error) {
+        if (error instanceof DrawError) return errorResult(error.message)
         return runtimeErrorResult(error)
       }
     }

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { partialRelay } from "../bridge"
 import { CARD_TEXT, cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
-import { commonPrefixLength, drawingScanner, elementChange, noteBeingChanged, noteTail, sameElement, type SceneElement } from "../live/partial"
+import { commonPrefixLength, drawingScanner, elementChange, noteBeingChanged, noteTail, sameElement, shortFormReader, type SceneElement } from "../live/partial"
+import { completeDrawing } from "../../../supabase/functions/mcp-server/tools/drawingCompletion"
 import { hasDiagramsToDraw } from "../cardDiagrams"
 import type { CardEmbed, CardFile } from "../toolResult"
 
@@ -86,6 +87,72 @@ describe("reading a drawing as it is written", () => {
     const scanner = drawingScanner()
     expect(scanner.read("---\nexcalidraw-plugin: parsed\n---\n\n%%\n## Drawing\n```compressed-json\nN4Ig").added).toEqual([])
     expect(scanner.compressed).toBe(true)
+  })
+})
+
+describe("a drawing in draw's short form, completed as it is written", () => {
+  // Shapes with a label and no size, and arrows by from and to: one written
+  // before the shape it goes to, and one whose shape never comes. A full text,
+  // and an old label text that the short form's label replaces.
+  const FLOW = JSON.stringify(
+    {
+      type: "excalidraw",
+      version: 2,
+      elements: [
+        { id: "browser", type: "rectangle", x: 0, y: 0, label: "Browser" },
+        { id: "browser-to-api", type: "arrow", from: "browser", to: "api", label: "fetch" },
+        { id: "api", type: "rectangle", x: 300, y: 0, label: "API server" },
+        { id: "db", type: "ellipse", x: 600, y: 0, label: "Postgres database", backgroundColor: "#a5d8ff" },
+        { id: "db-old-label", type: "text", x: 640, y: 20, text: "DB", containerId: "db" },
+        { id: "api-to-db", type: "arrow", from: "api", to: "db" },
+        { id: "note", type: "text", x: 0, y: 150, text: 'A full element, "as it is" }' },
+      ],
+      appState: { viewBackgroundColor: "#ffffff" },
+    },
+    null,
+    2,
+  )
+  /** The elements by id, leaving out what each lists as bound to it. */
+  const byId = (elements: SceneElement[]) => Object.fromEntries(elements.map((element) => [element.id, { ...element, boundElements: null }]))
+
+  test("every prefix completes as the server saves the drawing, each element once, and an arrow once both its shapes have come", () => {
+    const saved = JSON.parse(completeDrawing(FLOW)).elements as SceneElement[]
+    const scanner = drawingScanner()
+    const reader = shortFormReader()
+    const drawn: SceneElement[] = []
+    // How much of the file had come when each element was drawn.
+    const when = new Map<unknown, number>()
+    for (let end = 0; end <= FLOW.length; end++) {
+      const { added } = scanner.read(FLOW.slice(0, end))
+      if (added.length === 0) continue
+      for (const element of reader.read(scanner.elements)) {
+        drawn.push(element)
+        when.set(element.id, end)
+      }
+    }
+    // The same elements, field for field: the same sizes, places and seeds, so
+    // the same strokes, but for what a shape lists as bound to it, which is
+    // not drawn and fills in as its arrows come.
+    expect(drawn.length).toBe(saved.length)
+    expect(byId(drawn)).toEqual(byId(saved))
+    expect(drawn.map((element) => element.id)).not.toContain("db-old-label")
+    // An arrow comes with the second of its shapes, in the file's order, and its label right after it.
+    expect(drawn.map((element) => element.id)).toEqual(["browser", "browser-label", "browser-to-api", "browser-to-api-label", "api", "api-label", "db", "db-label", "api-to-db", "note"])
+    expect(when.get("browser-to-api")).toBe(when.get("api"))
+    expect(when.get("api-to-db")!).toBeGreaterThan(when.get("db")!)
+  })
+
+  test("an arrow whose shape never comes is not drawn, and the rest are", () => {
+    const scanner = drawingScanner()
+    const reader = shortFormReader()
+    const lonely = FLOW.replace('"to": "db"', '"to": "cache"')
+    scanner.read(lonely)
+    const ids = reader.read(scanner.elements).map((element) => element.id)
+    expect(ids).toEqual(["browser", "browser-label", "browser-to-api", "browser-to-api-label", "api", "api-label", "db", "db-label", "note"])
+    // What it returned, it does not return again.
+    expect(reader.read(scanner.elements)).toEqual([])
+    // The server refuses the whole drawing.
+    expect(() => completeDrawing(lonely)).toThrow('The arrow "api-to-db" goes to "cache", which is not in the drawing.')
   })
 })
 

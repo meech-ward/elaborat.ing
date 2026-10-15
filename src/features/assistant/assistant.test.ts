@@ -169,6 +169,30 @@ describe("the tool bridge", () => {
     expect(writes).toEqual(["a.md", "a.md"])
   })
 
+  test("a drawing in draw's short form is written completed, and one it cannot complete is refused with why", async () => {
+    const { host, tabs, writes } = fakeHost()
+    const elements = [
+      { id: "api", type: "rectangle", x: 0, y: 0, label: "API" },
+      { id: "db", type: "ellipse", x: 300, y: 0, label: "Database" },
+      { id: "api-to-db", type: "arrow", from: "api", to: "db" },
+    ]
+    const write = (content: unknown[]) => runTool({ name: "write_file", arguments: JSON.stringify({ path: "art/flow.excalidraw", content: JSON.stringify({ elements: content }) }) }, context(host))
+    expect((await write(elements)).result).toBe("done")
+    const written = JSON.parse(tabs["art/flow.excalidraw"].text).elements as Array<Record<string, unknown>>
+    expect(written.map((element) => [element.id, element.type, element.containerId ?? null])).toEqual([
+      ["api", "rectangle", null],
+      ["api-label", "text", "api"],
+      ["db", "ellipse", null],
+      ["db-label", "text", "db"],
+      ["api-to-db", "arrow", null],
+    ])
+    expect(written[4].startBinding).toEqual({ focus: 0, gap: 8, elementId: "api" })
+    const refused = await write([elements[0], { id: "api-to-cache", type: "arrow", from: "api", to: "cache" }])
+    expect(refused.result).toBe("error")
+    expect(JSON.parse(refused.output).error).toContain('The arrow "api-to-cache" goes to "cache", which is not in the drawing.')
+    expect(writes).toEqual(["art/flow.excalidraw"])
+  })
+
   test("a drawing that is not a scene is refused before anything changes", async () => {
     const { host, writes } = fakeHost()
     const outcome = await runTool({ name: "write_file", arguments: JSON.stringify({ path: "art/flow.excalidraw", content: "not json" }) }, context(host))

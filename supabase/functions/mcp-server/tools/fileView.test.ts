@@ -5,6 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 import { COMPONENTS_META_KEY, importedPaths } from './componentSources.ts'
+import { addElements } from './draw.ts'
 import { D2_META_KEY, FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MAX_META_CHARS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
@@ -365,6 +366,129 @@ Deno.test('update_and_show refuses a file that is not there, and changes only no
     assertEquals(result.content, [{ type: 'text', text: 'Use write_file for this file.' }])
     assertFalse(queries.flat().some((step) => step[0] === 'rpc'), path)
   }
+})
+
+type SceneElement = Record<string, unknown>
+
+/** A flow in draw's short form, as an agent writes it: two shapes with labels and no size, and the arrow joining them. */
+const SHORT_FLOW = JSON.stringify({
+  type: 'excalidraw',
+  version: 2,
+  elements: [
+    { id: 'api', type: 'rectangle', x: 0, y: 0, label: 'API' },
+    { id: 'db', type: 'ellipse', x: 300, y: 0, label: 'Database' },
+    { id: 'api-to-db', type: 'arrow', from: 'api', to: 'db', label: 'SQL' },
+  ],
+  appState: { viewBackgroundColor: '#ffffff' },
+})
+const elementsIn = (content: string) => JSON.parse(content).elements as SceneElement[]
+const byIdIn = (content: string) => new Map(elementsIn(content).map((element) => [element.id, element]))
+/** The tools that save a drawing as it is written, with what each needs besides the path and content, and the files before. */
+const WRITES = (path: string, before: string) =>
+  [
+    ['create_and_show', {}, []],
+    ['write_file', {}, []],
+    ['update_and_show', { base_version: 2 }, [{ ...file(path, before), version: 2 }]],
+  ] as [string, Record<string, unknown>, Row[]][]
+
+/** One write of `content` at `path` with `tool`: its result, the files after it, and whether it saved. */
+function writeWith(tool: string, args: Record<string, unknown>, files: Row[], path: string, content: string) {
+  return withClient(files, async (client, queries) => ({
+    result: (await client.callTool({ name: tool, arguments: { project_id: PROJECT, path, content, ...args } })) as CallToolResult,
+    saved: queries.flat().some((step) => step[0] === 'rpc'),
+    files,
+  }))
+}
+
+Deno.test("create_and_show, write_file and update_and_show save a drawing in draw's short form as the elements draw makes, bound together", async () => {
+  const path = 'art/flow.excalidraw'
+  // draw's elements for the same flow, but for the order index and update time draw gives from the scene and the clock.
+  const drawn = elementsIn(addElements(null, elementsIn(SHORT_FLOW) as never).content).map(({ index: _index, updated: _updated, ...element }) => element)
+  const texts: string[] = []
+  for (const [tool, args, files] of WRITES(path, SCENE)) {
+    const { result } = await writeWith(tool, args, files, path, SHORT_FLOW)
+    assertFalse(result.isError, tool)
+    const saved = files.find((row) => row.path === path)!.content
+    texts.push(saved)
+    // The scene as it was written, with each element completed and each label right after its shape or arrow.
+    assertEquals({ ...JSON.parse(saved), elements: [] }, { ...JSON.parse(SHORT_FLOW), elements: [] }, tool)
+    assertEquals(elementsIn(saved), drawn, tool)
+    const byId = byIdIn(saved)
+    assertEquals(byId.get('api')!.boundElements, [{ type: 'text', id: 'api-label' }, { type: 'arrow', id: 'api-to-db' }], tool)
+    assertEquals(byId.get('db')!.boundElements, [{ type: 'text', id: 'db-label' }, { type: 'arrow', id: 'api-to-db' }], tool)
+    assertEquals(byId.get('api-to-db')!.boundElements, [{ type: 'text', id: 'api-to-db-label' }], tool)
+    assertEquals(['api-label', 'db-label', 'api-to-db-label'].map((id) => byId.get(id)!.containerId), ['api', 'db', 'api-to-db'], tool)
+    const arrow = byId.get('api-to-db')!
+    // From 8 px off the API box's right edge (140 wide) to 8 px off the ellipse's left, both bound.
+    assertEquals([arrow.x, arrow.y, arrow.points], [148, 35, [[0, 0], [144, 0]]], tool)
+    assertEquals([arrow.startBinding, arrow.endBinding], [{ focus: 0, gap: 8, elementId: 'api' }, { focus: 0, gap: 8, elementId: 'db' }], tool)
+  }
+  // The same text saves the same file, so a save retried with its mutation_id is the same save.
+  assertEquals(new Set(texts).size, 1)
+})
+
+Deno.test('a drawing with no element in the short form, an Obsidian drawing and a file that is not JSON are saved byte for byte', async () => {
+  const full = '{"type":"excalidraw","elements":[\n  {"id":"r","type":"rectangle","x":0,"y":0,"width":120,"height":60}\n],"appState":{}}\n'
+  const obsidian = ['---', 'excalidraw-plugin: parsed', '---', '', '%%', '## Drawing', '```json', SHORT_FLOW, '```', '%%', ''].join('\n')
+  for (const [path, content] of [['art/full.excalidraw', full], ['art/flow.excalidraw.md', obsidian], ['art/half.excalidraw', '{"elements": [{"id": "api", "label"']]) {
+    for (const [tool, args, files] of WRITES(path, SCENE)) {
+      const { result } = await writeWith(tool, args, files, path, content)
+      assertFalse(result.isError, `${tool} ${path}`)
+      assertEquals(files.find((row) => row.path === path)!.content, content, `${tool} ${path}`)
+    }
+  }
+})
+
+Deno.test("a drawing whose short form cannot be completed is not saved, and the tool says why in draw's words", async () => {
+  const path = 'art/flow.excalidraw'
+  const content = JSON.stringify({
+    type: 'excalidraw',
+    version: 2,
+    elements: [
+      { id: 'api', type: 'rectangle', x: 0, y: 0, label: 'API' },
+      { id: 'api-to-cache', type: 'arrow', from: 'api', to: 'cache' },
+    ],
+  })
+  for (const [tool, args, files] of WRITES(path, SCENE)) {
+    const before = JSON.stringify(files)
+    const { result, saved } = await writeWith(tool, args, files, path, content)
+    assert(result.isError, tool)
+    assertEquals(result.content, [
+      { type: 'text', text: 'The arrow "api-to-cache" goes to "cache", which is not in the drawing. Nothing was saved. Add that shape first, or in the same call.' },
+    ])
+    assertFalse(saved, tool)
+    assertEquals(JSON.stringify(files), before, tool)
+  }
+})
+
+Deno.test('update_and_show gives a shape and an arrow written again in the short form their new labels in place of their old ones, and keeps the rest as it was', async () => {
+  const path = 'art/flow.excalidraw'
+  // The drawing as draw saved it.
+  const saved = addElements(null, elementsIn(SHORT_FLOW) as never).content
+  // The agent keeps every element as it read it, the old label texts too, but writes the API box with a new label, and the arrow from it, in the short form.
+  const rewritten = elementsIn(saved).map((element) =>
+    element.id === 'api'
+      ? { id: 'api', type: 'rectangle', x: 0, y: 0, label: 'Gateway service' }
+      : element.id === 'api-to-db'
+      ? { id: 'api-to-db', type: 'arrow', from: 'api', to: 'db', label: 'SQL' }
+      : element
+  )
+  const files = [{ ...file(path, saved), version: 3 }]
+  const { result } = await updateAndShow(path, 3, JSON.stringify({ ...JSON.parse(saved), elements: rewritten }), files)
+  assertFalse(result.isError)
+  const after = files[0].content
+  // Each new label right after its shape or arrow, where the old one was; one label each.
+  assertEquals(elementsIn(after).map((element) => element.id), ['api', 'api-label', 'db', 'db-label', 'api-to-db', 'api-to-db-label'])
+  const [was, now] = [byIdIn(saved), byIdIn(after)]
+  assertEquals([now.get('api-label')!.text, now.get('api-to-db-label')!.text], ['Gateway service', 'SQL'])
+  // The box is sized to its new label, 165 px estimated, centred in it, and the arrow runs from its new edge.
+  const [box, label, arrow] = [now.get('api')!, now.get('api-label')!, now.get('api-to-db')!]
+  assertEquals([box.width, box.height], [205, 70])
+  assertEquals([(label.x as number) + (label.width as number) / 2, (label.y as number) + (label.height as number) / 2], [102.5, 35])
+  assertEquals([arrow.x, arrow.y, arrow.points], [213, 35, [[0, 0], [79, 0]]])
+  // What it kept is as it was.
+  for (const id of ['db', 'db-label']) assertEquals(JSON.stringify(now.get(id)), JSON.stringify(was.get(id)), id)
+  assertEquals(box.boundElements, [{ type: 'text', id: 'api-label' }, { type: 'arrow', id: 'api-to-db' }])
 })
 
 /** Runs `use` with console.log captured: the lines it printed. */

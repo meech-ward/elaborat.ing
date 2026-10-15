@@ -1,6 +1,7 @@
 import type { CallToolResult, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import { z } from 'npm:zod@4.4.3'
 
+import { completeFile, DrawError } from './drawingCompletion.ts'
 import { errorResult, jsonResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
@@ -185,8 +186,16 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       // The show_file card saves an edited note with this tool.
       _meta: VIEW_CALLABLE,
     },
-    ({ project_id, path, content, base_version, mutation_id }) =>
-      save(project_id, [{ op: 'put', path, content, base_version }], mutation_id)
+    ({ project_id, path, content, base_version, mutation_id }) => {
+      let saved: string
+      try {
+        // A drawing's elements in draw's short form are saved completed.
+        saved = completeFile(path, content)
+      } catch (error) {
+        return error instanceof DrawError ? errorResult(error.message) : runtimeErrorResult(error)
+      }
+      return save(project_id, [{ op: 'put', path, content: saved, base_version }], mutation_id)
+    }
   )
 
   server.registerTool(

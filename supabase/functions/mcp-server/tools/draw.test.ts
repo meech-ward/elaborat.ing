@@ -364,16 +364,8 @@ Deno.test('draw adds once more to a drawing someone saved in between, and return
   assert(!elementsOf(twice.files[PATH].content).some((element) => element.id === 'cache'))
 })
 
-/** addElements with Excalidraw's random seeds held still, so what two calls make can be compared. */
-function addSteady(content: string | null, elements: unknown[]) {
-  const random = Math.random
-  Math.random = () => 0.25
-  try {
-    return addElements(content, elements as NewElement[], 1_700_000_000_000)
-  } finally {
-    Math.random = random
-  }
-}
+/** addElements at one time, so what two calls make can be compared. */
+const addSteady = (content: string | null, elements: unknown[]) => addElements(content, elements as NewElement[], 1_700_000_000_000)
 
 /** Where an element's middle is. */
 const middleOf = (element: Element) => [(element.x as number) + (element.width as number) / 2, (element.y as number) + (element.height as number) / 2]
@@ -585,13 +577,36 @@ Deno.test("an arrow's label sits on the middle of the arrow", async () => {
   assertStringIncludes(drawn.svg, 'class="label-bg"')
 })
 
+Deno.test("a new element's seed and nonce come from its id, so it draws the same strokes wherever it is made", () => {
+  const box = { id: 'api', type: 'rectangle', x: 0, y: 0, label: 'API' }
+  const first = elementsOf(addElements(null, [box] as NewElement[]).content)
+  const later = elementsOf(addElements(BEFORE, [{ ...box, x: 500, y: 300 }] as NewElement[]).content).slice(-2)
+  const seeds = (elements: Element[]) => elements.map(({ id, seed, versionNonce }) => [id, seed, versionNonce])
+  assertEquals(seeds(later), seeds(first))
+  // Pinned: the same id gives the same strokes in every version of the server and the card.
+  assertEquals(seeds(first), [['api', 1501176551, 223870260], ['api-label', 1912173690, 2023391479]])
+  // A seed or nonce it was given stays.
+  const [given] = elementsOf(addElements(null, [{ ...box, seed: 7, versionNonce: 8 }] as NewElement[]).content)
+  assertEquals([given.seed, given.versionNonce], [7, 8])
+})
+
 Deno.test('the full form adds exactly what it added before labels and from and to', () => {
-  // Captured from draw at 36a641b with Math.random at 0.25 and `updated` fixed.
-  const seed = 536870912
+  // Captured from draw at 36a641b with `updated` fixed; the seed and nonce, random then, now come from each id.
+  const seeds: Record<string, [number, number]> = {
+    client: [1488318226, 2006862838],
+    'client-label': [514359924, 1226844984],
+    store: [1037551684, 1262527801],
+    save: [919369521, 1205850789],
+    'save-label': [1014224941, 743177778],
+    rule: [2120183110, 406714338],
+    scribble: [1227034691, 1609651591],
+    note: [1451062511, 1453555107],
+  }
   const made = (fields: Element): Element => ({
     id: '', type: '', x: 0, y: 0, width: 0, height: 0, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid',
-    strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: '', roundness: null, seed, version: 1,
-    versionNonce: seed, isDeleted: false, boundElements: [], updated: 1_700_000_000_000, link: null, locked: false, ...fields,
+    strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: '', roundness: null,
+    seed: seeds[fields.id as string][0], version: 1, versionNonce: seeds[fields.id as string][1], isDeleted: false, boundElements: [],
+    updated: 1_700_000_000_000, link: null, locked: false, ...fields,
   })
   const words = (text: string, containerId: string | null, fontSize = 20) => ({
     text, fontSize, fontFamily: 5, textAlign: containerId ? 'center' : 'left', verticalAlign: containerId ? 'middle' : 'top', containerId,

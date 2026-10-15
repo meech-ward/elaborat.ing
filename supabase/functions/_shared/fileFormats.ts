@@ -13,5 +13,11 @@ export const FILE_FORMAT_INSTRUCTIONS =
   'diagram, or a graph with dozens of connected nodes. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. ' +
   'Create a drawing before the note that embeds it. ' +
-  'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. ' +
+  'In a drawing, put elements before appState, and write each shape, then its arrows, in short form: ' +
+  'a rectangle, ellipse or diamond with x, y and a label and no width or height is sized to fit the label, ' +
+  'and an arrow with from and to, the ids of the two shapes it joins, is placed between them and bound to both, such as ' +
+  '{"id": "api", "type": "rectangle", "x": 0, "y": 0, "label": "API"}, {"id": "db", "type": "ellipse", "x": 300, "y": 0, "label": "Database"}, ' +
+  '{"id": "api-to-db", "type": "arrow", "from": "api", "to": "db", "label": "SQL"}. ' +
+  'The drawing is written with the full Excalidraw elements, each label a text with the id "<id>-label"; full elements work too. ' +
+  "To change a shape's or arrow's label, give it the new label in short form: it replaces the old label text. " +
   "Write straight quotes and apostrophes (' and \"), never curly ones: files are plain text people edit as source. "
