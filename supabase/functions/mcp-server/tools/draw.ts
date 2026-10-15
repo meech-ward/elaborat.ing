@@ -189,7 +189,8 @@ function complete(input: NewElement, index: string, updated: number): Element {
     groupIds: [],
     frameId: null,
     index,
-    roundness: null,
+    // Rounded corners on a rectangle, as Excalidraw gives a new one; `roundness: null` keeps them square.
+    roundness: type === 'rectangle' ? { type: 3 } : null,
     seed: randomInteger(),
     version: 1,
     versionNonce: randomInteger(),

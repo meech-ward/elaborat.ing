@@ -113,6 +113,20 @@ const BEFORE = JSON.stringify(
   2
 )
 
+Deno.test('draw gives a new rectangle rounded corners unless it asks for square ones', async () => {
+  const { supabase, files } = project({})
+  const result = await draw(supabase, {
+    elements: [
+      { id: 'round', type: 'rectangle', x: 0, y: 0, label: 'Round' },
+      { id: 'square', type: 'rectangle', x: 300, y: 0, label: 'Square', roundness: null },
+      { id: 'oval', type: 'ellipse', x: 600, y: 0, label: 'Oval' },
+    ],
+  })
+  assert(!result.isError, text(result))
+  const byId = new Map((JSON.parse(files[PATH].content).elements as Element[]).map((element) => [element.id, element]))
+  assertEquals(['round', 'square', 'oval'].map((id) => byId.get(id)?.roundness), [{ type: 3 }, null, null])
+})
+
 Deno.test('draw creates a new drawing whose elements have what Excalidraw and the server need to draw them', async () => {
   const { supabase, files, saves } = project({})
   const result = await draw(supabase, {
@@ -137,7 +151,7 @@ Deno.test('draw creates a new drawing whose elements have what Excalidraw and th
   assertEquals(shape, {
     id: 'draft', type: 'rectangle', x: 0, y: 0, width: 180, height: 80, angle: 0, strokeColor: '#1e1e1e', backgroundColor: '#fff3bf',
     fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a0',
-    roundness: null, version: 1, isDeleted: false, boundElements: [{ type: 'text', id: 'draft-label' }], link: null, locked: false,
+    roundness: { type: 3 }, version: 1, isDeleted: false, boundElements: [{ type: 'text', id: 'draft-label' }], link: null, locked: false,
   })
   // A label: Excalifont, Excalidraw's line height for it, and centred in its
   // shape whatever x and y it was sent (five characters estimated 55 wide).
