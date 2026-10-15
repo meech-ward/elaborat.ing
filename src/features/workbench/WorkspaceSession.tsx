@@ -42,6 +42,7 @@ import {
   type OpenFile,
 } from "./session";
 import { linkedFile, resolveNoteLink } from "./noteLinks";
+import { useSettledError } from "@/lib/settledError";
 
 type Mode = EditorView;
 
@@ -131,6 +132,11 @@ export function WorkspaceSession({
   useEffect(() => { writeProjectView(client.persistenceKey, initial.path, mode); }, [client.persistenceKey, initial.path, mode]);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  // The person's own edits in the source: while they type, an error in the
+  // half-typed text waits until they pause (lib/settledError.ts).
+  const [typed, setTyped] = useState(0);
+  const shownRenderError = useSettledError(renderError, typed);
+  const shownSourceError = useSettledError(sourceError, typed);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [componentGeneration, setComponentGeneration] = useState(0);
@@ -285,7 +291,9 @@ export function WorkspaceSession({
   const handleSourceChange = useCallback(
     (text: string) => {
       if (frozen.current) return;
+      // Text that arrived (a rendered edit, an agent's save, a reload) is in the store already.
       if (text === store.snapshot().text) return;
+      setTyped((count) => count + 1);
       setPatchError(null);
       setSnapshot(store.setText(text));
     },
@@ -736,14 +744,14 @@ export function WorkspaceSession({
           {notice && <span>{notice}</span>}
         </div>
       )}
-      {renderError && (
+      {shownRenderError && (
         <Banner tone="danger" className="mt-2">
-          Render error: {renderError} Source is unchanged and remains editable.
+          Render error: {shownRenderError} Source is unchanged and remains editable.
         </Banner>
       )}
-      {inSource && isNote && sourceError && !renderError && (
+      {inSource && isNote && shownSourceError && !shownRenderError && (
         <Banner tone="danger" className="mt-2">
-          Source check: {sourceError} Source is unchanged and remains editable.
+          Source check: {shownSourceError} Source is unchanged and remains editable.
         </Banner>
       )}
       {patchError && (
@@ -847,7 +855,7 @@ export function WorkspaceSession({
                 isNote ? undefined : editorLanguageForPath(displayName)
               }
               visible={active && inSource}
-              renderError={renderError ?? sourceError}
+              renderError={shownRenderError ?? shownSourceError}
               onChange={handleSourceChange}
               onCursor={() => {}}
               readOnly={readOnly}
@@ -887,6 +895,7 @@ export function WorkspaceSession({
                 onPendingChange={handleRenderedPending}
                 onPatch={handlePatch}
                 onError={handleRenderError}
+                typed={typed}
                 resources={resourcePixels}
                 allowedResourcePaths={refs.map((ref) => ref.path)}
                 availableResourcePaths={workspacePaths.filter((path) =>

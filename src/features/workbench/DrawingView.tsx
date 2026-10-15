@@ -33,6 +33,7 @@ import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import { embedded } from "@/features/embed/mode";
 import type { WorkspaceStore } from "./workspaceStore";
+import { useSettledError } from "@/lib/settledError";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -133,6 +134,10 @@ export function DrawingView({
   const { view, header: viewHeader } = useCanvasViews(mode, active, (next) => selectRef.current(next), "Drawing view");
   const [sourceDraft, setSourceDraft] = useState(opening.content);
   const [sourceError, setSourceError] = useState<string | null>(opened.error);
+  // The person's own edits in the source: while they type, the error in
+  // half-typed JSON waits until they pause (lib/settledError.ts).
+  const [typed, setTyped] = useState(0);
+  const shownError = useSettledError(sourceError, typed);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<{ revision: string; content: string | null } | null>(null);
@@ -247,6 +252,7 @@ export function DrawingView({
     if (parsed) setScene(parsed.scene);
     setSourceError(error);
     if (!parsed) setMode("source");
+    latest.current = { ...latest.current, sourceDraft: content };
     setSourceDraft(content);
     setSavedText(content);
     setBaseRevision(revision);
@@ -488,11 +494,11 @@ export function DrawingView({
         {notice && <span>{notice}</span>}
       </div>
 
-      {sourceError && (
+      {shownError && (
         <Banner tone="danger" className="mt-2">
           {original
-            ? `This is not a valid drawing: ${sourceError} The canvas keeps the last valid scene.`
-            : `This file is not a valid drawing, so it opened as text: ${sourceError} Nothing was changed.`}
+            ? `This is not a valid drawing: ${shownError} The canvas keeps the last valid scene.`
+            : `This file is not a valid drawing, so it opened as text: ${shownError} Nothing was changed.`}
         </Banner>
       )}
 
@@ -583,9 +589,11 @@ export function DrawingView({
           documentId={1}
           editorLanguage="json"
           visible={active && view !== "canvas"}
-          renderError={sourceError}
+          renderError={shownError}
           onChange={(text) => {
             if (frozen.current) return;
+            // Text the canvas wrote, or that arrived, is the source already.
+            if (text !== latest.current.sourceDraft && text !== fromCanvas.current) setTyped((count) => count + 1);
             latest.current = { ...latest.current, sourceDraft: text };
             setSourceDraft(text);
             if (view === "split") readSource(text);

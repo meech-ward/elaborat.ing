@@ -60,7 +60,7 @@ async function atEndOfElements(page: Page) {
   await page.keyboard.press("Home")
 }
 
-test("a drawing in Split: the source over the left half, source edits reach the canvas, canvas moves rewrite the source, and one save writes the file", async ({ page, appErrors }) => {
+test("a drawing in Split: the source over the left half, source edits reach the canvas, canvas moves rewrite the source, and one save writes the file", async ({ page }) => {
   const { fake, id } = await openProject(page, { "sketch.excalidraw": DRAWING }, "sketch.excalidraw")
   await expect(status(page)).toContainText("1 elements")
   await toSplit(page)
@@ -76,8 +76,7 @@ test("a drawing in Split: the source over the left half, source edits reach the 
   expect(tools.x).toBeGreaterThan(panel.x + panel.width)
 
   // A text element typed in the source appears on the canvas (the editor closes each brace and quote as it opens).
-  // Until it is finished, the half-typed JSON is not a valid drawing, and the page says so.
-  appErrors.expect("This is not a valid drawing")
+  // The half-typed JSON is not a valid drawing, but no error shows while it is being typed.
   await atEndOfElements(page)
   await page.keyboard.type(`,${JSON.stringify(LABEL).slice(0, -1)}`)
   await expect(status(page)).toContainText("2 elements · 1 text")

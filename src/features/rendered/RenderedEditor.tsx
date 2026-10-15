@@ -46,6 +46,7 @@ import {
 } from "react";
 import { FRAME_PAGE_PATH } from "virtual:preview-frame/page";
 import { moduleLoader, useModule } from "@/lib/moduleLoader";
+import { useSettledError } from "@/lib/settledError";
 import { SANDBOX_ORIGIN, sandboxFrameUrl } from "./sandboxFrame";
 import {
   codeFenceFromParagraph,
@@ -111,6 +112,12 @@ export type RenderedEditorProps = {
   onHistory?: (direction: "undo" | "redo") => SourceHistoryResult;
   onPendingChange?: (pending: boolean) => void;
   onError?: (message: string | null) => void;
+  /**
+   * The person's own edits to the note's source (WorkspaceSession counts
+   * them). While they type, a new error in the half-typed note waits until
+   * they pause, and the frame keeps its last good render (lib/settledError.ts).
+   */
+  typed?: number;
   /**
    * Generated pixels for Drawing/Diagram embeds (path -> SVG), produced by
    * the parent from workspace files. The frame receives pixels only.
@@ -236,6 +243,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPendingChange: onPendingChangeProp,
     onPatch,
     onError,
+    typed = 0,
     resources,
     allowedResourcePaths,
     availableResourcePaths,
@@ -1224,7 +1232,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     session,
   ]);
 
-  const displayedError = componentError ?? compileError;
+  // While the person types in the source, the frame keeps its last good render.
+  const displayedError = useSettledError(componentError ?? compileError, typed);
   // Offline, Comment by a selection or heading shows off, and says why.
   const offlineAction = comments?.offline && !comments.canComment ? (selectionAction ?? headingAction) : null;
   // The marker column shows while the note has commented text ("draft" is a new comment's, unmarked).

@@ -34,6 +34,7 @@ import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
+import { useSettledError } from "@/lib/settledError";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -146,9 +147,19 @@ export function DiagramView({
   useLayoutEffect(() => {
     latest.current = { source, scene };
   }, [source, scene]);
+  // The person's own edits in the code: while they type, an error in the
+  // half-typed code waits until they pause (lib/settledError.ts).
+  const [typed, setTyped] = useState(0);
+  const codeErrors = useMemo(() => {
+    const errors = diagnostics.filter((entry) => entry.severity === "error");
+    return errors.length > 0 ? errors : null;
+  }, [diagnostics]);
+  const shownErrors = useSettledError(codeErrors, typed);
 
   const changeSource = useCallback((text: string) => {
     if (frozen.current) return;
+    // Code that arrived is the source already (the layout effect above).
+    if (text !== latest.current.source) setTyped((count) => count + 1);
     latest.current = { ...latest.current, source: text };
     setLabelError(null);
     setSource(text);
@@ -635,9 +646,9 @@ export function DiagramView({
         {pendingLabels.length > 0 && <span role={labelError ? "alert" : "status"}>{labelError ?? "Updating the code with the canvas label…"}</span>}
       </div>
 
-      {errors.length > 0 && (
+      {shownErrors && (
         <Banner tone="danger" className="mt-2">
-          {errors.map((entry, index) => (
+          {shownErrors.map((entry, index) => (
             <p key={index} className="font-mono text-xs">
               [{entry.code}] {entry.message}
             </p>
@@ -712,7 +723,7 @@ export function DiagramView({
           documentId={1}
           editorLanguage="d2"
           visible={active && view !== "canvas"}
-          renderError={errors[0]?.message ?? null}
+          renderError={shownErrors?.[0]?.message ?? null}
           onChange={changeSource}
           onCursor={() => {}}
           onSave={() => (readOnly ? setNotice(readOnly) : void save())}

@@ -146,18 +146,18 @@ test("charts and code highlighting load into the frame the first time a note sho
   expect(loaded.sort()).toEqual(["charts", "highlighter"])
 })
 
-test("in the source view, typing <Rel offers the imported component with its default props", async ({ page, appErrors }) => {
+test("in the source view, typing <Rel offers the imported component with its default props", async ({ page }) => {
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/source.mdx": importCard }, "notes/source.mdx")
-  // Until the tag is finished, the note does not compile, and the page says so.
-  appErrors.expect(/^(Render error|Source check): /)
+  // The rendered view shows once the imported module has loaded, so the
+  // suggestions list it as soon as the tag is started: the half-typed tag
+  // does not compile, but no error shows while it is typed.
+  await rendered(page)
+  await showView(page, "Source")
   await endOfSource(page)
-  await page.keyboard.type("<Rel")
   const offered = page.getByRole("listbox", { name: "Suggest" }).getByRole("listitem", { name: /^ReleaseCard\b/ })
-  // The suggestions can open before the imported module has loaded; ask again until it has.
-  await expect(async () => {
-    if (!(await offered.isVisible())) await page.keyboard.press("Control+Space")
-    await expect(offered).toBeVisible({ timeout: 1_000 })
-  }).toPass({ timeout: 15_000 })
+  await page.keyboard.type("<Rel")
+  if (!(await offered.isVisible())) await page.keyboard.press("Control+Space")
+  await expect(offered).toBeVisible()
   await page.keyboard.press("Enter")
   await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => fake.server.content(id, "notes/source.mdx")).toBe(`${importCard}<ReleaseCard title="Review" count={3} ready={true} />`)
@@ -356,7 +356,7 @@ const forgetCleanups = (page: Page) => frameOf(page).locator(":root").evaluate((
   Object.assign(window, { cleanups: [] })
 })
 
-test("components keep their own state, clicks never edit the note, and replaced or removed components clean up", async ({ page, appErrors }) => {
+test("components keep their own state, clicks never edit the note, and replaced or removed components clean up", async ({ page }) => {
   const notePath = "notes/state.mdx"
   const { fake, id } = await openProject(page, { [TALLY]: tally, [notePath]: stateNote }, notePath)
   await rendered(page)
@@ -380,8 +380,7 @@ test("components keep their own state, clicks never edit the note, and replaced 
   expect(await cleanups(page)).toEqual([])
 
   // Replace the imported component with another local one. Typed a key at a
-  // time, the half-typed tag does not compile for a moment, and the page says so.
-  appErrors.expect(/^(Render error|Source check): /)
+  // time, the half-typed tag does not compile for a moment, but no error shows.
   await page.getByRole("button", { name: "Source" }).click()
   await replaceLastLine(page, '<Toggle name="swap" />')
   await rendered(page)
