@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 import { showView } from "./views.ts"
@@ -146,8 +146,10 @@ test("charts and code highlighting load into the frame the first time a note sho
   expect(loaded.sort()).toEqual(["charts", "highlighter"])
 })
 
-test("in the source view, typing <Rel offers the imported component with its default props", async ({ page }) => {
+test("in the source view, typing <Rel offers the imported component with its default props", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/source.mdx": importCard }, "notes/source.mdx")
+  // Until the tag is finished, the note does not compile, and the page says so.
+  appErrors.expect(/^(Render error|Source check): /)
   await endOfSource(page)
   await page.keyboard.type("<Rel")
   const offered = page.getByRole("listbox", { name: "Suggest" }).getByRole("listitem", { name: /^ReleaseCard\b/ })
@@ -242,7 +244,7 @@ test("inside the preview frame, the parent page, storage and the network are out
   expect(reached).toEqual([])
 })
 
-test("a module that fails to compile or throws hides the frame, and fixing it brings the note back", async ({ page }) => {
+test("a module that fails to compile or throws hides the frame, and fixing it brings the note back", async ({ page, appErrors }) => {
   const notePath = "notes/errors.mdx"
   const note = `${importCard}<ReleaseCard title="Launch" count={2} ready={false} />\n`
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), [notePath]: note }, notePath)
@@ -265,11 +267,13 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
     await page.getByRole("tab", { name: notePath }).click()
   }
 
+  appErrors.expect("Could not parse import/exports with acorn")
   await saveModule("export const = 1")
   await expect(alert).toBeVisible()
   await expect(page.locator(PREVIEW)).toBeHidden()
   await expect(frame.getByLabel("ReleaseCard title")).toBeHidden()
 
+  appErrors.expect("notDefined is not defined")
   await saveModule("export const missing = notDefined()")
   await expect(alert).toContainText("notDefined")
   await expect(page.locator(PREVIEW)).toBeHidden()
@@ -352,7 +356,7 @@ const forgetCleanups = (page: Page) => frameOf(page).locator(":root").evaluate((
   Object.assign(window, { cleanups: [] })
 })
 
-test("components keep their own state, clicks never edit the note, and replaced or removed components clean up", async ({ page }) => {
+test("components keep their own state, clicks never edit the note, and replaced or removed components clean up", async ({ page, appErrors }) => {
   const notePath = "notes/state.mdx"
   const { fake, id } = await openProject(page, { [TALLY]: tally, [notePath]: stateNote }, notePath)
   await rendered(page)
@@ -375,7 +379,9 @@ test("components keep their own state, clicks never edit the note, and replaced 
   await expect(unsaved(page, notePath)).toHaveCount(0)
   expect(await cleanups(page)).toEqual([])
 
-  // Replace the imported component with another local one.
+  // Replace the imported component with another local one. Typed a key at a
+  // time, the half-typed tag does not compile for a moment, and the page says so.
+  appErrors.expect(/^(Render error|Source check): /)
   await page.getByRole("button", { name: "Source" }).click()
   await replaceLastLine(page, '<Toggle name="swap" />')
   await rendered(page)

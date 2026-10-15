@@ -541,6 +541,17 @@ for (const format of ["md", "mdx"] as const) {
     expect(heading.text).toBe("﻿# A Café \u{1F600}\r\n\r\nFirst `code` here \u{1F389} end.\r\n");
   });
 
+  test(`${format}: a line break inside a paragraph or a code span shows with any line ending, and an edit keeps it`, async () => {
+    for (const ending of ["\r\n", "\r", "\n"]) {
+      const text = `First line${ending}second \`a${ending}b\` end.${ending}`;
+      const projection = await projectFluidSource(text, format);
+      expect(projection.doc.textContent).toBe("First line\nsecond a b end.");
+      const position = fluidPositionForSourceOffset(projection, text.indexOf("end."))!;
+      const next = await prepareFluidTransaction({ text, revision: 1, format }, projection, [replace(position, position, "the ")]);
+      expect(next.text).toBe(`First line${ending}second \`a${ending}b\` the end.${ending}`);
+    }
+  });
+
   test(`${format}: typing into a file that holds only a byte order mark adds no blank lines`, async () => {
     const projection = await projectFluidSource("﻿", format);
     const next = await prepareFluidTransaction({ text: "﻿", revision: 1, format }, projection, [replace(1, 1, "S")]);

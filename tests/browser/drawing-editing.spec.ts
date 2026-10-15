@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -102,7 +102,7 @@ test("unsaved canvas edits survive a reload and are not sent to the server", asy
   expect(fake.server.content(id, "sketch.excalidraw")).toBe(SCENE)
 })
 
-test("an Obsidian drawing opens without being rewritten, and its text can be edited and checked", async ({ page }) => {
+test("an Obsidian drawing opens without being rewritten, and its text can be edited and checked", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { "obsidian/system.excalidraw.md": OBSIDIAN }, "obsidian/system.excalidraw.md")
   await expect(canvas(page)).toBeVisible()
   await expect(status(page)).toContainText("Saved")
@@ -115,6 +115,7 @@ test("an Obsidian drawing opens without being rewritten, and its text can be edi
   expect(fake.server.content(id, "obsidian/system.excalidraw.md")).toBe(OBSIDIAN)
 
   // Breaking the file in the source view keeps the canvas's last valid scene.
+  appErrors.expect("This is not a valid drawing")
   await page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name: "Code", exact: true }).click()
   await source.click()
   await page.keyboard.press("ControlOrMeta+a")
@@ -127,7 +128,8 @@ test("an Obsidian drawing opens without being rewritten, and its text can be edi
   expect(fake.server.content(id, "obsidian/system.excalidraw.md")).toBe(OBSIDIAN)
 })
 
-test("a file that is not a valid drawing opens as text, and nothing is written", async ({ page }) => {
+test("a file that is not a valid drawing opens as text, and nothing is written", async ({ page, appErrors }) => {
+  appErrors.expect("This file is not a valid drawing, so it opened as text")
   const { fake, id } = await openProject(page, { "broken.excalidraw": "{ not json" }, "broken.excalidraw")
   await expect(page.getByRole("alert").filter({ hasText: "This file is not a valid drawing, so it opened as text" })).toBeVisible()
   await expect(page.locator(".monaco-editor:visible .view-lines").first()).toContainText("{ not json")

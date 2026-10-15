@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "./fixtures.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -134,7 +134,7 @@ test("the owner invites an email without an account, after a warning for an edit
   await expectNoAxeViolations(page)
 })
 
-test("the owner invites an existing account as a viewer without a warning, and not someone who already has access", async ({ page }) => {
+test("the owner invites an existing account as a viewer without a warning, and not someone who already has access", async ({ page, appErrors }) => {
   const server = new FakeProjectServer()
   const id = await sharedProject(server, person.id, "Team notes")
   const FRIEND = "8091a2b3-cd4e-4f5a-8b6c-7d8e9fa0b1c2"
@@ -156,6 +156,7 @@ test("the owner invites an existing account as a viewer without a warning, and n
   expect(server.projects.get(id)!.members.get(FRIEND)).toMatchObject({ role: "viewer", acceptedAt: null })
   expect(server.invitationEmails).toEqual([])
 
+  appErrors.expect("member@example.com already has access. Change their role in the list.")
   await form.getByLabel("Invite by email").fill("member@example.com")
   await form.getByRole("button", { name: "Invite" }).click()
   await expect(dialog.getByRole("alert")).toHaveText("member@example.com already has access. Change their role in the list.")
@@ -248,7 +249,8 @@ test("a member sees who has access, without controls or invitations", async ({ p
   await expectNoAxeViolations(page)
 })
 
-test("the members of a project need a connection", async ({ page }) => {
+test("the members of a project need a connection", async ({ page, appErrors }) => {
+  appErrors.expect("Seeing who a project is shared with needs a connection. Try again when you are online.")
   const server = new FakeProjectServer()
   await sharedProject(server, person.id, "Team notes")
   const fake = await fakeSupabase(page, { server })
@@ -263,7 +265,7 @@ test("the members of a project need a connection", async ({ page }) => {
   await expect(dialog.getByRole("list")).toHaveCount(0)
 })
 
-test("someone removed from a project they have open is told, and the page stops listening for its changes", async ({ page }) => {
+test("someone removed from a project they have open is told, and the page stops listening for its changes", async ({ page, appErrors }) => {
   const server = new FakeProjectServer()
   const id = crypto.randomUUID()
   await server.remote(OWNER).createProject(id, "Their notes")
@@ -277,6 +279,8 @@ test("someone removed from a project they have open is told, and the page stops 
   expect(fake.left).not.toContain(topic)
 
   // Removing someone raises the revision, so their open page hears it and syncs.
+  appErrors.expect("You can no longer change this project. Your work stays on this device.")
+  appErrors.expect("You no longer have access; your copy stays on this device")
   await server.remote(OWNER).shareProject(id, person.id, null)
   fake.signal(id, server.projects.get(id)!.revision)
   await expect(page.getByText("You can no longer change this project. Your work stays on this device.").first()).toBeVisible()

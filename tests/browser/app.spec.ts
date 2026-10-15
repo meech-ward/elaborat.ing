@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises"
 import path from "node:path"
 import AxeBuilder from "./axe.ts"
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures.ts"
 import { APP_URL } from "./urls.ts"
 
 test("the home page has no accessibility violations", async ({ page }) => {
@@ -22,6 +22,33 @@ test("the accessibility check catches a planted violation", async ({ page }) => 
   })
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.map((violation) => violation.id)).toContain("image-alt")
+})
+
+// A positive control for the error check every test runs (fixtures.ts): it
+// catches an error banner that is gone a moment later, and an uncaught
+// exception, and passes once the test says it expects them.
+test("the error check catches a planted error banner and exception", async ({ page, appErrors }) => {
+  await page.goto(APP_URL)
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+  await page.evaluate(() => {
+    const banner = document.createElement("div")
+    banner.setAttribute("role", "alert")
+    banner.textContent = "A planted error."
+    document.body.append(banner)
+    setTimeout(() => banner.remove(), 50)
+    setTimeout(() => {
+      throw new Error("A planted exception.")
+    })
+  })
+  await expect(page.getByText("A planted error.")).toHaveCount(0)
+  const found = () => appErrors.unexpected().map(({ kind, text, what, where }) => ({ kind, text, what, where })).sort((a, b) => a.kind.localeCompare(b.kind))
+  await expect.poll(found).toEqual([
+    { kind: "on screen", text: "A planted error.", what: 'role="alert"', where: page.url() },
+    { kind: "uncaught", text: "Error: A planted exception.", what: undefined, where: page.url() },
+  ])
+  appErrors.expect("A planted error.")
+  appErrors.expect(/planted exception/)
+  expect(appErrors.unexpected()).toEqual([])
 })
 
 // Page zoom is off on phones and tablets (docs/architecture.md).

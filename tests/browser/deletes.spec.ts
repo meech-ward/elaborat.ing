@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -147,7 +147,8 @@ test("cancelling the confirmation sends nothing and keeps the file", async ({ pa
   expect(fake.server.content(id, "plan.md")).toBe("# Plan\n")
 })
 
-test("a note with unsaved edits cannot be deleted until they are saved", async ({ page }) => {
+test("a note with unsaved edits cannot be deleted until they are saved", async ({ page, appErrors }) => {
+  appErrors.expect("notes/plan.md: It has unsaved edits. Save or discard them before deleting it.")
   const { fake, id } = await openProject(page, { "notes/plan.md": "# Plan\n" }, [], "notes/plan.md")
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+End")

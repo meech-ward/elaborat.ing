@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -221,7 +221,7 @@ test("a D2 diagram moves with its generated files, after a preview that lists wh
   await expect(editorText(page)).toContainText("diagrams/flow.d2")
 })
 
-test("unsaved edits stop a move until they are saved, then the open tab follows its file", async ({ page }) => {
+test("unsaved edits stop a move until they are saved, then the open tab follows its file", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { "a.md": "# A\n", "folder/keep.md": "keep\n" }, [], "a.md")
   await editorText(page).click()
   await page.keyboard.press("ControlOrMeta+End")
@@ -232,6 +232,7 @@ test("unsaved edits stop a move until they are saved, then the open tab follows 
   await chooseFolder(dialog, "folder")
   await dialog.getByRole("button", { name: "Preview move" }).click()
   // Either the kept draft or the open editor reports it, whichever the move sees first.
+  appErrors.expect(/^a\.md(:| has) .*unsaved (edits|changes)\. Save or discard them/)
   await expect(dialog.getByRole("alert")).toHaveText(/^a\.md(:| has) .*unsaved (edits|changes)\. Save or discard them/)
   await expect(dialog.getByRole("button", { name: "Move", exact: true })).toBeDisabled()
   await dialog.getByRole("button", { name: "Cancel" }).click()

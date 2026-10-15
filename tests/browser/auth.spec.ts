@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures.ts"
 import { fakeSupabase, otpCode, person as user, signedIn, SUPABASE } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -84,7 +84,8 @@ test("the emailed code signs in and continues to the page that needed it", async
   expect(verify?.postDataJSON()).toMatchObject({ email: user.email, token: otpCode, type: "email" })
 })
 
-test("a wrong code says so, and the person can send a new one or try again", async ({ page }) => {
+test("a wrong code says so, and the person can send a new one or try again", async ({ page, appErrors }) => {
+  appErrors.expect("That code did not work (Token has expired or is invalid).")
   const seen = await fakeAuth(page)
   await page.goto(new URL(consentNext, APP_URL).href)
   await emailMe(page)
@@ -143,7 +144,8 @@ for (const width of [1280, 390]) {
   })
 }
 
-test("a consent page without a request says so", async ({ page }) => {
+test("a consent page without a request says so", async ({ page, appErrors }) => {
+  appErrors.expect("This page needs an authorization_id.")
   await fakeAuth(page)
   await page.goto(new URL("oauth/consent", APP_URL).href)
   await expect(page.getByRole("alert")).toContainText("authorization_id")

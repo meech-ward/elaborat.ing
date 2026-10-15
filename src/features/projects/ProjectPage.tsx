@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PanelPage } from "@/components/panel"
 import { AgentChangesProvider, AgentFollow, ProjectAgentChanges, SupabaseAgentChangesRemote } from "@/features/agent-changes"
@@ -7,7 +7,7 @@ import { accountName } from "@/features/auth/accountName"
 import { CustomCodeProvider, type CustomCodePolicy } from "@/features/custom-code"
 import { useAuth } from "@/features/auth/useAuth"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
-import { parseProjectLocation, projectHref } from "@/features/navigation"
+import { parseProjectLocation, projectHref, useProjectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
 import { canEdit } from "@/features/project-storage/model"
@@ -38,8 +38,7 @@ const SYNC_DELAY_MS = 1_000
  * in the workbench. A file's URL opens it.
  */
 export function ProjectPage({ account }: { account: ProjectAccount }) {
-  const href = useLocation({ select: (location) => location.href })
-  const location = parseProjectLocation(href)
+  const location = parseProjectLocation(useProjectHref())
   if (location.kind === "invalid") {
     return (
       <PanelPage>

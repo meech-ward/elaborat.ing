@@ -1718,5 +1718,12 @@ plugins. Each accessibility check has a positive control that plants a known
 violation, so a check that can no longer fail is caught. CI runs them on every
 pull request.
 
+Every spec takes `test` and `expect` from `tests/browser/fixtures.ts`, so a
+test fails when the app shows an error it did not expect, even one gone by the
+time the test ends: an uncaught exception in any page or frame, or an alert or
+a failed save or sync status on screen. A test that shows an error on purpose
+says so with `appErrors.expect("<part of its text>")`. Console errors are not
+checked: failed requests log them, and offline journeys make those on purpose.
+
 Database changes are verified on that throwaway stack, then auth and function
 changes on the hosted project after they deploy.

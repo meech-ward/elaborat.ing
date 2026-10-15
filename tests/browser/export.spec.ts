@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { expect, test, type Download, type Page } from "@playwright/test"
+import { expect, test, type Download, type Page } from "./fixtures.ts"
 import { unzipSync } from "fflate"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
@@ -174,7 +174,8 @@ test("a folder imports as a new project named after it, and what cannot be store
   await expect.poll(() => fake.server.content(id, "sub/b.mdx")).toBe("b 🙂\n")
 })
 
-test("a file that is not a .zip says so and creates nothing", async ({ page }) => {
+test("a file that is not a .zip says so and creates nothing", async ({ page, appErrors }) => {
+  appErrors.expect("notes.zip could not be imported. This file is not a .zip archive, or it is damaged.")
   const fake = await fakeSupabase(page)
   await signedIn(page)
   await page.goto(APP_URL)

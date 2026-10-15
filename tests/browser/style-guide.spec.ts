@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -41,8 +41,17 @@ async function expectAxeClean(page: Page) {
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, appErrors }) => {
   await fakeSupabase(page)
+  // The guide shows the app's error states as samples.
+  for (const sample of [
+    "Not saved",
+    "Render error on line 4.",
+    "pricing.md already exists here.",
+    "Comments need a connection.",
+    "ChatGPT plan usage is unavailable right now",
+    "ChatGPT could not answer.",
+  ]) appErrors.expect(sample)
 })
 
 test("the foundations show the active palette, and the component sections sit in order", async ({ page }) => {

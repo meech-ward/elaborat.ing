@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures.ts"
 import { fakeSupabase, signedIn, type OAuthGrant } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -51,7 +51,8 @@ test("with no agents connected, the page says how one gets there", async ({ page
   await expect(page.getByText("No agents are connected.")).toBeVisible()
 })
 
-test("a failed listing says so and can be tried again", async ({ page }) => {
+test("a failed listing says so and can be tried again", async ({ page, appErrors }) => {
+  appErrors.expect("Could not load connected agents: Grants are unavailable")
   await fakeSupabase(page, { grants: "error" })
   await signedIn(page)
   await page.goto(agentsUrl)

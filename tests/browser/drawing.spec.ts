@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures.ts"
 import { HARNESS_URL } from "./urls.ts"
 
 const dist = path.join(import.meta.dirname, "harness", "dist")

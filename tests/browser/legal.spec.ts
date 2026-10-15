@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 

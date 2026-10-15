@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
 import { fakeSupabase, person, quiet, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -185,7 +185,7 @@ test("leaving a shared project removes it from the list and from this device", a
   await expect(page.getByText("No projects yet.")).toBeVisible()
 })
 
-test("leaving a shared project with an edit that has not synced is refused, naming the file", async ({ page }) => {
+test("leaving a shared project with an edit that has not synced is refused, naming the file", async ({ page, appErrors }) => {
   const server = new FakeProjectServer()
   const id = await sharedWithMe(server, "Their notes", { "a.md": "# From them" }, true)
   const fake = await fakeSupabase(page, { server })
@@ -206,6 +206,7 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   await expect(row).toContainText("Saved on this device, waiting to sync")
 
   page.once("dialog", (dialog) => void dialog.dismiss())
+  appErrors.expect("Not left: Their notes has changes on this device that have not synced (a.md).")
   await row.getByRole("button", { name: "Actions for Their notes" }).click()
   await page.getByRole("menuitem", { name: "Leave project" }).click()
   await expect(page.getByRole("alert").filter({ hasText: "Not left:" })).toHaveText(
@@ -277,7 +278,7 @@ test("an archived project moves to its own section and refuses edits until it is
   await expect.poll(() => server.content(id, "a.md")).toBe("# Notes edited")
 })
 
-test("deleting a project permanently needs its title typed, and removes it from the server and this device", async ({ page }) => {
+test("deleting a project permanently needs its title typed, and removes it from the server and this device", async ({ page, appErrors }) => {
   const server = new FakeProjectServer()
   const id = await serverProject(server, "Notes", { "a.md": "# Notes" })
   const fake = await fakeSupabase(page, { server })
@@ -306,6 +307,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
   await dialog.getByLabel("Type Notes to confirm").fill("Notes")
+  appErrors.expect("Deleting a project needs a connection. Try again when you are online.")
   await confirm.click()
   await expect(dialog.getByRole("alert")).toHaveText("Deleting a project needs a connection. Try again when you are online.")
   expect(server.projects.has(id)).toBe(true)
@@ -350,7 +352,8 @@ test("the projects home does not download the editor", async ({ page }) => {
   expect(scripts.filter((script) => /\/(WorkspaceWorkbench|editor\.api)-[\w-]+\.js$/.test(script))).toEqual([])
 })
 
-test("links to projects that do not exist, or are not project links, say so", async ({ page }) => {
+test("links to projects that do not exist, or are not project links, say so", async ({ page, appErrors }) => {
+  appErrors.expect("That link does not name a project.")
   await fakeSupabase(page)
   await signedIn(page)
   await page.goto(projectUrl(crypto.randomUUID()))

@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -133,9 +133,10 @@ test("Transfer first hands a shared project to a member, so deleting the account
   expect(fake.server.projects.has(solo)).toBe(false)
 })
 
-test("when signing out would lose unreconciled work, nothing is deleted until the person deletes anyway", async ({ page }) => {
+test("when signing out would lose unreconciled work, nothing is deleted until the person deletes anyway", async ({ page, appErrors }) => {
   const { fake, team } = await setUp(page)
   // Unsaved edits to a note that another device then changes: this device has to settle it first.
+  appErrors.expect("a.md was changed elsewhere while you were editing.")
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("My line")
@@ -159,9 +160,10 @@ test("when signing out would lose unreconciled work, nothing is deleted until th
   expect((await storedPartitions(page)).some((partition) => partition.includes(person.id))).toBe(false)
 })
 
-test("when what deleting does cannot be checked for want of a connection, it says so plainly and Try again checks again", async ({ page }) => {
+test("when what deleting does cannot be checked for want of a connection, it says so plainly and Try again checks again", async ({ page, appErrors }) => {
   await setUp(page)
   // Registered after the stand-in Supabase, so it answers first.
+  appErrors.expect("Checking your projects needs a connection.")
   await page.route("**/rest/v1/rpc/account_deletion_summary", (route) => route.abort())
   await page.getByRole("button", { name: "Look and theme" }).click()
   await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Delete account..." }).click()

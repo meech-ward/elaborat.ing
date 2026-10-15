@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -71,7 +71,9 @@ test("an export becomes a new project with every byte, and paths this app cannot
   await expect(page.locator(".monaco-editor:visible .view-lines").first()).toContainText("Kept byte for byte.")
 })
 
-test("an export that fails the checks says why, and creates nothing", async ({ page }) => {
+test("an export that fails the checks says why, and creates nothing", async ({ page, appErrors }) => {
+  appErrors.expect("later.json could not be imported. Only version 1 of the prototype's export can be imported.")
+  appErrors.expect("twice.json could not be imported. notes/intro.mdx appears more than once.")
   const fake = await home(page)
   await page.getByLabel("Import a prototype export").setInputFiles(exportFile("later.json", { ...exported, version: 2 }))
   await expect(page.getByRole("alert")).toHaveText("later.json could not be imported. Only version 1 of the prototype's export can be imported.")

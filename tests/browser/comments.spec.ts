@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import AxeBuilder from "./axe.ts"
 import { textAnchor } from "../../src/features/comments/placement.ts"
 import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"

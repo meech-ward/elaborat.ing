@@ -1,2 +1,2 @@
 export { parseProjectLocation, projectHref, type ProjectLocation } from "./location"
-export { useFileLocation, type FileTarget } from "./useFileLocation"
+export { useFileLocation, useProjectHref, type FileTarget } from "./useFileLocation"

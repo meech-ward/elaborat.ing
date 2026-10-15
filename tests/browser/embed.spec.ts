@@ -1,4 +1,4 @@
-import { expect, test, type FrameLocator, type Page } from "@playwright/test"
+import { expect, test, type FrameLocator, type Page } from "./fixtures.ts"
 import { fakeSupabase, otpCode, person, quiet, session, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL, HARNESS_URL } from "./urls.ts"
 

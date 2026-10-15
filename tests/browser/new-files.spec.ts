@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -70,7 +70,7 @@ for (const kind of kinds) {
     await expect.poll(() => serverPaths(fake, id).filter((path) => !kind.generated.includes(path))).toEqual(["a.md", kind.path].sort())
   })
 
-  test(`Escape creates no ${kind.noun}, and a taken name is refused in place`, async ({ page }) => {
+  test(`Escape creates no ${kind.noun}, and a taken name is refused in place`, async ({ page, appErrors }) => {
     const { fake, id } = await openProject(page, { "a.md": "a\n", [kind.path]: kind.existing })
     // The project opens its first note by itself, sometimes after "Synced" shows.
     // Wait for that, so any change to the tabs below comes from this journey.
@@ -80,6 +80,7 @@ for (const kind of kinds) {
     await fromMenu(page, kind.item)
     const field = nameField(page, kind.noun)
     await page.keyboard.type(kind.name)
+    appErrors.expect(`${kind.path} already exists here. Choose another name.`)
     await page.keyboard.press("Enter")
     await expect(page.getByRole("alert").filter({ hasText: `${kind.path} already exists here. Choose another name.` })).toBeVisible()
     await expect(field).toBeFocused()
@@ -170,7 +171,7 @@ test("a new note that was never saved can be renamed, and is saved under the new
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test("a dialog asks for the new note's name, and axe finds nothing in it", async ({ page }) => {
+  test("a dialog asks for the new note's name, and axe finds nothing in it", async ({ page, appErrors }) => {
     const { fake, id } = await openProject(page, { "a.mdx": "a\n" }, [], true)
     await page.getByRole("button", { name: "Back to files and projects" }).click()
     await fromMenu(page, "New note")
@@ -179,6 +180,7 @@ test.describe("on a phone", () => {
     await expect(dialog.getByLabel("Name")).toHaveValue("untitled.mdx")
     await expectNoAxeViolations(page, "[role=\"dialog\"]")
     await page.keyboard.type("a")
+    appErrors.expect("a.mdx already exists here. Choose another name.")
     await page.keyboard.press("Enter")
     await expect(dialog.getByRole("alert")).toHaveText("a.mdx already exists here. Choose another name.")
     await dialog.getByLabel("Name").fill("ideas.mdx")

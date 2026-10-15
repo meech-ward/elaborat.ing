@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, otpCode, person, session, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -24,20 +24,22 @@ async function openSettings(page: Page) {
   return page.getByRole("dialog", { name: "Settings" })
 }
 
-test("a wrong password says so plainly, and the page stays on sign-in", async ({ page }) => {
+test("a wrong password says so plainly, and the page stays on sign-in", async ({ page, appErrors }) => {
+  appErrors.expect("That email and password don't match. Try again, or reset your password.")
   await fakeSupabase(page)
   await signInWithPassword(page, "not my password 1")
   await expect(page.getByRole("alert")).toHaveText("That email and password don't match. Try again, or reset your password.")
   await expect(page).toHaveURL(new URL("sign-in", APP_URL).href)
 })
 
-test("an email not confirmed yet says to confirm it first", async ({ page }) => {
+test("an email not confirmed yet says to confirm it first", async ({ page, appErrors }) => {
+  appErrors.expect("Confirm your email first")
   await fakeSupabase(page, { unconfirmed: true })
   await signInWithPassword(page, "a password")
   await expect(page.getByRole("alert")).toContainText("Confirm your email first")
 })
 
-test("signing up from an agent's request needs a strong password, then the emailed code signs in and returns to the request", async ({ page }) => {
+test("signing up from an agent's request needs a strong password, then the emailed code signs in and returns to the request", async ({ page, appErrors }) => {
   const fake = await fakeSupabase(page)
   await page.goto(new URL(`sign-in?next=${encodeURIComponent(CONSENT)}`, APP_URL).href)
   await page.getByRole("main").getByRole("link", { name: "Sign up" }).click()
@@ -47,6 +49,7 @@ test("signing up from an agent's request needs a strong password, then the email
   await page.getByLabel("Email", { exact: true }).fill(person.email)
   await page.getByLabel("Password", { exact: true }).fill("short")
   await page.getByLabel("Repeat password").fill("short")
+  appErrors.expect("Choose a stronger password. At least 10 characters, with letters and digits.")
   await page.getByRole("button", { name: "Sign up" }).click()
   await expect(page.getByRole("alert")).toHaveText("Choose a stronger password. At least 10 characters, with letters and digits.")
 
@@ -64,7 +67,7 @@ test("signing up from an agent's request needs a strong password, then the email
   await expect(page.getByText("Authorize Claude")).toBeVisible()
 })
 
-test("a forgotten password: the reset email is sent, and its link opens a page that saves a new one and signs in", async ({ page }) => {
+test("a forgotten password: the reset email is sent, and its link opens a page that saves a new one and signs in", async ({ page, appErrors }) => {
   const fake = await fakeSupabase(page)
   await page.goto(new URL("sign-in", APP_URL).href)
   await page.getByRole("button", { name: "Use a password instead" }).click()
@@ -82,6 +85,7 @@ test("a forgotten password: the reset email is sent, and its link opens a page t
   const fragment = new URLSearchParams({ access_token, refresh_token, expires_in: String(expires_in), expires_at: String(expires_at), token_type, type: "recovery" })
   await page.goto(new URL(`update-password#${fragment}`, APP_URL).href)
   await page.getByLabel("New password").fill("password")
+  appErrors.expect("Choose a stronger password. At least 10 characters, with letters and digits.")
   await page.getByRole("button", { name: "Save new password" }).click()
   await expect(page.getByRole("alert")).toHaveText("Choose a stronger password. At least 10 characters, with letters and digits.")
   await page.getByLabel("New password").fill(STRONG)
@@ -91,20 +95,22 @@ test("a forgotten password: the reset email is sent, and its link opens a page t
   expect(fake.password).toBe(STRONG)
 })
 
-test("a reset link that has expired says so and offers a new one", async ({ page }) => {
+test("a reset link that has expired says so and offers a new one", async ({ page, appErrors }) => {
+  appErrors.expect("This link has expired or was already used. Send yourself a new one.")
   await fakeSupabase(page)
   await page.goto(new URL("update-password#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", APP_URL).href)
   await expect(page.getByRole("alert")).toHaveText("This link has expired or was already used. Send yourself a new one.")
   await expect(page.getByRole("link", { name: "Send a new link" })).toHaveAttribute("href", "/forgot-password")
 })
 
-test("Settings saves a password at once in a recent session", async ({ page }) => {
+test("Settings saves a password at once in a recent session", async ({ page, appErrors }) => {
   const fake = await fakeSupabase(page)
   fake.password = "an old password 1"
   await signedIn(page)
   await page.goto(APP_URL)
   const settings = await openSettings(page)
   await settings.getByLabel("New password").fill("an old password 1")
+  appErrors.expect("That is already your password.")
   await settings.getByRole("button", { name: "Save password" }).click()
   await expect(settings.getByRole("alert")).toHaveText("That is already your password.")
   await settings.getByLabel("New password").fill(STRONG)
@@ -114,7 +120,7 @@ test("Settings saves a password at once in a recent session", async ({ page }) =
   expect(fake.requests.some((request) => new URL(request.url()).pathname.endsWith("/reauthenticate"))).toBe(false)
 })
 
-test("Settings asks for the emailed code before it changes the password of an older session", async ({ page }) => {
+test("Settings asks for the emailed code before it changes the password of an older session", async ({ page, appErrors }) => {
   const fake = await fakeSupabase(page, { staleSession: true })
   await signedIn(page)
   await page.goto(APP_URL)
@@ -126,6 +132,7 @@ test("Settings asks for the emailed code before it changes the password of an ol
   expect(fake.password).toBe("a password")
 
   await settings.getByLabel("Code from the email").fill("00000000")
+  appErrors.expect("That code did not work. Check it, or send a new one.")
   await settings.getByRole("button", { name: "Save password" }).click()
   await expect(settings.getByRole("alert")).toHaveText("That code did not work. Check it, or send a new one.")
   await settings.getByLabel("Code from the email").fill(otpCode)

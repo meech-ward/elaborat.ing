@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures.ts"
 import { frameOf, load, openHarness } from "./rendered-support.ts"
 import { SANDBOX_URL } from "./urls.ts"
 
@@ -108,7 +108,8 @@ for (const mode of ["sandbox domain", "srcdoc"] as const) {
   })
 }
 
-test("a frame that navigates itself is replaced, and the preview stops when it keeps doing so", async ({ page }) => {
+test("a frame that navigates itself is replaced, and the preview stops when it keeps doing so", async ({ page, appErrors }) => {
+  appErrors.expect("The preview stopped: this note's code keeps leaving it.")
   const errors = await openHarness(page, `?sandbox=${encodeURIComponent(SANDBOX)}`)
   // The note's code reloads its frame every time it runs.
   await page.evaluate((text) => window.renderedHarness.load(text, "mdx"), "# Away\n\nStill here.\n\n{(() => { location.reload(); return null })()}\n")

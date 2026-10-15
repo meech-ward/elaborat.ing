@@ -254,7 +254,13 @@ export async function projectFluidSource(
   ): PMNode[] => {
     const { from, to } = range(ast);
     if (ast.type === "text" || ast.type === "inlineCode") {
-      const value = ast.value ?? "";
+      // The parser keeps a line break's own characters in the value: the
+      // editor shows it as "\n" in text and as a space in a code span, as
+      // the source mapping below reads it.
+      const value =
+        ast.type === "inlineCode"
+          ? (ast.value ?? "").replace(/\r\n?|\n/g, " ")
+          : (ast.value ?? "").replace(/\r\n?/g, "\n");
       let innerFrom = from,
         innerTo = to,
         active = frames;

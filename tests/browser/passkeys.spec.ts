@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -77,7 +77,7 @@ test("a person adds a passkey in Settings, signs out, and signs back in with it"
   expect(fake.passkeys[0].last_used_at).toBeDefined()
 })
 
-test("a passkey removed in Settings no longer signs in, and the sign-in page says what to do", async ({ page, browserName }) => {
+test("a passkey removed in Settings no longer signs in, and the sign-in page says what to do", async ({ page, browserName, appErrors }) => {
   test.skip(browserName !== "chromium", "The virtual authenticator is Chromium's")
   const fake = await fakeSupabase(page, { passkeys: true })
   await virtualAuthenticator(page)
@@ -104,6 +104,7 @@ test("a passkey removed in Settings no longer signs in, and the sign-in page say
   // The device still offers it, but Auth no longer knows it.
   await signOut(page)
   await page.goto(new URL("sign-in", APP).href)
+  appErrors.expect("That passkey is not linked to an account here.")
   await page.getByRole("button", { name: "Sign in with a passkey" }).click()
   await expect(page.getByRole("alert")).toHaveText("That passkey is not linked to an account here. Sign in another way, then add a passkey in Settings.")
   await expect(page).toHaveURL(new URL("sign-in", APP).href)

@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -97,7 +97,7 @@ test("a diagram compiles when the server labels D2's engine as something other t
   expect(relabelled).toBe(1)
 })
 
-test("when a generated file changed elsewhere, a save keeps all three files as they were", async ({ page }) => {
+test("when a generated file changed elsewhere, a save keeps all three files as they were", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { "flow.d2": "a -> b\n" }, "flow.d2")
   await compiled(page)
   await expect(status(page)).toContainText("Saved flow.d2 and its generated files.")
@@ -115,6 +115,7 @@ test("when a generated file changed elsewhere, a save keeps all three files as t
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("b -> c\n")
+  appErrors.expect("flow.excalidraw changed after you started editing this diagram, so nothing was saved.")
   await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("alert").filter({ hasText: "flow.excalidraw changed after you started editing this diagram, so nothing was saved." })).toBeVisible()
   await page.waitForTimeout(1_000)
@@ -122,7 +123,7 @@ test("when a generated file changed elsewhere, a save keeps all three files as t
   expect(fake.server.content(id, "flow.excalidraw")).toBe(theirs)
 })
 
-test("a code change reaches the canvas on Regenerate, and a syntax error keeps the last valid canvas", async ({ page }) => {
+test("a code change reaches the canvas on Regenerate, and a syntax error keeps the last valid canvas", async ({ page, appErrors }) => {
   await openProject(page, { "flow.d2": "a -> b\n" }, "flow.d2")
   await compiled(page)
   const first = await elementCount(page)
@@ -140,6 +141,7 @@ test("a code change reaches the canvas on Regenerate, and a syntax error keeps t
   await code.click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type("c ->")
+  appErrors.expect("connection missing destination")
   await menuAction(page, "Regenerate")
   await expect(page.getByRole("alert").filter({ hasText: "[d2/syntax]" })).toBeVisible({ timeout: 30_000 })
   await expect(status(page)).toContainText("The code does not compile, so the last valid canvas was kept.")

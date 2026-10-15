@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { palettes } from "../../src/features/appearance/palettes.ts"
 import { fakeSupabase, person, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
@@ -12,6 +12,12 @@ import { showView } from "./views.ts"
 const projectUrl = (id: string, file?: string) => new URL(`projects/${id}${file ? `/${file}` : ""}`, APP_URL).href
 
 test.describe.configure({ timeout: 60_000 })
+
+// Each test makes the conflict on purpose: its banner, and the sync status.
+test.beforeEach(({ appErrors }) => {
+  appErrors.expect("was changed on another device too, so its sync stopped.")
+  appErrors.expect("Changed in two places: choose which version to keep")
+})
 
 const NOTE = "# Plan\n\nShared line\n"
 

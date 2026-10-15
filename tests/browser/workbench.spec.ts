@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { recordFrameMessages, releaseTransactions } from "./rendered-support.ts"
 import { APP_URL } from "./urls.ts"
@@ -515,7 +515,9 @@ test("leaving the project keeps unsaved edits, and they are there on return", as
 })
 
 for (const choice of ["mine", "theirs", "both"] as const) {
-  test(`a file changed in two places can keep ${choice}`, async ({ page }) => {
+  test(`a file changed in two places can keep ${choice}`, async ({ page, appErrors }) => {
+    appErrors.expect("a.md was changed on another device too, so its sync stopped.")
+    appErrors.expect("Changed in two places: choose which version to keep")
     const { fake, id } = await openProject(page, { "a.md": "base\n" }, "a.md")
     // Save here while the server cannot be reached...
     fake.offline = true

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { HARNESS_URL } from "./urls.ts"
 
 // The rendered editor on the harness page: the note is evaluated only inside
@@ -64,7 +64,8 @@ test("MDX components run inside the frame, and the frame loads nothing", async (
   expect(errors).toEqual([])
 })
 
-test("a syntax error keeps the last good render and the source unchanged", async ({ page }) => {
+test("a syntax error keeps the last good render and the source unchanged", async ({ page, appErrors }) => {
+  appErrors.expect("Source is unchanged and remains editable.")
   const errors: string[] = []
   await open(page, "# Fine\n\nGood text.\n", "mdx", errors)
   await expect(frameOf(page).getByText("Good text.")).toBeVisible()

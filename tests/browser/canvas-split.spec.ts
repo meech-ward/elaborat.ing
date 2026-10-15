@@ -1,5 +1,5 @@
 import AxeBuilder from "./axe.ts"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
@@ -60,7 +60,7 @@ async function atEndOfElements(page: Page) {
   await page.keyboard.press("Home")
 }
 
-test("a drawing in Split: the source over the left half, source edits reach the canvas, canvas moves rewrite the source, and one save writes the file", async ({ page }) => {
+test("a drawing in Split: the source over the left half, source edits reach the canvas, canvas moves rewrite the source, and one save writes the file", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { "sketch.excalidraw": DRAWING }, "sketch.excalidraw")
   await expect(status(page)).toContainText("1 elements")
   await toSplit(page)
@@ -76,6 +76,8 @@ test("a drawing in Split: the source over the left half, source edits reach the 
   expect(tools.x).toBeGreaterThan(panel.x + panel.width)
 
   // A text element typed in the source appears on the canvas (the editor closes each brace and quote as it opens).
+  // Until it is finished, the half-typed JSON is not a valid drawing, and the page says so.
+  appErrors.expect("This is not a valid drawing")
   await atEndOfElements(page)
   await page.keyboard.type(`,${JSON.stringify(LABEL).slice(0, -1)}`)
   await expect(status(page)).toContainText("2 elements · 1 text")
@@ -102,7 +104,8 @@ test("a drawing in Split: the source over the left half, source edits reach the 
   ])
 })
 
-test("invalid JSON in a drawing's Split leaves the canvas view-only with the error, and fixing it restores editing", async ({ page }) => {
+test("invalid JSON in a drawing's Split leaves the canvas view-only with the error, and fixing it restores editing", async ({ page, appErrors }) => {
+  appErrors.expect("This is not a valid drawing")
   await openProject(page, { "sketch.excalidraw": DRAWING }, "sketch.excalidraw")
   await toSplit(page)
   await expect(viewMode(page)).toHaveCount(0)
@@ -145,7 +148,7 @@ test("the view shortcuts switch a drawing's views, and the buttons show them", a
   await expect(sourcePanel(page)).toBeHidden()
 })
 
-test("a diagram in Split updates its canvas as the code changes, and is view-only while the code does not compile", async ({ page }) => {
+test("a diagram in Split updates its canvas as the code changes, and is view-only while the code does not compile", async ({ page, appErrors }) => {
   await openProject(page, { "flow.d2": "a -> b\n" }, "flow.d2")
   await expect(page.getByText("Compiling diagram…")).toHaveCount(0, { timeout: 45_000 })
   const count = async () => Number(/(\d+) elements/.exec(await status(page).innerText())?.[1] ?? "0")
@@ -161,6 +164,7 @@ test("a diagram in Split updates its canvas as the code changes, and is view-onl
   const second = await count()
 
   // A connection with no destination (the code editor would auto-close a brace into valid D2).
+  appErrors.expect("connection missing destination")
   await page.keyboard.type("c ->")
   await expect(page.getByRole("alert").filter({ hasText: "[d2/syntax]" })).toBeVisible({ timeout: 30_000 })
   await expect(viewMode(page)).toBeVisible()

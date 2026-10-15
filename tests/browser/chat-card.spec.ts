@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures.ts"
 import { FILE_VIEW_HTML } from "../../supabase/functions/mcp-server/tools/fileViewHtml.ts"
 
 // The show_file view (the chat card) in a stand-in MCP Apps host: a page that
@@ -426,7 +426,8 @@ const previewFrame = (page: Page) => page.frames().find((frame) => frame.parentF
 const contexts = (page: Page) => page.evaluate(() => (window as unknown as { contexts: { content: { text: string }[] }[] }).contexts.map((context) => context.content[0].text))
 
 for (const theme of ["light", "dark"] as const) {
-  test(`a note's built-in and workspace components show in a sandboxed frame, and one that throws shows its error (${theme})`, async ({ page }) => {
+  test(`a note's built-in and workspace components show in a sandboxed frame, and one that throws shows its error (${theme})`, async ({ page, appErrors }) => {
+    appErrors.expect("Broken could not be shown: Broken on purpose")
     const card = await openHost(page, {
       tools: true,
       theme,
@@ -479,7 +480,8 @@ for (const theme of ["light", "dark"] as const) {
     expect(await contexts(page)).toEqual([])
   })
 
-  test(`a draft component file shows each component with its sample props, and the model hears about the one that throws (${theme})`, async ({ page }) => {
+  test(`a draft component file shows each component with its sample props, and the model hears about the one that throws (${theme})`, async ({ page, appErrors }) => {
+    appErrors.expect("Broken could not be shown: Broken on purpose")
     await page.setViewportSize({ width: 390, height: 800 })
     const card = await openHost(page, {
       tools: true,
@@ -594,7 +596,8 @@ test("an agent's draft component from a shared project that imports nothing runs
   await expect(card.getByRole("button", { name: "Run code" })).toHaveCount(0)
 })
 
-test("a component file whose code does not compile is a problem in the card, and the model hears why", async ({ page }) => {
+test("a component file whose code does not compile is a problem in the card, and the model hears why", async ({ page, appErrors }) => {
+  appErrors.expect("This component could not be shown: An import or export is not valid JavaScript")
   const card = await openHost(page, {
     tools: false,
     theme: "dark",
@@ -826,11 +829,12 @@ test("where the host does not allow the live view, the card shows its skeleton, 
   expect(await violations(page)).toEqual([])
 })
 
-test("a drawing that could not be saved leaves nothing of it on screen, only why", async ({ page }) => {
+test("a drawing that could not be saved leaves nothing of it on screen, only why", async ({ page, appErrors }) => {
   const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
   await writeIn(page, FLOW, FLOW_SCENE, cutsOf(FLOW_SCENE, 4))
   await expect.poll(() => liveShapes(page)).toBeGreaterThan(0)
   const message = `A file already exists at ${FLOW}. Nothing was saved. To change it, read it and use write_file with base_version.`
+  appErrors.expect(message)
   await send(page, "ui/notifications/tool-input", input(FLOW, FLOW_SCENE))
   await send(page, "ui/notifications/tool-result", { isError: true, content: [{ type: "text", text: message }] })
   await expect(card.getByText(message)).toBeVisible()
@@ -991,13 +995,14 @@ test("a change to a note shows its unchanged opening at once and writes the new 
   await expect(live).toHaveCount(0)
 })
 
-test("a change saved over by someone else first shows the server's message, and nothing of the change", async ({ page }) => {
+test("a change saved over by someone else first shows the server's message, and nothing of the change", async ({ page, appErrors }) => {
   const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
   await answer(page, "read_file", readAnswer(FLOW, SAVED_SCENE))
   await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
   await send(page, "ui/notifications/tool-input-partial", updateInput(FLOW, CHANGED_SCENE))
   await expect.poll(() => placed(page)).toContain(PLACED.b)
   const message = `Someone changed ${FLOW} first: it is now version 5. Nothing was saved. Read it again, merge, and retry.`
+  appErrors.expect(message)
   const conflict = { status: "conflict", conflicts: [{ path: FLOW, base_version: 3, current: { version: 5, content: SAVED_SCENE } }] }
   await send(page, "ui/notifications/tool-input", updateInput(FLOW, CHANGED_SCENE))
   await send(page, "ui/notifications/tool-result", { content: [{ type: "text", text: message }, { type: "text", text: JSON.stringify(conflict) }], structuredContent: conflict })
