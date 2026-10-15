@@ -42,14 +42,22 @@ export function moduleLoader<T extends object>(load: () => Promise<T>): ModuleLo
 // As the page starts to leave for another document (a reload, another
 // address, a link to another site), Firefox stops its downloads, and a module
 // still loading fails while the page is on screen. That failure is not shown:
-// the page is on its way out. A page the person uses again (they chose to
-// stay) shows failures again, and one that comes back from the back-forward
-// cache asks again for what failed as it left.
+// the page is on its way out. Nor is it an error when code that does not catch
+// it imported the module, such as the code editor's highlighting or the
+// drawing's file dialogs. A page the person uses again (they chose to stay)
+// shows failures again, and one that comes back from the back-forward cache
+// asks again for what failed as it left.
 let leaving = false
 const onReturn = new Set<() => void>()
+/** How Firefox, Chromium and Safari say a module did not load. */
+const MODULE_NOT_LOADED = /dynamically imported module|Importing a module script failed/
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
     leaving = true
+  })
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason: unknown = event.reason
+    if (leaving && MODULE_NOT_LOADED.test(reason instanceof Error ? reason.message : String(reason))) event.preventDefault()
   })
   const stayed = () => {
     leaving = false

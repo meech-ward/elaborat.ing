@@ -628,6 +628,37 @@ test("a code editor whose code does not download says so", async ({ page, appErr
   await expect(page.getByRole("alert").filter({ hasText: "The code editor could not load." })).toBeVisible()
 })
 
+// The same for code the app does not load itself: the code editor asks for
+// its Markdown highlighting as the note opens, and does not catch a failure.
+// As the page is left that failure is not an error; on a page that stays it
+// still is.
+test("leaving a note while its Markdown highlighting is still downloading throws nothing there", async ({ page, appErrors }) => {
+  // Two editor loads; see the journey above.
+  test.slow()
+  let release = () => {}
+  const released = new Promise<void>((resolve) => (release = resolve))
+  let asked = false
+  await page.route(/\/assets\/markdown-[\w-]+\.js$/, async (route) => {
+    if (asked) return route.continue()
+    asked = true
+    await released
+    await route.continue().catch(() => {})
+  })
+  const { id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await expect.poll(() => asked, { timeout: 15_000 }).toBe(true)
+  await page.goto(projectUrl(id, "b.md"))
+  release()
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+  expect(appErrors.unexpected()).toEqual([])
+})
+
+test("Markdown highlighting that does not download, on a note that stays open, is still an uncaught error", async ({ page, appErrors }) => {
+  await page.route(/\/assets\/markdown-[\w-]+\.js$/, (route) => route.abort())
+  await openProject(page, { "a.md": "a\n" }, "a.md")
+  await expect.poll(() => appErrors.unexpected().some((error) => error.kind === "uncaught" && /dynamically imported module/.test(error.text)), { timeout: 15_000 }).toBe(true)
+  appErrors.expect(/dynamically imported module/)
+})
+
 /** Open a file from the explorer, in a new tab, without reloading the page. */
 async function openFromExplorer(page: Page, path: string) {
   await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()

@@ -57,17 +57,13 @@ export const test = base.extend<{ appErrors: AppErrors }>({
 })
 
 /**
- * Two uncaught errors that say nothing about the app. Playwright's own script
+ * An uncaught error that says nothing about the app: Playwright's own script
  * that blocks service workers (playwright.config.ts) runs in every frame, and
- * in Chromium it throws in a sandboxed one, such as a note's preview. And
- * Firefox fails the code editor's language files still loading when the page
- * is left, by a reload or a new address, and the editor does not catch that.
+ * in Chromium it throws in a sandboxed one, such as a note's preview.
  */
 function notTheApps(error: Error) {
-  const stack = error.stack ?? ""
-  const frames = stack.split("\n").filter((line) => /^\s+at /.test(line))
-  if (error.message.startsWith("Failed to read the 'serviceWorker' property")) return frames.every((line) => /^\s+at <anonymous>:\d+:\d+$/.test(line))
-  return error.message.startsWith("error loading dynamically imported module") && /\brequest(Basic|Rich)LanguageFeatures\b/.test(stack)
+  const frames = (error.stack ?? "").split("\n").filter((line) => /^\s+at /.test(line))
+  return error.message.startsWith("Failed to read the 'serviceWorker' property") && frames.every((line) => /^\s+at <anonymous>:\d+:\d+$/.test(line))
 }
 
 /** Runs in every page and frame: reports each alert or failed status when it shows, and again when its text changes. */
