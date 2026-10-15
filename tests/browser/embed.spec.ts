@@ -124,7 +124,8 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   // A project opens its first note.
   await expect(app.getByRole("tab", { name: "notes/plan.md" })).toBeVisible({ timeout: 15_000 })
   expect(await html.evaluate(() => (window as unknown as { sawSiteHome?: boolean }).sawSiteHome)).toBeUndefined()
-  await expect(app.getByRole("link", { name: "Projects", exact: true })).toBeVisible()
+  // The workbench runs to the top, as on the site: no bar over it.
+  await expect(app.locator('[data-slot="app-bar"]')).toHaveCount(0)
 
   // The note renders, in the srcdoc frame.
   await app.getByRole("button", { name: "Rendered", exact: true }).click()
@@ -132,8 +133,9 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   await expect(app.frameLocator('iframe[title="Isolated document preview"]').getByText("Hello from the panel.")).toBeVisible({ timeout: 20_000 })
   expect(await preview.getAttribute("src")).toBeNull()
 
-  // Open in elaborat.ing goes to the view, which opens it through the chat.
-  await app.getByRole("link", { name: "Open in elaborat.ing" }).click()
+  // Open in elaborat.ing, in the project menu, goes to the view, which opens it through the chat.
+  await app.getByRole("button", { name: "Launch plan, project menu" }).click()
+  await app.getByRole("menuitem", { name: "Open in elaborat.ing" }).click()
   await expect
     .poll(() => messages(page))
     .toContainEqual({ origin: APP, data: { type: "elaborating-embed:open", url: `${APP}/projects/${id}/notes/plan.md` } })
@@ -178,9 +180,13 @@ test("the panel tells its view which project and file are open, and again when a
   await app.getByRole("button", { name: "notes/flow.excalidraw", exact: true }).click()
   await expect.poll(() => messages(page)).toContainEqual(location({ path: "notes/flow.excalidraw", kind: "drawing" }))
 
-  // A drawing's canvas bleeds under the whole page; the panel's bar stays on top of it and works.
+  // With a drawing open the workbench still runs to the top, with no bar, and All projects goes home.
   await expect(app.locator("[data-canvas-stage]")).toBeVisible({ timeout: 15_000 })
-  await app.getByRole("link", { name: "Projects" }).click()
+  await expect(app.locator('[data-slot="app-bar"]')).toHaveCount(0)
+  const menu = app.getByRole("button", { name: "Launch plan, project menu" })
+  expect(await menu.evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(40)
+  await menu.click()
+  await app.getByRole("menuitem", { name: "All projects" }).click()
   await expect(app.getByRole("heading", { name: "Your projects" })).toBeVisible()
 })
 

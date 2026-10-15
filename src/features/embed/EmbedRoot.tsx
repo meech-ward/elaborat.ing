@@ -187,9 +187,6 @@ function EmbedBar({ url, onProject, email }: { url: string; onProject: boolean; 
   return (
     <AppBar
       size="compact"
-      // Above a drawing's canvas, which bleeds under the whole page as it
-      // does under the workbench's own panels: otherwise it hides the bar.
-      className="relative z-10"
       home={<Link to="/" />}
       actions={
         <>
@@ -309,10 +306,13 @@ export function EmbedRoot() {
   } else {
     page = onProject && projectShown ? <Outlet /> : <ProjectsHome />
   }
+  // A project's workbench runs to the top, as on the site: its project menu
+  // has All projects and Open in elaborat.ing, and its side panel the account.
+  const workbench = pass === "open" && onProject && projectShown
 
   return (
     <DottedPage className="flex h-dvh min-h-0 flex-col overflow-hidden">
-      <EmbedBar url={url} onProject={onProject && pass === "open"} email={account.kind === "account" ? account.account.email : undefined} />
+      {!workbench && <EmbedBar url={url} onProject={onProject && pass === "open"} email={account.kind === "account" ? account.account.email : undefined} />}
       <div className="relative min-h-0 flex-1 overflow-y-auto">{page}</div>
       <ConfirmActionHost />
     </DottedPage>

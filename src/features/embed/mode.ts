@@ -21,6 +21,20 @@ export function sitePath(pathname: string): string {
   return isEmbedPath(pathname) ? `/${pathname.slice(EMBED_BASE.length).replace(/^\/+/, "")}` : pathname
 }
 
+/**
+ * Opens this page on the site in a new tab. In a panel the embed code catches
+ * the click on a new-tab link to the site and asks the chat to open it.
+ */
+export function openOnSite(): void {
+  const link = document.createElement("a")
+  link.href = new URL(sitePath(window.location.pathname), window.location.origin).href
+  link.target = "_blank"
+  link.rel = "noopener"
+  document.body.append(link)
+  link.click()
+  link.remove()
+}
+
 /** True when this page is the app in a panel. */
 export const embedded: boolean = typeof window !== "undefined" && isEmbedPath(window.location.pathname)
 

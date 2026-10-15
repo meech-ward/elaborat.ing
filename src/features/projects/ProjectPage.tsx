@@ -11,7 +11,7 @@ import { parseProjectLocation, projectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
 import { canEdit } from "@/features/project-storage/model"
-import { embedded } from "@/features/embed/mode"
+import { embedded, openOnSite } from "@/features/embed/mode"
 import { projectWorkspace, workspacePersistenceKey } from "@/features/workbench/workspaceStore"
 import { writeProjectView } from "@/features/workbench/projectViews"
 import { loadWorkbench } from "@/features/workbench/load"
@@ -287,12 +287,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
 
   const readOnly = readOnlyReason(entry)
   // The project menu starts with the other projects, the way home and Download project; the workbench adds its other actions.
-  // In a chat's panel, downloading and sharing are on the site.
+  // In a chat's panel, downloading and sharing are on the site, and the menu opens the project there.
   const go = (href: string) => void navigate({ href })
   const projectName = account.local ? "Local project" : (entry?.title ?? "Project")
   const projectMenu: MenuEntry[] = [
     ...(account.local ? [{ label: "Home", group: "home", onSelect: () => go("/") }] : projectMenuEntries(state.entries, projectId, go)),
-    ...(embedded ? [] : [{ label: "Download project", group: "actions", onSelect: () => void download.start(projectId, projectName) }]),
+    ...(embedded
+      ? [{ label: "Open in elaborat.ing", group: "actions", onSelect: openOnSite }]
+      : [{ label: "Download project", group: "actions", onSelect: () => void download.start(projectId, projectName) }]),
   ]
   const problem = departureError ?? error
   const notices = (
