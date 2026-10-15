@@ -290,6 +290,14 @@ Re-check it against OpenAI's pages linked below.
   [quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart),
   [theming](https://claude.com/docs/connectors/building/mcp-apps/transparent-theming),
   [interactive connectors](https://support.claude.com/en/articles/13454812-use-interactive-connectors-in-claude)
+- **Claude stores a large tool result as a file.** Where Claude's code
+  execution is on, a tool result of more than about 150,000 characters is
+  written to its sandbox's files, and the view gets a pointer instead of the
+  structured content, so it never shows. The page doesn't say whether `_meta`
+  counts, so a show result keeps its `_meta` under `MAX_META_CHARS` (120,000)
+  and the view fetches the drawings that didn't fit with `show_file`. Claude
+  Code has its own limit (25,000 tokens by default). (Checked 2026-10-15.)
+  [Troubleshoot MCP Apps](https://claude.com/docs/connectors/building/mcp-apps/troubleshooting)
 - **ChatGPT links a tool to its view with the standard `_meta.ui.resourceUri`**
   and the `ui/*` bridge; `_meta["openai/outputTemplate"]` is only a
   compatibility alias. OpenAI recommends putting the view on a separate render
