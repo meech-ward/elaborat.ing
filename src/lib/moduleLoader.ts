@@ -39,6 +39,30 @@ export function moduleLoader<T extends object>(load: () => Promise<T>): ModuleLo
   }
 }
 
+// As the page starts to leave for another document (a reload, another
+// address, a link to another site), Firefox stops its downloads, and a module
+// still loading fails while the page is on screen. That failure is not shown:
+// the page is on its way out. A page the person uses again (they chose to
+// stay) shows failures again, and one that comes back from the back-forward
+// cache asks again for what failed as it left.
+let leaving = false
+const onReturn = new Set<() => void>()
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    leaving = true
+  })
+  const stayed = () => {
+    leaving = false
+  }
+  window.addEventListener("pointerdown", stayed, true)
+  window.addEventListener("keydown", stayed, true)
+  window.addEventListener("pageshow", () => {
+    stayed()
+    for (const again of onReturn) again()
+    onReturn.clear()
+  })
+}
+
 /**
  * The loader's module once `wanted` (at once when it is already loaded), or
  * why it could not load and a way to try again.
@@ -49,16 +73,20 @@ export function useModule<T extends object>(loader: ModuleLoader<T>, wanted: boo
   useEffect(() => {
     if (!wanted || module) return
     let alive = true
+    const again = () => setState((current) => ({ ...current, attempt: current.attempt + 1 }))
     loader.load().then(
       (loaded) => {
         if (alive) setState((current) => ({ ...current, module: loaded, error: null }))
       },
       (error: unknown) => {
-        if (alive) setState((current) => ({ ...current, error: error instanceof Error ? error.message : String(error) }))
+        if (!alive) return
+        if (leaving) onReturn.add(again)
+        else setState((current) => ({ ...current, error: error instanceof Error ? error.message : String(error) }))
       },
     )
     return () => {
       alive = false
+      onReturn.delete(again)
     }
   }, [attempt, loader, module, wanted])
   return {

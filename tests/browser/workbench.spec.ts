@@ -598,6 +598,36 @@ test("closing a tab from the keyboard works, and an unsaved one asks first", asy
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible()
 })
 
+// Firefox stops a page's downloads as it starts to leave for another address,
+// so the code editor's code, still downloading, fails there while the page is
+// on screen (lib/moduleLoader.ts). The page being left says nothing of it.
+test("leaving a note while its code editor is still downloading shows no error on it", async ({ page, appErrors }) => {
+  // Two editor loads; see the journey above.
+  test.slow()
+  let release = () => {}
+  const released = new Promise<void>((resolve) => (release = resolve))
+  let asked = false
+  await page.route(/\/assets\/MonacoSourceEditor-[\w-]+\.js$/, async (route) => {
+    if (asked) return route.continue()
+    asked = true
+    await released
+    await route.continue().catch(() => {})
+  })
+  const { id } = await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
+  await expect.poll(() => asked).toBe(true)
+  await page.goto(projectUrl(id, "b.md"))
+  release()
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+  expect(appErrors.unexpected()).toEqual([])
+})
+
+test("a code editor whose code does not download says so", async ({ page, appErrors }) => {
+  appErrors.expect("The code editor could not load.")
+  await page.route(/\/assets\/MonacoSourceEditor-[\w-]+\.js$/, (route) => route.abort())
+  await openProject(page, { "a.md": "a\n" }, "a.md")
+  await expect(page.getByRole("alert").filter({ hasText: "The code editor could not load." })).toBeVisible()
+})
+
 /** Open a file from the explorer, in a new tab, without reloading the page. */
 async function openFromExplorer(page: Page, path: string) {
   await expect(page.getByRole("navigation", { name: "Workspace files" }).first()).toBeVisible()
