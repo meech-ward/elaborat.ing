@@ -302,6 +302,9 @@ Build without `VITE_SANDBOX_ORIGIN` there: the frame's page needs the headers
 Your MCP URL is then the function's own:
 `https://<ref>.supabase.co/functions/v1/mcp-server`.
 
+With the deploy workflow (step 6), leave both Cloudflare secrets unset: its
+`app` job then deploys nothing, and the rest of the backend still deploys.
+
 Either way, once you know `<site>`, make sure `site_url` and
 `additional_redirect_urls` in `config.toml` name it, and push the config.
 
