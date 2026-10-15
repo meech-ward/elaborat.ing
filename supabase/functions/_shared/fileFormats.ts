@@ -7,6 +7,10 @@ export const FILE_FORMAT_INSTRUCTIONS =
   'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
   "using the file's path in the project; the file must exist, so create it first. " +
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
+  'When the user asks you to draw, sketch or diagram something, make a drawing: it is the default for flows, ' +
+  'architecture, ideas and any boxes and arrows. Make a D2 diagram only when the user asks for D2, or for a ' +
+  'structured diagram that has to be laid out from code: database tables and their relationships, a sequence ' +
+  'diagram, or a graph with dozens of connected nodes. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. ' +
   'Create a drawing before the note that embeds it. ' +
   'In a drawing, put elements before appState, and write each shape, then its label, then its arrows. ' +

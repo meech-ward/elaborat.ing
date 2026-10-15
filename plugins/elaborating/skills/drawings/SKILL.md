@@ -1,6 +1,6 @@
 ---
 name: drawings
-description: Create or change hand-drawn style drawings (Excalidraw scenes) in elaborat.ing and embed them in notes. Use when the user wants a sketch, a whiteboard or shapes placed by hand in an elaborat.ing project.
+description: Create or change hand-drawn style drawings (Excalidraw scenes) in elaborat.ing and embed them in notes. The default whenever the user asks to draw, sketch or diagram something in an elaborat.ing project: flows, architecture, ideas, whiteboards and any boxes and arrows.
 ---
 
 # Drawings
@@ -12,8 +12,11 @@ The user's instructions win over this skill when they differ.
 - A drawing is an Excalidraw scene saved as JSON in a `.excalidraw` file, such
   as `drawings/idea.excalidraw`. The app also opens Obsidian's
   `.excalidraw.md` files: keep those in their own format.
-- For boxes and arrows that should lay themselves out, a D2 diagram is usually
-  the better choice. Use a drawing for sketches and hand-placed layouts.
+- A drawing is the default whenever the user asks to draw, sketch or diagram
+  something, boxes and arrows included. Make a D2 diagram instead only when
+  the user asks for D2, or for a structured diagram that has to be laid out
+  from code: database tables and their relationships, a sequence diagram, or
+  a graph with dozens of connected nodes.
 - To make or extend a drawing the user can watch in elaborat.ing, or in its
   panel beside the chat, use `draw`, not one big `write_file`. Add several
   shapes per call, a row or a group of related shapes with their arrows,

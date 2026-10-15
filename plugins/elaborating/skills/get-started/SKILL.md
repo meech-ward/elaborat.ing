@@ -13,13 +13,13 @@ The user's instructions win over this skill when they differ.
 2. Call `list_projects`.
    - If they have projects, name a few and ask what they want to work on.
    - If they have none, offer to make a first project. Only on a yes:
-     `create_project`, then save `diagrams/overview.d2` (a small D2 diagram)
-     and `notes/welcome.mdx` (a heading, a short paragraph, a `<Callout>` and
-     `<Diagram src="diagrams/overview.d2" />`) together with `save_files`, then
-     `show_file` the note. A new diagram is drawn the first time it opens in
-     the app, so give the user the note's link too.
+     `create_project`, then `draw` a small drawing at
+     `drawings/overview.excalidraw` (three labelled shapes joined by arrows),
+     then save `notes/welcome.mdx` (a heading, a short paragraph, a `<Callout>`
+     and `<Drawing src="drawings/overview.excalidraw" />`) with `write_file`,
+     and `show_file` the note. Give the user the note's link too.
 3. In three short lines, say what they can ask for:
-   - Write or edit notes in MDX, with D2 diagrams, charts and drawings, and
+   - Write or edit notes in MDX, with drawings, charts and D2 diagrams, and
      watch notes and drawings come together in elaborat.ing.
    - Search everything in their projects.
    - Work through the comments people leave on their files, with a reply on

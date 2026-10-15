@@ -1,11 +1,15 @@
 ---
 name: d2-diagrams
-description: Create or change D2 diagrams in elaborat.ing, such as flows, architecture and table relationships, and embed them in notes. Use when the user wants a diagram that lays itself out from code in an elaborat.ing project.
+description: Create or change D2 diagrams in elaborat.ing and embed them in notes. Use only when the user asks for D2, or for a structured diagram that has to be laid out from code, such as database tables and their relationships, a sequence diagram or a graph with dozens of connected nodes. For other diagrams, flows and architecture, make a drawing instead.
 ---
 
 # D2 diagrams
 
 The user's instructions win over this skill when they differ.
+
+Make a D2 diagram only when the user asks for D2, or when the diagram is
+structured enough that it has to be laid out from code. When they ask to draw,
+sketch or diagram something else, make a drawing (the drawings skill).
 
 ## Files
 
