@@ -92,6 +92,12 @@ function adoptDOMCaret(view: EditorView) {
  * option for this, so wrap the next timer set during this focus event and run
  * `first` at the start of its callback, in the same task: key events can run
  * between two separate timers.
+ *
+ * The check is skipped when the document has no selection to write to. In
+ * Firefox a hidden frame has none (`getSelection()` is null) and ProseMirror
+ * would throw, which the frame reports as a failed preview. Clicking a link
+ * that opens a file in another tab focuses the editor and hides its frame,
+ * and the timer can run after the frame is hidden.
  */
 function beforeFocusCheck(first: () => void) {
   const setTimer = window.setTimeout;
@@ -104,7 +110,7 @@ function beforeFocusCheck(first: () => void) {
     return setTimer(
       (...args: unknown[]) => {
         first();
-        handler(...args);
+        if (document.getSelection()) handler(...args);
       },
       timeout,
       ...rest,

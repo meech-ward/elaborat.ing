@@ -117,6 +117,8 @@ test("the code editor and the drawing canvas take the chosen palette's colours, 
 
   await page.goto(new URL(`projects/${id}/note.md`, APP_URL).href)
   await page.getByRole("button", { name: "Source" }).click()
+  // The code editor loads after the page: read its colour once it shows the note.
+  await expect(page.locator(".monaco-editor:visible .view-lines").first()).toContainText("# Note")
   const editorBackground = () =>
     page.evaluate(() => {
       const [r, g, b] = getComputedStyle(document.querySelector(".monaco-editor .monaco-editor-background")!).backgroundColor.match(/\d+/g)!.map(Number)
