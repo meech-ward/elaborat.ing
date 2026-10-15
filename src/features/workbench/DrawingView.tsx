@@ -33,7 +33,7 @@ import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import { embedded } from "@/features/embed/mode";
 import type { WorkspaceStore } from "./workspaceStore";
-import { useSettledError } from "@/lib/settledError";
+import { useSettledError, useTyping } from "@/lib/settledError";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -135,9 +135,10 @@ export function DrawingView({
   const [sourceDraft, setSourceDraft] = useState(opening.content);
   const [sourceError, setSourceError] = useState<string | null>(opened.error);
   // The person's own edits in the source: while they type, the error in
-  // half-typed JSON waits until they pause (lib/settledError.ts).
-  const [typed, setTyped] = useState(0);
-  const shownError = useSettledError(sourceError, typed);
+  // half-typed JSON waits until they pause, or until they act on the source
+  // (a view switch, Save, an export) and it shows at once (lib/settledError.ts).
+  const { typing, typed, settle } = useTyping();
+  const shownError = useSettledError(sourceError, typing);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<{ revision: string; content: string | null } | null>(null);
@@ -263,6 +264,7 @@ export function DrawingView({
 
   const selectView = useCallback((next: CanvasView) => {
     if (next === view) return;
+    settle();
     if (view === "canvas") {
       // The source takes the canvas as it stands.
       if (original && scene) {
@@ -298,12 +300,13 @@ export function DrawingView({
       setSourceError(null);
     }
     setMode(next);
-  }, [view, original, scene, sourceDraft, sourceError, path, writeCanvasToSource, readSource]);
+  }, [view, original, scene, sourceDraft, sourceError, path, settle, writeCanvasToSource, readSource]);
   useEffect(() => {
     selectRef.current = selectView;
   }, [selectView]);
 
   const save = useCallback(async (overwrite?: string) => {
+    settle();
     if (frozen.current || saving) return;
     const text = view === "split" ? writeCanvasToSource() : view === "source" ? sourceDraft : scene && original ? saveDrawingFile(scene, original).text : null;
     if (text === null) return;
@@ -343,7 +346,7 @@ export function DrawingView({
     } finally {
       setSaving(false);
     }
-  }, [view, sourceDraft, scene, original, path, savedText, baseRevision, client, saving, writeCanvasToSource]);
+  }, [view, sourceDraft, scene, original, path, savedText, baseRevision, client, saving, settle, writeCanvasToSource]);
 
   // Ctrl or Cmd+S saves the active drawing (the source editor handles its own).
   useEffect(() => {
@@ -400,6 +403,7 @@ export function DrawingView({
 
   const baseName = path.split("/").pop()?.replace(/\.md$/, "") ?? "drawing";
   const exportSvg = useCallback(async () => {
+    settle();
     if (!scene) return;
     try {
       downloadText(await exportDrawingSvg(scene), `${baseName}.svg`, "image/svg+xml");
@@ -407,8 +411,9 @@ export function DrawingView({
     } catch (error) {
       setNotice(`SVG export failed: ${message(error)}`);
     }
-  }, [scene, baseName]);
+  }, [scene, baseName, settle]);
   const exportPng = useCallback(async () => {
+    settle();
     if (!scene) return;
     try {
       downloadBlob(await exportDrawingPng(scene, { scale: 2 }), `${baseName}.png`);
@@ -416,8 +421,9 @@ export function DrawingView({
     } catch (error) {
       setNotice(`PNG export failed: ${message(error)}`);
     }
-  }, [scene, baseName]);
+  }, [scene, baseName, settle]);
   const exportNative = useCallback(() => {
+    settle();
     const result = buildNativeDownload({ view: view === "canvas" ? "canvas" : "source", scene, sourceDraft, path });
     if (!result.ok) {
       setNotice(`Excalidraw export failed: ${result.error}`);
@@ -425,7 +431,7 @@ export function DrawingView({
     }
     downloadText(result.text, result.filename, "application/json");
     setNotice(`Exported ${result.filename}.`);
-  }, [view, scene, sourceDraft, path]);
+  }, [view, scene, sourceDraft, path, settle]);
 
   // Comments on the drawing's elements: pins on the canvas, and Comment on
   // the selected element. The panel's Go to shows an element on the canvas.
@@ -593,7 +599,7 @@ export function DrawingView({
           onChange={(text) => {
             if (frozen.current) return;
             // Text the canvas wrote, or that arrived, is the source already.
-            if (text !== latest.current.sourceDraft && text !== fromCanvas.current) setTyped((count) => count + 1);
+            if (text !== latest.current.sourceDraft && text !== fromCanvas.current) typed();
             latest.current = { ...latest.current, sourceDraft: text };
             setSourceDraft(text);
             if (view === "split") readSource(text);

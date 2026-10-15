@@ -113,11 +113,11 @@ export type RenderedEditorProps = {
   onPendingChange?: (pending: boolean) => void;
   onError?: (message: string | null) => void;
   /**
-   * The person's own edits to the note's source (WorkspaceSession counts
-   * them). While they type, a new error in the half-typed note waits until
-   * they pause, and the frame keeps its last good render (lib/settledError.ts).
+   * Whether the person is typing in the note's source (WorkspaceSession's
+   * useTyping). While they type, a new error in the half-typed note waits,
+   * and the frame keeps its last good render (lib/settledError.ts).
    */
-  typed?: number;
+  typing?: boolean;
   /**
    * Generated pixels for Drawing/Diagram embeds (path -> SVG), produced by
    * the parent from workspace files. The frame receives pixels only.
@@ -243,7 +243,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPendingChange: onPendingChangeProp,
     onPatch,
     onError,
-    typed = 0,
+    typing = false,
     resources,
     allowedResourcePaths,
     availableResourcePaths,
@@ -323,7 +323,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     }, FRAME_READY_AFTER_LOAD);
   };
   const [exposed, setExposed] = useState<Exposed | null>(null);
-  const [compileError, setCompileError] = useState<string | null>(null);
+  // The error the note's text gave, with the text it was found in.
+  const [compileError, setCompileError] = useState<{ text: string; message: string } | null>(null);
   const [editNotice, setEditNotice] = useState<string | null>(null);
   const [readyTick, setReadyTick] = useState(0);
   // Frame modules sent to the frame since it last said ready: it asks for
@@ -517,7 +518,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (cancelled) return;
           const message =
             error instanceof Error ? error.message : String(error);
-          setCompileError(message);
+          setCompileError({ text: document.text, message });
           rejectPendingDraft(message);
           onPendingChange?.(false);
           onError?.(message);
@@ -526,7 +527,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       (error: unknown) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
-        setCompileError(message);
+        setCompileError({ text: document.text, message });
         rejectPendingDraft(message);
         onPendingChange?.(false);
         onError?.(message);
@@ -1024,9 +1025,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (message.kind === "render-error") {
         setEditNotice(null);
         const error = `Preview failed: ${message.message}`;
+        setCompileError({ text: authority.current?.text ?? latestDocument.current.text, message: error });
         authority.current = null;
         ++epoch.current;
-        setCompileError(error);
         onPendingChange?.(false);
         onError?.(error);
         return;
@@ -1233,7 +1234,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   ]);
 
   // While the person types in the source, the frame keeps its last good render.
-  const displayedError = useSettledError(componentError ?? compileError, typed);
+  const displayedError = useSettledError(
+    componentError ?? compileError?.message ?? null,
+    typing,
+    componentError != null || compileError?.text === document.text,
+  );
   // Offline, Comment by a selection or heading shows off, and says why.
   const offlineAction = comments?.offline && !comments.canComment ? (selectionAction ?? headingAction) : null;
   // The marker column shows while the note has commented text ("draft" is a new comment's, unmarked).

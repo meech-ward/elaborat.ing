@@ -42,7 +42,7 @@ import {
   type OpenFile,
 } from "./session";
 import { linkedFile, resolveNoteLink } from "./noteLinks";
-import { useSettledError } from "@/lib/settledError";
+import { useSettledError, useTyping } from "@/lib/settledError";
 
 type Mode = EditorView;
 
@@ -130,13 +130,15 @@ export function WorkspaceSession({
   const view: Mode = mode === "split" && compact ? "rendered" : mode;
   const [renderedEver, setRenderedEver] = useState(mode !== "source");
   useEffect(() => { writeProjectView(client.persistenceKey, initial.path, mode); }, [client.persistenceKey, initial.path, mode]);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const [sourceError, setSourceError] = useState<string | null>(null);
+  // Each error with the text it was found in, as the checks run after the text changes.
+  const [renderError, setRenderError] = useState<{ text: string; message: string } | null>(null);
+  const [sourceError, setSourceError] = useState<{ text: string; message: string } | null>(null);
   // The person's own edits in the source: while they type, an error in the
-  // half-typed text waits until they pause (lib/settledError.ts).
-  const [typed, setTyped] = useState(0);
-  const shownRenderError = useSettledError(renderError, typed);
-  const shownSourceError = useSettledError(sourceError, typed);
+  // half-typed text waits until they pause, or until they act on the text (a
+  // view switch, Save, Export, Format) and it shows at once (lib/settledError.ts).
+  const { typing, typed, settle } = useTyping();
+  const shownRenderError = useSettledError(renderError?.message ?? null, typing, renderError?.text === snapshot.text);
+  const shownSourceError = useSettledError(sourceError?.message ?? null, typing, sourceError?.text === snapshot.text);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [componentGeneration, setComponentGeneration] = useState(0);
@@ -293,11 +295,11 @@ export function WorkspaceSession({
       if (frozen.current) return;
       // Text that arrived (a rendered edit, an agent's save, a reload) is in the store already.
       if (text === store.snapshot().text) return;
-      setTyped((count) => count + 1);
+      typed();
       setPatchError(null);
       setSnapshot(store.setText(text));
     },
-    [store],
+    [store, typed],
   );
 
   const handlePatch = useCallback(
@@ -329,8 +331,8 @@ export function WorkspaceSession({
   }, []);
 
   const handleRenderError = useCallback((message: string | null) => {
-    setRenderError(message);
-  }, []);
+    setRenderError(message === null ? null : { text: store.snapshot().text, message });
+  }, [store]);
 
   const handleEditResource = useCallback(
     (path: string) => {
@@ -365,7 +367,7 @@ export function WorkspaceSession({
     let alive = true;
     const timer = window.setTimeout(() => {
       void diagnoseSource(snapshot.text, snapshot.format).then((message) => {
-        if (alive) setSourceError(message);
+        if (alive) setSourceError(message === null ? null : { text: snapshot.text, message });
       });
     }, 400);
     return () => {
@@ -375,6 +377,7 @@ export function WorkspaceSession({
   }, [snapshot.text, snapshot.format, isNote]);
 
   const switchMode = useCallback((next: Mode) => {
+    settle();
     // Blurring the iframe can start an edit between pointerdown and click.
     // Keep that one click as an intent, but do not hide the editor mid-commit.
     if (renderedPendingRef.current) {
@@ -385,7 +388,7 @@ export function WorkspaceSession({
     pendingMode.current = null;
     setMode(next);
     if (next !== "source") setRenderedEver(true);
-  }, []);
+  }, [settle]);
 
   // A note that asks again (a component file changed) stops its rendered
   // view, so an edit it had under way is let go.
@@ -446,6 +449,7 @@ export function WorkspaceSession({
   const pendingWrite = useRef<{ target: string; expectedRevision: string | null; verb: string } | null>(null);
   const doWrite = useCallback(
     async (target: string, expectedRevision: string | null, verb: string) => {
+      settle();
       if (frozen.current) return;
       if (renderedPendingRef.current) {
         pendingWrite.current = { target, expectedRevision, verb };
@@ -510,7 +514,7 @@ export function WorkspaceSession({
         savingRef.current = false;
       }
     },
-    [client, refreshList, store],
+    [client, refreshList, settle, store],
   );
   useEffect(() => {
     const write = pendingWrite.current;
@@ -648,6 +652,7 @@ export function WorkspaceSession({
   }, [client, holdBack, openFile, savedRevision, store]);
 
   const handleExport = useCallback(async () => {
+    settle();
     if (renderedPendingRef.current) {
       setNotice("Finishing edit…");
       return;
@@ -668,9 +673,10 @@ export function WorkspaceSession({
         `Export failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-  }, [displayName, store]);
+  }, [displayName, settle, store]);
 
   const handleFormat = useCallback(async () => {
+    settle();
     if (frozen.current) return;
     pendingOperation.current++;
     setNotice(null);
@@ -682,7 +688,7 @@ export function WorkspaceSession({
     } finally {
       pendingOperation.current--;
     }
-  }, []);
+  }, [settle]);
 
   useEffect(() => {
     if (!active) return;
@@ -895,7 +901,7 @@ export function WorkspaceSession({
                 onPendingChange={handleRenderedPending}
                 onPatch={handlePatch}
                 onError={handleRenderError}
-                typed={typed}
+                typing={typing}
                 resources={resourcePixels}
                 allowedResourcePaths={refs.map((ref) => ref.path)}
                 availableResourcePaths={workspacePaths.filter((path) =>

@@ -34,7 +34,7 @@ import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
-import { useSettledError } from "@/lib/settledError";
+import { useSettledError, useTyping } from "@/lib/settledError";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -111,12 +111,22 @@ export function DiagramView({
   const [savedSidecarBytes, setSavedSidecarBytes] = useState<string | null>(null);
   const [baseline, setBaseline] = useState<GeneratedBaseline | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  // The code those were found in.
+  const [diagnosed, setDiagnosed] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
   const [mode, setMode] = useState<CanvasView>(() => canvasViewFrom(readProjectView(client.persistenceKey, path)));
   useEffect(() => {
     writeProjectView(client.persistenceKey, path, mode);
   }, [client.persistenceKey, path, mode]);
-  const { view, header: viewHeader } = useCanvasViews(mode, active, setMode, "Diagram view");
+  // The person's own edits in the code: while they type, an error in the
+  // half-typed code waits until they pause, or until they act on the code (a
+  // view switch, Regenerate, Reset layout, Save, an export) and it shows at
+  // once (lib/settledError.ts).
+  const { typing, typed, settle } = useTyping();
+  const { view, header: viewHeader } = useCanvasViews(mode, active, (next) => {
+    settle();
+    setMode(next);
+  }, "Diagram view");
   /** The code the canvas was last generated from. */
   const generatedFrom = useRef<string | null>(null);
   // Set at open when the canvas had to be generated (none saved, or the code changed since).
@@ -147,23 +157,20 @@ export function DiagramView({
   useLayoutEffect(() => {
     latest.current = { source, scene };
   }, [source, scene]);
-  // The person's own edits in the code: while they type, an error in the
-  // half-typed code waits until they pause (lib/settledError.ts).
-  const [typed, setTyped] = useState(0);
   const codeErrors = useMemo(() => {
     const errors = diagnostics.filter((entry) => entry.severity === "error");
     return errors.length > 0 ? errors : null;
   }, [diagnostics]);
-  const shownErrors = useSettledError(codeErrors, typed);
+  const shownErrors = useSettledError(codeErrors, typing, diagnosed === source);
 
   const changeSource = useCallback((text: string) => {
     if (frozen.current) return;
     // Code that arrived is the source already (the layout effect above).
-    if (text !== latest.current.source) setTyped((count) => count + 1);
+    if (text !== latest.current.source) typed();
     latest.current = { ...latest.current, source: text };
     setLabelError(null);
     setSource(text);
-  }, []);
+  }, [typed]);
 
   const changeCanvas = useCallback((next: DrawingScene) => {
     if (frozen.current) return;
@@ -293,6 +300,7 @@ export function DiagramView({
         setScene(result.scene);
         setBaseline(result.baseline);
         setDiagnostics(result.diagnostics);
+        setDiagnosed(opened.source);
         setConflicts(result.conflicts);
         setSavedScene(native?.savedContent ? parseDrawingFile(native.savedContent, nativePath).scene : null);
         setSavedSidecarText(sidecar?.savedContent ? writeSidecarFile(readSidecarFile(sidecar.savedContent)) : null);
@@ -314,6 +322,7 @@ export function DiagramView({
   }, [client, opened, nativePath, sidecarPath]);
 
   const regenerate = useCallback(async () => {
+    settle();
     if (frozen.current || !scene || regenerating) return;
     if (pendingLabels.length) {
       setNotice("Wait for the canvas label to reach the code before regenerating.");
@@ -336,6 +345,7 @@ export function DiagramView({
       setScene(result.scene);
       setBaseline(result.baseline);
       setDiagnostics(result.diagnostics);
+      setDiagnosed(source);
       setConflicts(result.conflicts);
       setNotice(
         result.ok
@@ -347,9 +357,10 @@ export function DiagramView({
     } finally {
       setRegenerating(false);
     }
-  }, [scene, regenerating, pendingLabels.length, source, baseline]);
+  }, [scene, regenerating, pendingLabels.length, settle, source, baseline]);
 
   const resetLayout = useCallback(async () => {
+    settle();
     if (frozen.current || !scene || regenerating) return;
     if (pendingLabels.length) {
       setNotice("Wait for the canvas label to reach the code before resetting.");
@@ -379,6 +390,7 @@ export function DiagramView({
       setScene(toDrawingScene(merged.scene, scene));
       setBaseline(merged.baseline);
       setDiagnostics(merged.diagnostics);
+      setDiagnosed(source);
       setConflicts([]);
       setNotice("Reset to the generated layout, with freehand additions kept. Save to keep it.");
     } catch (error) {
@@ -386,7 +398,7 @@ export function DiagramView({
     } finally {
       setRegenerating(false);
     }
-  }, [scene, regenerating, pendingLabels.length, source]);
+  }, [scene, regenerating, pendingLabels.length, settle, source]);
 
   // Split: code changes reach the canvas as they are typed, as Regenerate
   // does, without its notices.
@@ -407,6 +419,7 @@ export function DiagramView({
         setScene(result.scene);
         setBaseline(result.baseline);
         setDiagnostics(result.diagnostics);
+        setDiagnosed(source);
         setConflicts(result.conflicts);
       })();
     }, 300);
@@ -418,6 +431,7 @@ export function DiagramView({
 
   /** Save the source and both generated files as one change. `overwrite` saves over files that changed meanwhile. */
   const save = useCallback(async (overwrite = false) => {
+    settle();
     if (frozen.current || saving) return;
     if (pendingLabels.length) {
       setNotice("Wait for the canvas label to reach the code before saving.");
@@ -470,7 +484,7 @@ export function DiagramView({
     } finally {
       setSaving(false);
     }
-  }, [saving, pendingLabels.length, baseline, savedSource, savedScene, savedSidecarText, baseRevision, client, path, nativePath, nativeRevision, sidecarPath, sidecarRevision]);
+  }, [saving, pendingLabels.length, baseline, savedSource, savedScene, savedSidecarText, baseRevision, client, path, nativePath, nativeRevision, settle, sidecarPath, sidecarRevision]);
 
   // A canvas generated at open follows from the saved code, so it is saved
   // straight away rather than shown as unsaved edits nobody made (a diagram an
@@ -534,6 +548,7 @@ export function DiagramView({
 
   const baseName = path.split("/").pop()?.replace(/\.d2$/i, "") ?? "diagram";
   const exportSvg = useCallback(async () => {
+    settle();
     if (!scene) return;
     try {
       downloadText(await exportDrawingSvg(scene), `${baseName}.svg`, "image/svg+xml");
@@ -541,8 +556,9 @@ export function DiagramView({
     } catch (error) {
       setNotice(`SVG export failed: ${message(error)}`);
     }
-  }, [scene, baseName]);
+  }, [scene, baseName, settle]);
   const exportPng = useCallback(async () => {
+    settle();
     if (!scene) return;
     try {
       downloadBlob(await exportDrawingPng(scene, { scale: 2 }), `${baseName}.png`);
@@ -550,7 +566,7 @@ export function DiagramView({
     } catch (error) {
       setNotice(`PNG export failed: ${message(error)}`);
     }
-  }, [scene, baseName]);
+  }, [scene, baseName, settle]);
 
   const fullBleed = desktop && active && view !== "source" && booted && !bootError && scene !== null;
   const [stageRef, onStageScroll] = useCanvasStage(fullBleed);

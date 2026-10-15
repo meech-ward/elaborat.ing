@@ -5,8 +5,9 @@ import { APP_URL } from "./urls.ts"
 // While the person types a tag into a note, it does not compile until the tag
 // closes. No error shows while they type, and the rendered view keeps its last
 // good render; text left unable to compile says so once they pause, after a
-// second (src/lib/settledError.ts). The page notes the times itself, so a slow
-// machine cannot blur them.
+// second, or at once when they act on it, as Canvas or Save does for a drawing
+// (src/lib/settledError.ts). The page notes the times itself, so a slow machine
+// cannot blur them.
 
 test.describe.configure({ timeout: 60_000 })
 test.use({ viewport: { width: 1280, height: 800 } })
@@ -16,10 +17,15 @@ const PATH = "notes/typing.mdx"
 const NOTE = "# Typing\n\nFirst paragraph here.\n"
 const SHOWN = "Source is unchanged and remains editable."
 
+const DRAWING_PATH = "sketch.excalidraw"
+const DRAWING = '{"type":"excalidraw","version":2,"source":"https://excalidraw.com","elements":[],"appState":{"viewBackgroundColor":"#ffffff"},"files":{}}'
+const NOT_A_DRAWING = "This is not a valid drawing"
+
 const projectUrl = (id: string, path: string) => new URL(`projects/${id}/${path}`, APP_URL).href
 const paragraph = (page: Page, text: string) => page.frameLocator(FRAME).locator("p").filter({ hasText: text })
 const sourceText = (page: Page) => page.locator(".monaco-editor:visible .view-lines")
 const errorShown = (page: Page) => page.getByRole("alert").filter({ hasText: SHOWN })
+const drawingView = (page: Page, name: string) => page.getByRole("group", { name: "Drawing view" }).getByRole("button", { name, exact: true })
 
 type Times = { keyAt: number; errorAt: number | null; frameHiddenAt: number[] }
 const times = (page: Page) => page.evaluate(() => (window as unknown as { typingTimes: Times }).typingTimes)
@@ -78,3 +84,43 @@ test("typing through text that does not compile shows no error, and text left th
   await expect(paragraph(page, "More more").locator("i")).toHaveText("more")
   expect(fake.server.content(id, PATH)).toBe(NOTE)
 })
+
+/** From now on the page notes, for each click, whether the drawing's error is on screen once the click's own update has rendered. */
+async function noteClicks(page: Page) {
+  await page.evaluate((error) => {
+    const clicks: boolean[] = []
+    Object.assign(window, { clicks })
+    // A task queued as a click starts runs once the click's update has rendered.
+    window.addEventListener("click", () => {
+      window.setTimeout(() => clicks.push([...document.querySelectorAll('[role="alert"]')].some((alert) => alert.textContent?.includes(error))))
+    }, true)
+  }, NOT_A_DRAWING)
+}
+
+for (const action of ["Canvas", "Save"] as const) {
+  test(`pressing ${action} right after typing JSON that is not a drawing shows its error at once, without waiting for the typing to pause`, async ({ page, appErrors }) => {
+    appErrors.expect(NOT_A_DRAWING)
+    const fake = await fakeSupabase(page)
+    const id = crypto.randomUUID()
+    await fake.server.remote(person.id).createProject(id, "Drawings")
+    await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: DRAWING_PATH, content: DRAWING }])
+    await signedIn(page)
+    await page.goto(projectUrl(id, DRAWING_PATH))
+    await expect(page.locator(".excalidraw canvas").first()).toBeVisible({ timeout: 45_000 })
+    await drawingView(page, "Code").click()
+    await sourceText(page).click()
+    await noteClicks(page)
+
+    // A letter after the closing brace leaves text that is not JSON.
+    await page.keyboard.press("ControlOrMeta+End")
+    await page.keyboard.type("x")
+    await (action === "Canvas" ? drawingView(page, "Canvas") : page.getByRole("button", { name: "Save", exact: true })).click()
+    await expect(page.getByRole("alert").filter({ hasText: NOT_A_DRAWING })).toBeVisible()
+    // It showed with the click itself, not once the typing had paused.
+    expect(await page.evaluate(() => (window as unknown as { clicks: boolean[] }).clicks)).toEqual([true])
+    // The drawing stays in Code, and nothing was saved.
+    await expect(drawingView(page, "Code")).toHaveAttribute("aria-pressed", "true")
+    if (action === "Save") await expect(page.locator(".wb-native-view [aria-live]").first()).toContainText("Not saved: the file is not a valid drawing.")
+    expect(fake.server.content(id, DRAWING_PATH)).toBe(DRAWING)
+  })
+}
