@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { usePanelRef } from "react-resizable-panels";
@@ -51,7 +52,7 @@ import { SignUpTo } from "@/features/projects/LocalProject";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
-import { AgentChangesEntry, AgentChangesSurface } from "@/features/agent-changes";
+import { AgentChangesEntry, AgentChangesSurface, type AgentFollow, type AgentSave } from "@/features/agent-changes";
 import { AssistantToggle, AssistantUiProvider, LazyAssistant, type AssistantHost } from "@/features/assistant";
 import { makeAssistantHost, type AssistantHostState } from "./assistantHost";
 import { NewEntryField } from "./NewEntryField";
@@ -96,6 +97,22 @@ import {
 } from "./tabPersistence";
 import "./workbench.css";
 
+/** How long after the person last used a chat's panel (a key, a press, the wheel) it does not follow the agent to another file. */
+const FOLLOW_QUIET_MS = 3_000;
+/** How long an agent's save may take to sync here and still be followed. */
+const FOLLOW_WITHIN_MS = 15_000;
+const noSubscription = () => () => {};
+const noSave = (): AgentSave | null => null;
+
+/**
+ * Something open that following the agent would close, or take its file
+ * from: a menu, a dialog (the command palette, a question, a name to give),
+ * or a comment, reply or edit being written in the comments panel.
+ */
+function menuOrDialogOpen(): boolean {
+  return document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"], [data-comments-surface] textarea') !== null;
+}
+
 /**
  * The editor for one project: an explorer, tabs of open files, each a
  * source and rendered editor, saves to this device (sync sends them), and a
@@ -120,6 +137,7 @@ export function WorkspaceWorkbench({
   onResolveConflict,
   readOnly = null,
   local = false,
+  follow = null,
 }: {
   client: WorkspaceStore;
   onLeaveGuard?: (guard: PrepareProjectLeave | null) => void;
@@ -147,6 +165,8 @@ export function WorkspaceWorkbench({
   readOnly?: string | null;
   /** The local project of someone without an account: what needs one is shown locked, linking to sign-up. */
   local?: boolean;
+  /** In a chat's panel: the agent's saves to follow (see the effect that follows them). */
+  follow?: AgentFollow | null;
 }) {
   const { href, target, navigate } = useFileLocation();
   const locationRef = useRef({ href, target, navigate });
@@ -384,8 +404,10 @@ export function WorkspaceWorkbench({
     onLeaveGuard?.(() => prepareProjectLeave(leaveSessions.current, true, () => client.flushLocalDrafts()));
     return () => onLeaveGuard?.(null);
   }, [client, onLeaveGuard]);
+  // `arriving`: a note or drawing opened to follow an agent shows empty at
+  // first and fills in (TabFile.arriving), unless it has edits kept here.
   const openPath = useCallback(
-    async (path: string, fromLocation = false): Promise<boolean> => {
+    async (path: string, fromLocation = false, arriving = false): Promise<boolean> => {
       setLocationProblem(null);
       if (!fromLocation) interacted.current = true;
       const request = ++sequence.current;
@@ -412,7 +434,13 @@ export function WorkspaceWorkbench({
           type: "opened",
           sequence: request,
           fromLocation,
-          file: { path, content: read.content, revision: read.revision, savedContent: read.savedContent },
+          file: {
+            path,
+            content: read.content,
+            revision: read.revision,
+            savedContent: read.savedContent,
+            ...(arriving && read.revision !== null && read.content === read.savedContent ? { arriving } : {}),
+          },
         });
         if (sequence.current === request) setNotice(null);
         if (restoreDone.current) setPersistReady(true);
@@ -745,6 +773,64 @@ export function WorkspaceWorkbench({
       if (restoreDone.current && tab) setPersistReady(true);
     }).catch((error: unknown) => setNotice(`Close stopped: ${String(error)}`));
   };
+  // In a chat's panel the workbench follows the agent (`follow`): once a
+  // save one of the person's agents made to a note, drawing or diagram has
+  // synced here, that file opens, or its tab comes forward, unless it is the
+  // one on screen (which takes the save itself). A note or drawing that
+  // opens this way fills in as if the agent were making it now
+  // (TabFile.arriving). Several saves in a row: the latest. Nothing happens
+  // while the person is in the middle of something: unsaved edits (or an
+  // edit finishing) in the file on screen, a key, press or wheel in the
+  // panel in the last FOLLOW_QUIET_MS (the note's frame reports its own), a
+  // menu or dialog open, a comment being written or attached, or a new
+  // file being named. The Agent changes count and the files panel show the
+  // save anyway.
+  const agentSave = useSyncExternalStore(follow?.subscribe ?? noSubscription, follow?.getState ?? noSave);
+  const usedAt = useRef(-Infinity);
+  const markUsed = useCallback(() => {
+    usedAt.current = performance.now();
+  }, []);
+  useEffect(() => {
+    if (!follow) return;
+    const inputs = ["keydown", "pointerdown", "wheel", "touchstart"];
+    for (const type of inputs) window.addEventListener(type, markUsed, { capture: true, passive: true });
+    return () => {
+      for (const type of inputs) window.removeEventListener(type, markUsed, { capture: true });
+    };
+  }, [follow, markUsed]);
+  // The latest save, when it was first seen, and whether it was dealt with.
+  const following = useRef<{ save: AgentSave; at: number; done: boolean } | null>(null);
+  const commentDraft = commentsUi.request !== null || commentsUi.attaching !== null;
+  useEffect(() => {
+    if (agentSave && following.current?.save !== agentSave) following.current = { save: agentSave, at: performance.now(), done: false };
+    const current = following.current;
+    if (!current || current.done) return;
+    const { save } = current;
+    const listed = files.find((file) => file.path === save.path);
+    if (!listed?.server || listed.server.version < save.version) {
+      // Not here yet: the file list has it once sync brings it, unless that takes too long.
+      if (performance.now() - current.at > FOLLOW_WITHIN_MS) current.done = true;
+      return;
+    }
+    current.done = true;
+    const active = stateRef.current.active;
+    if (save.path === active || performance.now() - usedAt.current < FOLLOW_QUIET_MS) return;
+    const open = active === null ? null : leaveSessions.current.get(active)?.state();
+    if (open?.dirty || open?.pending || stateRef.current.tabs.some((tab) => tab.path === active && tab.dirty)) return;
+    if (creating !== null || commentDraft || menuOrDialogOpen()) return;
+    interacted.current = true;
+    // Synchronize the agent's saves (an outside store) with the tabs, and on a phone show the file.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (narrow) setSidebar(false);
+    if (stateRef.current.tabs.some((tab) => tab.path === save.path)) {
+      dispatch({ type: "request", sequence: ++sequence.current });
+      dispatch({ type: "select", path: save.path });
+      if (restoreDone.current) setPersistReady(true);
+      return;
+    }
+    // A file with edits kept on this device, or a conflict to resolve, opens as it is.
+    void openPath(save.path, false, kindForPath(save.path) !== "diagram" && !listed.draft && !listed.conflict);
+  }, [agentSave, commentDraft, creating, files, narrow, openPath]);
   useEffect(() => {
     function key(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -1237,6 +1323,7 @@ export function WorkspaceWorkbench({
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined}
                             onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
+                            onActivity={follow ? markUsed : undefined}
                           />
                         )}
                       </TabsContent>

@@ -1553,6 +1553,27 @@ the frame may block `window.confirm`. Notes render in the `srcdoc` frame from
 the start there, since the sandbox domain lets only the app's own site frame
 its page.
 
+**Decision: the panel follows the agent.** The panel is there to watch the
+agent work, so when one of the person's agents saves a note, drawing or
+diagram other than the one on screen, the workbench opens it, or brings its
+tab forward, once the save has synced. After each change signal the project
+page lists the project's agent changes (`AgentFollow`,
+`src/features/agent-changes/follow.ts`) and takes the newest save made after
+its first look by an agent of this person's: their own saves are never agent
+changes, and another person's agent in a shared project is not followed.
+Several saves in a row: the latest. It does not switch while the person is
+in the middle of something in the panel: unsaved edits, or an edit still
+finishing, in the file on screen; a key, press or wheel there in the last
+3 s (the note's frame reports its own, as the page cannot see input in it);
+a menu or dialog open; a comment being written or attached; a new file being
+named. Nothing else shows then: the Agent changes count and the files panel
+already show the save. A note or drawing opened this way starts empty, and
+once its view shows that (the editors and the canvas load on first use; 10 s
+at most) it takes its saved version as a newer one, so it is sketched in or
+writes in by the paths above, all at once with reduced motion. That empty
+start is never kept as a draft, and a file with edits kept on the device, or
+a sync conflict, opens as it is. The site's own tab never follows.
+
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,
 16px text controls on touch screens and iOS pinch gestures cancelled, in the

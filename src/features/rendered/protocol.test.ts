@@ -163,6 +163,15 @@ describe('checkChildMessage', () => {
     });
     expect(result.ok).toBe(true);
   });
+
+  test('activity is input, not an edit: from the frame, for its session, at any revision, and nothing more', () => {
+    const valid = { data: { kind: 'activity', session: 'session-1234' }, source: FRAME, expectedSource: FRAME, session: 'session-1234', revision: 7 };
+    expect(checkChildMessage(valid).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, revision: 8 }).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, source: OTHER }).ok).toBe(false);
+    expect(checkChildMessage({ ...valid, session: 'another-session' }).ok).toBe(false);
+    expect(checkChildMessage({ ...valid, data: { ...valid.data, revision: 7 } }).ok).toBe(false);
+  });
 });
 
 describe('frame modules', () => {
@@ -195,6 +204,7 @@ describe('staleChildMessage', () => {
       ready: 'drop',
       'load-module': 'drop',
       rendered: 'drop',
+      activity: 'drop',
       'render-error': 'drop',
       'edit-resource': 'drop',
       'view-resource': 'drop',

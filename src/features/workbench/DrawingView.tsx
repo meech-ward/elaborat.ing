@@ -25,7 +25,7 @@ import { downloadBlob, downloadText } from "./download";
 import { buildNativeDownload } from "./nativeDownload";
 import type { OperationSession } from "./operationSession";
 import { readProjectView, writeProjectView } from "./projectViews";
-import type { TabFile } from "./tabs";
+import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { FileHeader } from "./FileHeader";
 import { useCanvasStage } from "./canvasStage";
@@ -34,6 +34,9 @@ import { useDesktopFrame } from "./tabline";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** What a drawing opened to follow an agent shows at first: no elements. */
+const EMPTY_DRAWING = '{"type":"excalidraw","version":2,"elements":[]}';
 
 function tryParse(content: string, path: string): { parsed: ParsedDrawing | null; error: string | null } {
   try {
@@ -107,12 +110,17 @@ export function DrawingView({
   const theme = useCanvasTheme();
   const desktop = useDesktopFrame();
   const present = useCanvasPresentation("drawing");
-  const [opened] = useState(() => tryParse(initial.content, path));
+  // A drawing opened to follow an agent starts empty (TabFile.arriving), and
+  // takes its saved version once its canvas shows that (below).
+  const [opening] = useState<TabFile>(() =>
+    initial.arriving ? { path, content: EMPTY_DRAWING, revision: ARRIVING_REVISION, savedContent: EMPTY_DRAWING } : initial,
+  );
+  const [opened] = useState(() => tryParse(opening.content, path));
   const [original, setOriginal] = useState<ParsedDrawing | null>(opened.parsed);
   const [scene, setScene] = useState<DrawingScene | null>(opened.parsed?.scene ?? null);
-  const [baseRevision, setBaseRevision] = useState<string | null>(initial.revision);
+  const [baseRevision, setBaseRevision] = useState<string | null>(opening.revision);
   // The saved copy that "unsaved" compares against: it moves on every save and adopted change.
-  const [savedText, setSavedText] = useState(initial.savedContent !== undefined ? initial.savedContent ?? "" : initial.revision ? initial.content : "");
+  const [savedText, setSavedText] = useState(opening.savedContent !== undefined ? opening.savedContent ?? "" : opening.revision ? opening.content : "");
   const [mode, setMode] = useState<CanvasView>(() => {
     const stored = canvasViewFrom(readProjectView(client.persistenceKey, path));
     return !opened.parsed && stored === "canvas" ? "source" : stored;
@@ -122,7 +130,7 @@ export function DrawingView({
   }, [client.persistenceKey, path, mode]);
   const selectRef = useRef<(next: CanvasView) => void>(() => {});
   const { view, header: viewHeader } = useCanvasViews(mode, active, (next) => selectRef.current(next), "Drawing view");
-  const [sourceDraft, setSourceDraft] = useState(initial.content);
+  const [sourceDraft, setSourceDraft] = useState(opening.content);
   const [sourceError, setSourceError] = useState<string | null>(opened.error);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -148,9 +156,10 @@ export function DrawingView({
     return view === "canvas" && scene && original ? saveDrawingFile(scene, original).text : sourceDraft;
   }, [dirty, savedText, view, scene, original, sourceDraft]);
 
-  // Unsaved edits are kept on the device (a draft equal to the saved copy is dropped).
+  // Unsaved edits are kept on the device (a draft equal to the saved copy is
+  // dropped). An arriving drawing's empty start is not an edit.
   const persistDraft = useCallback(async () => {
-    if (readOnly) return;
+    if (readOnly || baseRevision === ARRIVING_REVISION) return;
     await client.persistDrafts([{ path, content: currentText(), baseRevision }]);
   }, [client, path, currentText, baseRevision, readOnly]);
   useEffect(() => {
@@ -190,7 +199,7 @@ export function DrawingView({
   // that keeps the cursor on its line. The text written is remembered so it
   // is not read back into the canvas.
   const cursor = useRef({ line: 1, column: 1 });
-  const fromCanvas = useRef<string | null>(opened.parsed ? initial.content : null);
+  const fromCanvas = useRef<string | null>(opened.parsed ? opening.content : null);
   const canvasTimer = useRef<number | null>(null);
   const writeCanvasToSource = useCallback((): string => {
     const { scene: current, original: base, sourceDraft: before } = latest.current;
@@ -339,11 +348,25 @@ export function DrawingView({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active, save]);
 
+  // A drawing opened to follow an agent shows empty until its canvas has
+  // shown that (it loads on first use), or ARRIVAL_WAIT_MS has passed, or
+  // while only its text shows. Then it takes its saved version as a newer
+  // one, below, and the canvas sketches every element in.
+  const [canvasShown, setCanvasShown] = useState(false);
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    if (!initial.arriving) return;
+    const timer = window.setTimeout(() => setWaited(true), ARRIVAL_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [initial.arriving]);
+  const showCanvas = useCallback(() => setCanvasShown(true), []);
+  const arrivalWaits = baseRevision === ARRIVING_REVISION && !canvasShown && !waited && view !== "source";
+
   // A newer saved copy (from another tab, or brought in by sync): an untouched
   // drawing takes it; one with edits keeps them and offers the choice.
   const checking = useRef(false);
   useEffect(() => {
-    if (savedRevision === undefined || savedRevision === null || savedRevision === baseRevision || saving) return;
+    if (savedRevision === undefined || savedRevision === null || savedRevision === baseRevision || saving || arrivalWaits) return;
     if (changedElsewhere?.revision === savedRevision || checking.current) return;
     checking.current = true;
     void client
@@ -359,7 +382,7 @@ export function DrawingView({
       .finally(() => {
         checking.current = false;
       });
-  }, [savedRevision, baseRevision, saving, changedElsewhere, client, path, dirty, adopt]);
+  }, [savedRevision, baseRevision, saving, changedElsewhere, client, path, dirty, adopt, arrivalWaits]);
 
   const baseName = path.split("/").pop()?.replace(/\.md$/, "") ?? "drawing";
   const exportSvg = useCallback(async () => {
@@ -534,6 +557,7 @@ export function DrawingView({
             theme={theme}
             present={present}
             drawIn={arrived}
+            onShown={initial.arriving ? showCanvas : undefined}
             onScrollChange={onStageScroll}
             compact={!desktop}
             active={active && view !== "source"}
@@ -545,7 +569,7 @@ export function DrawingView({
       )}
       <div hidden={view === "canvas"} className="wb-native-stage wb-native-source">
         <SourceEditor
-          initialText={initial.content}
+          initialText={opening.content}
           documentText={sourceDraft}
           format="md"
           documentId={1}

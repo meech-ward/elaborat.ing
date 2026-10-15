@@ -3,7 +3,7 @@ import type { OperationSession } from "./operationSession";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
-import type { TabFile } from "./tabs";
+import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
 import { SourceEditor, preloadSourceEditor, type SourceEditorApi } from "@/features/source";
 import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
@@ -72,6 +72,7 @@ export function WorkspaceSession({
   onResolveConflict,
   onDuplicate,
   readOnly = null,
+  onActivity,
 }: {
   client: WorkspaceStore;
   initial: TabFile;
@@ -94,19 +95,26 @@ export function WorkspaceSession({
   onDuplicate?: () => void;
   /** Why the project cannot be changed (a viewer, or an archived project), or null. The file is then shown, never edited or kept as a draft. */
   readOnly?: string | null;
+  /** The person used the rendered note's frame (a key, a press, the wheel), which the page cannot see itself. */
+  onActivity?: () => void;
 }) {
+  // A note opened to follow an agent starts empty (TabFile.arriving), and
+  // takes its saved version once its views show that (below).
+  const [opening] = useState<TabFile>(() =>
+    initial.arriving ? { path: initial.path, content: "", revision: ARRIVING_REVISION, savedContent: "" } : initial,
+  );
   const [store] = useState(() => {
     const store = createDocumentStore(
-      initial.savedContent !== undefined ? initial.savedContent ?? "" : initial.revision ? initial.content : "",
+      opening.savedContent !== undefined ? opening.savedContent ?? "" : opening.revision ? opening.content : "",
       formatForFilename(initial.path),
     );
-    if ((!initial.revision && initial.content) || initial.savedContent !== undefined) store.setText(initial.content);
+    if ((!opening.revision && opening.content) || opening.savedContent !== undefined) store.setText(opening.content);
     return store;
   });
   const [snapshot, setSnapshot] = useState<StoreState>(() => store.snapshot());
   const [openFile, setOpenFile] = useState<OpenFile>(() =>
-    initial.revision
-      ? openWorkspaceFile(initial.path, initial.revision)
+    opening.revision
+      ? openWorkspaceFile(initial.path, opening.revision)
       : { ...newUntitledNote(initial.path), kind: kindForPath(initial.path) },
   );
   // Split is desktop only: at compact widths a stored Split shows Rendered.
@@ -137,7 +145,8 @@ export function WorkspaceSession({
   const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty);
   const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
   useEffect(() => {
-    if (readOnly) return;
+    // An arriving note's empty start is not an edit: never kept as a draft.
+    if (readOnly || openFile.baseRevision === ARRIVING_REVISION) return;
     let alive = true;
     void client.persistDrafts([{ path: initial.path, content: snapshot.text, baseRevision: openFile.baseRevision }]).catch((error: unknown) => {
       if (alive) setNotice(`Local draft could not be saved: ${error instanceof Error ? error.message : String(error)}`);
@@ -175,7 +184,7 @@ export function WorkspaceSession({
       freeze: () => { frozen.current = true; },
       release: () => { frozen.current = locked; },
       persistDraft: async () => {
-        if (readOnly) return;
+        if (readOnly || openFile.baseRevision === ARRIVING_REVISION) return;
         await client.persistDrafts([{ path: initial.path, content: store.snapshot().text, baseRevision: openFile.baseRevision }]);
       },
       whenEditFinished: () =>
@@ -569,6 +578,23 @@ export function WorkspaceSession({
     [openFile.path, openFile.pendingName, resetEditorMessages, store],
   );
 
+  // A note opened to follow an agent shows empty until each view on screen
+  // has shown that (the editors load on first use), or ARRIVAL_WAIT_MS has
+  // passed. Then it takes its saved version as a newer one, below, and the
+  // views write all of it in.
+  const [shownEmpty, setShownEmpty] = useState({ source: false, rendered: false, waited: false });
+  useEffect(() => {
+    if (!initial.arriving) return;
+    const timer = window.setTimeout(() => setShownEmpty((shown) => ({ ...shown, waited: true })), ARRIVAL_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [initial.arriving]);
+  const sourceShown = useCallback(() => setShownEmpty((shown) => (shown.source ? shown : { ...shown, source: true })), []);
+  const renderedShown = useCallback(() => setShownEmpty((shown) => (shown.rendered ? shown : { ...shown, rendered: true })), []);
+  const arrivalWaits =
+    openFile.baseRevision === ARRIVING_REVISION &&
+    !shownEmpty.waited &&
+    ((view !== "rendered" && !shownEmpty.source) || (view !== "source" && !shownEmpty.rendered));
+
   // A newer saved copy (from another tab, or brought in by sync): a clean
   // buffer takes it; a buffer with edits keeps them and offers the choice.
   // The copy the note last took this way (an agent's section, say), with the
@@ -576,7 +602,7 @@ export function WorkspaceSession({
   const [arrived, setArrived] = useState<WriteIn | null>(null);
   const checkingSaved = useRef(false);
   useEffect(() => {
-    if (savedRevision === undefined || savedRevision === null || !openFile.path) return;
+    if (savedRevision === undefined || savedRevision === null || !openFile.path || arrivalWaits) return;
     if (savedRevision === openFile.baseRevision || openFile.save.stage === "saving" || savingRef.current) return;
     if (openFile.serverChanged?.currentRevision === savedRevision || checkingSaved.current) return;
     const path = openFile.path;
@@ -601,7 +627,7 @@ export function WorkspaceSession({
       .finally(() => {
         checkingSaved.current = false;
       });
-  }, [client, openFile, savedRevision, store]);
+  }, [arrivalWaits, client, openFile, savedRevision, store]);
 
   const handleExport = useCallback(async () => {
     if (renderedPendingRef.current) {
@@ -801,7 +827,7 @@ export function WorkspaceSession({
           start={
           <div hidden={!inSource} className="wb-source-stage">
             <SourceEditor
-              initialText={initial.content}
+              initialText={opening.content}
               documentText={snapshot.text}
               format={snapshot.format}
               documentId={snapshot.docId}
@@ -817,6 +843,7 @@ export function WorkspaceSession({
               readOnly={readOnly}
               comments={{ ...commentProps, sections: isNote }}
               writeIn={isNote ? arrived : null}
+              onShown={initial.arriving ? sourceShown : undefined}
               onSave={() => {
                 if (readOnly) {
                   setNotice(readOnly);
@@ -860,6 +887,8 @@ export function WorkspaceSession({
                 readOnly={Boolean(readOnly)}
                 comments={commentProps}
                 writeIn={arrived}
+                onShown={initial.arriving ? renderedShown : undefined}
+                onActivity={onActivity}
                 apiRef={renderedApi}
               />
               )}

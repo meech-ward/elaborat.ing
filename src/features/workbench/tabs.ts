@@ -3,7 +3,19 @@ export interface TabFile {
   content: string;
   revision: string | null;
   savedContent?: string | null;
+  /**
+   * Opened to follow an agent (in a chat's panel): the file shows empty at
+   * first, at ARRIVING_REVISION, and once its view shows that, its saved
+   * version arrives as a newer one, so a note writes in and a drawing is
+   * sketched in as if the agent were making it now (WorkspaceSession,
+   * DrawingView).
+   */
+  arriving?: boolean;
 }
+/** The revision an arriving file shows empty at: no saved copy has it, so its saved version is newer. */
+export const ARRIVING_REVISION = "arriving";
+/** The longest an arriving file waits for its view to show it empty before its saved version arrives anyway. */
+export const ARRIVAL_WAIT_MS = 10_000;
 export interface OpenTab extends TabFile {
   dirty: boolean;
   generation?: number;

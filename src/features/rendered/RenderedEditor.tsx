@@ -143,6 +143,10 @@ export type RenderedEditorProps = {
    * writes the added blocks in, once. Display only.
    */
   writeIn?: WriteIn | null;
+  /** Called each time the frame has shown the note as it stands. */
+  onShown?: () => void;
+  /** The person used the frame: a key, a press or the wheel there, which the page around it cannot see. */
+  onActivity?: () => void;
   apiRef?: React.RefObject<RenderedEditorApi | null>;
 };
 
@@ -241,6 +245,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     readOnly = false,
     comments = null,
     writeIn = null,
+    onShown,
+    onActivity,
     apiRef,
   } = props;
   const pendingOwners = useRef({ fluid: false, draft: false });
@@ -741,7 +747,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         });
         return;
       }
-      if (message.kind === "rendered") return;
+      if (message.kind === "rendered") {
+        onShown?.();
+        return;
+      }
+      if (message.kind === "activity") {
+        onActivity?.();
+        return;
+      }
       if (message.kind === "shortcut") {
         // Replay it as a key press on the frame, where the app's own
         // listeners pick it up as if it had been pressed outside.
@@ -1205,6 +1218,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onHistory,
     onPendingChange,
     onPendingChangeProp,
+    onShown,
+    onActivity,
     resources,
     session,
   ]);

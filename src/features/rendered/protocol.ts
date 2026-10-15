@@ -523,6 +523,13 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     session: z.string().check(z.minLength(1)),
     revision: whole,
   }),
+  // The person used the frame (a key, a press, the wheel): the page around
+  // it cannot see input there. In a chat's panel the workbench then leaves
+  // the files on screen as they are for a few seconds.
+  z.strictObject({
+    kind: z.literal("activity"),
+    session: z.string().check(z.minLength(1)),
+  }),
   // The note needs a part of the frame's own code that loads on first use
   // (src/preview/frameModules.ts): charts, or code highlighting.
   z.strictObject({
@@ -668,6 +675,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "ready":
     case "load-module":
     case "rendered":
+    case "activity":
     case "render-error":
     case "edit-resource":
     case "view-resource":
@@ -719,9 +727,9 @@ export function checkChildMessage(args: {
   if (message.kind !== "ready" && message.session !== args.session) {
     return { ok: false, error: "Rejected frame message for a stale session." };
   }
-  // A shortcut is a key press, not an edit, and a module request asks for the
-  // frame's own code: neither has a revision to be stale.
-  if (message.kind !== "ready" && message.kind !== "shortcut" && message.kind !== "load-module" && message.revision !== args.revision) {
+  // A shortcut is a key press, not an edit, a module request asks for the
+  // frame's own code, and activity is only input: none has a revision to be stale.
+  if (message.kind !== "ready" && message.kind !== "shortcut" && message.kind !== "load-module" && message.kind !== "activity" && message.revision !== args.revision) {
     return {
       ok: false,
       error: `Rejected stale frame message (revision ${message.revision}, current ${args.revision}).`,

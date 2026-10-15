@@ -4,5 +4,6 @@
 
 export { AgentChangesEntry, AgentChangesSurface, type AgentChangesSurfaceProps } from "./AgentChangesSurface"
 export { AgentChangesProvider, useAgentChanges, useAgentChangesState } from "./context"
+export { AgentFollow, type AgentSave } from "./follow"
 export { SupabaseAgentChangesRemote, type AgentChange, type AgentChangeList, type AgentChangesRemote } from "./remote"
 export { ProjectAgentChanges, type AgentChangesFocus, type AgentChangesState } from "./store"

@@ -73,6 +73,8 @@ export interface SourceEditorProps {
    * text types in (sourceTypeIn.ts). Display only.
    */
   writeIn?: WriteIn | null;
+  /** Called once the code editor, which loads on first use, shows the text. */
+  onShown?: () => void;
 }
 
 /** Pull a leading `line:column` (MDX/VFile style) out of an error message. */

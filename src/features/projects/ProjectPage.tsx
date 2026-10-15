@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PanelPage } from "@/components/panel"
-import { AgentChangesProvider, ProjectAgentChanges, SupabaseAgentChangesRemote } from "@/features/agent-changes"
+import { AgentChangesProvider, AgentFollow, ProjectAgentChanges, SupabaseAgentChangesRemote } from "@/features/agent-changes"
 import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { accountName } from "@/features/auth/accountName"
 import { CustomCodeProvider, type CustomCodePolicy } from "@/features/custom-code"
@@ -126,9 +126,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     account.local ? null : new ProjectAgentChanges(new SupabaseAgentChangesRemote(loadedClient()), projectId),
   )
   useEffect(() => () => agentChanges?.dispose(), [agentChanges])
+  // In a chat's panel the workbench follows the agent: the newest save one of
+  // the person's agents makes to a note, drawing or diagram opens there.
+  const [agentFollow] = useState(() => (embedded && agentChanges ? new AgentFollow(agentChanges.remote, projectId, account.userId) : null))
+  useEffect(() => () => agentFollow?.dispose(), [agentFollow])
 
   // Hear about changes made elsewhere while the project is open: files sync,
-  // the comments listed so far reload, and agent changes are counted again. Once this project's sync stops
+  // the comments listed so far reload, and agent changes are counted again
+  // (and in a chat's panel looked at, for a save to follow). Once this project's sync stops
   // because the server no longer lists it for this person (their access
   // ended, or its owner deleted it), the page leaves the channel at once
   // (docs/architecture.md, the decision on change signals).
@@ -143,12 +148,14 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         void syncNow()
         comments?.store.changed(revision)
         agentChanges?.changed()
+        agentFollow?.changed()
       },
       // Signals sent while the channel was away are not replayed, so each (re)join reloads the comments listed so far and counts again.
       (status) => {
         if (status !== "SUBSCRIBED") return
         comments?.store.refresh()
         void agentChanges?.refresh()
+        void agentFollow?.refresh()
       },
     )
     seenRevisions.listen(changes)
@@ -156,7 +163,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       seenRevisions.listen(null)
       void changes.close()
     }
-  }, [agentChanges, comments, listening, projectId, seenRevisions, syncNow])
+  }, [agentChanges, agentFollow, comments, listening, projectId, seenRevisions, syncNow])
 
   // The person's own name, set in Settings, shows with their comments at once.
   const auth = useAuth()
@@ -347,6 +354,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           onResolveConflict={resolveConflict}
           readOnly={readOnly}
           local={account.local}
+          follow={agentFollow}
         />
         {download.dialog}
         {sharing && entry ? (

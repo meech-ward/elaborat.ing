@@ -305,7 +305,7 @@ function pushPresentation(api: NativeAPI, raw: DrawingScene, shown: DrawingScene
  * to. onChange fires only for authored edits, never for load restoration.
  */
 export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
-  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, drawIn = null, onScrollChange, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
+  const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, drawIn = null, onScrollChange, onShown, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   // The canvas controls' layer, which covers the part of the canvas a person can see.
@@ -328,6 +328,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const onChangeRef = useRef(onChange);
   const onErrorRef = useRef(onError);
   const onScrollRef = useRef(onScrollChange);
+  const onShownRef = useRef(onShown);
   const commentsRef = useRef(comments);
   // Someone who may comment but not change the drawing: a click selects an
   // element (Excalidraw selects none in view mode), and the Comment button
@@ -340,6 +341,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     onChangeRef.current = onChange;
     onErrorRef.current = onError;
     onScrollRef.current = onScrollChange;
+    onShownRef.current = onShown;
     commentsRef.current = comments;
     pickRef.current = pickToComment;
   });
@@ -694,6 +696,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         loadedRef.current = true;
         placeScene();
         watchArea();
+        onShownRef.current?.();
       }
       return;
     }

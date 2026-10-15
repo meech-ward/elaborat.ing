@@ -570,6 +570,7 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     // endings); that costs the history, which only mixed line endings meet.
     if (fileText(model) !== handoff.buffer.getValue()) model.setValue(handoff.buffer.getValue());
     handoff.attach(api);
+    live.current.onShown?.();
 
     return () => {
       handoff.detach();

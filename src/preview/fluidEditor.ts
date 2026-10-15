@@ -547,6 +547,16 @@ export class FluidEditor {
       },
       dispatchTransaction: (tr) => this.dispatch(tr),
     });
+    // In Firefox a frame its page hides (another tab, or Source) has no
+    // selection: `getSelection()` is null there. ProseMirror writes its
+    // selection to the page on every update while the editor has focus, and
+    // would throw on null, which the frame reports as a failed preview. A
+    // tab switch can hide the frame with the editor focused, and a newer
+    // saved version (an agent's) can then arrive, keep the person's caret
+    // and write in. Without a selection the editor counts as unfocused, so
+    // an update leaves the page's selection alone until the frame shows.
+    const hasFocus = this.view.hasFocus.bind(this.view);
+    this.view.hasFocus = () => this.view.dom.ownerDocument.getSelection() !== null && hasFocus();
   }
 
   private post(message: object) {

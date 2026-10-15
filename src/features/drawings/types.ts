@@ -231,6 +231,8 @@ export interface DrawingCanvasProps {
   drawIn?: DrawingScene | null;
   /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */
   onScrollChange?: (scrollX: number, scrollY: number, zoom: number) => void;
+  /** Fires once the canvas, which loads on first use, has shown its first scene. */
+  onShown?: () => void;
   /** Phone controls: the touch-sized tool island at the bottom, and no zoom island. Default false. */
   compact?: boolean;
   onError?: (message: string) => void;

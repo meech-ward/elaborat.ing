@@ -166,6 +166,23 @@ window.addEventListener("keydown", (event) => {
   if (event.defaultPrevented && event.target instanceof Element && event.target.closest("button,input,select,textarea,[data-authoring-from]")) return;
   postToParent({ kind: "shortcut", session: activeSession, key: "Escape", meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey });
 });
+// The person's use of the note (a key, a press, the wheel) is passed up, at
+// most twice a second: the page around the frame cannot see input in it,
+// and in a chat's panel it does not open the agent's next file meanwhile.
+const ACTIVITY_MS = 500;
+let reportedActivity = -Infinity;
+for (const type of ["keydown", "pointerdown", "wheel", "touchstart"]) {
+  window.addEventListener(
+    type,
+    () => {
+      const now = performance.now();
+      if (!activeSession || now - reportedActivity < ACTIVITY_MS) return;
+      reportedActivity = now;
+      postToParent({ kind: "activity", session: activeSession });
+    },
+    { capture: true, passive: true },
+  );
+}
 
 // The page never zooms on phones and tablets (docs/architecture.md): a pinch
 // over the frame must not zoom the app's page either. iOS Safari ignores the
