@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type FrameLocator, type Page } from "@playwright/test"
 import { fakeSupabase, otpCode, person, quiet, session, signedIn, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL, HARNESS_URL } from "./urls.ts"
 
@@ -203,7 +203,9 @@ const shape = (id: string, index: string, x: number, color: string) => ({
   strokeWidth: 2, strokeStyle: "solid", roughness: 0, opacity: 100, groupIds: [], frameId: null, index, roundness: null, seed: 7,
   version: 1, versionNonce: 7, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false,
 })
-const FLOW = `${JSON.stringify({ type: "excalidraw", version: 2, elements: [shape("client", "a0", 0, "#e03131"), shape("store", "a1", 240, "#1971c2")], appState: { viewBackgroundColor: "#ffffff" }, files: {} })}\n`
+const drawing = (...elements: object[]) => `${JSON.stringify({ type: "excalidraw", version: 2, elements, appState: { viewBackgroundColor: "#ffffff" }, files: {} })}\n`
+const FLOW = drawing(shape("client", "a0", 0, "#e03131"), shape("store", "a1", 240, "#1971c2"))
+const SLOW = "The import is slow: every row is checked twice, once as it is read and again before it is saved, so a large file can take minutes."
 
 const agentLooks = (fake: FakeSupabase) => fake.requests.filter((request) => request.url().endsWith("/rpc/list_agent_changes")).length
 const saveCalls = (fake: FakeSupabase) => fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length
@@ -322,38 +324,78 @@ test("in the panel a note an agent changes does not open over unsaved edits, or 
   expect(fake.server.content(id, "notes/plan.md")).toBe(`${PLAN} Draft.`)
 })
 
-test("a note hidden behind a drawing the panel followed takes the agent's next save, and shows it when the person goes back, not a failed preview", async ({ page }) => {
-  const { fake, id, app } = await followingPanel(page, { "notes/plan.md": PLAN }, "notes/plan.md")
-  await app.getByRole("button", { name: "Rendered", exact: true }).click()
-  // The note's frame, also while its tab is hidden.
-  const note = app.getByRole("tabpanel", { name: "notes/plan.md", includeHidden: true }).frameLocator('iframe[title="Isolated document preview"]')
-  // The caret goes into the note, then the person leaves the panel be.
-  await note.getByText("What ships on day one.").click()
-  await page.waitForTimeout(3_500)
-
-  // The panel follows the agent to a new drawing: the note's frame is hidden with its text focused.
-  await agentSaves(fake, id, "notes/flow.excalidraw", FLOW)
-  await expect(app.getByRole("tab", { name: "notes/flow.excalidraw" })).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
-  await expect(app.locator(".wb-native-view [aria-live]").first()).toContainText("2 elements")
-
-  // Working on the drawing, the person keeps the agent's next save, to the note, behind it.
+/** One of the person's agents saves `path` while they turn the wheel over the drawing on screen, so the panel stays where it is; once the panel has looked at the save. */
+async function agentSavesWhileDrawing(page: Page, app: FrameLocator, fake: FakeSupabase, id: string, path: string, content: string) {
   const canvas = (await app.locator("[data-canvas-stage]").boundingBox())!
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2)
   const looks = agentLooks(fake)
-  await agentSaves(fake, id, "notes/plan.md", `${PLAN}\n## Risks\n\nThe import is slow.\n`)
+  await agentSaves(fake, id, path, content)
   for (let turn = 0; turn < 6; turn++) {
     await page.mouse.wheel(0, 40)
     await page.waitForTimeout(400)
   }
   await expect.poll(() => agentLooks(fake)).toBeGreaterThan(looks)
-  await expect(note.getByText("The import is slow.")).toBeAttached()
-  await expect(app.getByRole("tab", { name: "notes/flow.excalidraw" })).toHaveAttribute("aria-selected", "true")
+}
 
-  // Back on the note, it shows the agent's section.
+test("in the panel a note or a drawing behind another tab writes in or sketches in an agent's save once it comes forward", async ({ page }) => {
+  const { fake, id, app, html } = await followingPanel(page, { "notes/plan.md": PLAN, "notes/flow.excalidraw": FLOW }, "notes/plan.md")
+  const plan = app.getByRole("tabpanel", { name: "notes/plan.md", includeHidden: true })
+  const planFrame = plan.frameLocator('iframe[title="Isolated document preview"]')
+  const drawingTab = app.getByRole("tab", { name: "notes/flow.excalidraw" })
+  const drawingStatus = app.locator(".wb-native-view [aria-live]").first()
+  // The person reads the plan in Split, then opens the drawing in front of it.
+  await app.getByRole("button", { name: "Split", exact: true }).click()
+  await expect(planFrame.getByRole("heading", { name: "Plan" })).toBeVisible({ timeout: 20_000 })
+  await app.getByRole("button", { name: "notes/flow.excalidraw", exact: true }).click()
+  await expect(drawingStatus).toContainText("2 elements", { timeout: 15_000 })
+
+  // While they work on the drawing, the agent adds to the plan, which stays behind it as it was.
+  await agentSavesWhileDrawing(page, app, fake, id, "notes/plan.md", `${PLAN}\n${SLOW}\n`)
+  // Longer than writing that in takes, so only a save still to be taken can write in now.
+  await page.waitForTimeout(2_000)
+  await expect(drawingTab).toHaveAttribute("aria-selected", "true")
+
+  // Brought forward, the plan writes in what the agent added, in Source and in Rendered.
   await app.getByRole("tab", { name: "notes/plan.md" }).click()
-  await expect(note.getByRole("heading", { name: "Risks" })).toBeVisible()
-  await expect(note.getByText("The import is slow.")).toBeVisible()
+  await expect.poll(() => plan.locator(".monaco-editor .source-writing-caret").count(), { intervals: [50] }).toBeGreaterThan(0)
+  await expect.poll(() => planFrame.locator(".type-in-caret").count(), { intervals: [50] }).toBeGreaterThan(0)
+  await expect(planFrame.getByText(SLOW)).toBeVisible({ timeout: 15_000 })
+  await expect(planFrame.getByText("What ships on day one.")).toBeVisible()
   await expect(app.getByText(/Preview failed/)).toHaveCount(0)
+
+  // Left alone, the agent adds a box to the drawing behind the plan: the
+  // panel brings it forward and sketches in the box, and only the box.
+  await html.evaluate(() => {
+    const sketched = new Set<string>()
+    Object.assign(window, { sketched })
+    new MutationObserver(() => {
+      for (const element of document.querySelectorAll<SVGElement>("[data-sketch] [data-sketch-id]")) sketched.add(element.dataset.sketchId!)
+    }).observe(document.body, { childList: true, subtree: true })
+  })
+  await page.waitForTimeout(3_500)
+  await agentSaves(fake, id, "notes/flow.excalidraw", drawing(shape("client", "a0", 0, "#e03131"), shape("store", "a1", 240, "#1971c2"), shape("queue", "a2", 480, "#2f9e44")))
+  await expect(drawingTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
+  await expect(drawingStatus).toContainText("3 elements")
+  await expect.poll(() => html.evaluate(() => [...(window as unknown as { sketched: Set<string> }).sketched])).toEqual(["queue"])
+  await expect(app.locator("[data-sketch]")).toHaveCount(0, { timeout: 15_000 })
+  await expect(app.getByRole("tab", { name: /unsaved changes/ })).toHaveCount(0)
+})
+
+test("in the panel a note behind another tab, still showing what it had before an agent's save, is not kept as a draft of that when the person leaves the project", async ({ page }) => {
+  const { fake, id, app } = await followingPanel(page, { "notes/plan.md": PLAN, "notes/flow.excalidraw": FLOW }, "notes/plan.md")
+  await app.getByRole("button", { name: "notes/flow.excalidraw", exact: true }).click()
+  await expect(app.locator(".wb-native-view [aria-live]").first()).toContainText("2 elements", { timeout: 15_000 })
+  await agentSavesWhileDrawing(page, app, fake, id, "notes/plan.md", `${PLAN}\n${SLOW}\n`)
+
+  // Leaving keeps the unsaved edits of every open file on the device: the plan has none.
+  await app.getByRole("button", { name: "Launch plan, project menu" }).click()
+  await app.getByRole("menuitem", { name: "All projects" }).click()
+  await expect(app.getByRole("heading", { name: "Your projects" })).toBeVisible()
+  await app.getByRole("link", { name: "Launch plan" }).click()
+  await app.getByRole("tab", { name: /notes\/plan\.md/ }).click({ timeout: 15_000 })
+  await expect(app.getByRole("tab", { name: "notes/plan.md", exact: true })).toHaveAttribute("aria-selected", "true")
+  await expect(app.locator(".monaco-editor:visible .view-lines").first()).toContainText("The import is slow")
+  await expect(app.getByRole("tab", { name: /unsaved changes/ })).toHaveCount(0)
 })
 
 test("on the site, a drawing an agent makes does not open in place of the note on screen", async ({ page }) => {

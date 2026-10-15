@@ -31,6 +31,7 @@ import { FileHeader } from "./FileHeader";
 import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
+import { embedded } from "@/features/embed/mode";
 import type { WorkspaceStore } from "./workspaceStore";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -157,11 +158,14 @@ export function DrawingView({
   }, [dirty, savedText, view, scene, original, sourceDraft]);
 
   // Unsaved edits are kept on the device (a draft equal to the saved copy is
-  // dropped). An arriving drawing's empty start is not an edit.
+  // dropped). What is not an edit never is: an arriving drawing's empty
+  // start, or an untouched saved copy while a newer one waits to be taken
+  // (below; in a chat's panel, while the drawing is not on screen), which as
+  // a draft would undo that newer copy.
   const persistDraft = useCallback(async () => {
-    if (readOnly || baseRevision === ARRIVING_REVISION) return;
+    if (readOnly || baseRevision === ARRIVING_REVISION || (!dirty && savedRevision != null && savedRevision !== baseRevision)) return;
     await client.persistDrafts([{ path, content: currentText(), baseRevision }]);
-  }, [client, path, currentText, baseRevision, readOnly]);
+  }, [client, path, currentText, baseRevision, readOnly, dirty, savedRevision]);
   useEffect(() => {
     void persistDraft().catch((error: unknown) => setNotice(`Could not keep unsaved edits on this device: ${message(error)}`));
   }, [persistDraft]);
@@ -348,25 +352,29 @@ export function DrawingView({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active, save]);
 
-  // A drawing opened to follow an agent shows empty until its canvas has
-  // shown that (it loads on first use), or ARRIVAL_WAIT_MS has passed, or
-  // while only its text shows. Then it takes its saved version as a newer
-  // one, below, and the canvas sketches every element in.
+  // In a chat's panel a drawing takes a newer saved version (an agent's,
+  // say) only while it is on screen and its canvas there has shown the scene
+  // it holds, so the canvas sketches in the elements that version added: a
+  // drawing behind another tab takes it when it comes forward, and one opened
+  // to follow an agent (TabFile.arriving) once its canvas has shown it empty
+  // (it loads on first use). Its text alone needs no wait, and a canvas not
+  // shown ARRIVAL_WAIT_MS after the drawing came on screen is not waited for.
   const [canvasShown, setCanvasShown] = useState(false);
   const [waited, setWaited] = useState(false);
+  const canvasReady = canvasShown || view === "source";
   useEffect(() => {
-    if (!initial.arriving) return;
+    if (!embedded || !active || canvasReady) return;
     const timer = window.setTimeout(() => setWaited(true), ARRIVAL_WAIT_MS);
     return () => window.clearTimeout(timer);
-  }, [initial.arriving]);
+  }, [active, canvasReady]);
   const showCanvas = useCallback(() => setCanvasShown(true), []);
-  const arrivalWaits = baseRevision === ARRIVING_REVISION && !canvasShown && !waited && view !== "source";
+  const holdBack = embedded && (!active || (!canvasReady && !waited));
 
   // A newer saved copy (from another tab, or brought in by sync): an untouched
   // drawing takes it; one with edits keeps them and offers the choice.
   const checking = useRef(false);
   useEffect(() => {
-    if (savedRevision === undefined || savedRevision === null || savedRevision === baseRevision || saving || arrivalWaits) return;
+    if (savedRevision === undefined || savedRevision === null || savedRevision === baseRevision || saving || holdBack) return;
     if (changedElsewhere?.revision === savedRevision || checking.current) return;
     checking.current = true;
     void client
@@ -382,7 +390,7 @@ export function DrawingView({
       .finally(() => {
         checking.current = false;
       });
-  }, [savedRevision, baseRevision, saving, changedElsewhere, client, path, dirty, adopt, arrivalWaits]);
+  }, [savedRevision, baseRevision, saving, changedElsewhere, client, path, dirty, adopt, holdBack]);
 
   const baseName = path.split("/").pop()?.replace(/\.md$/, "") ?? "drawing";
   const exportSvg = useCallback(async () => {
@@ -557,7 +565,7 @@ export function DrawingView({
             theme={theme}
             present={present}
             drawIn={arrived}
-            onShown={initial.arriving ? showCanvas : undefined}
+            onShown={embedded ? showCanvas : undefined}
             onScrollChange={onStageScroll}
             compact={!desktop}
             active={active && view !== "source"}

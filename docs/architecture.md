@@ -1589,7 +1589,12 @@ once its view shows that (the editors and the canvas load on first use; 10 s
 at most) it takes its saved version as a newer one, so it is sketched in or
 writes in by the paths above, all at once with reduced motion. That empty
 start is never kept as a draft, and a file with edits kept on the device, or
-a sync conflict, opens as it is. The site's own tab never follows.
+a sync conflict, opens as it is. The site's own tab never follows. In the
+panel a note or drawing takes a newer saved version only while it is on
+screen, and once its views there have shown what they hold, so one behind
+another tab sketches or writes in what an agent saved when it comes forward,
+whoever brings it forward. Until then its older text, untouched, is never
+kept as a draft, which would undo the save.
 
 **Decision: the page never zooms on phones and tablets.** Page zoom is off on
 purpose in the editor app (`maximum-scale=1`, `touch-action: manipulation`,

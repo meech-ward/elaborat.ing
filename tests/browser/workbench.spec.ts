@@ -433,6 +433,28 @@ async function agentSaves(fake: FakeSupabase, id: string, content: string) {
   fake.signal(id, fake.server.projects.get(id)!.revision)
 }
 
+test("a rendered note behind another tab takes an agent's save, and shows it when the person goes back, not a failed preview", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "notes/launch.md": PLAN, "notes/other.md": "# Other\n" }, "notes/launch.md")
+  const other = page.getByRole("tab", { name: "notes/other.md" })
+  await page.getByRole("button", { name: "notes/other.md", exact: true }).click()
+  await expect(other).toHaveAttribute("aria-selected", "true")
+  await page.getByRole("tab", { name: "notes/launch.md" }).click()
+  await page.getByRole("button", { name: "Rendered" }).click()
+  // The note's frame, also while its tab is hidden.
+  const note = page.getByRole("tabpanel", { name: "notes/launch.md", includeHidden: true }).frameLocator('iframe[title="Isolated document preview"]')
+  // The caret goes into the note, then the other tab hides its frame with
+  // its text focused, where Firefox gives the frame no selection.
+  await note.getByText("What ships on day one.").click()
+  await other.click()
+  await expect(other).toHaveAttribute("aria-selected", "true")
+  await agentSaves(fake, id, `${PLAN}\n## Risks\n\nThe import is slow.\n`)
+  await expect(note.getByText("The import is slow.")).toBeAttached()
+  await page.getByRole("tab", { name: "notes/launch.md" }).click()
+  await expect(note.getByRole("heading", { name: "Risks" })).toBeVisible()
+  await expect(note.getByText("The import is slow.")).toBeVisible()
+  await expect(page.getByText(/Preview failed/)).toHaveCount(0)
+})
+
 test("the caret in a rendered note stays where it was when an agent adds a section, and what the person types goes there", async ({ page }) => {
   const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
   await page.getByRole("button", { name: "Rendered" }).click()
