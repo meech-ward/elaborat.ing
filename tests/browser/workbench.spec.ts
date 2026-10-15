@@ -288,11 +288,19 @@ const renderedWriting = (page: Page) =>
 type SourceFrame = { unsaved: boolean; hidden: number; caret: boolean; caretLine: number | null; numbers: { line: number; shown: boolean }[] }
 const sourceWriting = (page: Page) => page.evaluate(() => (window as unknown as { writing: SourceFrame[] }).writing)
 const allNumbersShown = (frame: SourceFrame | undefined) => frame?.numbers.every(({ shown }) => shown)
+/** The last frame each view drew. */
+const lastRendered = (page: Page) =>
+  noteFrame(page).locator("body").evaluate(() => (window as unknown as { writing: { hidden: (number | null)[]; caret: boolean }[] }).writing.at(-1))
+const lastSource = (page: Page) => page.evaluate(() => (window as unknown as { writing: SourceFrame[] }).writing.at(-1))
 
 test("a paragraph an agent adds to the open note types in behind a caret in Rendered and Source, leaves nothing unsaved or to undo, and with reduced motion appears at once", async ({ page }) => {
   const NOTE = "# Launch plan\n\nWhat ships on day one.\n"
   const SLOW = "The import is slow: every row is checked twice, once as it is read and again before it is saved, so a large file can take several minutes to finish."
   const WITH_SLOW = `${NOTE}\n${SLOW}\n`
+  // The note takes three of an agent's versions: more than the default test time on a busy machine.
+  test.slow()
+  // The page's clock, which this test stops for the clicks below.
+  await page.clock.install()
   const { fake, id } = await openProject(page, { "notes/launch.md": NOTE }, "notes/launch.md")
   await page.getByRole("button", { name: "Split", exact: true }).click()
   const frame = noteFrame(page)
@@ -337,18 +345,37 @@ test("a paragraph an agent adds to the open note types in behind a caret in Rend
   expect(fake.requests.filter((request) => request.url().endsWith("/rpc/save_files")).length).toBe(saves)
   expect(serverContent(fake, id, "notes/launch.md")).toBe(WITH_SLOW)
 
-  // A click in a view while it writes shows the rest there at once.
+  // A click in a view while it writes shows the rest there at once. The page's clock (in the note's
+  // frame too) stands still meanwhile and goes on a frame at a time, so the writing cannot finish by
+  // itself however busy the machine: what shows after a click and a frame is the click's doing.
   const STEPS = `First, the rows are read in batches of a thousand. ${SLOW} Then each batch is checked once, and only what changed is saved again, which leaves the slow part to the rows that really did change since the last import.`
   const WITH_STEPS = `${WITH_SLOW}\n${STEPS}\n`
+  // Any press in Source's text, or anywhere in Rendered, shows the rest: the mouse presses near the
+  // top left of each, measured before, as a click on an element waits for frames the clock holds back.
+  const sourceArea = (await page.locator(".monaco-editor:visible .editor-scrollable").first().boundingBox())!
+  const renderedArea = (await page.locator('iframe[title="Isolated document preview"]').boundingBox())!
   await watchWriting(page, [STEPS])
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000))
+  const frames = (count: number) => page.clock.runFor(16 * count)
   await agentSaves(fake, id, WITH_STEPS)
-  await expect.poll(async () => ((await renderedWriting(page)).at(-1)?.hidden[0] ?? 0) > 0).toBe(true)
-  await frame.getByText("What ships on day one.").click()
-  await expect.poll(async () => (await renderedWriting(page)).at(-1), { timeout: 400 }).toEqual({ hidden: [0], caret: false })
-  expect((await sourceWriting(page)).at(-1)?.hidden).toBeGreaterThan(0)
-  await sourceLine(page, "What ships on day one.").click()
-  await expect.poll(async () => (await sourceWriting(page)).at(-1), { timeout: 400 }).toMatchObject({ hidden: 0, caret: false })
-  expect(allNumbersShown((await sourceWriting(page)).at(-1))).toBe(true)
+  // A few frames at a time until both views write it, well short of the time writing it takes (writeIn.ts).
+  await expect
+    .poll(async () => {
+      await frames(6)
+      return [(await lastSource(page))?.hidden ?? 0, (await lastRendered(page))?.hidden[0] ?? 0].every((hidden) => hidden > 0)
+    }, { intervals: [10] })
+    .toBe(true)
+  // Source first, while it keeps the writing in view: it draws only the lines in view, and a click
+  // in Rendered brings Source to the line clicked.
+  await page.mouse.click(sourceArea.x + 20, sourceArea.y + 10)
+  await frames(3)
+  expect(await lastSource(page)).toMatchObject({ hidden: 0, caret: false })
+  expect(allNumbersShown(await lastSource(page))).toBe(true)
+  expect((await lastRendered(page))?.hidden[0]).toBeGreaterThan(0)
+  await page.mouse.click(renderedArea.x + 40, renderedArea.y + 40)
+  await frames(3)
+  expect(await lastRendered(page)).toEqual({ hidden: [0], caret: false })
+  await page.clock.resume()
 
   // With reduced motion the next paragraph appears at once, in both views.
   await page.emulateMedia({ reducedMotion: "reduce" })
