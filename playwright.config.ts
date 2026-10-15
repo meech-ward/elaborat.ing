@@ -22,7 +22,16 @@ export default defineConfig({
     // Firefox on CI runners now and then drops a click made right after a page
     // loads (never reproduced elsewhere), so CI gives Firefox one retry. A test
     // that passes on retry is still reported as flaky.
-    { name: "firefox", use: { ...devices["Desktop Firefox"] }, retries: process.env.CI ? 1 : 0 },
+    // Form history is off. Every test in a worker shares one Firefox, which
+    // remembers what an `email` field was sent with, and for a moment after
+    // the next such field is filled it takes the next mouse press for its
+    // suggestions: the press never reaches the page, only the release, so a
+    // click straight after the fill did nothing.
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"], launchOptions: { firefoxUserPrefs: { "browser.formfill.enable": false } } },
+      retries: process.env.CI ? 1 : 0,
+    },
   ],
   webServer: [
     {
