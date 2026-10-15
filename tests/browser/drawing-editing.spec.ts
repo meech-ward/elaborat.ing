@@ -208,44 +208,92 @@ const framed = (...boxes: object[]) =>
 const ADDED = framed(box("red", "a1", 30, 30, RED), box("blue", "a2", 230, 130, BLUE, 50))
 
 /**
- * From now on, records every frame how opaque the canvas draws the red box
- * and the blue one (the alpha, 0 to 255, of the most opaque pixel of each),
- * and 1 when the drawing says it has unsaved changes.
+ * One frame of the open drawing: how opaque the canvas draws the red box and
+ * the blue one (the alpha, 0 to 255, of the most opaque pixel of each); 1
+ * when the drawing says it has unsaved changes; how each box shows in the
+ * sketch over the canvas (0 not there, 1 there, 2 with one of its lines on
+ * its way, 3 going once the canvas shows it); and where the sketch is drawn
+ * (its scroll and zoom), if it is.
+ */
+type BoxFrame = [red: number, blue: number, unsaved: number, redSketch: number, blueSketch: number, sketchView: string]
+
+/**
+ * From now on, records every frame of the open drawing (BoxFrame), and each
+ * time a box's sketch hands it to the canvas (it goes, or starts to go),
+ * how the canvas draws the boxes then: before the page paints, so a frame
+ * that would show neither is caught.
  */
 async function watchBoxes(page: Page) {
   const rgb = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
   await page.evaluate(([red, blue]) => {
     const near = (data: Uint8ClampedArray, i: number, color: number[]) => color.every((value, at) => Math.abs(data[i + at] - value) < 16)
-    const frames: number[][] = []
+    const handovers: Array<[string, number, number]> = []
+    Object.assign(window, { boxHandovers: handovers })
+    const sketched = (id: string) => {
+      const g = document.querySelector<SVGGElement>(`[data-sketch] [data-sketch-id="${id}"]`)
+      if (!g || g.style.opacity === "0") return 0
+      if (g.dataset.landed !== undefined) return 3
+      const tracing = [...g.querySelectorAll("path")].some((path) =>
+        path.getAnimations().some((animation) => {
+          const effect = animation.effect as KeyframeEffect | null
+          const progress = effect?.getComputedTiming().progress
+          return typeof progress === "number" && progress > 0 && progress < 1 && "strokeDashoffset" in (effect?.getKeyframes()[0] ?? {})
+        }),
+      )
+      return tracing ? 2 : 1
+    }
+    const frames: Array<[number, number, number, number, number, string]> = []
     Object.assign(window, { boxFrames: frames })
     const copy = document.createElement("canvas")
     const context = copy.getContext("2d", { willReadFrequently: true })!
-    const tick = () => {
+    /** How opaque the canvas draws the red box and the blue one now; null before it shows. */
+    const shownNow = () => {
       const canvas = document.querySelector<HTMLCanvasElement>(".excalidraw canvas.static")
-      if (canvas && canvas.width > 0) {
-        copy.width = Math.ceil(canvas.width / 4)
-        copy.height = Math.ceil(canvas.height / 4)
-        context.drawImage(canvas, 0, 0, copy.width, copy.height)
-        const { data } = context.getImageData(0, 0, copy.width, copy.height)
-        let [shownRed, shownBlue] = [0, 0]
-        for (let i = 0; i < data.length; i += 4) {
-          if (near(data, i, red)) shownRed = Math.max(shownRed, data[i + 3])
-          else if (near(data, i, blue)) shownBlue = Math.max(shownBlue, data[i + 3])
-        }
+      if (!canvas || canvas.width === 0) return null
+      copy.width = Math.ceil(canvas.width / 4)
+      copy.height = Math.ceil(canvas.height / 4)
+      context.drawImage(canvas, 0, 0, copy.width, copy.height)
+      const { data } = context.getImageData(0, 0, copy.width, copy.height)
+      let [shownRed, shownBlue] = [0, 0]
+      for (let i = 0; i < data.length; i += 4) {
+        if (near(data, i, red)) shownRed = Math.max(shownRed, data[i + 3])
+        else if (near(data, i, blue)) shownBlue = Math.max(shownBlue, data[i + 3])
+      }
+      return [shownRed, shownBlue]
+    }
+    const tick = () => {
+      const shown = shownNow()
+      if (shown) {
         const unsaved = document.querySelector(".wb-native-view [aria-live]")?.textContent?.includes("Unsaved changes")
-        frames.push([shownRed, shownBlue, unsaved ? 1 : 0])
+        const view = document.querySelector("[data-sketch] > g")?.getAttribute("transform") ?? ""
+        frames.push([shown[0], shown[1], unsaved ? 1 : 0, sketched("red"), sketched("blue"), view])
       }
       if (frames.length < 1_500) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
+    // A sketch going (or starting to) is seen right after the frame's work that did it, before the paint.
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const going = record.type === "attributes" ? [record.target] : [...record.removedNodes]
+        for (const node of going) {
+          const id = node instanceof SVGElement ? node.dataset.sketchId : undefined
+          const shown = id ? shownNow() : null
+          if (id && shown) handovers.push([id, shown[0], shown[1]])
+        }
+      }
+    }).observe(document.querySelector("[data-slot='canvas-sketch']")!, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-landed"] })
   }, [rgb(RED), rgb(BLUE)])
 }
-const boxFrames = (page: Page) => page.evaluate(() => (window as unknown as { boxFrames: number[][] }).boxFrames)
-/** How the boxes are drawn now: red's alpha, and blue's to the nearest 8. */
+/** Each time a box's sketch handed it to the canvas: the box, and how the canvas drew the red box and the blue one then. */
+const boxHandovers = (page: Page) => page.evaluate(() => (window as unknown as { boxHandovers: Array<[string, number, number]> }).boxHandovers)
+const boxFrames = (page: Page) => page.evaluate(() => (window as unknown as { boxFrames: BoxFrame[] }).boxFrames)
+/** How the boxes are drawn on the canvas now: red's alpha, and blue's to the nearest 8. */
 const boxesNow = async (page: Page) => {
   const [red, blue] = (await boxFrames(page)).at(-1) ?? [0, 0]
   return [red, Math.round(blue / 8) * 8]
 }
+/** The canvas alpha each box shows at in full: red's own, and blue's at half opacity. */
+const FULL = { red: 250, blue: 120 }
 
 async function agentAddsBoxes(page: Page) {
   const { fake, id } = await openProject(page, { "sketch.excalidraw": framed() }, "sketch.excalidraw")
@@ -262,12 +310,33 @@ async function agentAddsBoxes(page: Page) {
   return { fake, saves }
 }
 
-test("elements an agent adds to the open drawing draw in, and the drawing stays saved with nothing to undo", async ({ page }) => {
+test("elements an agent adds to the open drawing are sketched in one after the other, each lands on the canvas when drawn, and the drawing stays saved with nothing to undo", async ({ page }) => {
   const { fake, saves } = await agentAddsBoxes(page)
-  // On the way, the red box showed part way in.
-  expect((await boxFrames(page)).some(([red]) => red > 0 && red < 250)).toBe(true)
-  // The fade changed nothing of the file's: it never had unsaved changes, and has nothing to undo.
-  expect((await boxFrames(page)).filter(([, , unsaved]) => unsaved)).toEqual([])
+  const frames = await boxFrames(page)
+  // The blue box started after the red one.
+  const redStarts = frames.findIndex((frame) => frame[3] > 0)
+  const blueStarts = frames.findIndex((frame) => frame[4] > 0)
+  expect(redStarts).toBeGreaterThanOrEqual(0)
+  expect(blueStarts).toBeGreaterThan(redStarts)
+  for (const [sketch, shown, full] of [[3, 0, FULL.red], [4, 1, FULL.blue]] as const) {
+    const starts = frames.findIndex((frame) => frame[sketch] > 0)
+    const onCanvas = frames.findIndex((frame) => frame[shown] > 0)
+    expect(onCanvas).toBeGreaterThan(starts)
+    // Its lines were drawn along their length over a canvas that showed none of it yet.
+    expect(frames.slice(0, onCanvas).filter((frame) => frame[shown] > 0)).toEqual([])
+    expect(frames.slice(starts, onCanvas).some((frame) => frame[sketch] === 2)).toBe(true)
+    // In sight all along: in the sketch until the canvas showed it, then on the canvas in full.
+    expect(frames.slice(starts, onCanvas).filter((frame) => frame[sketch] === 0 || frame[sketch] === 3)).toEqual([])
+    expect(frames.slice(onCanvas).filter((frame) => frame[shown] < full)).toEqual([])
+  }
+  // When each sketch went, before the page painted again, the canvas already drew its box in full.
+  const handovers = await boxHandovers(page)
+  expect(handovers.filter(([id]) => id === "red").length).toBeGreaterThan(0)
+  expect(handovers.filter(([id]) => id === "blue").length).toBeGreaterThan(0)
+  expect(handovers.filter(([id, red, blue]) => (id === "red" && red < FULL.red) || (id === "blue" && blue < FULL.blue))).toEqual([])
+  await expect(page.locator("[data-sketch]")).toHaveCount(0)
+  // The sketch changed nothing of the file's: it never had unsaved changes, and has nothing to undo.
+  expect(frames.filter(([, , unsaved]) => unsaved)).toEqual([])
   await expect(status(page)).toContainText("Saved")
   await expect(page.getByRole("tab", { name: "sketch.excalidraw, unsaved changes" })).toHaveCount(0)
   expect(saveCalls(fake)).toBe(saves)
@@ -275,11 +344,86 @@ test("elements an agent adds to the open drawing draw in, and the drawing stays 
   await expect(page.getByRole("menuitem", { name: "Undo" })).toBeDisabled()
 })
 
-test("with reduced motion, elements an agent adds to the open drawing appear at once", async ({ page }) => {
+test("with reduced motion, elements an agent adds to the open drawing appear at once, with no sketch", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   await agentAddsBoxes(page)
-  // No frame showed either box part way in.
-  expect((await boxFrames(page)).filter(([red, blue]) => (red > 0 && red < 250) || (blue > 0 && blue < 120))).toEqual([])
+  const frames = await boxFrames(page)
+  // Both came in the same frame, in full, and nothing was sketched.
+  expect(frames.findIndex(([red]) => red > 0)).toBe(frames.findIndex(([, blue]) => blue > 0))
+  expect(frames.filter(([red, blue]) => (red > 0 && red < FULL.red) || (blue > 0 && blue < FULL.blue))).toEqual([])
+  expect(frames.filter(([, , , redSketch, blueSketch]) => redSketch || blueSketch)).toEqual([])
+  await expect(page.getByRole("button", { name: "Pencil sound" })).toHaveCount(0)
+})
+
+test("when the person starts working on the canvas while elements are sketched in, the rest shows at once", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "sketch.excalidraw": framed() }, "sketch.excalidraw")
+  await expect(canvas(page)).toBeVisible()
+  await expect(status(page)).toContainText("1 elements")
+  const saves = saveCalls(fake)
+  await watchBoxes(page)
+  await fake.agentChanges.save(person.id, id, "sketch.excalidraw", ADDED)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  // As the red box is sketched, before the blue one is on the canvas, the person presses on an empty spot below the frame.
+  await expect.poll(async () => (await boxFrames(page)).at(-1)?.[3], { intervals: [16] }).toBeGreaterThan(0)
+  expect((await boxFrames(page)).filter(([, blue]) => blue > 0)).toEqual([])
+  const area = (await canvas(page).boundingBox())!
+  await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2 + 200)
+  const pressed = (await boxFrames(page)).length
+  // Both are on the canvas in full within a frame or two, and the sketch is gone.
+  await expect.poll(async () => (await boxFrames(page)).length).toBeGreaterThan(pressed + 10)
+  const after = (await boxFrames(page)).slice(pressed + 2)
+  expect(after.filter(([red, blue, , redSketch, blueSketch]) => red < FULL.red || blue < FULL.blue || redSketch || blueSketch)).toEqual([])
+  await expect(page.locator("[data-sketch]")).toHaveCount(0)
+  expect((await boxFrames(page)).filter(([, , unsaved]) => unsaved)).toEqual([])
+  expect(saveCalls(fake)).toBe(saves)
+  await page.getByRole("button", { name: "More tools" }).click()
+  await expect(page.getByRole("menuitem", { name: "Undo" })).toBeDisabled()
+})
+
+test("a sketch makes a pencil stroke for its elements where the browser lets audio play, and the person can mute it for the next ones", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "sketch.excalidraw": framed() }, "sketch.excalidraw")
+  await expect(canvas(page)).toBeVisible()
+  await expect(status(page)).toContainText("1 elements")
+  // Counts the strokes the page starts, and finds out whether this browser lets it play audio unasked.
+  const audible = await page.evaluate(async () => {
+    const state = window as unknown as { strokes: number }
+    state.strokes = 0
+    const start = AudioBufferSourceNode.prototype.start
+    AudioBufferSourceNode.prototype.start = function (this: AudioBufferSourceNode, ...args: Parameters<AudioBufferSourceNode["start"]>) {
+      state.strokes++
+      return start.apply(this, args)
+    }
+    const probe = new AudioContext()
+    await Promise.race([probe.resume(), new Promise((resolve) => setTimeout(resolve, 300))])
+    const running = probe.state === "running"
+    await probe.close()
+    return running
+  })
+  const strokes = () => page.evaluate(() => (window as unknown as { strokes: number }).strokes)
+  await watchBoxes(page)
+  await fake.agentChanges.save(person.id, id, "sketch.excalidraw", ADDED)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  // On by default while the boxes are sketched in; where the browser holds audio back, silent.
+  const sound = page.getByRole("button", { name: "Pencil sound" })
+  await expect(sound).toHaveAttribute("aria-pressed", "true")
+  await expect.poll(() => boxesNow(page)).toEqual([255, 128])
+  await expect(sound).toHaveCount(0)
+  if (audible) expect(await strokes()).toBeGreaterThan(0)
+  else expect(await strokes()).toBe(0)
+
+  // Muted while the next ones are sketched in, the rest of them come in silence, and it stays muted.
+  const more = framed(box("red", "a1", 30, 30, RED), box("blue", "a2", 230, 130, BLUE, 50), box("green", "a3", 30, 300, "#2f9e44"), box("plum", "a4", 230, 300, "#9c36b5"))
+  await fake.agentChanges.save(person.id, id, "sketch.excalidraw", more)
+  fake.signal(id, fake.server.projects.get(id)!.revision)
+  await sound.click()
+  await expect(sound).toHaveAttribute("aria-pressed", "false")
+  const muted = await strokes()
+  // The button is not the canvas: the sketch went on.
+  await expect(page.locator("[data-sketch]")).toHaveCount(1)
+  await expect(sound).toHaveCount(0, { timeout: 15_000 })
+  expect(await strokes()).toBe(muted)
+  expect(await page.evaluate(() => localStorage.getItem("elaborat.ing:pencil-sound"))).toBe("off")
+  await expect(status(page)).toContainText("5 elements")
 })
 
 /** Open the frame on its own, watch the canvas, and have the agent add the red box far to its right, out of sight. */
@@ -297,11 +441,16 @@ async function agentAddsBoxOutOfSight(page: Page, beforeTheAgent?: () => Promise
   return { fake, saves }
 }
 
-test("the open drawing moves to an element an agent adds out of sight, at the same zoom, with nothing to save or undo", async ({ page }) => {
+test("the open drawing moves to an element an agent adds out of sight, at the same zoom, then sketches it in, with nothing to save or undo", async ({ page }) => {
   const { fake, saves } = await agentAddsBoxOutOfSight(page)
   // The view went to the red box: it shows, all drawn in, and nothing was zoomed.
   await expect.poll(() => boxesNow(page)).toEqual([255, 0])
   await expect(page.getByRole("button", { name: "Reset zoom, now 100%" })).toBeVisible()
+  // The view moved first, and stayed where it went while the box was sketched.
+  const frames = await boxFrames(page)
+  const starts = frames.findIndex(([, , , redSketch]) => redSketch > 0)
+  expect(new Set(frames.slice(0, starts).map(([, , , , , view]) => view).filter(Boolean)).size).toBeGreaterThan(1)
+  expect(new Set(frames.slice(starts).map(([, , , , , view]) => view).filter(Boolean)).size).toBe(1)
   expect((await boxFrames(page)).filter(([, , unsaved]) => unsaved)).toEqual([])
   await expect(status(page)).toContainText("Saved")
   expect(saveCalls(fake)).toBe(saves)

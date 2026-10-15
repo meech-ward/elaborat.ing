@@ -867,18 +867,32 @@ The production server's tools are unchanged.
   A save that conflicts is read again and applied once more; with
   `base_version`, a drawing changed since is a conflict. An Obsidian
   `.excalidraw.md` is refused (`write_file` changes it). In the app, and so
-  in the panel, a drawing open on its canvas draws in the elements new in a
-  version saved elsewhere (`DrawingCanvas`'s `drawIn`,
-  `src/features/drawings/drawIn.ts`): each fades to its own opacity over
-  300 ms, 60 ms after the one before (the last starts within 1.2 s), in
-  frames outside undo that never mark the file changed; with reduced motion
-  they appear at once. When any of them is out of sight (outside the visible
-  part of the canvas, clear of its islands), the view follows them with
-  Excalidraw's `scrollToContent`: they go to the middle at the same zoom,
-  zooming out only as far as it takes to fit them (not below the readable
-  zoom a drawing opens at), over 500 ms or at once with reduced motion. It
-  stays put while the person draws a shape or line or edits text, and for
-  3 s after they last pressed, scrolled or typed on the canvas.
+  in the panel, a drawing open on its canvas sketches in the elements new in
+  a version saved elsewhere, by any tool (`DrawingCanvas`'s `drawIn`,
+  `src/features/drawings/sketchIn.ts`), one after another as the chat card's
+  live view draws them, with the step logic and pencil sound it shares
+  (`src/features/sketch`): each line along its length, hachure scribbled in,
+  solid fills faded in after their outline, text written left to right, at
+  the card's pace, faster for a big addition so the whole sketch takes about
+  6 s at most. The canvas keeps them hidden while an SVG layer over it,
+  following its scroll and zoom (and its dark filter), draws them from
+  Excalidraw's own `exportToSvg` of each element: the same seeds, strokes and
+  text layout as the canvas (the server's `drawElement` lays out text and
+  arrow labels its own way, so it would move at the hand-over). As each one
+  is drawn, the canvas shows it before the next paint (a synchronous React
+  update, since Excalidraw draws in an effect) and its sketch fades over it
+  in 150 ms: the canvas puts its own copy of each element on whole pixels, a
+  fraction of a pixel from the sketch's. It is all outside undo and never
+  marks the file changed; with reduced motion, or on a canvas that is not
+  showing, they appear at once, in silence. Once the person presses, turns
+  the wheel or types on the canvas, the rest shows at once. When any of them
+  is out of sight (outside the visible part of the canvas, clear of its
+  islands), the view first follows them with Excalidraw's `scrollToContent`:
+  they go to the middle at the same zoom, zooming out only as far as it takes
+  to fit them (not below the readable zoom a drawing opens at), over 500 ms
+  or at once with reduced motion, and the sketch starts once the view holds
+  still. It stays put while the person draws a shape or line or edits text,
+  and for 3 s after they last pressed, scrolled or typed on the canvas.
 - **Decision: a note grows in sections the person can watch
   (`append_to_note`).** As with a drawing, a note written in one
   `write_file` appears all at once. `append_to_note` (`tools/appendToNote.ts`,
@@ -938,12 +952,15 @@ The production server's tools are unchanged.
   writes in; a diagram's source writes in as text. A host that sends no
   partial input gets `create_and_show`'s fallback.
 - **Decision: a pencil sound while a drawing draws in.** Each element makes
-  a short, quiet pencil stroke as it draws in, made with Web Audio from
-  noise in the live module (no file is fetched); the variation of each
-  stroke follows the Excalidraw MCP app's (MIT, credited in the file). It is
-  on by default, and a button in the live card mutes it, remembered for the
-  viewer in the card's storage where the host gives it one. It is silent
-  with reduced motion, and where the browser keeps the audio held back.
+  a short, quiet pencil stroke as it draws in, in the live card and on the
+  app's canvas, made with Web Audio from noise
+  (`src/features/sketch/pencil.ts`; no file is fetched); the variation of
+  each stroke follows the Excalidraw MCP app's (MIT, credited in the file).
+  It is on by default, and a button mutes it, remembered for the viewer in
+  the page's storage where the host gives it one (`pencilSetting.ts`): in
+  the live card's footer, and on the canvas, at the bottom right (the top
+  right on a phone), while elements are sketched in. It is silent with
+  reduced motion, and where the browser keeps the audio held back.
 - **A live card says how it went.** When a live card settles, it calls
   `card_report` once, a view-only tool (`ui.visibility: ["app"]`) that
   validates the host's name (at most 40 characters), the tool, how many

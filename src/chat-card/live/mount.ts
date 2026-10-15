@@ -8,12 +8,13 @@
  * live.
  *
  * A drawing's elements draw in one after another as a person would sketch
- * them, each with a quiet pencil sound (pencil.ts): each line drawn along
- * its length, hachure fills scribbled in, solid fills faded in after their
- * outline, text written left to right, and the view easing out to hold what
- * is drawn so far. A note renders as Markdown, its new blocks fading in and
- * the last one written into with a caret. A diagram's D2 source writes in
- * as text. With reduced motion, everything just appears, in silence.
+ * them, each with a quiet pencil sound (src/features/sketch, which the app's
+ * canvas shares): each line drawn along its length, hachure fills scribbled
+ * in, solid fills faded in after their outline, text written left to right,
+ * and the view easing out to hold what is drawn so far. A note renders as
+ * Markdown, its new blocks fading in and the last one written into with a
+ * caret. A diagram's D2 source writes in as text. With reduced motion,
+ * everything just appears, in silence.
  *
  * A change to a saved file (update_and_show) starts from the file as saved
  * (`base`): a drawing's elements show at once, those the new content keeps
@@ -23,8 +24,9 @@
  */
 import { drawElement, MAX_ELEMENTS, MAX_SVG_CHARS, parseDrawing, type Box } from "../../../supabase/functions/mcp-server/tools/drawingSvg.ts"
 import { renderNote } from "../../../supabase/functions/mcp-server/tools/markdown.ts"
+import { pencil } from "@/features/sketch/pencil"
+import { itemMs, NEXT_AT, playSteps, sketchMs, stepsOf, STROKE_GAP_MS, type Step } from "@/features/sketch/steps"
 import { drawingScanner, elementChange, noteBeingChanged, noteTail, type SceneElement } from "./partial"
-import { pencil } from "./pencil"
 import { readingMarkup } from "../readingMarkup"
 
 export type LiveKind = "note" | "drawing" | "diagram"
@@ -50,8 +52,6 @@ const SETTLE_MS = 400
 /** How long a saved element the new drawing leaves out takes to fade, and one it changes once its new one starts. */
 const LEAVE_MS = 320
 const REPLACE_MS = 200
-/** Pencil strokes start at most this often, so a quick finish is not a burst of sound. */
-const STROKE_GAP_MS = 70
 /** A note renders at most this often. */
 const NOTE_MS = 100
 /** The smallest part of the scene the view shows, so the first shapes are not blown up. */
@@ -96,67 +96,8 @@ export function mountLive(el: HTMLElement, options: LiveOptions): LiveHandle {
   return mountText(el, options)
 }
 
-/**
- * One part of an element and how it comes in: drawn along its length (a
- * path's pieces one after another, as a pen goes), written left to right,
- * or faded in.
- */
-type Step = { how: "stroke" | "text" | "fade"; ms: number; pieces: Array<{ el: SVGGraphicsElement; length: number }> }
 /** An element waiting to draw in: its parts, what kind it is (for its sound), and the saved one it changes, if any. */
 type Item = { g: SVGGElement; box: Box; steps: Step[]; ms: number; type: string; replaces: SVGGElement | null }
-
-const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
-
-/**
- * How an element's parts come in, in order: its lines, then its hachure
- * (thinner lines than the outline), then its solid fills and the rest.
- * Dashed lines fade in: drawing them along would undo their dashes.
- */
-function stepsOf(g: SVGGElement): Step[] {
-  const parts = [...g.querySelectorAll<SVGGraphicsElement>("path, text, rect")]
-  const width = (part: Element) => Number(part.getAttribute("stroke-width")) || 0
-  const lines = parts.filter((part) => part.tagName === "path" && part.getAttribute("fill") === "none" && part.getAttribute("stroke") !== "none" && !part.hasAttribute("stroke-dasharray"))
-  const widest = Math.max(0, ...lines.map(width))
-  const line = (part: SVGGraphicsElement): Step => {
-    // A dash pattern starts again with each piece of a path (each side, each
-    // hachure line), so each piece is drawn as a path of its own, in turn.
-    const pieces = (part.getAttribute("d") ?? "").split(/(?=M)/).filter((piece) => piece.trim())
-    const els =
-      pieces.length > 1
-        ? pieces.map((d) => {
-            const piece = part.cloneNode() as SVGGraphicsElement
-            piece.setAttribute("d", d)
-            part.before(piece)
-            return piece
-          })
-        : [part]
-    if (els.length > 1) part.remove()
-    const measured = els.map((el) => {
-      try {
-        return { el, length: (el as SVGPathElement).getTotalLength() }
-      } catch {
-        // Not measurable here: it fades in.
-        return { el, length: 0 }
-      }
-    })
-    const length = measured.reduce((total, piece) => total + piece.length, 0)
-    return length > 0 ? { how: "stroke", ms: clamp(length / 1.6, 150, 600), pieces: measured } : { how: "fade", ms: 200, pieces: measured }
-  }
-  const outline = lines.filter((part) => width(part) >= widest).map(line)
-  const hachure = lines.filter((part) => width(part) < widest).map(line)
-  const rest = parts
-    .filter((part) => !lines.includes(part))
-    .map((part): Step => ({
-      how: part.tagName === "text" ? "text" : "fade",
-      ms: part.tagName === "text" ? clamp((part.textContent ?? "").length * 28, 150, 600) : 200,
-      pieces: [{ el: part, length: 0 }],
-    }))
-  const texts = rest.filter((step) => step.how === "text")
-  return [...outline, ...hachure, ...rest.filter((step) => step.how !== "text"), ...texts]
-}
-
-/** How long an element takes at normal speed: its steps one after another, lines overlapping a little. */
-const itemMs = (steps: Step[]) => steps.reduce((total, step) => total + step.ms * (step.how === "stroke" ? 0.85 : 1), 0)
 
 function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): LiveHandle {
   const svg = document.createElementNS(SVG_NS, "svg")
@@ -320,46 +261,24 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): 
   const speedAt = (now: number) => {
     let speed = 1 + Math.max(0, queue.length - 2) * 0.35
     if (deadline !== null) {
-      const work = queue.reduce((total, item) => total + item.ms * 0.7, 0) + (queue.at(-1)?.ms ?? 0) * 0.3
-      speed = Math.max(speed, work / Math.max(50, deadline - now))
+      speed = Math.max(speed, sketchMs(queue) / Math.max(50, deadline - now))
     }
     return speed
+  }
+
+  const track = (animation: Animation, done?: () => void) => {
+    running.add(animation)
+    animation.onfinish = animation.oncancel = () => {
+      running.delete(animation)
+      done?.()
+    }
   }
 
   const play = (item: Item, speed: number): number => {
     item.g.style.opacity = ""
     // The saved element this one changes goes as the new one starts.
     if (item.replaces) leave(item.replaces, REPLACE_MS)
-    let at = 0
-    const track = (animation: Animation, done?: () => void) => {
-      running.add(animation)
-      animation.onfinish = animation.oncancel = () => {
-        running.delete(animation)
-        done?.()
-      }
-    }
-    for (const step of item.steps) {
-      const ms = step.ms / speed
-      if (step.how === "stroke") {
-        // The pen moves at one speed along the whole path, piece after piece.
-        const total = step.pieces.reduce((sum, piece) => sum + piece.length, 0)
-        let along = 0
-        for (const { el, length } of step.pieces) {
-          const dash = length + 1
-          el.style.strokeDasharray = `${dash} ${dash}`
-          const timing: KeyframeAnimationOptions = { duration: (ms * length) / total, delay: at + (ms * along) / total, fill: "backwards" }
-          track(el.animate([{ strokeDashoffset: dash }, { strokeDashoffset: 0 }], timing), () => (el.style.strokeDasharray = ""))
-          along += length
-        }
-      } else {
-        const timing: KeyframeAnimationOptions = { duration: ms, delay: at, fill: "backwards" }
-        for (const { el } of step.pieces) {
-          track(step.how === "text" ? el.animate([{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }], timing) : el.animate([{ opacity: 0 }, { opacity: 1 }], timing))
-        }
-      }
-      at += step.how === "stroke" ? ms * 0.85 : ms
-    }
-    return at
+    return playSteps(item.steps, speed, track)
   }
 
   const tick = (now: number) => {
@@ -374,7 +293,7 @@ function mountDrawing(el: HTMLElement, reducedMotion: boolean, sound: boolean): 
       }
       grow(item.box)
       // The next element starts when this one is most of the way drawn.
-      nextAt = Math.max(nextAt, now - 32) + ms * 0.7
+      nextAt = Math.max(nextAt, now - 32) + ms * NEXT_AT
     }
     let moving = false
     if (target) {

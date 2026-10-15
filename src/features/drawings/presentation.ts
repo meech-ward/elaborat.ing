@@ -36,7 +36,8 @@ export function presentDrawing(scene: DrawingScene, colors: CanvasColors): Drawi
 // Excalidraw's dark theme draws the canvas through
 // `filter: invert(93%) hue-rotate(180deg)` (0.18.1, `--theme-filter`).
 const INVERT = 0.93;
-const DARK_FILTER = 'invert(93%) hue-rotate(180deg)';
+/** The filter Excalidraw's dark theme draws the canvas through. */
+export const DARK_FILTER = 'invert(93%) hue-rotate(180deg)';
 // Its dark export turns raster images back, so they keep their colours
 // (src/preview/reading.css does the same for a note's pictures).
 const IMAGE_FILTER = 'invert(100%) hue-rotate(180deg) saturate(1.25)';

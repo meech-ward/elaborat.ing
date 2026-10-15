@@ -1,8 +1,8 @@
 /**
- * Whether this viewer wants the pencil sound a live drawing makes
- * (live/pencil.ts): on unless they muted it in the card, which the card
- * remembers in its storage where the host allows that, and otherwise for as
- * long as the card is open.
+ * Whether this viewer wants the pencil sound a drawing makes as it is
+ * sketched in (pencil.ts): on unless they muted it, in the chat card or on
+ * the app's canvas, which remember it in their storage where the host allows
+ * that, and otherwise for as long as the page is open.
  */
 const KEY = "elaborat.ing:pencil-sound"
 
@@ -25,6 +25,6 @@ export function setPencilSound(on: boolean) {
     if (on) window.localStorage.removeItem(KEY)
     else window.localStorage.setItem(KEY, "off")
   } catch {
-    // Not kept: the host gives the card no storage.
+    // Not kept: the host gives the page no storage.
   }
 }

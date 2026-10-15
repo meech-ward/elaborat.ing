@@ -25,11 +25,13 @@
  * SOFTWARE.
  */
 /**
- * A quiet pencil-on-paper sound for each element as the live view draws it
- * in (mount.ts): noise with the paper's grain, through a band-pass filter,
- * shaped like a stroke. Web Audio only, made in the page: nothing is
- * fetched. Where the browser keeps audio held back (no click in the chat
- * yet, or the host does not let frames play sound), it stays silent.
+ * A quiet pencil-on-paper sound for each element as it is sketched in (the
+ * chat card's live view, src/chat-card/live/mount.ts, and the app's canvas,
+ * src/features/drawings/sketchIn.ts): noise with the paper's grain, through
+ * a band-pass filter, shaped like a stroke. Web Audio only, made in the
+ * page: nothing is fetched. Where the browser keeps audio held back (no
+ * click in the chat yet, or the host does not let frames play sound), it
+ * stays silent.
  */
 
 export type Pencil = {

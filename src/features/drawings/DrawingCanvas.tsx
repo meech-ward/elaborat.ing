@@ -28,11 +28,13 @@
 //   resets the baseline, so the library's own echo re-baselines quietly,
 //   and feeding an emitted scene back in is a referential no-op.
 // - A scene that arrived from elsewhere (`drawIn`, such as an agent's save)
-//   draws its new elements in (drawIn.ts): frames that change only their
-//   opacity, outside undo, while the library events report each one's own
-//   opacity, so the fade never reaches raw or marks anything changed. When
-//   any of them is out of sight, the view moves to them (followArrivals),
-//   unless the person has used the canvas in the last few seconds.
+//   sketches its new elements in (sketchIn.ts): the canvas shows them
+//   hidden, outside undo, while an SVG over it draws them stroke by stroke,
+//   and shows each one as its sketch ends. The library events report each
+//   one's own opacity, so hiding them never reaches raw or marks anything
+//   changed. When any of them is out of sight, the view moves to them first
+//   (followArrivals), unless the person has used the canvas in the last few
+//   seconds; once they start working on it, the rest shows at once.
 //
 // Browser-only and lazily loaded: the native package (pinned in
 // package.json) resolves at render time. Unit tests never render this.
@@ -45,15 +47,19 @@
 // tests) and the vendor unions.
 
 import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import type { ComponentProps, ComponentType, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ComponentProps, ComponentType, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode, SyntheticEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Banner, BannerAction, isApplePlatform } from '@/features/design-system';
 import type { CanvasPin } from '@/features/comments';
+import { pencil, type Pencil } from '@/features/sketch/pencil.ts';
+import { pencilSoundOn, setPencilSound } from '@/features/sketch/pencilSetting.ts';
 import { mergeLibraryUpdate, snapshotLibraryState } from './merge.ts';
 import type { LibrarySnapshot } from './merge.ts';
 import type { DrawingCanvasProps, DrawingScene } from './types.ts';
 import { ensureGeneratedNativeFont } from './nativeFontReady.ts';
 import { initialCanvasAppState } from './initialCanvasAppState.ts';
-import { arrivingElements, drawInOpacities, withOpacities } from './drawIn.ts';
+import { arrivingElements, withOpacities } from './drawIn.ts';
+import { createSketchSoundStore, sketchIn, type Sketch } from './sketchIn.ts';
 import { CanvasControls, type CanvasCommands } from './CanvasControls.tsx';
 import {
   CanvasPins,
@@ -105,14 +111,16 @@ interface NativeUpdateScene {
   captureUpdate?: 'NEVER';
 }
 
-// The vendor's element restore and scene bounds, once the package has loaded.
+// The vendor's element restore, scene bounds and SVG export, once the package has loaded.
 let restoreNative: typeof import('@excalidraw/excalidraw')['restoreElements'] | null = null;
 let boundsNative: typeof import('@excalidraw/excalidraw')['getCommonBounds'] | null = null;
+let exportNative: typeof import('@excalidraw/excalidraw')['exportToSvg'] | null = null;
 
 const NativeCanvas = lazy(() =>
   Promise.all([import('@excalidraw/excalidraw'), ensureGeneratedNativeFont()]).then(([mod]) => {
     restoreNative = mod.restoreElements;
     boundsNative = mod.getCommonBounds;
+    exportNative = mod.exportToSvg;
     // React's own Memo wrapper is not a ComponentType statically.
     return { default: mod.Excalidraw as unknown as ComponentType<NativeProps> };
   }),
@@ -215,30 +223,10 @@ function pushScene(api: NativeAPI, target: DrawingScene, onError?: (message: str
   }
 }
 
-/**
- * Fades the arriving elements in on the canvas, frame by frame and outside
- * undo, ending at each one's own opacity; no other element is touched.
- * `onDone` runs after the last frame. Returns what stops it.
- */
-function drawElementsIn(api: NativeAPI, arriving: ReadonlyMap<string, number>, onDone: () => void): () => void {
-  let frame = 0;
-  let start: number | null = null;
-  const step = (now: number) => {
-    start ??= now;
-    const shown = drawInOpacities(arriving, now - start);
-    if (shown) frame = requestAnimationFrame(step);
-    (api.updateScene as (sceneData: NativeUpdateScene) => void)({
-      elements: withOpacities(api.getSceneElementsIncludingDeleted(), shown ?? arriving),
-      captureUpdate: 'NEVER',
-    });
-    if (!shown) onDone();
-  };
-  frame = requestAnimationFrame(step);
-  return () => cancelAnimationFrame(frame);
-}
-
 /** How long after the person last used the canvas (a pointer, the wheel or a key on it) the view stays where they left it. */
 const LEFT_ALONE_MS = 3000;
+/** How long the view takes to move to elements that arrived out of sight; their sketch starts after. */
+const FOLLOW_MS = 500;
 
 /**
  * Brings elements that just arrived into view when any of them is out of
@@ -246,23 +234,26 @@ const LEFT_ALONE_MS = 3000;
  * Excalidraw's scrollToContent puts them in the middle of the area at the
  * same zoom, zooming out only as far as it takes to fit them, and not below a
  * readable zoom. Not while the person is drawing a shape or line or editing
- * text. Animated unless `animate` is false. Only the view moves: nothing is
- * recorded for undo, and the file does not change.
+ * text. Animated over FOLLOW_MS unless `animate` is false. Only the view
+ * moves: nothing is recorded for undo, and the file does not change. True
+ * when the view moved.
  */
-function followArrivals(api: NativeAPI, ids: ReadonlyMap<string, number>, area: CanvasArea, margin: OpeningMargin, animate: boolean): void {
+function followArrivals(api: NativeAPI, ids: ReadonlyMap<string, number>, area: CanvasArea, margin: OpeningMargin, animate: boolean): boolean {
   const state = api.getAppState();
-  if (!boundsNative || state.newElement || state.multiElement || state.editingTextElement || state.editingLinearElement) return;
+  if (!boundsNative || state.newElement || state.multiElement || state.editingTextElement || state.editingLinearElement) return false;
   const arrived = api.getSceneElements().filter((element) => ids.has(element.id));
-  if (arrived.length === 0) return;
+  if (arrived.length === 0) return false;
   const zoom = state.zoom.value;
-  if (boundsInView(boundsNative(arrived), { zoom, scrollX: state.scrollX, scrollY: state.scrollY }, area, margin)) return;
+  if (boundsInView(boundsNative(arrived), { zoom, scrollX: state.scrollX, scrollY: state.scrollY }, area, margin)) return false;
   api.scrollToContent(arrived, {
     fitToViewport: true,
     maxZoom: zoom,
     minZoom: Math.min(zoom, READABLE_ZOOM),
     canvasOffsets: areaOffsets(state, area, margin),
     animate,
+    duration: FOLLOW_MS,
   });
+  return true;
 }
 
 /** The scene as the canvas shows it; raw when nothing is presented over it. */
@@ -373,8 +364,31 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       window.removeEventListener('pointercancel', release, true);
     };
   }, []);
-  const onUse = () => {
+  // The sketch of elements that arrived from elsewhere (sketchIn.ts): the
+  // elements, with the opacity each ends at, and the sketch; the pencil it
+  // sounds with, made for the first one; what its sound control shows; and
+  // the layer over the canvas it draws in.
+  const drawingInRef = useRef<{ arriving: ReadonlyMap<string, number>; sketch: Sketch } | null>(null);
+  const penRef = useRef<Pencil | null>(null);
+  const [sketchSound] = useState(() => createSketchSoundStore(pencilSoundOn()));
+  const sketchHostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => {
+    const current = drawingInRef.current;
+    drawingInRef.current = null;
+    current?.sketch.stop();
+    penRef.current?.close();
+    penRef.current = null;
+  }, []);
+  const toggleSound = useCallback(() => {
+    const on = !sketchSound.get().on;
+    setPencilSound(on);
+    penRef.current?.set(on);
+    sketchSound.set({ ...sketchSound.get(), on });
+  }, [sketchSound]);
+  /** The person used the canvas. On the canvas itself, not its controls, a sketch still going shows the rest at once. */
+  const onUse = (event: SyntheticEvent) => {
     usedAtRef.current = performance.now();
+    if (event.target instanceof Element && event.target.closest('.excalidraw')) drawingInRef.current?.sketch.finish();
   };
 
   // Comment pins follow their elements and the view: placed again on every
@@ -456,7 +470,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   };
   const onUseDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     heldRef.current.add(event.pointerId);
-    onUse();
+    onUse(event);
     if (pickToComment) onPickDown(event);
   };
   const onPickUp = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -491,20 +505,17 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     };
   });
 
-  // The draw-in on the canvas (drawIn.ts): the elements arriving, with the
-  // opacity each ends at, and what stops it.
-  const drawingInRef = useRef<{ arriving: ReadonlyMap<string, number>; stop: () => void } | null>(null);
-  useEffect(() => () => drawingInRef.current?.stop(), []);
-
   // External scene identities (agent edits, reloads) replace the raw
   // authority and reset the library baseline, so the vendor echo of the
   // push re-baselines quietly instead of emitting. A parent's own authored
   // echo must retain the baseline: the next native event can be the text
   // commit, with no intervening selection/paint event to re-establish it.
   // A new presentation redraws the raw scene the same way, quietly. A scene
-  // that arrived from elsewhere (`drawIn`) draws its new elements in, unless
-  // the person prefers reduced motion, and the view follows them when they
-  // are out of sight and the person has left the canvas alone for a while.
+  // that arrived from elsewhere (`drawIn`) sketches its new elements in on a
+  // canvas that shows, unless the person prefers reduced motion, and the view
+  // first follows them when they are out of sight and the person has left
+  // the canvas alone for a while.
+  const shownNow = props.active !== false;
   useEffect(() => {
     const restyled = present !== presentRef.current;
     presentRef.current = present;
@@ -513,32 +524,79 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       pushedRef.current = scene;
       rawRef.current = scene;
       baselineRef.current = null;
-      drawingInRef.current?.stop();
+      // A sketch still going ends here: the scene pushed below shows its elements.
+      const previous = drawingInRef.current;
       drawingInRef.current = null;
+      previous?.sketch.stop();
       const api = apiRef.current;
       if (api) {
         const shown = presented(present, scene);
         const arriving = loadedRef.current && scene === drawIn ? arrivingElements(before, scene) : null;
         const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (arriving && arriving.size > 0 && motion) {
-          // They arrive unseen, then fade in.
+        const host = sketchHostRef.current;
+        const exportSvg = exportNative;
+        const bounds = boundsNative;
+        const sketching = arriving !== null && arriving.size > 0 && motion && shownNow && host !== null && exportSvg !== null && bounds !== null;
+        if (sketching) {
+          // They arrive unseen, then are sketched in.
           pushScene(api, { ...shown, elements: withOpacities(shown.elements, new Map([...arriving.keys()].map((id) => [id, 0]))) }, onErrorRef.current ?? undefined);
-          const stop = drawElementsIn(api, arriving, () => {
-            if (drawingInRef.current?.arriving === arriving) drawingInRef.current = null;
-          });
-          drawingInRef.current = { arriving, stop };
         } else {
           pushScene(api, shown, onErrorRef.current ?? undefined);
         }
         const area = visibleAreaOf(wrapperRef.current, areaRef.current);
         const leftAlone = heldRef.current.size === 0 && performance.now() - usedAtRef.current >= LEFT_ALONE_MS;
-        if (arriving && arriving.size > 0 && area && leftAlone)
-          followArrivals(api, arriving, area, OPENING_MARGIN[compact ? 'touch' : 'default'], motion);
+        const moved = arriving !== null && arriving.size > 0 && area !== null && leftAlone && followArrivals(api, arriving, area, OPENING_MARGIN[compact ? 'touch' : 'default'], motion);
+        if (sketching) {
+          penRef.current ??= pencil(sketchSound.get().on);
+          const sketch: Sketch = sketchIn({
+            host,
+            surface: () => wrapperRef.current?.querySelector('.excalidraw__canvas.static') ?? null,
+            elements: api.getSceneElements(),
+            arriving,
+            exportSvg: (elements, padding) =>
+              exportSvg({
+                elements,
+                appState: { exportBackground: false, exportScale: 1, exportWithDarkMode: false, viewBackgroundColor: api.getAppState().viewBackgroundColor },
+                files: api.getFiles(),
+                exportPadding: padding,
+                skipInliningFonts: true,
+              }),
+            bounds: (elements) => bounds(elements),
+            view: () => {
+              const state = api.getAppState();
+              return { scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value, dark: state.theme === 'dark' };
+            },
+            // On the canvas before the next paint, as the sketch goes: Excalidraw draws in an effect, which a sync update runs at once.
+            reveal: (ids, now) => {
+              const own = new Map(ids.map((id) => [id, arriving.get(id) ?? 100]));
+              const show = () =>
+                (api.updateScene as (sceneData: NativeUpdateScene) => void)({
+                  elements: withOpacities(api.getSceneElementsIncludingDeleted(), own),
+                  captureUpdate: 'NEVER',
+                });
+              if (now) flushSync(show);
+              else show();
+            },
+            // The view moves to them first.
+            delay: moved ? FOLLOW_MS : 0,
+            pen: () => penRef.current,
+            onDone: () => {
+              if (drawingInRef.current?.sketch === sketch) drawingInRef.current = null;
+              sketchSound.set({ ...sketchSound.get(), playing: drawingInRef.current !== null });
+            },
+          });
+          drawingInRef.current = { arriving, sketch };
+          sketchSound.set({ ...sketchSound.get(), playing: true });
+        }
       } else {
         pendingRef.current = scene;
       }
     } else if (restyled) {
       baselineRef.current = null;
+      // A sketch still going shows the rest at once: the canvas is drawn again in new colours.
+      const previous = drawingInRef.current;
+      drawingInRef.current = null;
+      previous?.sketch.finish(false);
       const api = apiRef.current;
       if (api) {
         pushPresentation(api, rawRef.current, presented(present, rawRef.current), onErrorRef.current ?? undefined);
@@ -546,7 +604,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
         pendingRef.current = rawRef.current;
       }
     }
-  }, [scene, present, drawIn, compact]);
+  }, [scene, present, drawIn, compact, shownNow, sketchSound]);
 
   // The scene opens fitted into the visible area, clear of the islands, when
   // it first loads and whenever the canvas is shown again (another tab or the
@@ -589,6 +647,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     const shown = props.active !== false;
     const wasShown = shownRef.current;
     shownRef.current = shown;
+    // Hidden while a sketch goes: the rest shows at once, in silence.
+    if (!shown) drawingInRef.current?.sketch.finish(false);
     if (!shown || wasShown) return;
     openWantedRef.current = true;
     // After the page has placed the canvas area (its effects run after this
@@ -755,6 +815,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
               onScrollRef.current?.(scrollX, scrollY, zoom.value);
             }}
           />
+          {/* Arriving elements are sketched in here (sketchIn.ts): over the canvas, under its selection and controls. */}
+          <div ref={sketchHostRef} data-slot="canvas-sketch" className="pointer-events-none absolute inset-0 z-[1]" />
           {pins && pins.length > 0 && <CanvasPins pins={pins} places={pinStore} onOpen={openPin} />}
           {canComment && comments && <ElementMenuComment store={ui} wrapperRef={wrapperRef} shortcut={comments.shortcut} onComment={commentFromMenu} />}
           {pickToComment && comments && (
@@ -773,6 +835,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
             size={compact ? 'touch' : 'default'}
             viewOnly={viewOnly ?? false}
             comment={canComment && comments ? { shortcut: comments.shortcut, onComment: commentOnSelected } : null}
+            sound={{ store: sketchSound, onToggle: toggleSound }}
           />
         </Suspense>
       </CanvasErrorBoundary>

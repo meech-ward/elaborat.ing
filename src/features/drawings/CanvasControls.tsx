@@ -1,6 +1,10 @@
 import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
+import { Volume2, VolumeX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   CanvasIsland,
+  Hint,
   MoreTools,
   ToolButton,
   ToolGroup,
@@ -9,11 +13,13 @@ import {
   commandShortcut,
   isApplePlatform,
   islandTools,
+  toolButtonVariants,
   type CanvasTool,
   type IslandSize,
   type MenuEntry,
 } from "@/features/design-system";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_STEP, islandTool, nativeTool, type CanvasUiStore } from "./canvasView";
+import type { SketchSoundStore } from "./sketchIn";
 
 /** What the controls ask of the canvas (DrawingCanvas drives Excalidraw with them). */
 export interface CanvasCommands {
@@ -55,8 +61,9 @@ const extraTools: readonly { id: string; label: string; shortcut?: string; group
  * The canvas's own controls, from the design system: the tool island (at
  * the top centre of the canvas area on a desktop, at the bottom centre on
  * a phone), with More tools for the rest of Excalidraw's tools, tool lock,
- * the library and undo and redo, and the zoom island at the bottom left on
- * a desktop. They float over the part of the canvas a person can see (the
+ * the library and undo and redo, the zoom island at the bottom left on a
+ * desktop, and while elements are sketched in, the pencil sound's mute
+ * button. They float over the part of the canvas a person can see (the
  * area's place comes from the page, see workbench.css) and drive
  * Excalidraw through its API; its own toolbar and footer stay hidden.
  */
@@ -67,6 +74,7 @@ export function CanvasControls({
   size,
   viewOnly,
   comment = null,
+  sound = null,
 }: {
   store: CanvasUiStore;
   commands: CanvasCommands;
@@ -76,6 +84,8 @@ export function CanvasControls({
   viewOnly: boolean;
   /** Comment on the one selected element, first in More tools; null where comments cannot be written. */
   comment?: { shortcut: { label: string; aria: string }; onComment: () => void } | null;
+  /** The pencil sound of elements being sketched in, and turning it on or off. */
+  sound?: { store: SketchSoundStore; onToggle: () => void } | null;
 }) {
   const ui = useSyncExternalStore(store.subscribe, store.get, store.get);
   // Read when More tools opens: undo and redo are Excalidraw's own state.
@@ -206,6 +216,35 @@ export function CanvasControls({
           className="pointer-events-auto absolute bottom-4 left-4"
         />
       )}
+      {sound && <PencilSound store={sound.store} onToggle={sound.onToggle} size={size} />}
     </div>
+  );
+}
+
+/**
+ * The pencil sound's mute button, as the chat card has it: in an island of
+ * its own at the bottom right (the top right on a phone, clear of the tools)
+ * while elements are sketched in, and never otherwise. The icon says whether
+ * the sound is on; the choice is remembered for this viewer.
+ */
+function PencilSound({ store, onToggle, size }: { store: SketchSoundStore; onToggle: () => void; size: IslandSize }) {
+  const { playing, on } = useSyncExternalStore(store.subscribe, store.get, store.get);
+  if (!playing) return null;
+  const button = (
+    <Button
+      variant="ghost"
+      aria-label="Pencil sound"
+      aria-pressed={on}
+      onClick={onToggle}
+      // On or off shows in the icon, not as a pressed tool.
+      className={cn(toolButtonVariants({ size }), "aria-pressed:bg-transparent aria-pressed:text-tool-ink aria-pressed:hover:bg-seg")}
+    >
+      {on ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+    </Button>
+  );
+  return (
+    <CanvasIsland size={size} className={size === "touch" ? "pointer-events-auto absolute top-3 right-3" : "pointer-events-auto absolute right-4 bottom-4"}>
+      {size === "touch" ? button : <Hint label={on ? "Mute the pencil sound" : "Turn the pencil sound on"} side="top">{button}</Hint>}
+    </CanvasIsland>
   );
 }

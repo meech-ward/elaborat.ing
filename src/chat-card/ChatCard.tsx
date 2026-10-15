@@ -43,7 +43,7 @@ import type { LiveHandle } from "./live/mount"
 import { blockModules, loadModule, ModuleNotLoaded, modulesAllowed } from "./modules"
 import { ComponentPreview, type LinkSpot, type PreviewOutcome } from "./preview/ComponentPreview"
 import { codeBlock, highlightBlock, type Highlighter } from "./readingMarkup"
-import { pencilSoundOn, setPencilSound } from "./pencilSetting"
+import { pencilSoundOn, setPencilSound } from "@/features/sketch/pencilSetting"
 import { APP_ORIGIN, hasMeta, parseReadResult, parseShowResult, parseWriteResult, type CardEmbed, type CardFile } from "./toolResult"
 
 const inputSchema = z.object({ path: z.string() })

@@ -222,11 +222,11 @@ export interface DrawingCanvasProps {
   present?: (scene: DrawingScene) => DrawingScene;
   /**
    * A scene that arrived from elsewhere, such as an agent's save. When
-   * `scene` becomes this scene, the elements new in it draw in: each fades
-   * in to its own opacity, one after another, unless the person prefers
-   * reduced motion. When any of them is out of sight, the view moves to them,
-   * unless the person has used the canvas in the last few seconds. Display
-   * only, like `present`.
+   * `scene` becomes this scene, the elements new in it are sketched in, one
+   * after another, as the chat card draws them (sketchIn.ts), unless the
+   * person prefers reduced motion or the canvas is hidden. When any of them
+   * is out of sight, the view moves to them first, unless the person has
+   * used the canvas in the last few seconds. Display only, like `present`.
    */
   drawIn?: DrawingScene | null;
   /** Fires when the view pans or zooms, with Excalidraw's scroll and zoom. */
