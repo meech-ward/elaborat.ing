@@ -63,6 +63,32 @@ test("without an account, the local project keeps a note across a reload, and wh
   await expect(page.getByRole("complementary", { name: "Comments" }).getByRole("link", { name: "Sign up to comment" })).toHaveAttribute("href", "/sign-up")
 })
 
+// A link to another page leaves the local project on screen until that
+// page's code has arrived (routes/__root.tsx), never a request to sign in in
+// its place. The test holds the sign-up page's code, and stops the page's
+// clock to look at the moment before the loading state shows.
+test("following a link away leaves the local project on screen while the next page loads, with no request to sign in", async ({ page }) => {
+  await fakeSupabase(page)
+  let release = () => {}
+  const released = new Promise<void>((resolve) => (release = resolve))
+  await page.route(/\/assets\/sign-up-[\w-]+\.js$/, async (route) => {
+    await released
+    await route.continue()
+  })
+  await page.clock.install()
+  await startWriting(page)
+
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  await page.getByRole("link", { name: "Sign up to share" }).click()
+  await expect(page).toHaveURL(new URL("sign-up", APP_URL).href)
+  await expect(page.getByRole("heading", { level: 1, name: "Local project" })).toBeVisible()
+  await expect(page.getByText("Sign in to open this project.")).toHaveCount(0)
+
+  release()
+  await page.clock.resume()
+  await expect(page.getByRole("heading", { level: 1, name: "Sign up" })).toBeVisible()
+})
+
 test("signing in uploads the local project once, as Local project, and opens it", async ({ page }) => {
   const fake = await fakeSupabase(page)
   const earlier = crypto.randomUUID()

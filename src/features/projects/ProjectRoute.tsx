@@ -1,6 +1,6 @@
-import { Link, useLocation } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import { PanelPage } from "@/components/panel"
-import { parseProjectLocation } from "@/features/navigation"
+import { parseProjectLocation, useProjectHref } from "@/features/navigation"
 import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { LOCAL_ACCOUNT, useProjectAccount, type ProjectAccount } from "./account"
 
@@ -10,7 +10,7 @@ import { LOCAL_ACCOUNT, useProjectAccount, type ProjectAccount } from "./account
 /** Shows the project page for the account (the local project without one), or the reason it cannot. */
 export function ProjectRoute({ children }: { children: (account: ProjectAccount) => React.ReactNode }) {
   const result = useProjectAccount()
-  const href = useLocation({ select: (location) => location.href })
+  const href = useProjectHref()
   if (result.kind === "account") return <>{children(result.account)}</>
   const location = parseProjectLocation(href)
   if (result.kind === "signed-out" && location.kind === "project" && location.projectId === LOCAL_PROJECT_ID) return <>{children(LOCAL_ACCOUNT)}</>
