@@ -32,8 +32,10 @@
  *   instrumentation for the shown revision (exact range plus `expected`
  *   slice, same literal kind in the same quoted/braced context), never
  *   trusted on the evaluated document's word.
- * - Syntax or runtime errors leave the source recoverable: the last good
- *   render stays on screen and the message goes to `onError`.
+ * - Syntax or runtime errors leave the source recoverable: the message goes
+ *   to `onError` and the note is hidden until its text works again. While
+ *   the person types, the last good render stays until the error shows
+ *   (useSettledError).
  */
 import {
   useCallback,

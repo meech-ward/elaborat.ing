@@ -7,6 +7,8 @@ import type { ComponentDefinition } from "../document/componentCatalog";
 import type { WriteIn } from "../document/writeIn";
 import { createSourceHandoff, type SourceEditorApi } from "./sourceBuffer";
 
+export { parseErrorPosition } from "@/lib/sourceDiagnostics";
+
 export type { SourceEditorApi };
 
 /** The note's commented text, and the Comment actions when the person may comment. */
@@ -77,23 +79,6 @@ export interface SourceEditorProps {
   onShown?: () => void;
 }
 
-/** Pull a leading `line:column` (MDX/VFile style) out of an error message. */
-export function parseErrorPosition(
-  message: string,
-): { line: number; column: number } | null {
-  const match = /(?:^|\s)(\d+):(\d+)(?:\s|-|:|$)/.exec(message);
-  if (!match) return null;
-  const line = Number(match[1]);
-  const column = Number(match[2]);
-  if (
-    !Number.isInteger(line) ||
-    line < 1 ||
-    !Number.isInteger(column) ||
-    column < 1
-  )
-    return null;
-  return { line, column };
-}
 
 // Monaco and the editor around it are about half of the project page's
 // code, so they load in their own chunk the first time a Source, Split or

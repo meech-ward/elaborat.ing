@@ -400,6 +400,19 @@ function emptyChildInsertion(source: string, component: SourceRange): number | u
  * descriptive compile error for invalid MDX; the caller keeps the source
  * recoverable and shows the message.
  */
+/**
+ * A compile error's message, ending with the line and column the compiler
+ * gave it when the message doesn't already name a place, so Source can
+ * underline the error where it is (parseErrorPosition).
+ */
+function placedMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const { line, column } = error as { line?: unknown; column?: unknown };
+  return typeof line === "number" && typeof column === "number" && !/\d+:\d+/.test(error.message)
+    ? `${error.message} (${line}:${column})`
+    : error.message;
+}
+
 export async function instrumentMdxSource(
   source: string,
   catalog: readonly ComponentDefinition[] = COMPONENT_CATALOG,
@@ -415,7 +428,7 @@ export async function instrumentMdxSource(
     });
   } catch (error) {
     throw new Error(
-      `Invalid MDX: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid MDX: ${placedMessage(error)}`,
     );
   }
   if (!collected.tree)
@@ -444,7 +457,7 @@ export async function instrumentMarkdownSource(
     });
   } catch (error) {
     throw new Error(
-      `Invalid Markdown: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid Markdown: ${placedMessage(error)}`,
     );
   }
   if (!collected.tree)

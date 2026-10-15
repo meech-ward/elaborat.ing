@@ -29,3 +29,16 @@ export async function diagnoseSource(
     return error instanceof Error ? error.message : String(error)
   }
 }
+
+/**
+ * The first `line:column` in an error message, as MDX writes them: leading
+ * ("3:6: ..."), or in brackets ("(3:6-3:9)", "(3:6)").
+ */
+export function parseErrorPosition(message: string): { line: number; column: number } | null {
+  const match = /(?:^|[\s(])(\d+):(\d+)(?:[\s:)-]|$)/.exec(message)
+  if (!match) return null
+  const line = Number(match[1])
+  const column = Number(match[2])
+  if (!Number.isInteger(line) || line < 1 || !Number.isInteger(column) || column < 1) return null
+  return { line, column }
+}
