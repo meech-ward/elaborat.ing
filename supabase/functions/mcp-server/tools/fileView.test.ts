@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { CARD_SCRIPT, CARD_STYLE } from './cardEditorScript.ts'
 import { COMPONENTS_META_KEY, importedPaths } from './componentSources.ts'
-import { D2_META_KEY, FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MAX_TOTAL_SVG_CHARS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
+import { D2_META_KEY, FILE_VIEW_URI, HTML_META_KEY, MAX_EMBEDS, MAX_META_CHARS, MCP_APP_MIME_TYPE, SOURCE_META_KEY, SVG_META_KEY, sourceHash } from './fileView.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
 import { registerTools, type ToolContext } from './index.ts'
 import { renderMarkdown, renderNote } from './markdown.ts'
@@ -648,14 +648,53 @@ Deno.test('what the view draws a diagram from goes in what is left of the budget
   const { result } = await showFile('plan.md', [
     file('plan.md', note),
     file('art/flow.excalidraw', SCENE),
-    // With the drawing's SVG in, this one no longer fits.
-    file('flows/big.d2', `# ${'x'.repeat(MAX_TOTAL_SVG_CHARS - 10)}\na -> b`),
+    // Too big for a result even on its own, this one is not sent.
+    file('flows/big.d2', `# ${'x'.repeat(MAX_META_CHARS - 10)}\na -> b`),
     file('flows/small.d2', 'c -> d'),
   ])
   const view = result.structuredContent as { embeds: { path: string; status: string }[] }
   assertEquals(view.embeds.map((embed) => embed.status), ['drawn', 'not_drawn', 'not_drawn'])
   assert((result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['art/flow.excalidraw'].startsWith('<svg '))
   assertEquals((result._meta as Record<string, unknown>)[D2_META_KEY], { 'flows/small.d2': { source: 'c -> d' } })
+})
+
+/** A drawing of `count` labelled shapes, each with an arrow on: about 1,500 characters of SVG a shape. */
+function sceneOf(count: number) {
+  const elements = Array.from({ length: count }, (_, i) => {
+    const [x, y] = [(i % 5) * 220, Math.floor(i / 5) * 160]
+    return [
+      { id: `s${i}`, type: 'rectangle', x, y, width: 160, height: 70, seed: i + 1, roundness: { type: 3 } },
+      { id: `t${i}`, type: 'text', x: x + 20, y: y + 22, width: 120, height: 25, text: `Step ${i + 1}`, fontSize: 20, fontFamily: 5, textAlign: 'center', containerId: `s${i}` },
+      { id: `a${i}`, type: 'arrow', x: x + 160, y: y + 35, width: 60, height: 0, seed: 1000 + i, points: [[0, 0], [60, 0]], endArrowhead: 'arrow', roundness: { type: 2 } },
+    ]
+  })
+  return JSON.stringify({ type: 'excalidraw', version: 2, elements: elements.flat() })
+}
+
+Deno.test('a note whose drawings pass the cap draws the first ones and defers the rest, for the view to load each on its own', async () => {
+  const drawings = ['a', 'b', 'c', 'd', 'e'].map((name) => `art/${name}.excalidraw`)
+  const source = `# ${'x'.repeat(30_000)}\na -> b`
+  const note = ['# Plan', ...drawings.map((path) => `<Drawing src="${path}" />`), '<Diagram src="flows/new.d2" />'].join('\n\n')
+  const files = [file('plan.mdx', note), ...drawings.map((path) => file(path, sceneOf(20))), file('flows/new.d2', source)]
+  const { result } = await showFile('plan.mdx', files)
+  // The whole of _meta, as the host passes it on: under the size at which Claude keeps a result as a file.
+  const size = JSON.stringify(result._meta).length
+  assert(size <= MAX_META_CHARS, `_meta is ${size} characters`)
+  const view = result.structuredContent as { embeds: { path: string; status: string }[] }
+  assertEquals(view.embeds.map((embed) => embed.status), ['drawn', 'drawn', 'drawn', 'deferred', 'deferred', 'deferred'])
+  const meta = result._meta as Record<string, Record<string, string>>
+  assertEquals(Object.keys(meta[SVG_META_KEY]), drawings.slice(0, 3))
+  assertFalse(D2_META_KEY in meta)
+
+  // Each one deferred, shown on its own as the view loads it, is drawn or sent to draw, under the cap too.
+  const drawing = await showFile('art/d.excalidraw', files)
+  assertEquals((drawing.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'drawn')
+  assert((drawing.result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['art/d.excalidraw'].startsWith('<svg '))
+  assert(JSON.stringify(drawing.result._meta).length <= MAX_META_CHARS)
+  const diagram = await showFile('flows/new.d2', files)
+  assertEquals((diagram.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'not_drawn')
+  assertEquals(diagram.result._meta, { [D2_META_KEY]: { 'flows/new.d2': { source } } })
+  assert(JSON.stringify(diagram.result._meta).length <= MAX_META_CHARS)
 })
 
 Deno.test('a note is marked mdx when the HTML shows or drops some of its MDX, and not for embeds and callouts alone', () => {

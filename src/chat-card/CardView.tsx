@@ -90,8 +90,8 @@ export type CardViewProps = Omit<ComponentProps<"section">, "children"> & {
  */
 export function CardView({ state, canEdit, editNote = null, editor, live, sound = null, preview = null, highlighter, onEdit, onSave, onCancel, onReload, className, ...props }: CardViewProps) {
   const shown = state.phase === "shown" ? state : null
-  // A diagram the card draws itself is being laid out.
-  const drawing = shown?.file.embeds.some((embed) => embed?.status === "drawing") ?? false
+  // A diagram the card draws itself is being laid out, or a drawing that did not fit in the result is loading.
+  const drawing = shown?.file.embeds.some((embed) => embed?.status === "drawing" || embed?.status === "loading") ?? false
   return (
     <section
       data-slot="chat-card"

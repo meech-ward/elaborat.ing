@@ -31,7 +31,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v37.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v38.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -70,6 +70,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v34.html',
   'ui://elaborating/file-view-v35.html',
   'ui://elaborating/file-view-v36.html',
+  'ui://elaborating/file-view-v37.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -100,16 +101,28 @@ const SHOWN_AS_MADE = /\.(md|mdx|excalidraw|d2)$/i
 /** The longest a card_report's times may be: a day, in ms. */
 const DAY_MS = 86_400_000
 
-/** Characters of a note rendered in the view; the rest is a click away. */
-const PREVIEW_LIMIT = 40_000
+/**
+ * Characters of a note rendered in the view; the rest is a click away. A
+ * note this long takes about 45,000 characters of `_meta` for its HTML and
+ * source, and one that is all a table of short cells about 92,000, which
+ * leaves the drawings room under MAX_META_CHARS. At 40,000, a data table's
+ * HTML and source alone passed it.
+ */
+const PREVIEW_LIMIT = 20_000
 /** Different drawings and diagrams drawn for one note; later ones show as links. */
 export const MAX_EMBEDS = 8
 /**
- * Characters of drawings in one result: the SVG of each file drawn here
- * (each at most MAX_SVG_CHARS), then, in what is left, what the view draws a
- * diagram from (D2_META_KEY).
+ * Characters of `_meta` in one result, as JSON: the note's HTML, its source
+ * and its component files, then the SVG of each file drawn here (each at most
+ * MAX_SVG_CHARS), then, in what is left, what the view draws a diagram from
+ * (D2_META_KEY). A drawing or diagram that does not fit in what is left is
+ * deferred: the view loads it with show_file. Claude keeps a result of more
+ * than about 150,000 characters as a file where its code execution is on,
+ * and the view then gets no result to show, so this stays under that, with
+ * room for the rest of the result.
+ * https://claude.com/docs/connectors/building/mcp-apps/troubleshooting
  */
-export const MAX_TOTAL_SVG_CHARS = 600_000
+export const MAX_META_CHARS = 120_000
 /** A drawing file longer than this is not read to draw it. */
 const MAX_SCENE_CHARS = 5_000_000
 /** The result `_meta` key holding each drawn file's SVG by path. `_meta` reaches the view, not the model. */
@@ -129,6 +142,13 @@ export const D2_META_KEY = 'elaborat.ing/d2'
 
 /** What the view draws a diagram from (D2_META_KEY). */
 export type DiagramSource = { source: string; canvas?: string; layout?: string }
+
+/** A value's characters in `_meta` as JSON, with its key, a colon and a comma. */
+const metaSize = (key: string, value: unknown) => JSON.stringify(key).length + JSON.stringify(value).length + 2
+/** The characters of MAX_META_CHARS left for drawings beside the rest of `_meta`, once their two keys are in. */
+const roomBeside = (meta: Record<string, unknown>) => MAX_META_CHARS - JSON.stringify(meta).length - JSON.stringify({ [SVG_META_KEY]: {}, [D2_META_KEY]: {} }).length
+/** The room a drawing or diagram has in a result of its own, as when the view loads one that was deferred. */
+const ALONE = roomBeside({})
 
 export type FileKind = 'note' | 'drawing' | 'diagram' | 'file' | 'component'
 
@@ -182,10 +202,11 @@ function drawnFromOtherSource(path: string, files: Map<string, string>): boolean
   }
 }
 
-export type EmbedStatus = 'drawn' | 'stale' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'not_shown' | 'unsupported'
+/** How a drawing or diagram came out; `deferred`: it did not fit in this result, and the view loads it with show_file. */
+export type EmbedStatus = 'drawn' | 'stale' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'deferred' | 'not_shown' | 'unsupported'
 export type EmbedView = EmbedRef & { url: string; status: EmbedStatus }
 
-function drawOne(path: string, files: Map<string, string>, budget: number): { status: EmbedStatus; svg?: string } {
+function drawOne(path: string, files: Map<string, string>): { status: EmbedStatus; svg?: string } {
   const kind = fileKind(path)
   if (kind !== 'drawing' && kind !== 'diagram') return { status: 'unsupported' }
   if (!files.has(path)) return { status: 'missing' }
@@ -198,7 +219,7 @@ function drawOne(path: string, files: Map<string, string>, budget: number): { st
   } catch {
     return { status: 'unreadable' }
   }
-  const drawn = drawingSvg(elements, Math.min(MAX_SVG_CHARS, budget), { diagram: kind === 'diagram' })
+  const drawn = drawingSvg(elements, MAX_SVG_CHARS, { diagram: kind === 'diagram' })
   if (!('svg' in drawn)) return { status: drawn.problem }
   return { status: kind === 'diagram' && drawnFromOtherSource(path, files) ? 'stale' : 'drawn', svg: drawn.svg }
 }
@@ -213,14 +234,18 @@ function diagramSource(path: string, files: Map<string, string>): DiagramSource 
 /**
  * Draws the first MAX_EMBEDS different files the refs name, reading them
  * (and each diagram's companion) as the user in one query. `known` holds
- * contents already read. A diagram whose canvas is missing or out of date
- * goes to the view to draw from its source (`diagrams`), in what is left of
- * the budget once the SVG is in.
+ * contents already read. Their SVG goes in `room`, the characters of `_meta`
+ * left for drawings, in the order the refs name them. A diagram whose canvas
+ * is missing or out of date goes to the view to draw from its source
+ * (`diagrams`), in what is left once the SVG is in. A drawing, or a diagram
+ * with no canvas, that does not fit in what is left but would on its own is
+ * deferred, for the view to load; one too big for that is not shown.
  */
 async function drawEmbeds(
   supabase: SupabaseClient,
   projectId: string,
   refs: EmbedRef[],
+  room: number,
   known: Record<string, string> = {}
 ): Promise<{ embeds: EmbedView[]; svgs: Record<string, string>; diagrams: Record<string, DiagramSource> }> {
   const drawn = [...new Set(refs.map((ref) => ref.path))].slice(0, MAX_EMBEDS)
@@ -238,13 +263,17 @@ async function drawEmbeds(
   }
   const svgs: Record<string, string> = {}
   const statuses = new Map<string, EmbedStatus>()
-  let budget = MAX_TOTAL_SVG_CHARS
+  let left = room
   for (const path of drawn) {
-    const { status, svg } = drawOne(path, files, budget)
-    statuses.set(path, status)
-    if (svg) {
+    const { status, svg } = drawOne(path, files)
+    const size = svg === undefined ? 0 : metaSize(path, svg)
+    if (svg === undefined) statuses.set(path, status)
+    else if (size > ALONE) statuses.set(path, 'too_big')
+    else if (size > left) statuses.set(path, 'deferred')
+    else {
+      statuses.set(path, status)
       svgs[path] = svg
-      budget -= svg.length
+      left -= size
     }
   }
   const diagrams: Record<string, DiagramSource> = {}
@@ -252,10 +281,14 @@ async function drawEmbeds(
     const status = statuses.get(path)
     if (status !== 'not_drawn' && status !== 'stale') continue
     const sent = diagramSource(path, files)
-    const size = sent.source.length + (sent.canvas?.length ?? 0) + (sent.layout?.length ?? 0)
-    if (size > budget) continue
-    diagrams[path] = sent
-    budget -= size
+    const size = metaSize(path, sent)
+    if (size <= left) {
+      diagrams[path] = sent
+      left -= size
+    } else if (status === 'not_drawn' && size <= ALONE) {
+      // It has no drawing to show meanwhile; one out of date shows the one it has.
+      statuses.set(path, 'deferred')
+    }
   }
   const embeds = refs.map((ref) => ({ ...ref, url: fileUrl(projectId, ref.path), status: statuses.get(ref.path) ?? 'not_shown' }))
   return { embeds, svgs, diagrams }
@@ -294,15 +327,23 @@ export async function showFilePayload(
     const note = kind === 'note' ? preview(content) : null
     const rendered = note ? renderNote(note.source) : null
     const refs: EmbedRef[] = rendered?.embeds ?? (kind === 'drawing' || kind === 'diagram' ? [{ kind, path: data.path }] : [])
-    const { embeds, svgs, diagrams } =
-      refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, { [data.path]: content }) : { embeds: [], svgs: {}, diagrams: {} }
-    const drawings = Object.keys(svgs).length > 0 || Object.keys(diagrams).length > 0
     // An MDX note shown whole whose components the HTML shows as text: the view previews them from these.
     const previewed = rendered?.mdx && note && !note.truncated && data.path.toLowerCase().endsWith('.mdx')
     const modules = previewed ? await componentSources(supabase, project_id, content) : null
     // Only a previewed note's custom components ask first, naming who last changed the files they come from.
     const shared = modules ? await sharedWithUser(supabase, project_id, userClaims?.id) : false
     const editors = shared && modules ? await componentEditors(supabase, project_id, [data.path, ...Object.keys(modules)], userClaims?.id) : null
+    // The view's part of the result, which the drawings fit beside.
+    const meta: Record<string, unknown> = {
+      ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
+      // The whole note, for editing in the view; a note too long to show whole is not edited there.
+      ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
+      ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),
+    }
+    const { embeds, svgs, diagrams } =
+      refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, roomBeside(meta), { [data.path]: content }) : { embeds: [], svgs: {}, diagrams: {} }
+    if (Object.keys(svgs).length > 0) meta[SVG_META_KEY] = svgs
+    if (Object.keys(diagrams).length > 0) meta[D2_META_KEY] = diagrams
     return {
       content: [
         {
@@ -326,18 +367,7 @@ export async function showFilePayload(
         embeds,
         ...(modules ? { shared } : {}),
       },
-      ...(rendered || drawings
-        ? {
-            _meta: {
-              ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
-              ...(Object.keys(svgs).length > 0 ? { [SVG_META_KEY]: svgs } : {}),
-              ...(Object.keys(diagrams).length > 0 ? { [D2_META_KEY]: diagrams } : {}),
-              // The whole note, for editing in the view; a note too long to show whole is not edited there.
-              ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
-              ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),
-            },
-          }
-        : {}),
+      ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     }
   } catch (error) {
     return runtimeErrorResult(error)

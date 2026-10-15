@@ -28,8 +28,12 @@ type OpSet = Drawable['sets'][number]
 
 /** Elements drawn at most; a bigger scene is not drawn. */
 export const MAX_ELEMENTS = 3000
-/** Characters of SVG markup at most; a bigger drawing is not shown. */
-export const MAX_SVG_CHARS = 200_000
+/**
+ * Characters of SVG markup at most; a bigger drawing is not shown. Under the
+ * file view's cap on a result's `_meta` (fileView.ts MAX_META_CHARS), with
+ * room for what JSON adds to it, so one drawing fits in a result of its own.
+ */
+export const MAX_SVG_CHARS = 110_000
 
 const INK = '#1e1e1e'
 const PADDING = 10

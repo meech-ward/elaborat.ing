@@ -75,7 +75,7 @@ export type ComponentPreviewRequest = {
 export type ShowOutcome = { ok: true; file: CardFile } | { ok: false; message: string }
 export type WriteOutcome = { kind: "saved"; version: number | null } | { kind: "conflict" } | { kind: "failed"; message: string }
 
-const STATUSES = ["drawn", "stale", "not_drawn", "missing", "unreadable", "empty", "too_big", "not_shown", "unsupported"] as const
+const STATUSES = ["drawn", "stale", "not_drawn", "missing", "unreadable", "empty", "too_big", "deferred", "not_shown", "unsupported"] as const
 const kindSchema = z.catch(z.enum(["note", "drawing", "diagram", "file", "component"]), "file")
 const appUrl = z.catch(z.nullable(z.string().check(z.startsWith(APP_ORIGIN))), null)
 

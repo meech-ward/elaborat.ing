@@ -8,8 +8,9 @@ export type FileKind = "note" | "drawing" | "diagram" | "file" | "component"
 
 /**
  * How a drawing or diagram came out (fileView.ts EmbedStatus); anything else
- * reads as drawn. `drawing` is the card's own: a diagram it is drawing from
- * its source (cardDiagrams.ts).
+ * reads as drawn. `drawing` and `loading` are the card's own: a diagram it is
+ * drawing from its source (cardDiagrams.ts), and a deferred one it is loading
+ * (cardDeferred.ts).
  */
 export type EmbedStatus =
   | "drawn"
@@ -19,9 +20,11 @@ export type EmbedStatus =
   | "unreadable"
   | "empty"
   | "too_big"
+  | "deferred"
   | "not_shown"
   | "unsupported"
   | "drawing"
+  | "loading"
 
 export type CardEmbed = { kind: FileKind; path: string; url: string | null; status: EmbedStatus }
 
@@ -48,9 +51,11 @@ export const EMBED_NOTES: Record<EmbedStatus, string> = {
   unreadable: "This drawing could not be read.",
   empty: "This drawing is empty.",
   too_big: "Too big to show here. Open it in elaborat.ing.",
+  deferred: "Open it in elaborat.ing to see it.",
   not_shown: "Open the note in elaborat.ing to see it.",
   unsupported: "Only drawings and diagrams are shown here.",
   drawing: "Laying it out…",
+  loading: "Loading it…",
 }
 
 /** What the card says for a file it does not show. */

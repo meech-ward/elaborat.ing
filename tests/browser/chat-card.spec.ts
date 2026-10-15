@@ -368,6 +368,57 @@ test("a diagram shows on the dotted canvas in dark mode, with a banner when its 
   expect(await violations(page)).toEqual([])
 })
 
+// Drawings and diagrams that did not fit in show_file's result, which keeps
+// its _meta small (fileView.ts MAX_META_CHARS), come deferred: the card loads
+// each with show_file, one at a time, where the host lets it call tools.
+
+/** show_file's result for a drawing on its own, as the card loads one that was deferred. */
+function drawingShown(path: string, svg: string) {
+  const url = `https://elaborat.ing/projects/${PROJECT}/${path}`
+  return {
+    content: [{ type: "text", text: `Showing ${path} (version 1) to the user.` }],
+    structuredContent: { project_id: PROJECT, path, kind: "drawing", version: 1, updated_at: null, url, truncated: false, embeds: [{ kind: "drawing", path, url, status: "drawn" }] },
+    _meta: { "elaborat.ing/svg": { [path]: svg } },
+  }
+}
+
+test("a drawing that did not fit in the result is loaded with show_file and drawn where its link was, and one that does not load keeps its link", async ({ page }) => {
+  const later = "art/later.excalidraw"
+  const gone = "art/gone.excalidraw"
+  const circle = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40"><circle cx="60" cy="20" r="16" fill="none" stroke="#1e1e1e"/></svg>'
+  const embed = (path: string, status: string) => ({ kind: "drawing", path, url: `https://elaborat.ing/projects/${PROJECT}/${path}`, status })
+  const note = shown(4, SOURCE)
+  const result = {
+    ...note,
+    structuredContent: { ...note.structuredContent, embeds: [embed("art/flow.excalidraw", "drawn"), embed(later, "deferred"), embed(gone, "deferred")] },
+    _meta: { ...note._meta, "elaborat.ing/html": `<h1>Launch plan</h1>${[0, 1, 2].map((index) => `<figure class="embed" data-embed="${index}"></figure>`).join("")}` },
+  }
+  const notLoaded = "Open it in elaborat.ing to see it."
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await answer(page, "show_file", drawingShown(later, circle))
+  await answer(page, "show_file", { isError: true, content: [{ type: "text", text: `No file at ${gone} in this project.` }] })
+  await send(page, "ui/notifications/tool-result", result)
+  await expect(card.getByRole("img", { name: `Drawing ${later}` }).locator("circle")).toHaveCount(1)
+  await expect(card.getByRole("img", { name: "Drawing art/flow.excalidraw" })).toBeVisible()
+  // The one whose call failed keeps its link.
+  await expect(card.getByRole("figure").filter({ hasText: gone })).toContainText(notLoaded)
+  await expect(card.getByRole("link", { name: gone })).toHaveAttribute("href", `https://elaborat.ing/projects/${PROJECT}/${gone}`)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  // One call for each, in the note's order, for its path in the same project.
+  expect(await calls(page)).toEqual([
+    { name: "show_file", arguments: { project_id: PROJECT, path: later } },
+    { name: "show_file", arguments: { project_id: PROJECT, path: gone } },
+  ])
+  expect(await violations(page)).toEqual([])
+
+  // A host that does not let the card call tools gets the links.
+  const readOnly = await openHost(page, { tools: false, theme: "light", result })
+  await expect(readOnly.getByText(notLoaded)).toHaveCount(2)
+  await expect(readOnly.getByRole("img", { name: "Drawing art/flow.excalidraw" })).toBeVisible()
+  expect(await calls(page)).toEqual([])
+})
+
 // D2 diagrams the app has not drawn from their source yet: a new one, with no
 // canvas, or one whose source changed since its canvas was saved. The server
 // sends what each is drawn from, and the card lays it out with the app's D2

@@ -674,8 +674,8 @@ Limits that were there already, kept as they are:
   selection at most 5,000, with 32 characters of context on each side, and an
   element's label at most 200.
 - **Per API read:** at most 1,000 rows (`max_rows` in `config.toml`).
-- **MCP Apps card:** 8 drawings per note, 200,000 characters of SVG each and
-  600,000 per result, 3,000 elements per scene.
+- **MCP Apps card:** 8 drawings per note, 110,000 characters of SVG each and
+  120,000 characters of `_meta` per result, 3,000 elements per scene.
 - **Auth** (`[auth.rate_limit]` in `config.toml`): 30 emails an hour for the
   project; per IP address, 30 sign-ups and sign-ins, 30 code and link checks
   and 150 session refreshes every 5 minutes. A person can ask for another
@@ -828,17 +828,25 @@ The production server's tools are unchanged.
   Excalidraw uses (`tools/drawingSvg.ts`), and sends the SVG in the result's
   `_meta`, which reaches the view but not the model. A diagram the app has not
   drawn from its source yet is drawn by the card (below). Limits: 8 different
-  files drawn per note, 200,000 characters of SVG each and 600,000 per result
-  (what the card draws a diagram from comes out of what the SVG leaves), 3,000
-  elements per scene. The view is on its own tool, not on `read_file`, so
-  agents can read files without filling the chat with views.
+  files drawn per note, 110,000 characters of SVG each, and 120,000
+  characters of `_meta` per result, as JSON: the note's HTML (of its first
+  20,000 characters), its source and its component files, then the SVG, then
+  what the card draws a diagram from in what that leaves. Where code
+  execution is on, Claude keeps a result of more than about 150,000
+  characters as a file, and the view then gets no result to show (its MCP
+  Apps troubleshooting page). A drawing or diagram that does not fit in what
+  is left, but would in a result of its own, is `deferred`: the card loads
+  each with `show_file`, one at a time, where the host lets it call tools,
+  and draws it where its link was. 3,000 elements per scene. The view is on
+  its own tool, not on `read_file`, so agents can read files without filling
+  the chat with views.
 - **Decision: the card draws a D2 diagram the app has not drawn from its
   source yet.** A diagram's canvas is saved by the app when someone opens it,
   so a new diagram has none (`not_drawn`), and one whose source changed since
   is out of date (`stale`). For each such diagram, `show_file` (and so
   `create_and_show` and `update_and_show`) sends its source, with the canvas
   and layout record the app saved if it did, in `_meta["elaborat.ing/d2"]`,
-  only for those diagrams and only in what the 600,000 characters leave once
+  only for those diagrams and only in what the 120,000 characters leave once
   the SVG is in. The card (`src/chat-card/cardDiagrams.ts`) then loads its
   `diagram` module, which lays the diagram out with the app's own code, as the
   app does when it opens it (`compileD2Diagram` and `projectDiagramArtifact`,

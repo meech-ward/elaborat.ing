@@ -44,8 +44,8 @@ export type LiveHandle = {
   destroy(): void
 }
 
-/** Characters of a note the card renders, as the server's preview. */
-const PREVIEW_LIMIT = 40_000
+/** Characters of a note the card renders, as the server's preview (fileView.ts). */
+const PREVIEW_LIMIT = 20_000
 /** How long the rest of a drawing takes once its whole input is in, and once the file is saved. */
 const FINAL_MS = 1200
 const SETTLE_MS = 400

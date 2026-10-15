@@ -34,6 +34,10 @@
  * D2 engine (cardDiagrams.ts), where the host allows it. A diagram being
  * written starts the engine while it comes in, and its drawing takes the
  * source's place when the result comes.
+ *
+ * A drawing or diagram that did not fit in the result (deferred) is loaded
+ * with show_file, one at a time, where the host lets the card call tools
+ * (cardDeferred.ts).
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
@@ -41,6 +45,7 @@ import { z } from "zod/mini"
 import { DottedPage } from "@/components/panel"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
+import { useLoadedFile } from "./cardDeferred"
 import { drawDiagrams, hasDiagramsToDraw, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
 import { CardNote, READING_CLASS } from "./cardNote"
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
@@ -307,8 +312,10 @@ export function ChatCard({ host }: { host: HostBridge }) {
   }, [host, feed])
 
   const shown = state.phase === "shown" ? state : null
-  // The file with the diagrams the card draws itself, as they are drawn.
-  const drawn = useDrawnFile(shown?.file ?? null)
+  // The file with the drawings and diagrams that did not fit in its result, as they load,
+  // then with the diagrams the card draws itself, as they are drawn.
+  const loaded = useLoadedFile(shown?.file ?? null, canCallTools ? host : null)
+  const drawn = useDrawnFile(loaded)
   const editing = shown !== null && shown.mode !== "read"
   useEffect(() => {
     if (editing || !expanded.current) return
