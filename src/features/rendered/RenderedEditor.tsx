@@ -40,6 +40,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useId,
   useMemo,
@@ -339,6 +340,19 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // Frame modules sent to the frame since it last said ready: it asks for
   // each once, and again only after a failed load.
   const sentModules = useRef(new Set<string>());
+  // What the frame was last told (Exposed above).
+  const authority = useRef<Exposed | null>(null);
+  // A link in the note was clicked, said in a window post from the frame
+  // (the handshake effect below). Only a person's click opens anything: the
+  // frame's own code cannot, since a click in the frame is what activates this
+  // page too.
+  const openLink = useEffectEvent((data: unknown, frame: Window) => {
+    const checked = checkChildMessage({ data, source: frame, expectedSource: frame, session, revision: authority.current?.revision ?? -1 });
+    if (!checked.ok || checked.message.kind !== "open-link") return;
+    const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+    if (activation && !activation.isActive) return;
+    onOpenLink?.(checked.message.href);
+  });
   // The handshake (docs/architecture.md, Component isolation): the frame's
   // first `ready`, a window post, is answered with one port of a new channel,
   // and every message after it, both ways, goes on that channel. A port stays
@@ -346,10 +360,17 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // which has the same window, can neither hear the editor nor speak to it.
   // A frame gets one port: a later `ready` from its window is not answered.
   // The frame gets the current render on its port as soon as it has one.
+  // After that only a clicked link comes as a window post (postLinkToParent in
+  // src/preview/parentPort.ts), with this editor's session, which only the
+  // frame's first document was sent.
   useEffect(() => {
     const onWindowMessage = (event: MessageEvent) => {
       const frame = frameRef.current?.contentWindow;
-      if (event.source !== frame || frame == null || portRef.current) return;
+      if (event.source !== frame || frame == null) return;
+      if (portRef.current) {
+        openLink(event.data, frame);
+        return;
+      }
       const checked = checkChildMessage({ data: event.data, source: event.source, expectedSource: frame, session, revision: -1 });
       if (!checked.ok || checked.message.kind !== "ready") return;
       const channel = new MessageChannel();
@@ -403,7 +424,6 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     null,
   );
   const hasExposed = exposed !== null;
-  const authority = useRef<Exposed | null>(null);
   const epoch = useRef(0);
   const latestDocument = useRef(document);
   // The newer saved version the note last took, for the projection below,
@@ -1041,14 +1061,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         onError?.(error);
         return;
       }
-      if (message.kind === "open-link") {
-        // Only a person's click opens anything: the frame's own code cannot,
-        // since a click in the frame is what activates this page too.
-        const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
-        if (activation && !activation.isActive) return;
-        onOpenLink?.(message.href);
-        return;
-      }
+      // A clicked link comes as a window post (openLink above), never on the port.
+      if (message.kind === "open-link") return;
       if (message.kind === "edit-resource") {
         // The path was parsed from evaluated document output: allow only a
         // reference the parent itself parsed from the authoritative source.
@@ -1230,7 +1244,6 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     document.format,
     exposed,
     onEditResource,
-    onOpenLink,
     onError,
     onPatch,
     onHistory,

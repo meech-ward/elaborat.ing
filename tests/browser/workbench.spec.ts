@@ -949,6 +949,17 @@ test.describe("on a phone", () => {
 
 test("a link in a rendered note opens the file it names in a tab, says when there is none, and opens a web page in a new tab", async ({ page }) => {
   await page.context().route("https://example.com/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>Example</title>" }))
+  // Each link reaches the app as a window post: WebKit runs the app's handler
+  // for one as part of the click, and Safari blocks the tab the app opens
+  // otherwise. Playwright's WebKit opens pop-ups regardless, so the posts are counted.
+  await page.addInitScript(() => {
+    if (window !== window.top) return
+    const app = window as unknown as { linkPosts: number }
+    app.linkPosts = 0
+    window.addEventListener("message", (event) => {
+      if ((event.data as { kind?: unknown } | null)?.kind === "open-link") app.linkPosts += 1
+    })
+  })
   await openProject(
     page,
     {
@@ -973,4 +984,5 @@ test("a link in a rendered note opens the file it names in a tab, says when ther
   expect((await popup).url()).toBe("https://example.com/docs")
   // The note stays where it was: the frame never navigated.
   await expect(frame.getByRole("heading", { name: "Start here" })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { linkPosts: number }).linkPosts)).toBe(3)
 })

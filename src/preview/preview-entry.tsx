@@ -44,7 +44,7 @@ import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
-import { connectToParent, postToParent } from './parentPort';
+import { connectToParent, postLinkToParent, postToParent } from './parentPort';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import { rasterImageUses } from '../features/drawings/presentation.ts';
@@ -1255,7 +1255,7 @@ document.addEventListener("click", (event) => {
     (document.getElementById(id) ?? document.getElementsByName(id)[0])?.scrollIntoView({ block: "start" });
     return;
   }
-  if (activeSession && href.trim()) postToParent({ kind: "open-link", session: activeSession, revision: activeRevision, href: href.slice(0, 2048) });
+  if (activeSession && href.trim()) postLinkToParent({ kind: "open-link", session: activeSession, revision: activeRevision, href: href.slice(0, 2048) });
 });
 // Commented text opens its thread when clicked (not when a selection ends on it).
 document.addEventListener("click", (event) => {

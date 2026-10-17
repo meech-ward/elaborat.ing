@@ -1366,7 +1366,12 @@ Every message after that handshake, both ways, goes over the channel, so it
 is bound to the frame's first document: a port stays with the document it
 was transferred to, and a page the frame navigates to has the frame's window
 but not its port, so it is sent nothing and the app hears nothing from it,
-even when it never finishes loading. The frame is given nothing a component
+even when it never finishes loading. A link the person clicks is the one
+message that comes as a window post instead: WebKit runs the app's handler
+for a window post as part of the click, but not its handler for a port
+message, so Safari blocked the new tab the app opened. The app takes that post
+only from the frame's window and with the editor's session, which only the
+frame's first document was sent. The frame is given nothing a component
 in it could not already see. A frame that loads a second time has navigated
 itself (a note's code, or a link): the app closes its port and puts a new
 frame in its place, or stops the preview, with a notice, when it happens

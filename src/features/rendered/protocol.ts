@@ -646,7 +646,8 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
   // A link in the note was clicked: its href as written. The parent decides
-  // what it opens, and only while the person's click is still active.
+  // what it opens, and only while the person's click is still active. It comes
+  // as a window post, not on the port (postLinkToParent in src/preview/parentPort.ts).
   z.strictObject({
     kind: z.literal("open-link"),
     session: z.string().check(z.minLength(1)),
