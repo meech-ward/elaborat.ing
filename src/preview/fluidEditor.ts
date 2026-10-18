@@ -1,4 +1,5 @@
 import {
+  AllSelection,
   EditorState,
   Plugin,
   PluginKey,
@@ -62,13 +63,16 @@ function inProse(view: EditorView, node: Node): boolean {
  * `selectionchange` event that can arrive after the next keydown, and
  * ProseMirror updates its selection only from that event. A key command run
  * in between, such as Enter's split, would act where the caret was before.
- * So take the browser's caret first. Node selections, and carets in object
- * islands, stay as ProseMirror has them.
+ * So take the browser's caret first. A click is reported the same way, and
+ * after a select-all (Mod-a) the next keys would replace the whole document,
+ * which a note with computed output refuses, losing them: so a select-all is
+ * taken over too. Untouched, it reads back from the page as itself. Node
+ * selections, and carets in object islands, stay as ProseMirror has them.
  */
 function adoptDOMCaret(view: EditorView) {
   const current = view.state.selection;
   const dom = view.dom.ownerDocument.getSelection();
-  if (!(current instanceof TextSelection) || !view.hasFocus() || !dom) return;
+  if (!(current instanceof TextSelection || current instanceof AllSelection) || !view.hasFocus() || !dom) return;
   const { anchorNode, focusNode } = dom;
   if (!anchorNode || !focusNode) return;
   if (!inProse(view, anchorNode) || !inProse(view, focusNode)) return;

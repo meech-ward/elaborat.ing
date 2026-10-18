@@ -269,6 +269,43 @@ test.describe("MDX documents", () => {
     await expect.poll(() => source(page)).toBe(`${heading} More`)
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
   })
+
+  test("typing straight after a refused select-all edit keeps every character, even when the click is reported late", async ({ page }) => {
+    // Chromium can tell the editor about a click's caret only after the next
+    // keys (a late selectionchange). The editor still had the whole note
+    // selected from the refused edit, so those keys replaced the whole note,
+    // which its computed text refuses, and their characters were lost. The
+    // reports are held back here so that happens every time.
+    const text = "Before.\n\nInline {2 + 2} text.\n\nAfter."
+    await load(page, text, "mdx", /^Before\.$/)
+    await paragraph(page, /^Before\.$/).click()
+    await press(page, "ControlOrMeta+a")
+    await press(page, "Backspace")
+    await expect(page.getByText(/This selection crosses computed output/).first()).toBeVisible()
+    const body = frameOf(page).locator("body")
+    await body.evaluate(() => {
+      const held = { on: true, any: false }
+      window.addEventListener(
+        "selectionchange",
+        (event) => {
+          if (!held.on) return
+          held.any = true
+          event.stopPropagation()
+        },
+        true,
+      )
+      ;(window as unknown as { releaseSelection: () => void }).releaseSelection = () => {
+        held.on = false
+        if (held.any) document.dispatchEvent(new Event("selectionchange"))
+      }
+    })
+    await paragraph(page, /^After\.$/).click()
+    await press(page, "End")
+    await page.keyboard.type(" More")
+    await body.evaluate(() => (window as unknown as { releaseSelection: () => void }).releaseSelection())
+    await expect.poll(() => source(page)).toBe(`${text} More`)
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
 })
 
 test.describe("lists", () => {
