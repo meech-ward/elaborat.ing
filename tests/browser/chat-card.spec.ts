@@ -539,7 +539,7 @@ const drawnText = (card: FrameLocator, path = SIGN_IN) => card.getByRole("img", 
 /** The card's files asked for that draw diagrams: the module, D2's engine and its worker. */
 const DIAGRAM_FILES = ["diagram", "d2-engine", "d2-worker"]
 
-test("a note's new D2 diagram is drawn in the card from its source, and one that does not compile says to open it", async ({ page }) => {
+test("a note's new D2 diagram is drawn in the card from its source, and one that does not compile says to open it and tells the model its error", async ({ page }) => {
   test.setTimeout(60_000)
   const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: noteShown({ [SIGN_IN]: SIGN_IN_D2, "flows/broken.d2": "x -> {\n" }) })
   await expect(card.getByText("How someone signs in.")).toBeVisible()
@@ -548,6 +548,10 @@ test("a note's new D2 diagram is drawn in the card from its source, and one that
   await expect(card.getByRole("img", { name: "Diagram flows/broken.d2" })).toHaveCount(0)
   await expect(card.getByText(NOT_DRAWN)).toHaveCount(1)
   await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  // The model hears D2's error on its next turn, once, so it can fix the source.
+  await expect.poll(() => contexts(page)).toEqual([
+    "The elaborat.ing card could not draw the diagram flows/broken.d2: its D2 source has an error. Fix the source with update_and_show. D2 said: flows/broken.d2:1:1: connection missing destination; flows/broken.d2:1:6: maps must be terminated with }",
+  ])
   // The drawing module, and D2's engine and worker, came from elaborat.ing, under the host's policy.
   expect(asked(page)).toEqual(expect.arrayContaining(DIAGRAM_FILES))
   expect(await violations(page)).toEqual([])
@@ -582,7 +586,11 @@ test("a D2 diagram whose source changed is drawn from the new source, keeping th
   expect(await violations(page)).toEqual([])
 })
 
-test("where D2's engine does not load, a new diagram says to open it and a changed one shows as last drawn", async ({ page }) => {
+/** What the model hears about a diagram the card could not draw because D2's engine does not run in the chat, and what the user `sees`. */
+const engineNote = (path: string, sees: string) =>
+  `The elaborat.ing card could not draw the diagram ${path}: this chat does not let it run D2's engine. The user sees ${sees}. If they want to see it in the chat, offer to make it as an Excalidraw drawing with create_and_show and a .excalidraw path.`
+
+test("where D2's engine does not load, a new diagram says to open it and a changed one shows as last drawn, and the model hears what each shows", async ({ page }) => {
   const card = await openHost(page, { tools: true, theme: "light", policy: "eval", result: null, manual: true })
   const failed: string[] = []
   await page.route(`${APP}/chat-card/d2-engine-*`, (route) => {
@@ -599,6 +607,20 @@ test("where D2's engine does not load, a new diagram says to open it and a chang
   await send(page, "ui/notifications/tool-result", diagramShown("stale", { source: CHANGED_D2, canvas: SAVED_DIAGRAM.canvas, layout: SAVED_DIAGRAM.layout }, { [SIGN_IN]: SVG }))
   await expect(card.getByRole("status").filter({ hasText: "Its source changed after this was drawn." })).toBeVisible()
   await expect(card.getByRole("img", { name: `Diagram ${SIGN_IN}` }).locator("rect")).toHaveCount(1)
+  // The model hears what the user sees each time, and that it can offer a drawing.
+  await expect.poll(() => contexts(page)).toEqual([engineNote(SIGN_IN, "only a link to open it in elaborat.ing"), engineNote(SIGN_IN, "it as it was drawn before its source changed")])
+})
+
+test("where the host's policy does not let D2's engine run, a new diagram says to open it, and the model hears it can offer a drawing instead", async ({ page }) => {
+  // The view's declared policy: no WebAssembly, no code from strings, no blob: workers.
+  const card = await openHost(page, { tools: true, theme: "light", result: noteShown({ [SIGN_IN]: SIGN_IN_D2, "flows/audit.d2": "audit: Audit log\n" }) })
+  await expect(card.getByText(NOT_DRAWN)).toHaveCount(2)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  // Once for each diagram, the latest with the one before it, since a host keeps only the latest.
+  const sees = "only a link to open it in elaborat.ing"
+  await expect.poll(() => contexts(page)).toEqual([engineNote(SIGN_IN, sees), `${engineNote(SIGN_IN, sees)}\n${engineNote("flows/audit.d2", sees)}`])
+  // The host's policy refused the engine's worker.
+  expect(await violations(page)).toEqual(["worker-src blob"])
 })
 
 test("D2's engine loads only for a card with a diagram to draw", async ({ page }) => {

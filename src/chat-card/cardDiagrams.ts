@@ -7,14 +7,16 @@
  * engine and draws it (diagram/draw.ts). Until then its embed says it is
  * being laid out; one that cannot be drawn (the module or the engine does
  * not load, the host's policy does not allow the engine, or the source does
- * not compile) shows as the server sent it.
+ * not compile) shows as the server sent it, and the model hears why on its
+ * next turn (`onNotDrawn`).
  * Each is drawn once for the card, so the same diagram shown again is drawn
  * at once. A card with no diagram to draw never loads the module. The engine
  * stops once it has had nothing to lay out for a while, for its memory, and
  * starts again for a later diagram (diagram/d2Engine.ts).
  */
 import { useEffect, useMemo, useSyncExternalStore } from "react"
-import { loadModule } from "./modules"
+import type { Drawn, NotDrawn } from "./diagram/draw"
+import { loadModule, ModuleNotLoaded } from "./modules"
 import type { CardEmbed, CardFile, DiagramSource } from "./toolResult"
 
 const DRAWN_HERE = new Set(["not_drawn", "stale"])
@@ -40,22 +42,53 @@ const started = new Map<string, Promise<void>>()
 let settled: ReadonlyMap<string, string | null> = new Map()
 const listeners = new Set<() => void>()
 
+/** What the model hears about each diagram the card could not draw, by path, and who tells it. */
+const notes = new Map<string, string>()
+const tellers = new Set<(text: string) => void>()
+
+/**
+ * Calls `tell` once for each diagram the card could not draw, with what the
+ * model should hear about it and each one before it: a host keeps only the
+ * latest context the card gives it.
+ */
+export function onNotDrawn(tell: (text: string) => void): () => void {
+  tellers.add(tell)
+  return () => {
+    tellers.delete(tell)
+  }
+}
+
+/** Tells the model why the diagram at `path` could not be drawn, unless it heard the same already. */
+function tellNotDrawn(path: string, sent: DiagramSource, { problem, message }: NotDrawn) {
+  console.warn(`${path} could not be drawn here.`, message)
+  const card = `The elaborat.ing card could not draw the diagram ${path}`
+  const sees = sent.canvas === undefined ? "only a link to open it in elaborat.ing" : "it as it was drawn before its source changed"
+  const note =
+    problem === "source"
+      ? `${card}: its D2 source has an error. Fix the source with update_and_show. D2 said: ${message}`
+      : problem === "engine"
+        ? `${card}: this chat does not let it run D2's engine. The user sees ${sees}. If they want to see it in the chat, offer to make it as an Excalidraw drawing with create_and_show and a .excalidraw path.`
+        : `${card}. ${message}`
+  if (notes.get(path) === note) return
+  notes.set(path, note)
+  const text = [...notes.values()].join("\n")
+  for (const tell of tellers) tell(text)
+}
+
 function draw(path: string, sent: DiagramSource): Promise<void> {
   const key = keyOf(path, sent)
   let drawing = started.get(key)
   if (!drawing) {
     drawing = loadModule("diagram")
       .then((module) => module.drawDiagram(path, sent))
-      .then(
-        (svg) => svg,
-        (error: unknown) => {
-          console.warn(`${path} could not be drawn here.`, error)
-          return null
-        },
-      )
-      .then((svg) => {
-        settled = new Map(settled).set(key, svg)
+      .catch((error: unknown): Drawn => ({
+        problem: error instanceof ModuleNotLoaded ? "engine" : "drawing",
+        message: error instanceof Error ? error.message : String(error),
+      }))
+      .then((drawn) => {
+        settled = new Map(settled).set(key, "svg" in drawn ? drawn.svg : null)
         for (const listener of listeners) listener()
+        if ("problem" in drawn) tellNotDrawn(path, sent, drawn)
       })
     started.set(key, drawing)
   }

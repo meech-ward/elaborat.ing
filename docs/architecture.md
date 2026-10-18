@@ -885,7 +885,15 @@ The production server's tools are unchanged.
   as ChatGPT's view does; where it does not (Claude's view is untested), or
   the engine does not load or a source does not compile, the card shows the
   diagram as the server sent it: a new one says to open it in elaborat.ing,
-  and one out of date shows its last drawing with a line that says so.
+  and one out of date shows its last drawing with a line that says so. The
+  card then tells the model, once for each such diagram, with
+  `ui/update-model-context`: for a source that does not compile, D2's errors
+  and to fix it with `update_and_show`; where the engine does not run (a
+  diagram that surely lays out fails too), that the chat does not let the
+  card run D2's engine, what the user sees instead, and that it can offer to
+  make it as an Excalidraw drawing with `create_and_show`. A host keeps only
+  the latest context a view gives it, so each one repeats the diagrams told
+  before it.
 - **Notes are edited in the card.** Where the host lets views call tools, a
   note's card has Edit: it runs the app's own rendered editor
   (`FluidEditor` and `prepareFluidTransaction`, so each edit is an exact

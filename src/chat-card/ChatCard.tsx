@@ -31,7 +31,8 @@
  *
  * A D2 diagram the app has not drawn from its source yet (no canvas, or its
  * source changed since) is drawn in the card from its source, with the app's
- * D2 engine (cardDiagrams.ts), where the host allows it. A diagram being
+ * D2 engine (cardDiagrams.ts), where the host allows it; where the card
+ * cannot draw one, it tells the model why. A diagram being
  * written starts the engine while it comes in, and its drawing takes the
  * source's place when the result comes.
  *
@@ -46,7 +47,7 @@ import { DottedPage } from "@/components/panel"
 import type { HostBridge } from "./bridge"
 import type { CardEditor, EmbedRef } from "./cardEditor"
 import { useLoadedFile } from "./cardDeferred"
-import { drawDiagrams, hasDiagramsToDraw, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
+import { drawDiagrams, hasDiagramsToDraw, onNotDrawn, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
 import { CardNote, READING_CLASS } from "./cardNote"
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
@@ -310,6 +311,9 @@ export function ChatCard({ host }: { host: HostBridge }) {
       }
     })
   }, [host, feed])
+
+  // The model hears, on its next turn, why the card could not draw a diagram.
+  useEffect(() => onNotDrawn((text) => host.tellModel(text)), [host])
 
   const shown = state.phase === "shown" ? state : null
   // The file with the drawings and diagrams that did not fit in its result, as they load,
