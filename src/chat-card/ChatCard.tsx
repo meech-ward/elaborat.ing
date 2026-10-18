@@ -371,8 +371,13 @@ export function ChatCard({ host }: { host: HostBridge }) {
     dispatch({ type: "reloading" })
     try {
       const raw = await host.callTool("show_file", { project_id: file.projectId, path: file.path })
-      const reloaded = parseShowResult(raw, host.openaiMeta())
+      // Its own _meta only: ChatGPT's globals keep the _meta of the result that
+      // first showed the card, whose older text would show under the newer
+      // version, and be saved over it with the next edit.
+      const reloaded = parseShowResult(raw)
       if (!reloaded.ok) throw new Error("reload")
+      // A note that came back without its text is kept as it was saved (below).
+      if (reloaded.file.kind === "note" && !reloaded.file.truncated && reloaded.file.source === null) throw new Error("reload")
       lastResult.current = raw
       dispatch({ type: "reloaded", file: reloaded.file, version: savedVersion })
     } catch {

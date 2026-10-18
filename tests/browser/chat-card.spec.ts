@@ -287,6 +287,23 @@ test("a note is edited in the chat card and saved with write_file, byte for byte
   expect(await displayModes(page)).toEqual([])
 })
 
+test("where the host leaves _meta out of the card's calls, a saved note goes on from what was saved, never the text the card first showed", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE), chatgpt: true, dropsCallMeta: true })
+  // As in ChatGPT, its globals keep the _meta of the result that showed the card.
+  await page.frames()[1].evaluate((meta) => {
+    ;(window as unknown as { openai: Record<string, unknown> }).openai.toolResponseMetadata = meta
+  }, shown(4, SOURCE)._meta)
+  await expect(card.getByText("Version 4 as rendered by the server.")).toBeVisible()
+  await edit(page)
+  await answer(page, "write_file", { content: [{ type: "text", text: "{}" }], structuredContent: { status: "saved", changes: [{ op: "put", path: PATH, version: 5 }] } })
+  await answer(page, "show_file", shown(5, EDITED))
+  await card.getByRole("button", { name: "Save" }).click()
+  await expect(card.getByText("Saved as v5.")).toBeVisible()
+  // The reload came back without the note's text: the card keeps the edit as saved, not version 4's text.
+  await expect(card.getByText("Version 4 as rendered by the server.")).toHaveCount(0)
+  await expect(card.locator(".ProseMirror em", { hasText: "today" })).toBeVisible()
+})
+
 test("a note changed since the card loaded is not overwritten, and the latest can be loaded", async ({ page }) => {
   const card = await openHost(page, { tools: true, theme: "dark", result: shown(4, SOURCE) })
   await edit(page)
