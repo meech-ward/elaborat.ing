@@ -87,8 +87,35 @@ function pointsSize(points: Point[]): { width: number; height: number } {
   return { width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
 }
 
-/** How wide one line of text is. Excalidraw measures text with its font; this is near enough until it does. */
-const lineWidth = (line: string, fontSize: number) => [...line].length * fontSize * 0.55
+/**
+ * Excalifont's advance widths at 20 px by kind of character, the first kind
+ * a character is in: measured in a browser as Excalidraw measures a line
+ * (canvas measureText), from the font Excalidraw 0.18.1 ships, and set a
+ * little above each kind's average (in the comments), so a label is rarely
+ * wider than its estimate.
+ */
+const ADVANCES: [RegExp, number][] = [
+  [/ /, 8],
+  // i, j, l and narrow punctuation: 4.4 to 6.6.
+  [/[ijl.,:;'!|]/, 6],
+  // m and w: 13.3 and 13.9.
+  [/[mw]/, 14],
+  // Other lowercase letters: 8.2 to 12.1, 10.9 on average.
+  [/\p{Ll}/u, 11.5],
+  // Capitals: 10.9 to 17.1, 13.7 on average.
+  [/\p{Lu}/u, 15],
+  // Digits: 8.5 to 14, 12.1 on average.
+  [/\p{Nd}/u, 13],
+  // The rest of ASCII's punctuation and symbols: 7.4 to 18.6, 11.5 on average.
+  [/[!-~]/, 12],
+]
+/** Any other character, such as a Chinese one or an emoji, which fonts draw about a full em wide. */
+const OTHER_ADVANCE = 20
+
+const advance = (char: string): number => ADVANCES.find(([kind]) => kind.test(char))?.[1] ?? OTHER_ADVANCE
+
+/** How wide one line of text is: its characters' advances, at the font size. Excalidraw measures it with the font; this is near enough. */
+const lineWidth = (line: string, fontSize: number) => ([...line].reduce((width, char) => width + advance(char), 0) * fontSize) / 20
 
 /** The box text takes. */
 function textBox(text: string, fontSize: number, lineHeight: number): { width: number; height: number } {
@@ -129,17 +156,34 @@ function wrapLabel(label: string, width: number, fontSize: number): string {
  * A shape's size for its label, and the label wrapped to fit it: to the
  * width the shape was given, or else to keep it at most MAX_SIZED_WIDTH
  * wide. The label's box with room around it, inside the largest box the
- * shape holds, and at least MIN_SIZE.
+ * shape holds, and at least MIN_SIZE; `fits`, the height without that least.
  */
-function sizeFor(type: string, label: string, width?: number): { width: number; height: number; text: string } {
+function sizeFor(type: string, label: string, width?: number): { width: number; height: number; fits: number; text: string } {
   const holds = HOLDS[type] ?? 1
   const text = wrapLabel(label, (width ?? MAX_SIZED_WIDTH) / holds - 2 * LABEL_ROOM.x, 20)
   const box = textBox(text, 20, LINE_HEIGHT[5])
+  const fits = Math.ceil((box.height + 2 * LABEL_ROOM.y) * holds)
   return {
     width: Math.max(MIN_SIZE.width, Math.ceil((box.width + 2 * LABEL_ROOM.x) * holds)),
-    height: Math.max(MIN_SIZE.height, Math.ceil((box.height + 2 * LABEL_ROOM.y) * holds)),
+    height: Math.max(MIN_SIZE.height, fits),
+    fits,
     text,
   }
+}
+
+/**
+ * An arrow's label made from `label`, wrapped at its spaces to fit the
+ * arrow, as Excalidraw wraps one: to 70% of the arrow's width, and at least
+ * 11 times the font size (220 px). An arrow that runs more across than down
+ * wraps it to at least the line the smallest shape sized to its label holds
+ * (100 px) instead, so the label of an arrow between two such shapes 300
+ * apart stays between them.
+ */
+function wrapArrowLabel(label: Element, arrow: Element): void {
+  const [width, height] = [Math.abs(num(arrow.width, 0)), Math.abs(num(arrow.height, 0))]
+  const least = width >= height ? MIN_SIZE.width - 2 * LABEL_ROOM.x : 11 * 20
+  const text = wrapLabel(String(label.originalText), Math.max(0.7 * width, least), 20)
+  Object.assign(label, { text, ...textBox(text, 20, LINE_HEIGHT[5]) })
 }
 
 /** An arrow's two ends: the ids of the shapes it joins. */
@@ -263,7 +307,8 @@ function complete({ input, given: source }: Extract<Planned, { kept: false }>, i
  * What one element to complete becomes: itself, less label, from and to,
  * and right after a shape or arrow with a label, the text bound to it,
  * `<id>-label`. A labelled shape with no width or height is sized to its
- * label. Throws a DrawError for a label or an end that it cannot take.
+ * label, and one given a height too short for it grows taller. Throws a
+ * DrawError for a label or an end that it cannot take.
  */
 function plan(element: unknown): Planned[] {
   if (!isRecord(element) || typeof element.id !== 'string' || element.id === '' || typeof element.type !== 'string') {
@@ -287,7 +332,7 @@ function plan(element: unknown): Planned[] {
     if (from === to) throw new DrawError(`The arrow "${id}" goes from "${from}" to itself. Nothing was saved. Give from and to two different shapes.`, element)
     ends = { from, to }
   }
-  // The lines a label shows: wrapped to fit a shape sized to it, else as it was given.
+  // The lines a label shows: wrapped to fit its shape, else as it was given (an arrow's are wrapped once it is placed).
   let text = label
   if (label !== undefined) {
     if (!CONTAINERS.has(type)) {
@@ -300,10 +345,11 @@ function plan(element: unknown): Planned[] {
     if (typeof label !== 'string' || label.trim() === '') {
       throw new DrawError(`The label of the ${type} "${id}" is empty. Nothing was saved. Give it some text, or leave label out.`, element)
     }
-    if (SHAPES.has(type) && (input.width === undefined || input.height === undefined)) {
+    if (SHAPES.has(type)) {
+      // A size it was given stays, but for a height too short for the label's lines, which grows to fit them.
       const size = sizeFor(type, label, typeof input.width === 'number' ? input.width : undefined)
       input.width ??= size.width
-      input.height ??= size.height
+      input.height = typeof input.height === 'number' ? Math.max(input.height, size.fits) : (input.height ?? size.height)
       text = size.text
     }
   }
@@ -534,7 +580,9 @@ export function completeElements(
     const at = entry.kept ? entry.element : entry.given
     if (element.type === 'text' && typeof element.containerId === 'string' && (mine || madeIds.has(element.containerId))) {
       bind(element as Element, element.containerId, 'text', at)
-      if (mine) placeLabel(element as Element, live.get(element.containerId)!)
+      const container = live.get(element.containerId)!
+      if (mine && !entry.kept && entry.labelOf !== null && container.type === 'arrow') wrapArrowLabel(element as Element, container)
+      if (mine) placeLabel(element as Element, container)
     }
     if (element.type !== 'arrow') return
     for (const end of [element.startBinding, element.endBinding]) {

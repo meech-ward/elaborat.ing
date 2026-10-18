@@ -29,8 +29,8 @@ The user's instructions win over this skill when they differ.
   centred, and sizes the shape to fit it. Join two shapes with an arrow's
   `from` and `to`, their ids, instead of `x`, `y` and `points`: `draw` runs
   it straight between their outlines and binds both ends. An arrow can have
-  a `label` too. Leave about 150 px between shapes for the arrows and their
-  labels. For example:
+  a `label` too. Place shapes about 300 px apart, left edge to left edge, so
+  the arrows and their labels have room. For example:
 
   ```json
   {"path": "drawings/flow.excalidraw", "elements": [

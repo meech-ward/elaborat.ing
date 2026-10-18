@@ -508,11 +508,11 @@ Deno.test('update_and_show gives a shape and an arrow written again in the short
   assertEquals(elementsIn(after).map((element) => element.id), ['api', 'api-label', 'db', 'db-label', 'api-to-db', 'api-to-db-label'])
   const [was, now] = [byIdIn(saved), byIdIn(after)]
   assertEquals([now.get('api-label')!.text, now.get('api-to-db-label')!.text], ['Gateway service', 'SQL'])
-  // The box is sized to its new label, 165 px estimated, centred in it, and the arrow runs from its new edge.
+  // The box is sized to its new label, 169.5 px estimated, centred in it, and the arrow runs from its new edge.
   const [box, label, arrow] = [now.get('api')!, now.get('api-label')!, now.get('api-to-db')!]
-  assertEquals([box.width, box.height], [205, 70])
-  assertEquals([(label.x as number) + (label.width as number) / 2, (label.y as number) + (label.height as number) / 2], [102.5, 35])
-  assertEquals([arrow.x, arrow.y, arrow.points], [213, 35, [[0, 0], [79, 0]]])
+  assertEquals([box.width, box.height], [210, 70])
+  assertEquals([(label.x as number) + (label.width as number) / 2, (label.y as number) + (label.height as number) / 2], [105, 35])
+  assertEquals([arrow.x, arrow.y, arrow.points], [218, 35, [[0, 0], [74, 0]]])
   // What it kept is as it was.
   for (const id of ['db', 'db-label']) assertEquals(JSON.stringify(now.get(id)), JSON.stringify(was.get(id)), id)
   assertEquals(box.boundElements, [{ type: 'text', id: 'api-label' }, { type: 'arrow', id: 'api-to-db' }])

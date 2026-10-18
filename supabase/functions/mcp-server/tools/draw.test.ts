@@ -154,11 +154,11 @@ Deno.test('draw creates a new drawing whose elements have what Excalidraw and th
     roundness: { type: 3 }, version: 1, isDeleted: false, boundElements: [{ type: 'text', id: 'draft-label' }], link: null, locked: false,
   })
   // A label: Excalifont, Excalidraw's line height for it, and centred in its
-  // shape whatever x and y it was sent (five characters estimated 55 wide).
+  // shape whatever x and y it was sent ('Draft' estimated 61 wide).
   assertEquals(
     { ...label, seed: 0, versionNonce: 0, updated: 0, width: 0 },
     {
-      id: 'draft-label', type: 'text', x: 62.5, y: 27.5, width: 0, height: 25, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+      id: 'draft-label', type: 'text', x: 59.5, y: 27.5, width: 0, height: 25, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
       fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a1',
       roundness: null, seed: 0, version: 1, versionNonce: 0, isDeleted: false, boundElements: [], updated: 0, link: null, locked: false,
       text: 'Draft', fontSize: 20, fontFamily: 5, textAlign: 'center', verticalAlign: 'middle', containerId: 'draft', originalText: 'Draft',
@@ -325,12 +325,12 @@ Deno.test('a label sent at 0, 0 sits in the middle of its shape, and an arrow\'s
   ] as NewElement[])
   const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
   const at = (id: string) => [byId.get(id)!.x, byId.get(id)!.y]
-  // 'Hello' is estimated 55 by 25: centred on the box's middle, (200, 100).
-  assertEquals(at('box-label'), [172.5, 87.5])
-  // 'go' is 22 by 25, on the straight arrow's middle, (100, 50).
-  assertEquals(at('link-label'), [89, 37.5])
-  // 'via' is 33 by 25, on the bent arrow's middle point, (50, 90).
-  assertEquals(at('bend-label'), [33.5, 77.5])
+  // 'Hello' is estimated 50 by 25: centred on the box's middle, (200, 100).
+  assertEquals(at('box-label'), [175, 87.5])
+  // 'go' is 23 by 25, on the straight arrow's middle, (100, 50).
+  assertEquals(at('link-label'), [88.5, 37.5])
+  // 'via' is 29 by 25, on the bent arrow's middle point, (50, 90).
+  assertEquals(at('bend-label'), [35.5, 77.5])
 })
 
 Deno.test('draw adds once more to a drawing someone saved in between, and returns the conflict when it happens again', async () => {
@@ -394,12 +394,12 @@ Deno.test('a shape sent with a label and no size is sized to fit the label, whic
   assertEquals(elements.map((element) => element.id), ['api', 'api-label', 'auth', 'auth-label', 'db', 'db-label', 'valid', 'valid-label', 'queue', 'queue-label'])
   const byId = new Map(elements.map((element) => [element.id, element]))
   const size = (id: string) => [byId.get(id)!.width, byId.get(id)!.height]
-  // At least 140 by 70; a long label (estimated 242 wide) wraps into two lines, the longer 154 wide, with 20 px each side.
+  // At least 140 by 70; a long label (estimated 236.5 wide) wraps into two lines, the longer 153.5 wide, with 20 px each side.
   assertEquals(size('api'), [140, 70])
   assertEquals(size('auth'), [194, 70])
-  // The largest box inside an ellipse is 1/√2 of it, inside a diamond half: 'Database' is 88 by 25, 'Valid?' 66 by 25.
-  assertEquals(size('db'), [182, 70])
-  assertEquals(size('valid'), [212, 90])
+  // The largest box inside an ellipse is 1/√2 of it, inside a diamond half: 'Database' is 95.5 by 25, 'Valid?' 62 by 25.
+  assertEquals(size('db'), [192, 70])
+  assertEquals(size('valid'), [204, 90])
   // A width it was sent stays, and only the height is fitted.
   assertEquals(size('queue'), [300, 70])
   for (const id of ['api', 'auth', 'db', 'valid', 'queue']) {
@@ -423,33 +423,28 @@ Deno.test('a shape sent with a label and no size is sized to fit the label, whic
 })
 
 Deno.test('a long label wraps at its spaces, so a shape sized to it is at most 240 px wide', () => {
-  // [element, the label's lines, the shape's size]
-  const cases: [Element, string, number[]][] = [
-    // At most 18 characters a line in a rectangle (198 px estimated), 11 in an ellipse and 7 in a diamond, which hold less.
-    [{ id: 'enter', type: 'rectangle', x: 0, y: 0, label: 'User enters their email' }, 'User enters their\nemail', [227, 70]],
-    [{ id: 'hash', type: 'ellipse', x: 300, y: 0, label: 'Check the password hash' }, 'Check the\npassword\nhash', [197, 135]],
-    [{ id: 'valid', type: 'diamond', x: 600, y: 0, label: 'Is the email valid?' }, 'Is the\nemail\nvalid?', [212, 190]],
+  // [element, the label's lines, the shape's size, the label's estimated width]
+  const cases: [Element, string, number[], number][] = [
+    // At most 200 px estimated a line in a rectangle, 129 in an ellipse and 80 in a diamond, which hold less.
+    [{ id: 'enter', type: 'rectangle', x: 0, y: 0, label: 'User enters their email' }, 'User enters their\nemail', [227, 70], 186.5],
+    [{ id: 'hash', type: 'ellipse', x: 300, y: 0, label: 'Check the password hash' }, 'Check the\npassword\nhash', [203, 135], 103.5],
+    [{ id: 'valid', type: 'diamond', x: 600, y: 0, label: 'Is the email valid?' }, 'Is the\nemail\nvalid?', [218, 190], 69],
     // The lines it was given stay.
-    [{ id: 'magic', type: 'rectangle', x: 0, y: 200, label: 'Sign in\nwith a magic link sent by email' }, 'Sign in\nwith a magic link\nsent by email', [227, 95]],
+    [{ id: 'magic', type: 'rectangle', x: 0, y: 200, label: 'Sign in\nwith a magic link sent by email' }, 'Sign in\nwith a magic link\nsent by email', [208, 95], 168],
     // A word longer than a line widens the shape for it.
-    [{ id: 'i18n', type: 'rectangle', x: 300, y: 200, label: 'Load internationalization files' }, 'Load\ninternationalization\nfiles', [260, 95]],
+    [{ id: 'i18n', type: 'rectangle', x: 300, y: 200, label: 'Load internationalization files' }, 'Load\ninternationalization\nfiles', [243, 95], 202.5],
     // A shape given its width wraps the label to it.
-    [{ id: 'queue', type: 'rectangle', x: 600, y: 200, width: 160, label: 'Jobs wait here for a worker' }, 'Jobs wait\nhere for a\nworker', [160, 95]],
-    // A shape given its whole size, and an arrow, keep the label on one line, as before.
-    [{ id: 'note', type: 'rectangle', x: 0, y: 400, width: 400, height: 80, label: 'A note given its own size' }, 'A note given its own size', [400, 80]],
-    [{ id: 'link', type: 'arrow', from: 'enter', to: 'hash', label: 'then its password is checked' }, 'then its password is checked', []],
+    [{ id: 'queue', type: 'rectangle', x: 600, y: 200, width: 160, label: 'Jobs wait here for a worker' }, 'Jobs wait\nhere for a\nworker', [160, 95], 108],
   ]
   const { content } = addElements(null, cases.map(([element]) => element) as NewElement[])
   const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
-  for (const [{ id, label: given }, lines, size] of cases) {
+  for (const [{ id, label: given }, lines, size, width] of cases) {
     const [shape, label] = [byId.get(id as string)!, byId.get(`${id}-label`)!]
     // Excalidraw shows the lines in text and wraps originalText again when the shape is resized.
     assertEquals([label.text, label.originalText], [lines, given], `${id}'s label`)
-    if (shape.type === 'arrow') continue
     assertEquals([shape.width, shape.height], size, `${id}'s size`)
-    // The label's box is its lines', centred in the shape.
-    const longest = Math.max(...lines.split('\n').map((line) => line.length))
-    assertEquals([label.width, label.height], [longest * 11, lines.split('\n').length * 25], `${id}'s label box`)
+    // The label's box is its lines', its longest line's width by 25 px a line, centred in the shape.
+    assertEquals([label.width, label.height], [width, lines.split('\n').length * 25], `${id}'s label box`)
     assertEquals(middleOf(label), middleOf(shape), `${id}'s label is centred`)
   }
   for (const id of ['enter', 'hash', 'valid', 'magic']) assert((byId.get(id)!.width as number) <= 240, `${id} is at most 240 wide`)
@@ -458,6 +453,81 @@ Deno.test('a long label wraps at its spaces, so a shape sized to it is at most 2
   const drawn = drawingSvg(parseDrawing(content))
   assert('svg' in drawn)
   for (const line of ['User enters their', 'email', 'Check the', 'password', 'hash']) assertStringIncludes(drawn.svg, `>${line}</text>`)
+})
+
+/**
+ * Excalifont's advance widths at 20 px for the characters below, measured in
+ * a browser as Excalidraw measures text (canvas measureText).
+ */
+const MEASURED: Record<string, number> = {
+  ' ': 8, '?': 9.32, A: 13.52, D: 15.6, E: 14.14, G: 15.6, I: 10.9, K: 12.26, L: 10.86, M: 15.32, N: 12.64, O: 15.34, P: 13.96, Q: 15.36,
+  R: 14.72, T: 17.14, U: 14.6, V: 11.84, W: 15.72, Y: 11.28, a: 11.52, e: 10.74, m: 13.26, n: 10.52, t: 11.06, w: 13.86, y: 10.6,
+}
+/** How wide a line of those characters is in Excalifont: the sum of their advances, which kerning only narrows. */
+const measured = (line: string) => [...line].reduce((width, char) => width + MEASURED[char], 0)
+
+Deno.test('an all-caps label fits its shape', () => {
+  const { content } = addElements(null, [
+    { id: 'gateway', type: 'rectangle', x: 0, y: 0, label: 'PAYMENT GATEWAY' },
+    { id: 'worker', type: 'ellipse', x: 300, y: 0, label: 'QUEUE WORKER' },
+    { id: 'valid', type: 'diamond', x: 600, y: 0, label: 'VALID?' },
+    // A capitalised one too.
+    { id: 'orders', type: 'rectangle', x: 0, y: 300, label: 'Payment Gateway' },
+  ] as NewElement[])
+  const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
+  // The largest box inside a rectangle is all of it, inside an ellipse 1/√2 of it, inside a diamond half.
+  const holds: Record<string, number> = { rectangle: 1, ellipse: Math.SQRT1_2, diamond: 0.5 }
+  for (const id of ['gateway', 'worker', 'valid', 'orders']) {
+    const [shape, label] = [byId.get(id)!, byId.get(`${id}-label`)!]
+    const room = (shape.width as number) * holds[shape.type as string]
+    // Each line as Excalifont draws it, with the 20 px each side a shape sized to its label leaves.
+    for (const line of (label.text as string).split('\n')) {
+      assert(measured(line) + 2 * 20 <= room, `${id}: "${line}" measures ${measured(line).toFixed(2)} px, in a ${shape.type} that holds ${room.toFixed(2)} px`)
+    }
+    assertEquals(middleOf(label), middleOf(shape), `${id}'s label is centred`)
+  }
+  // A capital is about 14 px wide where a lowercase letter is about 11: the all-caps label takes two lines where the other takes one.
+  assertEquals(['gateway', 'orders'].map((id) => byId.get(`${id}-label`)!.text), ['PAYMENT\nGATEWAY', 'Payment Gateway'])
+})
+
+Deno.test("an arrow's label wraps, and stays between the shapes it joins", () => {
+  const { content } = addElements(null, [
+    { id: 'login', type: 'rectangle', x: 0, y: 0, label: 'Log in' },
+    { id: 'check', type: 'rectangle', x: 300, y: 0, label: 'Check' },
+    { id: 'login-to-check', type: 'arrow', from: 'login', to: 'check', label: 'sends a reset link' },
+    { id: 'done', type: 'rectangle', x: 300, y: 200, label: 'Done' },
+    { id: 'check-to-done', type: 'arrow', from: 'check', to: 'done', label: 'when the password is right' },
+  ] as NewElement[])
+  const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
+  const [across, down] = [byId.get('login-to-check-label')!, byId.get('check-to-done-label')!]
+  // Excalidraw shows the lines in text and wraps originalText again when the arrow changes.
+  assertEquals([across.text, across.originalText], ['sends a\nreset link', 'sends a reset link'])
+  assertEquals([down.text, down.originalText], ['when the password is\nright', 'when the password is right'])
+  // Across, the arrow runs 144 px from 8 px off one box to 8 px off the other, and its label, two lines, wraps to 70% of that.
+  assertEquals([across.width, across.height], [100.5, 50])
+  assert((across.x as number) > 140 && (across.x as number) + (across.width as number) < 300, 'the label stays between the boxes side by side')
+  // Down, it wraps to 220 px, as Excalidraw wraps it, and stays in the gap between the boxes, from 70 to 200.
+  assertEquals([down.width, down.height], [219, 50])
+  assert((down.y as number) > 70 && (down.y as number) + (down.height as number) < 200, 'the label stays between the boxes one above the other')
+  for (const id of ['login-to-check', 'check-to-done']) {
+    const [[sx, sy], [ex, ey]] = endsOf(byId.get(id)!)
+    assertEquals(middleOf(byId.get(`${id}-label`)!), [(sx + ex) / 2, (sy + ey) / 2], `${id}'s label is on its middle`)
+  }
+})
+
+Deno.test('a shape given a width and a height wraps its label to the width, and grows taller only when the lines need it', () => {
+  const { content } = addElements(null, [
+    { id: 'queue', type: 'rectangle', x: 0, y: 0, width: 160, height: 60, label: 'Jobs wait here for a worker' },
+    { id: 'db', type: 'ellipse', x: 300, y: 0, width: 200, height: 70, label: 'Postgres with row level security' },
+    // Tall enough already, and its label fits on a line.
+    { id: 'note', type: 'rectangle', x: 0, y: 300, width: 400, height: 80, label: 'A note given its own size' },
+  ] as NewElement[])
+  const byId = new Map(elementsOf(content).map((element) => [element.id, element]))
+  const shapes = ['queue', 'db', 'note'].map((id) => [byId.get(id)!, byId.get(`${id}-label`)!])
+  assertEquals(shapes.map(([, label]) => label.text), ['Jobs wait\nhere for a\nworker', 'Postgres\nwith row\nlevel\nsecurity', 'A note given its own size'])
+  // The width stays; the height grows to the lines with 10 px above and below, inside the largest box the shape holds.
+  assertEquals(shapes.map(([shape]) => [shape.width, shape.height]), [[160, 95], [200, 170], [400, 80]])
+  for (const [shape, label] of shapes) assertEquals(middleOf(label), middleOf(shape), `${shape.id}'s label is centred`)
 })
 
 Deno.test('an arrow sent with from and to runs between two boxes side by side, 8 px off their facing edges, bound to both', async () => {
@@ -591,7 +661,8 @@ Deno.test("a new element's seed and nonce come from its id, so it draws the same
 })
 
 Deno.test('the full form adds exactly what it added before labels and from and to', () => {
-  // Captured from draw at 36a641b with `updated` fixed; the seed and nonce, random then, now come from each id.
+  // Captured from draw at 36a641b with `updated` fixed; the seed and nonce, random then, now come from each id,
+  // and a text's width from Excalifont's measured widths, not 11 px a character.
   const seeds: Record<string, [number, number]> = {
     client: [1488318226, 2006862838],
     'client-label': [514359924, 1226844984],
@@ -628,14 +699,14 @@ Deno.test('the full form adds exactly what it added before labels and from and t
       id: 'client', type: 'rectangle', width: 180, height: 80, backgroundColor: '#a5d8ff', index: 'a0', roundness: { type: 3 },
       boundElements: [{ type: 'text', id: 'client-label' }, { type: 'arrow', id: 'save' }],
     }),
-    made({ id: 'client-label', type: 'text', x: 57, y: 27.5, width: 66, height: 25, index: 'a1', ...words('Client', 'client') }),
+    made({ id: 'client-label', type: 'text', x: 59.25, y: 27.5, width: 61.5, height: 25, index: 'a1', ...words('Client', 'client') }),
     made({ id: 'store', type: 'ellipse', x: 320, width: 160, height: 80, strokeStyle: 'dashed', index: 'a2', boundElements: [{ type: 'arrow', id: 'save' }] }),
     made({
       id: 'save', type: 'arrow', x: 188, y: 40, width: 124, index: 'a3', boundElements: [{ type: 'text', id: 'save-label' }], points: [[0, 0], [124, 0]],
       lastCommittedPoint: null, startBinding: { focus: 0, gap: 8, elementId: 'client' }, endBinding: { focus: 0.2, gap: 4, elementId: 'store' },
       startArrowhead: null, endArrowhead: 'arrow', elbowed: false,
     }),
-    made({ id: 'save-label', type: 'text', x: 228, y: 27.5, width: 44, height: 25, index: 'a4', ...words('save', 'save') }),
+    made({ id: 'save-label', type: 'text', x: 227, y: 27.5, width: 46, height: 25, index: 'a4', ...words('save', 'save') }),
     made({
       id: 'rule', type: 'line', y: 140, width: 480, index: 'a5', points: [[0, 0], [480, 0]], lastCommittedPoint: null, startBinding: null,
       endBinding: null, startArrowhead: null, endArrowhead: null,
@@ -644,7 +715,7 @@ Deno.test('the full form adds exactly what it added before labels and from and t
       id: 'scribble', type: 'freedraw', x: 500, width: 20, height: 5, index: 'a6', points: [[0, 0], [10, 5], [20, 0]], pressures: [],
       simulatePressure: true, lastCommittedPoint: null,
     }),
-    made({ id: 'note', type: 'text', y: 160, width: 79.2, height: 40, index: 'a7', ...words('Two lines\nof text', null, 16) }),
+    made({ id: 'note', type: 'text', y: 160, width: 76, height: 40, index: 'a7', ...words('Two lines\nof text', null, 16) }),
   ]
   // The whole file, field order included.
   assertEquals(content, JSON.stringify({ type: 'excalidraw', version: 2, elements, appState: { viewBackgroundColor: '#ffffff' }, files: {} }, null, 2))

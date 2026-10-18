@@ -1070,8 +1070,8 @@ test("a new drawing in draw's short form draws in as the server saves it: each s
   // Each shape and its label, then the arrow between them and its label; not the arrow to "c", which never came.
   await expect.poll(() => liveShapes(page)).toBe(6)
   await expect(card.locator(".live-svg text")).toHaveText(['Write "it"', "Ship } it", "then"])
-  // Where the server puts them: the box 150 by 70 for its label, the ellipse 197 by 70, the labels centred, the arrow 8 px off each.
-  expect(await placed(page)).toEqual(["translate(0 0)", "translate(20 22.5)", "translate(300 0)", "translate(349 22.5)", "translate(158 35)", "translate(203 22.5)"])
+  // Where the server puts them: the box 145 by 70 for its label, the ellipse 184 by 70, the labels centred, the arrow 8 px off each.
+  expect(await placed(page)).toEqual(["translate(0 0)", "translate(20 22.5)", "translate(300 0)", "translate(347.25 22.5)", "translate(153 35)", "translate(199.5 22.5)"])
 })
 
 test("a new note writes in, its heading before it is saved, then the saved card takes its place", async ({ page }) => {
