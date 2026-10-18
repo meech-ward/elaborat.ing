@@ -6,7 +6,7 @@ Instructions for any agent or contributor. Read these first:
 2. [Architecture](docs/architecture.md): settled decisions and open questions.
 3. [Roadmap](docs/roadmap.md): what is being built now, in order.
 4. [Platform notes](docs/platform-notes.md): Supabase and Cloudflare facts, with sources.
-5. [Task queue](docs/tasks.md): self-contained tasks for contributors and agents.
+5. [Task queue](docs/tasks.md): the open work, as self-contained tasks for contributors and agents.
 
 Implemented behavior lives in code and tests. The docs above also describe
 planned work: never describe something as working until it is built and tested.
@@ -94,7 +94,8 @@ regenerating migrations from `supabase/schemas/` would change
   `bunx supabase@2.118.0 db start`, then `bunx supabase@2.118.0 test db`.
   Auth and function changes are checked on a hosted Supabase project.
 - **Smallest complete change.** Do what the task asks, test in proportion to
-  risk, and list anything else you notice instead of fixing it.
+  risk, and add anything else you notice to the [task queue](docs/tasks.md)
+  instead of fixing it.
 - **Bump the plugin's version when a skill changes.** Change `version` in
   `plugins/elaborating/plugin.json` whenever a skill in
   `plugins/elaborating/skills/` changes: Codex installs a plugin by its

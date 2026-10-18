@@ -186,8 +186,8 @@ Also done in this phase: the comment anchoring library (see the task below).
 - **Self-host guide:** from a new free Supabase project to a running copy
   (done: [self-host.md](self-host.md); its database, functions, app, sign-in
   and agent steps were checked on a local Supabase stack).
-- **Hosted launch** at https://elaborat.ing on a paid Supabase plan, so the
-  project never pauses.
+- **Hosted launch** at https://elaborat.ing (live; the hosted project stays on
+  Supabase's Free plan for now).
 
 ## Phase 4: sharing and comments
 

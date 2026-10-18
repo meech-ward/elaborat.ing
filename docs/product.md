@@ -18,6 +18,14 @@ Developer first, friendly for everyone.
   sharing and comments must be usable by someone who has never seen Markdown.
   A developer should be able to share a project with a coworker who isn't one,
   or ask them for one.
+- **What the person expects to see decides a close call.** When a choice
+  trades what they see against download size or effort, they win: someone who
+  asks an agent for a diagram expects to see it in the chat, so the chat card
+  lays out D2 diagrams itself, though that downloads about 6 MB the first time.
+- **The shell paints first.** The first download is only the page frame and
+  its loading states; every heavy engine (Monaco, Excalidraw, D2, charts, the
+  MDX compiler) loads when a screen needs it, behind a loading state. There is
+  no server-side rendering. `bun run check:bundle` holds each page to its budget.
 
 ## What it does
 
@@ -57,6 +65,11 @@ Developer first, friendly for everyone.
   This is enforced in the database, not only by leaving out a tool.
 - **Risky tools ask first.** Sharing and archiving are marked destructive with
   the standard MCP annotation, so clients confirm with the user.
+- **A drawing first.** Asked to draw, sketch or diagram something, an agent
+  makes an Excalidraw drawing. It writes D2 only when the person asks for D2,
+  or for a diagram that has to be laid out from code: database tables and
+  their relationships, a sequence diagram, or a graph of dozens of connected
+  parts. The tool descriptions and the plugin's skills teach this.
 - **Agents can show, not just tell.** Inside Claude or ChatGPT (MCP Apps), an
   agent can display a read-only rendered document with its drawings, or a
   single drawing, with a link to open it in the app. It can also show a
