@@ -22,17 +22,22 @@ export function sitePath(pathname: string): string {
 }
 
 /**
- * Opens this page on the site in a new tab. In a panel the embed code catches
- * the click on a new-tab link to the site and asks the chat to open it.
+ * Opens `href` in a new tab. In a panel the embed code catches the click on a
+ * new-tab link and asks the chat to open it.
  */
-export function openOnSite(): void {
+export function openInNewTab(href: string): void {
   const link = document.createElement("a")
-  link.href = new URL(sitePath(window.location.pathname), window.location.origin).href
+  link.href = href
   link.target = "_blank"
-  link.rel = "noopener"
+  link.rel = "noopener noreferrer"
   document.body.append(link)
   link.click()
   link.remove()
+}
+
+/** Opens this page on the site in a new tab. */
+export function openOnSite(): void {
+  openInNewTab(new URL(sitePath(window.location.pathname), window.location.origin).href)
 }
 
 /** True when this page is the app in a panel. */

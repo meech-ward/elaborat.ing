@@ -23,7 +23,8 @@ import { framed, panelPass } from "./mode"
 // redeemed the pass the view put in its address (#pass=, read in mode.ts),
 // as the signed-in person. It talks to the view that frames it:
 //   to the view    {type: "elaborating-embed:ready"} once it has started,
-//                  {type: "elaborating-embed:open", url} for a link to the site,
+//                  {type: "elaborating-embed:open", url} for a link to open in
+//                  a new tab: a page of the site, or a web link in a note,
 //                  {type: "elaborating-embed:pass"} when it has no pass that works,
 //                  {type: "elaborating-embed:location", project, file} when what
 //                  is open changes: project {id, name} and file {path, kind:
@@ -58,7 +59,7 @@ function tellView(message: Record<string, unknown>): boolean {
   return true
 }
 
-/** Says it is ready, follows the view's light or dark, and opens links to the site through the view. */
+/** Says it is ready, follows the view's light or dark, and opens new-tab links through the view. */
 function useView() {
   const { setMode } = useAppearance()
   useEffect(() => {
@@ -70,11 +71,13 @@ function useView() {
       const theme = (data as { theme?: unknown }).theme
       if (theme === "light" || theme === "dark") setMode(theme)
     }
-    // A link to a page of the site (a new tab) goes to the view, which asks the chat to open it.
+    // A web link that opens a new tab (a page of the site, or a link in a note:
+    // openInNewTab) goes to the view, which asks the chat to open it. A tab the
+    // panel opened itself would start inside the chat's frame, if it opened at all.
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0) return
       const link = event.target instanceof Element ? event.target.closest("a[target=_blank]") : null
-      if (!(link instanceof HTMLAnchorElement) || new URL(link.href).origin !== window.location.origin) return
+      if (!(link instanceof HTMLAnchorElement) || !/^https?:$/.test(new URL(link.href).protocol)) return
       if (tellView({ type: OPEN, url: link.href })) event.preventDefault()
     }
     window.addEventListener("message", onMessage)

@@ -490,6 +490,20 @@ Deno.test("the view takes a location only from the app's frame, and only one tha
   assertEquals(view.told().length, 1)
 })
 
+Deno.test("the view opens a web link from the app's frame through the chat, and nothing else", async () => {
+  const view = await openView()
+  const opened = () => view.posted.filter((message) => message.method === 'ui/open-link').map((message) => message.params?.url)
+  const open = (url: unknown) => ({ type: 'elaborating-embed:open', url })
+  await view.fromApp(open('https://example.com/docs'), { origin: 'https://other.example' })
+  await view.fromApp(open('https://example.com/docs'), { source: {} })
+  for (const url of ['javascript:alert(1)', 'data:text/html,hi', 'mailto:a@example.com', 'not a link', 42, `https://example.com/${'x'.repeat(2048)}`]) await view.fromApp(open(url))
+  assertEquals(opened(), [])
+  // From the app's frame, a page of the site and a web link in a note.
+  await view.fromApp(open(`${APP}/projects/${PROJECT}/notes/plan.md`))
+  await view.fromApp(open('https://example.com/docs'))
+  assertEquals(opened(), [`${APP}/projects/${PROJECT}/notes/plan.md`, 'https://example.com/docs'])
+})
+
 Deno.test('the view clears what it told the model when the app is no longer on screen', async () => {
   const view = await openView()
   await view.fromApp(at({ path: 'notes/plan.md', kind: 'note' }))

@@ -1651,7 +1651,8 @@ are the same as on the site. Only the projects and a project's workbench show;
 any other page offers Open in elaborat.ing. The embed's chrome, sign-in and
 messages to the view load in a chunk of their own (`EmbedRoot`): a compact
 top bar with back to Projects, Open in elaborat.ing (sent to the view as
-`elaborating-embed:open`, which opens it through the host) and Sign out; no
+`elaborating-embed:open`, which opens it through the host, as it does a web
+link tapped in a note) and Sign out; no
 Settings, no legal footer, and project management (members, transfer,
 archive, delete, leave, download, import) and Copy path left to the site.
 Sign-in in the panel is the emailed code or a password (passkeys and GitHub

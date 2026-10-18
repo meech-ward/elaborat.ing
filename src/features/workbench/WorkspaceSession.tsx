@@ -3,7 +3,7 @@ import type { OperationSession } from "./operationSession";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
-import { embedded } from "@/features/embed/mode";
+import { embedded, openInNewTab } from "@/features/embed/mode";
 import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
 import { SourceEditor, preloadSourceEditor, type SourceEditorApi } from "@/features/source";
 import type { RenderedEditorApi } from "@/features/rendered";
@@ -342,12 +342,13 @@ export function WorkspaceSession({
   );
 
   // A link clicked in the rendered note: a project file opens in a tab, a web
-  // page in a new browser tab.
+  // page in a new browser tab, which in a chat's panel the chat opens.
   const handleOpenLink = useCallback(
     (href: string) => {
       const link = resolveNoteLink(href, initial.path);
       if (link.kind === "web") {
-        window.open(link.url, "_blank", "noopener,noreferrer");
+        if (embedded) openInNewTab(link.url);
+        else window.open(link.url, "_blank", "noopener,noreferrer");
         return;
       }
       if (link.kind !== "file") return;

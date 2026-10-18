@@ -82,7 +82,7 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   const id = crypto.randomUUID()
   const remote = fake.server.remote(person.id)
   await remote.createProject(id, "Launch plan")
-  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content: "# Plan\n\nHello from the panel.\n" }])
+  await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/plan.md", content: "# Plan\n\nHello from the panel.\n\n[The docs](https://example.com/docs)\n" }])
   await signedInPanel(page)
   // Records whether the site's home page (its footer's links) ever shows in the panel.
   await page.addInitScript((origin) => {
@@ -132,6 +132,10 @@ test("signed in, the panel lists the projects, opens one, and works with its vie
   const preview = app.locator('iframe[title="Isolated document preview"]')
   await expect(app.frameLocator('iframe[title="Isolated document preview"]').getByText("Hello from the panel.")).toBeVisible({ timeout: 20_000 })
   expect(await preview.getAttribute("src")).toBeNull()
+  // A web link in the note goes to the view too, which opens it through the chat.
+  await app.frameLocator('iframe[title="Isolated document preview"]').getByRole("link", { name: "The docs" }).click()
+  await expect.poll(() => messages(page)).toContainEqual({ origin: APP, data: { type: "elaborating-embed:open", url: "https://example.com/docs" } })
+  expect(page.context().pages()).toHaveLength(1)
 
   // Open in elaborat.ing, in the project menu, goes to the view, which opens it through the chat.
   await app.getByRole("button", { name: "Launch plan, project menu" }).click()

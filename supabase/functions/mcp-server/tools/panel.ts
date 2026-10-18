@@ -31,7 +31,7 @@ import type { ToolContext } from './types.ts'
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v5.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v6.html'
 /**
  * Earlier names of the panel view. A host keeps the tool list it last read, so
  * it asks for the name that list carries until it refreshes; serving the
@@ -39,6 +39,7 @@ export const PANEL_VIEW_URI = 'ui://elaborating/panel-v5.html'
  * The content is always the current view.
  */
 export const OLD_PANEL_VIEW_URIS = [
+  'ui://elaborating/panel-v5.html',
   'ui://elaborating/panel-v4.html',
   'ui://elaborating/panel-v3.html',
   'ui://elaborating/panel-v2.html',
@@ -382,7 +383,7 @@ const SCRIPT = String.raw`
         fallback.hidden = true;
         if (theme) frame.contentWindow.postMessage({ type: "elaborating-embed:theme", theme: theme }, APP);
         if (!reportedOk) { reportedOk = true; reportOrigins(true); }
-      } else if (data.type === "elaborating-embed:open" && typeof data.url === "string" && data.url.indexOf(APP + "/") === 0) {
+      } else if (data.type === "elaborating-embed:open" && webLink(data.url)) {
         openLink(data.url);
       } else if (data.type === "elaborating-embed:pass" && !retried) {
         // The page had no pass that works (one already used, say, when the chat shows the view again): one new one.
@@ -418,6 +419,16 @@ const SCRIPT = String.raw`
 
   function openLink(url) {
     request("ui/open-link", { url: url }).catch(function () { window.open(url, "_blank", "noopener"); });
+  }
+  // A link the app asks to open in a new tab: a page of the site, or a web link in a note.
+  function webLink(url) {
+    if (typeof url !== "string" || url.length > 2048) return false;
+    try {
+      var protocol = new URL(url).protocol;
+      return protocol === "https:" || protocol === "http:";
+    } catch (error) {
+      return false;
+    }
   }
   document.getElementById("open").onclick = function () { openLink(APP + ((shown || target()).replace(/^\/embed/, "") || "/")); };
 
