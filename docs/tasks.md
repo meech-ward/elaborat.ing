@@ -187,6 +187,14 @@ matters.
   as "this chat does not let it run D2's engine".
 - A host that allows `blob:` workers but not WebAssembly takes the same path
   in the card as one that allows neither, with no test of its own.
+- In a note's Rendered view, after a click selects a computed value (a node
+  selection) and an edit is refused, keys typed straight after a click
+  elsewhere could still be lost before the browser reports that click:
+  `adoptDOMCaret` in `src/preview/fluidEditor.ts` leaves node selections
+  alone. Not reproduced.
+- If the first click into a note is reported more than 20 ms late,
+  ProseMirror's check after focus writes the old selection back over it; the
+  workaround catches up only when keys were pressed since focus.
 
 ## Done
 
