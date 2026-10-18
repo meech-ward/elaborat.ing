@@ -2,7 +2,7 @@ import type { McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import { z } from 'npm:zod@4.4.3'
 
 import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser } from './componentSources.ts'
-import { FILE_VIEW_URI, fileUrl, projectUrl } from './fileView.ts'
+import { FILE_VIEW_URI, MAX_META_CHARS, fileUrl, projectUrl } from './fileView.ts'
 import { path, projectId } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
@@ -65,6 +65,17 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
         const editors = shared ? await componentEditors(supabase, project_id, Object.keys(modules), userClaims?.id) : null
         const what = component ? `${component} from ${path}` : `the components in ${path}`
         const which = draft ? 'a draft, not saved' : `version ${data?.version}`
+        const url = data ? fileUrl(project_id, path) : projectUrl(project_id)
+        // The sources reach the view, not the model.
+        const meta = { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } }
+        // Over the file view's cap a chat may show no card at all (fileView.ts MAX_META_CHARS).
+        const size = JSON.stringify(meta).length
+        if (size > MAX_META_CHARS) {
+          return errorResult(
+            `The preview of ${what} is ${size} characters of code with the files it imports, more than a chat card can take (${MAX_META_CHARS}), so it isn't shown. ` +
+              `${draft ? 'Save it and open it' : 'Open it'} in elaborat.ing to see it: ${url}`
+          )
+        }
         return {
           content: [{ type: 'text', text: `Showing a preview of ${what} (${which}) to the user.` }],
           structuredContent: {
@@ -73,7 +84,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
             kind: 'component',
             version: data?.version ?? null,
             updated_at: data?.updated_at ?? null,
-            url: data ? fileUrl(project_id, path) : projectUrl(project_id),
+            url,
             truncated: false,
             embeds: [],
             draft,
@@ -81,8 +92,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
             props: props ?? null,
             shared,
           },
-          // The sources reach the view, not the model.
-          _meta: { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } },
+          _meta: meta,
         }
       } catch (error) {
         return runtimeErrorResult(error)

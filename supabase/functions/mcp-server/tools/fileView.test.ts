@@ -1002,6 +1002,14 @@ Deno.test('preview_component says when the component file is in a project shared
   assertEquals(sent.editors, { 'components/chart.mdx': 'Ana', 'components/axis.mdx': 'you' })
 })
 
+Deno.test("preview_component says when the code is too big for a chat card, instead of a result the chat may not show", async () => {
+  const big = `export const Big = () => <p>${'x'.repeat(125_000)}</p>\n`
+  const { result } = await previewComponent({ path: 'components/big.mdx', source: big }, [])
+  assert(result.isError)
+  assertStringIncludes((result.content as { text: string }[])[0].text, 'more than a chat card can take (120000), so it isn\'t shown. Save it and open it in elaborat.ing to see it')
+  assertFalse(COMPONENTS_META_KEY in (result._meta ?? {}))
+})
+
 Deno.test('preview_component shows a draft that is not saved, and refuses other files', async () => {
   const draft = await previewComponent({ path: 'components/new.mdx', source: CHART }, [file('components/axis.mdx', 'export const Axis = () => <hr />\n')])
   const view = draft.result.structuredContent as Record<string, unknown>
