@@ -93,8 +93,22 @@ type Policy = "declared" | "eval" | "default" | "default-said"
  * `modes`: the display modes the host offers (`availableDisplayModes`).
  * `manual`: the host sends nothing once the view is ready; the test sends
  * the tool's input and result with `send`.
+ * `dropsCallMeta`: the host leaves `_meta` out of the results of the card's
+ * own tool calls, as a host may.
+ * `silent`: the host never answers the card's tool calls.
  */
-type Host = { tools: boolean; theme: "light" | "dark"; result: unknown; styles?: unknown; policy?: Policy; chatgpt?: boolean; modes?: string[]; manual?: boolean }
+type Host = {
+  tools: boolean
+  theme: "light" | "dark"
+  result: unknown
+  styles?: unknown
+  policy?: Policy
+  chatgpt?: boolean
+  modes?: string[]
+  manual?: boolean
+  dropsCallMeta?: boolean
+  silent?: boolean
+}
 
 const MODULES = path.join(import.meta.dirname, "..", "..", "public", "chat-card")
 
@@ -175,8 +189,11 @@ async function openHost(page: Page, host: Host) {
           send("ui/notifications/tool-result", host.result)
         } else if (message.method === "tools/call") {
           calls.push(message.params)
-          const queue = (state.answers as Record<string, unknown[]>)[message.params!.name] ?? []
-          reply(message.id, queue.shift())
+          if (host.silent) return
+          const queue = (state.answers as Record<string, Record<string, unknown>[]>)[message.params!.name] ?? []
+          const result = queue.shift()
+          if (host.dropsCallMeta) delete result?._meta
+          reply(message.id, result)
         } else if (message.method === "ui/notifications/size-changed") {
           sizes.push(message.params)
         } else if (message.method === "ui/update-model-context") {
@@ -370,53 +387,71 @@ test("a diagram shows on the dotted canvas in dark mode, with a banner when its 
 
 // Drawings and diagrams that did not fit in show_file's result, which keeps
 // its _meta small (fileView.ts MAX_META_CHARS), come deferred: the card loads
-// each with show_file, one at a time, where the host lets it call tools.
+// each with card_embed, one at a time, where the host lets it call tools.
 
-/** show_file's result for a drawing on its own, as the card loads one that was deferred. */
-function drawingShown(path: string, svg: string) {
-  const url = `https://elaborat.ing/projects/${PROJECT}/${path}`
-  return {
-    content: [{ type: "text", text: `Showing ${path} (version 1) to the user.` }],
-    structuredContent: { project_id: PROJECT, path, kind: "drawing", version: 1, updated_at: null, url, truncated: false, embeds: [{ kind: "drawing", path, url, status: "drawn" }] },
-    _meta: { "elaborat.ing/svg": { [path]: svg } },
-  }
-}
+const LATER = "art/later.excalidraw"
+const GONE = "art/gone.excalidraw"
+const CIRCLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40"><circle cx="60" cy="20" r="16" fill="none" stroke="#1e1e1e"/></svg>'
+const NOT_LOADED = "Open it in elaborat.ing to see it."
 
-test("a drawing that did not fit in the result is loaded with show_file and drawn where its link was, and one that does not load keeps its link", async ({ page }) => {
-  const later = "art/later.excalidraw"
-  const gone = "art/gone.excalidraw"
-  const circle = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40"><circle cx="60" cy="20" r="16" fill="none" stroke="#1e1e1e"/></svg>'
+/** show_file's result for the note with one drawing drawn and two that did not fit. */
+const DEFERRED_NOTE = (() => {
   const embed = (path: string, status: string) => ({ kind: "drawing", path, url: `https://elaborat.ing/projects/${PROJECT}/${path}`, status })
   const note = shown(4, SOURCE)
-  const result = {
+  return {
     ...note,
-    structuredContent: { ...note.structuredContent, embeds: [embed("art/flow.excalidraw", "drawn"), embed(later, "deferred"), embed(gone, "deferred")] },
+    structuredContent: { ...note.structuredContent, embeds: [embed("art/flow.excalidraw", "drawn"), embed(LATER, "deferred"), embed(GONE, "deferred")] },
     _meta: { ...note._meta, "elaborat.ing/html": `<h1>Launch plan</h1>${[0, 1, 2].map((index) => `<figure class="embed" data-embed="${index}"></figure>`).join("")}` },
   }
-  const notLoaded = "Open it in elaborat.ing to see it."
-  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true })
+})()
+
+/** card_embed's result for a drawing, as the card loads one that was deferred: all of it in structuredContent. */
+const embedSent = (path: string, svg: string) => ({
+  content: [{ type: "text", text: `Sent ${path} to the card that shows it.` }],
+  structuredContent: { path, status: "drawn", svg },
+})
+
+test("a drawing that did not fit in the result is loaded with card_embed and drawn where its link was, from a host that leaves _meta out, and one that does not load keeps its link", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: null, manual: true, dropsCallMeta: true })
   await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
-  await answer(page, "show_file", drawingShown(later, circle))
-  await answer(page, "show_file", { isError: true, content: [{ type: "text", text: `No file at ${gone} in this project.` }] })
-  await send(page, "ui/notifications/tool-result", result)
-  await expect(card.getByRole("img", { name: `Drawing ${later}` }).locator("circle")).toHaveCount(1)
+  await answer(page, "card_embed", embedSent(LATER, CIRCLE))
+  await answer(page, "card_embed", { isError: true, content: [{ type: "text", text: `No file at ${GONE} in this project.` }] })
+  await send(page, "ui/notifications/tool-result", DEFERRED_NOTE)
+  await expect(card.getByRole("img", { name: `Drawing ${LATER}` }).locator("circle")).toHaveCount(1)
   await expect(card.getByRole("img", { name: "Drawing art/flow.excalidraw" })).toBeVisible()
   // The one whose call failed keeps its link.
-  await expect(card.getByRole("figure").filter({ hasText: gone })).toContainText(notLoaded)
-  await expect(card.getByRole("link", { name: gone })).toHaveAttribute("href", `https://elaborat.ing/projects/${PROJECT}/${gone}`)
+  await expect(card.getByRole("figure").filter({ hasText: GONE })).toContainText(NOT_LOADED)
+  await expect(card.getByRole("link", { name: GONE })).toHaveAttribute("href", `https://elaborat.ing/projects/${PROJECT}/${GONE}`)
   await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
   // One call for each, in the note's order, for its path in the same project.
   expect(await calls(page)).toEqual([
-    { name: "show_file", arguments: { project_id: PROJECT, path: later } },
-    { name: "show_file", arguments: { project_id: PROJECT, path: gone } },
+    { name: "card_embed", arguments: { project_id: PROJECT, path: LATER } },
+    { name: "card_embed", arguments: { project_id: PROJECT, path: GONE } },
   ])
   expect(await violations(page)).toEqual([])
 
   // A host that does not let the card call tools gets the links.
-  const readOnly = await openHost(page, { tools: false, theme: "light", result })
-  await expect(readOnly.getByText(notLoaded)).toHaveCount(2)
+  const readOnly = await openHost(page, { tools: false, theme: "light", result: DEFERRED_NOTE })
+  await expect(readOnly.getByText(NOT_LOADED)).toHaveCount(2)
   await expect(readOnly.getByRole("img", { name: "Drawing art/flow.excalidraw" })).toBeVisible()
   expect(await calls(page)).toEqual([])
+})
+
+test("a drawing that did not fit in the result keeps its link once the host has not answered the card's call for 20 s", async ({ page }) => {
+  await page.clock.install()
+  const card = await openHost(page, { tools: true, theme: "light", result: DEFERRED_NOTE, silent: true })
+  const [later, gone] = [LATER, GONE].map((path) => card.getByRole("figure").filter({ hasText: path }))
+  await expect(later).toContainText("Loading it")
+  await page.clock.fastForward(15_000)
+  await expect(later).toContainText("Loading it")
+  await page.clock.fastForward(5_000)
+  await expect(later).toContainText(NOT_LOADED)
+  // Then the next one's call, which waits 20 s of its own.
+  await expect(gone).toContainText("Loading it")
+  await page.clock.fastForward(20_000)
+  await expect(gone).toContainText(NOT_LOADED)
+  await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
+  expect((await calls(page)).map((call) => call.arguments.path)).toEqual([LATER, GONE])
 })
 
 // D2 diagrams the app has not drawn from their source yet: a new one, with no

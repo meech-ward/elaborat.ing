@@ -28,11 +28,13 @@ import type { ToolContext } from './types.ts'
 // what stays at once and draws in what changes. Quiet changes stay with
 // write_file, which has no view. card_report is the view's own: it logs how
 // a live card went, to learn which hosts send the input as it is written.
+// card_embed is the view's own too: it sends one drawing or diagram that did
+// not fit in show_file's result.
 // https://modelcontextprotocol.io/docs/extensions/apps
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v39.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v40.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -73,6 +75,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v36.html',
   'ui://elaborating/file-view-v37.html',
   'ui://elaborating/file-view-v38.html',
+  'ui://elaborating/file-view-v39.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -118,7 +121,7 @@ export const MAX_EMBEDS = 8
  * and its component files, then the SVG of each file drawn here (each at most
  * MAX_SVG_CHARS), then, in what is left, what the view draws a diagram from
  * (D2_META_KEY). A drawing or diagram that does not fit in what is left is
- * deferred: the view loads it with show_file. Claude keeps a result of more
+ * deferred: the view loads it with card_embed. Claude keeps a result of more
  * than about 150,000 characters as a file where its code execution is on,
  * and the view then gets no result to show, so this stays under that, with
  * room for the rest of the result.
@@ -204,7 +207,7 @@ function drawnFromOtherSource(path: string, files: Map<string, string>): boolean
   }
 }
 
-/** How a drawing or diagram came out; `deferred`: it did not fit in this result, and the view loads it with show_file. */
+/** How a drawing or diagram came out; `deferred`: it did not fit in this result, and the view loads it with card_embed. */
 export type EmbedStatus = 'drawn' | 'stale' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'deferred' | 'not_shown' | 'unsupported'
 export type EmbedView = EmbedRef & { url: string; status: EmbedStatus }
 
@@ -296,6 +299,9 @@ async function drawEmbeds(
   return { embeds, svgs, diagrams }
 }
 
+/** show_file's and card_embed's answer for a path with no file the user can read. */
+const noFile = (path: string) => errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
+
 function preview(content: string): { source: string; truncated: boolean } {
   if (content.length <= PREVIEW_LIMIT) return { source: content, truncated: false }
   const cut = content.lastIndexOf('\n', PREVIEW_LIMIT)
@@ -322,7 +328,7 @@ export async function showFilePayload(
       .eq('path', path)
       .maybeSingle()
     if (error) throw error
-    if (!data) return errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
+    if (!data) return noFile(path)
     const kind = fileKind(data.path)
     const url = fileUrl(project_id, data.path)
     const content = String(data.content ?? '')
@@ -370,6 +376,34 @@ export async function showFilePayload(
         ...(modules ? { shared } : {}),
       },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
+    }
+  } catch (error) {
+    return runtimeErrorResult(error)
+  }
+}
+
+/**
+ * card_embed's result: the drawing or diagram at `path` as show_file draws it
+ * shown on its own, read as the user with the same limits, for the view to
+ * show where a note's link to it was (`deferred`). Its SVG, or what the view
+ * draws a diagram from, goes in structuredContent, not `_meta`: a host may
+ * leave `_meta` out of the result of a call the view makes (ChatGPT left it
+ * out of the result it passes the view until May 2026). Only the view calls
+ * this tool, so the model never reads its result.
+ */
+export async function cardEmbedPayload({ supabase }: ToolContext, project_id: string, path: string): Promise<CallToolResult> {
+  const kind = fileKind(path)
+  if (kind !== 'drawing' && kind !== 'diagram') return errorResult(`${path} is not a drawing or a diagram.`)
+  try {
+    const { data, error } = await supabase.from('project_files').select('path, content').eq('project_id', project_id).eq('path', path).maybeSingle()
+    if (error) throw error
+    if (!data) return noFile(path)
+    const drawn = await drawEmbeds(supabase, project_id, [{ kind, path: data.path }], ALONE, { [data.path]: String(data.content ?? '') })
+    const svg = drawn.svgs[data.path]
+    const diagram = drawn.diagrams[data.path]
+    return {
+      content: [{ type: 'text', text: `Sent ${data.path} to the card that shows it.` }],
+      structuredContent: { path: data.path, status: drawn.embeds[0].status, ...(svg ? { svg } : {}), ...(diagram ? { diagram } : {}) },
     }
   } catch (error) {
     return runtimeErrorResult(error)
@@ -540,5 +574,20 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
       console.log(JSON.stringify({ event: 'card_live', user: context.userClaims.id, host, tool, partials, first_partial_ms, total_ms }))
       return { content: [{ type: 'text', text: 'Noted.' }] }
     }
+  )
+
+  // For the view only: one drawing or diagram a note embeds that did not fit
+  // in show_file's result, which the view loads to show where its link was.
+  server.registerTool(
+    'card_embed',
+    {
+      title: 'Card embed',
+      description:
+        "Used by the file view itself: one drawing or diagram a note embeds that did not fit in show_file's result, for the view to show. Not for use in a conversation.",
+      inputSchema: z.object({ project_id: projectId, path }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
+    },
+    ({ project_id, path }) => cardEmbedPayload(context, project_id, path)
   )
 }

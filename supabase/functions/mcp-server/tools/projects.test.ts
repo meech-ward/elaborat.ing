@@ -213,7 +213,7 @@ Deno.test('the tests cover every tool the server lists', async () => {
   try {
     const { tools } = await client.listTools()
     // search is tested in search.test.ts, show_file, preview_component,
-    // create_and_show, update_and_show and card_report in fileView.test.ts, draw in draw.test.ts,
+    // create_and_show, update_and_show, card_report and card_embed in fileView.test.ts, draw in draw.test.ts,
     // append_to_note in appendToNote.test.ts, the comment tools in comments.test.ts, and open_panel,
     // panel_pass and panel_origins in panel.test.ts.
     const tested = [
@@ -230,6 +230,7 @@ Deno.test('the tests cover every tool the server lists', async () => {
       'append_to_note',
       'update_and_show',
       'card_report',
+      'card_embed',
       'list_comments',
       'add_comment',
       'reply_comment',

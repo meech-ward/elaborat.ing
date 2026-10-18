@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { CARD_SCRIPT } from "../../../supabase/functions/mcp-server/tools/cardEditorScript"
 import { cardReducer, INITIAL_CARD_STATE, type CardState } from "../cardState"
 import { modulesAllowed } from "../modules"
-import { parseShowResult, parseWriteResult, type CardFile } from "../toolResult"
+import { parseEmbedResult, parseShowResult, parseWriteResult, type CardFile } from "../toolResult"
 
 const URL = "https://elaborat.ing/projects/p/notes/plan.md"
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
@@ -70,6 +70,16 @@ describe("show_file's result", () => {
   test("an error or an unreadable result is a problem with the server's words", () => {
     expect(parseShowResult({ isError: true, content: [{ type: "text", text: "No file at x." }], structuredContent: {} })).toEqual({ ok: false, message: "No file at x." })
     expect(parseShowResult({ structuredContent: { path: 3 } })).toEqual({ ok: false, message: "Something went wrong." })
+  })
+})
+
+describe("card_embed's result", () => {
+  test("a drawing's SVG and what a diagram is drawn from, for the path asked for only, and SVG only as the server draws it", () => {
+    const sent = (content: Record<string, unknown>) => ({ content: [{ type: "text", text: "Sent" }], structuredContent: { path: "a.d2", status: "stale", ...content } })
+    expect(parseEmbedResult(sent({ svg: SVG, diagram: { source: "a -> b", canvas: "{}" } }), "a.d2")).toEqual({ status: "stale", svg: SVG, diagram: { source: "a -> b", canvas: "{}" } })
+    expect(parseEmbedResult(sent({ svg: "<script>", diagram: { canvas: "{}" } }), "a.d2")).toEqual({ status: "stale", svg: null, diagram: null })
+    expect(parseEmbedResult(sent({ svg: SVG }), "b.d2")).toBeNull()
+    expect(parseEmbedResult({ isError: true, content: [{ type: "text", text: "No file at a.d2." }] }, "a.d2")).toBeNull()
   })
 })
 

@@ -836,10 +836,16 @@ The production server's tools are unchanged.
   characters as a file, and the view then gets no result to show (its MCP
   Apps troubleshooting page). A drawing or diagram that does not fit in what
   is left, but would in a result of its own, is `deferred`: the card loads
-  each with `show_file`, one at a time, where the host lets it call tools,
-  and draws it where its link was. 3,000 elements per scene. The view is on
-  its own tool, not on `read_file`, so agents can read files without filling
-  the chat with views.
+  each with `card_embed`, one at a time, where the host lets it call tools,
+  and draws it where its link was. `card_embed` is the view's own tool
+  (`ui.visibility: ["app"]`), so the model never reads its result: it reads
+  and draws one drawing or diagram as `show_file` does shown on its own, as
+  the user and with the same limits and errors, and sends its SVG, or what
+  the card draws a diagram from, in `structuredContent`, since a host may
+  leave `_meta` out of the result of a call the view makes. A call that
+  fails, or that the host has not answered in 20 s, leaves the link. 3,000
+  elements per scene. The view is on its own tool, not on `read_file`, so
+  agents can read files without filling the chat with views.
 - **Decision: the card draws a D2 diagram the app has not drawn from its
   source yet.** A diagram's canvas is saved by the app when someone opens it,
   so a new diagram has none (`not_drawn`), and one whose source changed since

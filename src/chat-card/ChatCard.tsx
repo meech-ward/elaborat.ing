@@ -36,7 +36,7 @@
  * source's place when the result comes.
  *
  * A drawing or diagram that did not fit in the result (deferred) is loaded
- * with show_file, one at a time, where the host lets the card call tools
+ * with card_embed, one at a time, where the host lets the card call tools
  * (cardDeferred.ts).
  */
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"

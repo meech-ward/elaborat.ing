@@ -837,7 +837,7 @@ Deno.test('a note whose drawings pass the cap draws the first ones and defers th
   assertEquals(Object.keys(meta[SVG_META_KEY]), drawings.slice(0, 3))
   assertFalse(D2_META_KEY in meta)
 
-  // Each one deferred, shown on its own as the view loads it, is drawn or sent to draw, under the cap too.
+  // Each one deferred, shown on its own, is drawn or sent to draw, under the cap too, as card_embed sends it to the view (below).
   const drawing = await showFile('art/d.excalidraw', files)
   assertEquals((drawing.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'drawn')
   assert((drawing.result._meta as Record<string, Record<string, string>>)[SVG_META_KEY]['art/d.excalidraw'].startsWith('<svg '))
@@ -846,6 +846,64 @@ Deno.test('a note whose drawings pass the cap draws the first ones and defers th
   assertEquals((diagram.result.structuredContent as { embeds: { status: string }[] }).embeds[0].status, 'not_drawn')
   assertEquals(diagram.result._meta, { [D2_META_KEY]: { 'flows/new.d2': { source } } })
   assert(JSON.stringify(diagram.result._meta).length <= MAX_META_CHARS)
+})
+
+Deno.test("card_embed is the view's alone, and sends it a drawing or diagram as show_file draws it on its own, all in structuredContent", async () => {
+  const layout = JSON.stringify({ version: 1, sourceHash: sourceHash('a -> c') })
+  const files = [
+    file('art/flow.excalidraw', sceneOf(20)),
+    // More SVG than MAX_SVG_CHARS.
+    file('art/huge.excalidraw', sceneOf(120)),
+    file('art/broken.excalidraw', '{"elements": 3}'),
+    file('flows/new.d2', `# ${'x'.repeat(30_000)}\na -> b`),
+    file('flows/signup.d2', 'a -> b'),
+    file('flows/signup.excalidraw', SCENE),
+    file('flows/signup.d2.json', layout),
+  ]
+  await withClient(files, async (client, queries) => {
+    // Only the view can call it, so the SVG in its structuredContent never reaches the model.
+    const tool = (await client.listTools()).tools.find((entry) => entry.name === 'card_embed')
+    assertEquals(tool?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
+    assertEquals(tool?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+    const call = async (name: string, path: string) => (await client.callTool({ name, arguments: { project_id: PROJECT, path } })) as CallToolResult
+    const cases = [['art/flow.excalidraw', 'drawn'], ['art/huge.excalidraw', 'too_big'], ['art/broken.excalidraw', 'unreadable'], ['flows/new.d2', 'not_drawn'], ['flows/signup.d2', 'stale']]
+    for (const [path, status] of cases) {
+      const shown = await call('show_file', path)
+      assertEquals((shown.structuredContent as { embeds: { status: string }[] }).embeds[0].status, status, path)
+      const meta = (shown._meta ?? {}) as Record<string, Record<string, unknown>>
+      queries.length = 0
+      const sent = await call('card_embed', path)
+      // Read as the user, as show_file reads it.
+      assertEquals(queries[0], [['from', 'project_files'], ['select', 'path, content'], ['eq', 'project_id', PROJECT], ['eq', 'path', path]], path)
+      assertFalse(sent.isError, path)
+      assertEquals(
+        sent.structuredContent,
+        {
+          path,
+          status,
+          ...(meta[SVG_META_KEY]?.[path] ? { svg: meta[SVG_META_KEY][path] } : {}),
+          ...(meta[D2_META_KEY]?.[path] ? { diagram: meta[D2_META_KEY][path] } : {}),
+        },
+        path,
+      )
+      assertEquals(sent._meta, undefined, path)
+      assert(JSON.stringify(sent.structuredContent).length <= MAX_META_CHARS, path)
+    }
+  })
+})
+
+Deno.test("card_embed gives show_file's error for a path with no file, and sends only drawings and diagrams", async () => {
+  await withClient([file('notes/plan.md', '# Plan')], async (client, queries) => {
+    const call = async (name: string, path: string) => (await client.callTool({ name, arguments: { project_id: PROJECT, path } })) as CallToolResult
+    const gone = await call('card_embed', 'art/gone.excalidraw')
+    assert(gone.isError)
+    assertEquals(gone.content, (await call('show_file', 'art/gone.excalidraw')).content)
+    queries.length = 0
+    const note = await call('card_embed', 'notes/plan.md')
+    assert(note.isError)
+    assertEquals(note.content, [{ type: 'text', text: 'notes/plan.md is not a drawing or a diagram.' }])
+    assertEquals(queries, [])
+  })
 })
 
 Deno.test('a note is marked mdx when the HTML shows or drops some of its MDX, and not for embeds and callouts alone', () => {

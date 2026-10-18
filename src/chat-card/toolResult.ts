@@ -1,6 +1,7 @@
 /**
  * The tool results the chat card reads, parsed at the bridge: show_file's
  * view of one file (supabase/functions/mcp-server/tools/fileView.ts),
+ * card_embed's drawing or diagram that did not fit in it (fileView.ts),
  * preview_component's view of a component file (componentPreview.ts),
  * write_file's outcome, and read_file's content (projects.ts). The host passes them on from the server, so every
  * field is checked; links count only when they go to elaborat.ing, and a
@@ -8,7 +9,7 @@
  * card's small script tree-shakes, where full Zod would all come along.
  */
 import { z } from "zod/mini"
-import type { CardEmbed, DiagramSource, FileKind } from "./embedText"
+import type { CardEmbed, DiagramSource, EmbedStatus, FileKind } from "./embedText"
 
 /** The app's origin: the only place the card links to. */
 export const APP_ORIGIN = "https://elaborat.ing/"
@@ -165,6 +166,31 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       editors: components?.editors ?? {},
     },
   }
+}
+
+/**
+ * A drawing or diagram card_embed sent: how it came out, its SVG where it was
+ * drawn, and what the card draws a diagram from where the app has not drawn
+ * it from its source.
+ */
+export type LoadedEmbed = { status: EmbedStatus; svg: string | null; diagram: DiagramSource | null }
+
+// In structuredContent, which a host passes on where it may leave `_meta` out.
+const embedResultSchema = z.object({
+  structuredContent: z.object({
+    path: z.string(),
+    status: z.catch(z.enum(STATUSES), "drawn"),
+    svg: z.catch(z.optional(z.string().check(z.startsWith("<svg"))), undefined),
+    diagram: z.catch(z.optional(diagramSourceSchema), undefined),
+  }),
+})
+
+/** card_embed's drawing or diagram at `path`, or null when the result is not one of it. */
+export function parseEmbedResult(raw: unknown, path: string): LoadedEmbed | null {
+  const parsed = isError(raw) ? null : embedResultSchema.safeParse(raw)
+  if (!parsed?.success || parsed.data.structuredContent.path !== path) return null
+  const { status, svg, diagram } = parsed.data.structuredContent
+  return { status, svg: svg ?? null, diagram: diagram ?? null }
 }
 
 /** Whether a raw result carried its own `_meta` (ChatGPT dropped it from the notification until May 2026). */
