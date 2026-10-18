@@ -152,7 +152,7 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
           .describe(
             'The elements to add, in drawing order, each with a new id and a type. ' +
               'A rectangle, ellipse or diamond needs x and y; with a label, its width and height may be left out, and it is sized to fit the label. ' +
-              'An arrow needs only from and to, the ids of two shapes in the drawing or in this call, and may have a label. ' +
+              'An arrow needs only from and to, the ids of two shapes in the drawing or in this call, and may have a label of a word or two: a longer one covers the shapes beside a short arrow. ' +
               `A label becomes a text with the id "<id>-label". At most ${MAX_ADDED} elements a call, labels included. ` +
               'Full Excalidraw elements work too: text needs x, y and text; lines, and arrows without from and to, need x, y and points relative to them. ' +
               'A text with containerId set to a shape or arrow is its label, and draw centres it there; an arrow attaches with startBinding and endBinding ({"elementId": "..."}).'

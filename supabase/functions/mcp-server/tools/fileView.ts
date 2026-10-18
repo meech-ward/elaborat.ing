@@ -464,7 +464,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         'which draws it while you write it where the chat allows that. It only creates: a file already at the path is not changed. ' +
         'Use it when the user should watch a new note, drawing or diagram being made. ' +
         "Write a drawing in draw's short form, a fraction of the full JSON to write: give a shape a label and leave out its size, " +
-        "and join two shapes with an arrow's from and to. It is saved as the full elements draw would make: the shape sized to its label, " +
+        "and join two shapes with an arrow's from and to, its label a word or two. It is saved as the full elements draw would make: the shape sized to its label, " +
         'the label a text bound to it, and the arrow placed and bound. ' +
         'To change a file, read it and use update_and_show, or write_file for a quiet change, with base_version.',
       inputSchema: z.object({

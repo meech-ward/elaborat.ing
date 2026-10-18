@@ -29,8 +29,10 @@ The user's instructions win over this skill when they differ.
   centred, and sizes the shape to fit it. Join two shapes with an arrow's
   `from` and `to`, their ids, instead of `x`, `y` and `points`: `draw` runs
   it straight between their outlines and binds both ends. An arrow can have
-  a `label` too. Place shapes about 300 px apart, left edge to left edge, so
-  the arrows and their labels have room. For example:
+  a `label` too: keep it to a word or two, since a label wider than the gap
+  between its shapes covers the arrow and their edges. Place shapes about
+  300 px apart, left edge to left edge, so the arrows and their labels have
+  room. For example:
 
   ```json
   {"path": "drawings/flow.excalidraw", "elements": [
@@ -85,7 +87,7 @@ form as `draw`: each shape with a `label` and no size, and each arrow by
   about 240 px wide: shapes 300 apart leave room for an arrow.
 - An arrow with `from` and `to`, the ids of two shapes, and no `x`, `y` or
   `points`, runs straight between their outlines and is bound to both. It
-  can have a `label` too.
+  can have a `label` too, of a word or two.
 - Full Excalidraw elements still work, also in the same file. Each needs a
   unique `id`, a `type`, `x`, `y`, `width` and `height`, and the app fills
   in the fields you leave out. A label is then a text element with
