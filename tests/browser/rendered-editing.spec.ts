@@ -467,4 +467,50 @@ test.describe("edits Markdown has to write with care", () => {
       expect(text, from).toEqual({ shown: `${italic}these limits push you into weak logins.`, italic })
     }
   })
+
+  test("Enter at the start of a heading puts an empty paragraph above it, and typing goes on in the heading", async ({ page }) => {
+    const sections = "## Top heading\n\nIntro paragraph.\n\n## 2. Second part\n\nBody text.\n"
+    for (const [heading, written] of [
+      ["2. Second part", sections.replace("## 2.", "\n\n## X2.")],
+      ["Top heading", `\n\n\n\n${sections.replace("## Top", "## XTop")}`],
+    ] as const) {
+      let mark = await load(page, sections, "mdx", "Body text.")
+      const target = frameOf(page).locator(".ProseMirror > h2").filter({ hasText: heading })
+      await target.click()
+      await press(page, "Home")
+      await press(page, "Enter")
+      await accepted(page, mark)
+      await expect(target).toHaveText(heading)
+      expect(await target.evaluate((h2) => [h2.previousElementSibling?.tagName, h2.previousElementSibling?.textContent]), heading).toEqual(["P", ""])
+      mark = await revision(page)
+      await page.keyboard.type("X")
+      await accepted(page, mark)
+      await expect.poll(() => source(page), { message: heading }).toBe(written)
+      await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+    }
+  })
+
+  test("Enter at the start of the note's first paragraph, or on a selected table, adds an empty paragraph there", async ({ page }) => {
+    const first = "First paragraph.\n\nMore text.\n"
+    let mark = await load(page, first, "mdx", "More text.")
+    await clickAt(page, "First paragraph.", 2)
+    await press(page, "Home")
+    await press(page, "Enter")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe(`\n\n\n\n${first}`)
+
+    const table = "Intro.\n\n| A | B |\n| --- | --- |\n| x | y |\n\nMore text.\n"
+    mark = await load(page, table, "mdx", "More text.")
+    await clickAt(page, "Intro.", 2)
+    await press(page, "End")
+    // The arrow selects the table; Enter adds an empty paragraph after it, with the caret there.
+    await press(page, "ArrowRight")
+    await press(page, "Enter")
+    await accepted(page, mark)
+    mark = await revision(page)
+    await page.keyboard.type("Z")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe(table.replace("| x | y |\n", "| x | y |\n\nZ\n"))
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
 })

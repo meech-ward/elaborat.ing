@@ -347,6 +347,23 @@ export class FluidEditor {
                 }
                 return true;
               },
+              // Enter at the start of a heading puts an empty paragraph above
+              // it and keeps the caret in the heading, as Enter at the start
+              // of a paragraph does: one new block, written as blank lines,
+              // where splitting would leave an empty heading to change back.
+              (state, dispatch) => {
+                const { $from, empty } = state.selection;
+                if (
+                  !empty ||
+                  $from.depth !== 1 ||
+                  $from.parentOffset !== 0 ||
+                  $from.parent.type !== nodes.heading ||
+                  !$from.parent.content.size
+                )
+                  return false;
+                dispatch?.(state.tr.insert($from.before(), nodes.paragraph.create()).scrollIntoView());
+                return true;
+              },
               // A new item after a task item is a task too, not yet ticked.
               (state, dispatch) => {
                 const { $from } = state.selection;

@@ -205,6 +205,17 @@ matters.
   (`*a&#32;*&#98;`): exact, but hard to read in Source. `*a* b` reads better
   but takes the space out of the italics, so the editor would have to take the
   document the source makes in place of its own.
+- In a note's Rendered view, Enter at the start of a line in a quote is
+  refused: it splits the quote's paragraph, and Markdown has no empty
+  paragraph inside a quote. Putting the empty paragraph above the quote, as
+  Enter at the start of a heading does (`src/preview/fluidEditor.ts`), would
+  work.
+- In a note's Rendered view, Enter right before a space (between two
+  sentences, or two words of a heading) is refused: the new paragraph starts
+  with the space, which Markdown drops.
+- In a note's Rendered view, a second empty line between two blocks (Enter on
+  an empty line Enter made) is refused: blank lines between blocks make one
+  empty paragraph at most.
 
 ## Done
 

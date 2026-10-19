@@ -756,3 +756,22 @@ test("a delete from plain text into italics after it opens them where Markdown c
   expect(await remove(shown.indexOf("words"), shown.indexOf(" italic"))).toBe("Some plain *&#32;italic words* end.");
   expect(await remove(shown.indexOf("rds"), shown.indexOf("hen"))).toBe("Some plain wo*hen italic words* end.");
 });
+
+test("an empty paragraph added before a heading, the note's first block or after its last is written as blank lines", async () => {
+  const text = "## First heading\n\nSome text.\n\n## 2. Second heading\n\n| A |\n| --- |\n| x |\n";
+  const projection = await projectFluidSource(text, "mdx");
+  // Enter at the start of a heading, and on a selected table, add one empty paragraph.
+  const add = async (index: number) => {
+    let pos = 0;
+    for (let i = 0; i < index; i++) pos += projection.doc.child(i).nodeSize;
+    const empty = new Slice(Fragment.from(fluidSchema.nodes.paragraph.create()), 0, 0);
+    return (await edit(text, [new ReplaceStep(pos, pos, empty).toJSON()])).text;
+  };
+  expect(await add(2)).toBe(text.replace("## 2.", "\n\n## 2."));
+  expect(await add(0)).toBe(`\n\n\n\n${text}`);
+  expect(await add(4)).toBe(`${text}\n`);
+  // Enter at the start of the note's first paragraph splits it there.
+  const first = "First paragraph.\n\nMore.\n";
+  const split = new Transform((await projectFluidSource(first, "mdx")).doc).split(1);
+  expect((await edit(first, split.steps.map((step) => step.toJSON()))).text).toBe(`\n\n\n\n${first}`);
+});

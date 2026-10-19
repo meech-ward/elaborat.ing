@@ -1302,8 +1302,12 @@ function structuralPatch(
     newEnd--;
   }
   const affected = projection.mapping.roots.slice(prefix, oldEnd);
-  if (!affected.length)
+  if (!affected.length) {
+    const added = next.content.content.slice(prefix, newEnd);
+    if (added.length === 1 && added[0].type === fluidSchema.nodes.paragraph && !added[0].content.size)
+      return blankParagraphPatch(projection, prefix);
     throw new Error("Unsupported top-level insertion boundary");
+  }
   const originalList = projection.mapping.nodes.find(
     (entry) =>
       entry.node.type.name === "bullet_list" &&
@@ -1344,6 +1348,23 @@ function structuralPatch(
     insert: chunks.join("\n\n"),
     expected: projection.text.slice(from, to),
   };
+}
+
+/**
+ * An empty paragraph added before top-level block `index` of the note, or
+ * after the last: Enter at the start of a heading or of the note's first
+ * paragraph, or on a selected table. Markdown has no empty paragraph, so it
+ * is blank lines, as Enter at the end of a paragraph writes it: four line
+ * breaks before the next block (a gap, which projects as an empty paragraph),
+ * or two at the end of the note.
+ */
+function blankParagraphPatch(projection: FluidProjection, index: number): SourcePatch {
+  const following = projection.mapping.roots[index];
+  const at = following ? following.from : projection.text.length;
+  const blank = /\s*$/.exec(projection.text.slice(0, at))![0];
+  const breaks = blank.split("\n").length - 1;
+  const insert = "\n".repeat(Math.max(0, (following ? 4 : 2) - breaks));
+  return { from: at, to: at, insert, expected: "" };
 }
 
 /** A heading shortcut changes only a source prefix. Keep inline islands as
