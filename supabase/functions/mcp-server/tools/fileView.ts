@@ -130,13 +130,14 @@ const PREVIEW_LIMIT = 20_000
 export const MAX_EMBEDS = 8
 /**
  * Characters of `_meta` in one result, as JSON: the note's HTML, its source
- * and its component files, then the SVG of each file drawn here (each at most
- * MAX_SVG_CHARS), then, in what is left, what the view draws a diagram from
- * (D2_META_KEY). A drawing or diagram that does not fit in what is left is
- * deferred: the view loads it with card_embed. Claude keeps a result of more
- * than about 150,000 characters as a file where its code execution is on,
- * and the view then gets no result to show, so this stays under that, with
- * room for the rest of the result.
+ * and its component files (only where they fit with those two), then the SVG
+ * of each file drawn here (each at most MAX_SVG_CHARS), then, in what is
+ * left, what the view draws a diagram from (D2_META_KEY). A drawing or
+ * diagram that does not fit in what is left is deferred: the view loads it
+ * with card_embed. Claude keeps a result of more than about 150,000
+ * characters as a file where its code execution is on, and the view then
+ * gets no result to show, so this stays under that, with room for the rest
+ * of the result.
  * https://claude.com/docs/connectors/building/mcp-apps/troubleshooting
  */
 export const MAX_META_CHARS = 120_000
@@ -159,6 +160,15 @@ export const D2_META_KEY = 'elaborat.ing/d2'
 
 /** What the view draws a diagram from (D2_META_KEY). */
 export type DiagramSource = { source: string; canvas?: string; layout?: string }
+
+/**
+ * The callout a note's HTML starts with when its component files would take
+ * `_meta` past MAX_META_CHARS: they are not sent, so the view shows the HTML,
+ * with the components as text, as it shows a note's own callouts.
+ */
+const COMPONENTS_TOO_BIG =
+  '<aside class="callout" data-tone="warn"><p>The components in this note could not be shown here: with the files they come from, ' +
+  'the note is too big for a chat card. Open it in elaborat.ing to see them.</p></aside>\n'
 
 /** A value's characters in `_meta` as JSON, with its key, a colon and a comma. */
 const metaSize = (key: string, value: unknown) => JSON.stringify(key).length + JSON.stringify(value).length + 2
@@ -358,8 +368,13 @@ export async function showFilePayload(
       ...(rendered ? { [HTML_META_KEY]: rendered.html } : {}),
       // The whole note, for editing in the view; a note too long to show whole is not edited there.
       ...(note && !note.truncated ? { [SOURCE_META_KEY]: content } : {}),
-      ...(modules ? { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } } : {}),
     }
+    // Component files that would take it past the cap, where a chat may show no card at all, stay out:
+    // the view then shows the HTML, which starts by saying why.
+    const components = modules && { modules, ...(editors ? { editors } : {}) }
+    const componentsSent = components !== null && JSON.stringify({ ...meta, [COMPONENTS_META_KEY]: components }).length <= MAX_META_CHARS
+    if (componentsSent) meta[COMPONENTS_META_KEY] = components
+    else if (components && rendered) meta[HTML_META_KEY] = COMPONENTS_TOO_BIG + rendered.html
     const { embeds, svgs, diagrams } =
       refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, roomBeside(meta), { [data.path]: content }) : { embeds: [], svgs: {}, diagrams: {} }
     if (Object.keys(svgs).length > 0) meta[SVG_META_KEY] = svgs
@@ -385,7 +400,7 @@ export async function showFilePayload(
         url,
         truncated: note?.truncated ?? false,
         embeds,
-        ...(modules ? { shared } : {}),
+        ...(componentsSent ? { shared } : {}),
       },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     }

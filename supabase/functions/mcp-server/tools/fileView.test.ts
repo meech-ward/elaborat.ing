@@ -998,6 +998,24 @@ Deno.test('show_file sends no component files for a Markdown note, a note withou
   assertFalse(COMPONENTS_META_KEY in (long.result._meta ?? {}))
 })
 
+Deno.test('show_file sends a note whose component files would pass the cap without them, and its HTML says why', async () => {
+  const big = `export const Chart = () => <p>${'x'.repeat(MAX_META_CHARS)}</p>\n`
+  const { result } = await showFile('notes/plan.mdx', [file('notes/plan.mdx', COMPONENT_NOTE), file('components/chart.mdx', big)])
+  // Under the size at which Claude keeps a result as a file, and the view gets nothing to show.
+  const size = JSON.stringify(result._meta).length
+  assert(size <= MAX_META_CHARS, `_meta is ${size} characters`)
+  const meta = result._meta as Record<string, unknown>
+  assertFalse(COMPONENTS_META_KEY in meta)
+  assertFalse('shared' in (result.structuredContent as Record<string, unknown>))
+  // The card shows the note as the server rendered it, which starts by saying why its components are not shown.
+  const html = String(meta[HTML_META_KEY])
+  assert(html.startsWith('<aside class="callout" data-tone="warn"><p>The components in this note could not be shown here: '), html)
+  assertStringIncludes(html, 'the note is too big for a chat card. Open it in elaborat.ing to see them.</p></aside>')
+  assertStringIncludes(html, '<h1>Plan</h1>')
+  // It can still be edited in the card.
+  assertEquals(meta[SOURCE_META_KEY], COMPONENT_NOTE)
+})
+
 function previewComponent(args: Record<string, unknown>, files: Row[]) {
   return withClient(files, async (client, queries) => ({
     result: (await client.callTool({ name: 'preview_component', arguments: { project_id: PROJECT, ...args } })) as CallToolResult,

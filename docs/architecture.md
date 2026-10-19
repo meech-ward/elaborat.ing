@@ -831,7 +831,10 @@ The production server's tools are unchanged.
   files drawn per note, 110,000 characters of SVG each, and 120,000
   characters of `_meta` per result, as JSON: the note's HTML (of its first
   20,000 characters), its source and its component files, then the SVG, then
-  what the card draws a diagram from in what that leaves. Where code
+  what the card draws a diagram from in what that leaves. A note whose HTML,
+  source and component files would pass that goes without its component
+  files: the card shows the server's HTML, which then starts with a callout
+  that says why. Where code
   execution is on, Claude keeps a result of more than about 150,000
   characters as a file, and the view then gets no result to show (its MCP
   Apps troubleshooting page). A drawing or diagram that does not fit in what

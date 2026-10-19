@@ -89,20 +89,6 @@ to 1.8 s with ELK (about 150 MB), so a small container service would do, at
 some cost. Done when this is decided, and, if built, `show_file` sends a
 server-drawn SVG for a diagram the app hasn't drawn yet.
 
-## T36: show_file keeps a note's component files under the size cap
-
-**Status:** Ready
-
-`show_file` (`supabase/functions/mcp-server/tools/fileView.ts`) sends a
-note's component files in `_meta` with no cap; only a note cut at 20,000
-characters sends none. Component files can be up to 2 MiB, which takes
-`_meta` past `MAX_META_CHARS` (120,000), and Claude then shows no card at all
-(it stores a large result as a file). `preview_component` already refuses a
-preview over the cap. When a note's HTML, source and component files would
-pass the cap, send the note without its component files, so the card shows
-the server's HTML, and say why in the card. Done when a Deno test with a large
-component file fails on the old code.
-
 ## T37: stop loading deferred drawings once the host stops answering
 
 **Status:** Ready
@@ -260,6 +246,7 @@ matters.
 - T31: a sync conflict shows what differs before you choose (#31)
 - T32: a stale message from the rendered frame never shows as a render error (branch claude/t32-stale-frame)
 - T33: a new file asks for its name, and an unsaved new note can be renamed (#32)
+- T36: show_file keeps a note's component files under the size cap (by the maintainer)
 
 After T33 the work was tracked elsewhere until the queue came back here in
 October 2026; `git log` describes each change by its outcome.
