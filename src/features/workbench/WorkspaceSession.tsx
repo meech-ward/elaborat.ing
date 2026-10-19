@@ -720,6 +720,9 @@ export function WorkspaceSession({
     if (t) void doWrite(t, openFile.baseRevision, openFile.path ? "Saved" : "Created");
   };
   const saveDisabled = renderedPending || !hasFile || openFile.save.stage === "saving";
+  // The header's Save stays on while a rendered edit finishes, so it doesn't
+  // blink at each keystroke; a save pressed then waits for the edit (doWrite).
+  const headerSaveDisabled = !hasFile || openFile.save.stage === "saving";
   const duplicateKey = commandShortcut("D", apple);
   // The file's actions: its tab's menu on a desktop, "..." on a phone.
   const fileActions: MenuEntry[] = [
@@ -740,7 +743,7 @@ export function WorkspaceSession({
         active={active}
         navigation={navigation}
         view={isNote ? { value: view, views, names: "note", label: "Editor mode", onChange: switchMode, preload: preloadViews } : undefined}
-        save={!readOnly && overallDirty ? { disabled: saveDisabled, onSave: save } : null}
+        save={!readOnly && overallDirty ? { disabled: headerSaveDisabled, onSave: save } : null}
         actions={fileActions}
       />
       {/* The saved state and the last notice, for screen readers: Save and

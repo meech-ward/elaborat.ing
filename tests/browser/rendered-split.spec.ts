@@ -129,6 +129,31 @@ test("Split has no accessibility problems at 1280", async ({ page }) => {
   expect(results.violations.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
 })
 
+test("Save stays on while the person types in the rendered note, and a save pressed then waits for the typing", async ({ page }) => {
+  const { fake, id } = await openNote(page)
+  await page.getByRole("button", { name: "Rendered" }).click()
+  const frame = page.frameLocator('iframe[title="Isolated document preview"]')
+  const paragraph = frame.locator("p").first()
+  await paragraph.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" A")
+  const save = page.getByRole("button", { name: "Save", exact: true })
+  await expect(save).toBeEnabled()
+  // Each time Save turns off while the person types, it blinks.
+  await save.evaluate((button) => {
+    const state = window as unknown as { saveOff: number }
+    state.saveOff = 0
+    new MutationObserver(() => {
+      if ((button as HTMLButtonElement).disabled || button.hasAttribute("data-disabled")) state.saveOff++
+    }).observe(button, { attributes: true })
+  })
+  await page.keyboard.type(" few more words.")
+  const blinks = await page.evaluate(() => (window as unknown as { saveOff: number }).saveOff)
+  await save.click()
+  await expect.poll(() => fake.server.content(id, PATH)).toContain(" A few more words.")
+  expect(blinks).toBe(0)
+})
+
 test("Cmd+S pressed inside the rendered note saves it", async ({ page }) => {
   const { fake, id } = await openNote(page)
   await page.getByRole("button", { name: "Rendered" }).click()
