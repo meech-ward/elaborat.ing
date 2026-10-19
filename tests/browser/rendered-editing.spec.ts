@@ -446,10 +446,11 @@ test.describe("edits Markdown has to write with care", () => {
 
   test("deleting a selection from inside italics to the plain text after them deletes it, wherever it starts", async ({ page }) => {
     // From the start of a word, the closing `*` would sit after a space,
-    // where Markdown cannot close italics; after the quote, between
-    // punctuation and a letter. The characters beside it become references.
+    // where Markdown cannot close italics: the space goes just outside them,
+    // and the note takes that. After the quote, it would sit between
+    // punctuation and a letter: the letter becomes a reference.
     for (const [from, key, written, italic] of [
-      ["really", "Backspace", item.replace(/ really make .* from: t/, "&#32;*&#116;"), 'Ann (draft): "Those limits '],
+      ["really", "Backspace", item.replace(/ really make .* from: /, "* "), 'Ann (draft): "Those limits'],
       ['Those', "Delete", item.replace(/Those .* from: t/, "*&#116;"), 'Ann (draft): "'],
       ["ally make", "Backspace", item.replace(/ally make .* from: /, "*"), 'Ann (draft): "Those limits re'],
     ] as const) {
@@ -465,10 +466,12 @@ test.describe("edits Markdown has to write with care", () => {
       await accepted(page, mark)
       await expect.poll(() => source(page), { message: from }).toBe(note.replace(item, written))
       await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
-      // The source shows what the editor showed: the same words, the same italics.
+      // The editor shows what the source holds, and so does the note opened again: the same words, the same italics.
+      const after = `${shown.slice(0, shown.indexOf(from))}these limits push you into weak logins.`
+      const showing = () => paragraph(page, "these limits push you").evaluate((p) => ({ shown: p.textContent, italic: p.querySelector("em")?.textContent }))
+      await expect.poll(showing, { message: from }).toEqual({ shown: after, italic })
       await load(page, await source(page), "mdx", "these limits push you")
-      const text = await paragraph(page, "these limits push you").evaluate((p) => ({ shown: p.textContent, italic: p.querySelector("em")?.textContent }))
-      expect(text, from).toEqual({ shown: `${italic}these limits push you into weak logins.`, italic })
+      expect(await showing(), from).toEqual({ shown: after, italic })
     }
   })
 

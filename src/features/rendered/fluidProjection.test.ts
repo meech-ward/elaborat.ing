@@ -737,12 +737,24 @@ test("a delete from inside italics to plain text after them is written, wherever
     for (const end of [shown.indexOf("these"), shown.indexOf(" these"), shown.indexOf("The fair")])
       await remove(start, end);
   const removed = async (from: string, to: string) => (await remove(shown.indexOf(from), shown.indexOf(to))).text;
-  // As written by hand where Markdown can close the italics there; where it
-  // cannot (after a space or a quote, before a letter), the characters beside
-  // the closing `*` are references, so the note shows exactly what it showed.
+  // As written by hand where Markdown can close the italics there. After a
+  // space it cannot: the space goes just outside the italics. After the quote,
+  // before a letter, the letter is a reference, so the note shows exactly what
+  // it showed.
   expect(await removed("ally", "these")).toBe(text.replace(/ally make .* from: /, "*"));
-  expect(await removed("really", "these")).toBe(text.replace(/ really make .* from: t/, "&#32;*&#116;"));
+  expect(await removed("really", "these")).toBe(text.replace(/ really make .* from: /, "* "));
   expect(await removed("Those", "these")).toBe(text.replace(/Those .* from: t/, "*&#116;"));
+});
+
+test("a delete that leaves bold or italics ending in a space before a letter writes the space just outside them", async () => {
+  const remove = async (text: string, from: string, to: string) => {
+    const shown = (await projectFluidSource(text, "mdx")).doc.textContent;
+    const next = await edit(text, [new ReplaceStep(1 + shown.indexOf(from), 1 + shown.indexOf(to), Slice.empty).toJSON()]);
+    // The editor takes the document the source makes: the space is out of the formatting.
+    return { text: next.text, nearest: next.nearest !== null, parts: next.projection.doc.firstChild!.content.content.map((node) => node.text) };
+  };
+  expect(await remove("Make **these words** count.", "words", "count")).toEqual({ text: "Make **these** count.", nearest: true, parts: ["Make ", "these", " count."] });
+  expect(await remove("*Ann said: so true* and more.", "so", "more")).toEqual({ text: "*Ann said:* more.", nearest: true, parts: ["Ann said:", " more."] });
 });
 
 test("a delete from plain text into italics after it opens them where Markdown can", async () => {

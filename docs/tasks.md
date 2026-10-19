@@ -200,11 +200,13 @@ matters.
   the closing `**` or `*` would follow the space. The references a delete
   writes there (`flanked` in `src/features/rendered/fluidProjection.ts`) are
   tried only for typing and deletes.
-- A delete in a note's Rendered view that leaves italics ending in a space or
-  a quote right before a letter writes numeric references into the source
-  (`*a&#32;*&#98;`): exact, but hard to read in Source. `*a* b` reads better
-  but takes the space out of the italics, so the editor would have to take the
-  document the source makes in place of its own.
+- A delete in a note's Rendered view that leaves italics ending in a quote
+  or other punctuation right before a letter still writes that letter as a
+  numeric reference (`*"*&#116;hese`): exact, but hard to read in Source, and
+  there is no space to move out of the italics there.
+- A delete in a note's Rendered view from plain text into italics that leaves
+  them starting with a space writes it as a reference (`*&#32;italic*`), which
+  holds it exactly; ` *italic*` would read better.
 - In a note's Rendered view, Enter at the start of a line in a quote is
   refused: it splits the quote's paragraph, and Markdown has no empty
   paragraph inside a quote. Putting the empty paragraph above the quote, as

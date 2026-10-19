@@ -1523,7 +1523,9 @@ of a paragraph and a line break, the formatting on it, a link's text, and
 every block. So a lost letter or word is still refused, with the plain
 "Edit not applied" notice. A step that only adds such whitespace, such as a
 space typed at the start of a paragraph, changes nothing. Enter right before
-a space writes the new paragraph without it (`One.\n\nTwo.`).
+a space writes the new paragraph without it (`One.\n\nTwo.`), and a delete
+that leaves italics or bold ending in a space before a letter writes the
+space just outside them (`*a* b`).
 
 The editor then takes the document the source makes in place of its own. The
 app's acknowledgement of that edit carries the document and `nearest`; the

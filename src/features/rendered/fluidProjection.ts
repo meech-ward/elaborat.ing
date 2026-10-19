@@ -951,10 +951,13 @@ function flanks(
  * The patch with each emphasis, strong or strikethrough delimiter it writes
  * placed where Markdown reads it as one. Deleting from the start of a word
  * inside italics to plain text after them leaves the closing `*` between a
- * space and a letter, where it closes nothing (`*a *b`). The characters
- * beside such a delimiter are written as numeric references, which the parser
- * reads as punctuation and the note shows as the same characters, so the
- * source keeps exactly the text and formatting shown (`*a&#32;*&#98;`).
+ * space and a letter, where it closes nothing (`*a *b`). The spaces go just
+ * outside the italics (`*a* b`): Markdown cannot hold them inside, so this is
+ * the edit's nearest form, which the editor takes in place of its own
+ * (prepareFluidTransaction). Where punctuation, not a space, is beside the
+ * letter (`*"*b`), the letter is written as a numeric reference, which the
+ * parser reads as punctuation and the note shows as the same letter
+ * (`*"*&#98;`), so the source keeps exactly the text and formatting shown.
  */
 function flanked(
   text: string,
@@ -977,7 +980,7 @@ function flanked(
     run.underscore ||= delimiter.text.includes("_");
   }
   let changed = false;
-  // Right to left, so a reference written after a run never moves one before it.
+  // Right to left, so a reference written or a space moved after a run never moves one before it.
   for (const run of runs.reverse()) {
     const before = () => Array.from(out.slice(Math.max(0, run.from - 2), run.from)).at(-1);
     const after = () => Array.from(out.slice(run.to, run.to + 2))[0];
@@ -995,8 +998,25 @@ function flanked(
       run.to += reference.length - char.length;
     };
     if (flanks(before(), after(), run)) continue;
-    // A space or tab where the run may not have one: written as a reference,
-    // it reads as punctuation.
+    // Spaces or tabs just inside a run that only closes, or only opens, go
+    // just outside it, out of the formatting.
+    if (run.closes !== run.opens) {
+      let from = run.from,
+        to = run.to;
+      if (run.closes) while (from > 0 && /[ \t]/.test(out[from - 1])) from--;
+      else while (to < out.length && /[ \t]/.test(out[to])) to++;
+      const spaces = out.slice(from, run.from) + out.slice(run.to, to);
+      if (spaces) {
+        const delimiter = out.slice(run.from, run.to);
+        out = out.slice(0, from) + (run.closes ? delimiter + spaces : spaces + delimiter) + out.slice(to);
+        run.from = run.closes ? from : from + spaces.length;
+        run.to = run.from + delimiter.length;
+        changed = true;
+      }
+      if (flanks(before(), after(), run)) continue;
+    }
+    // A space or tab where a run that closes and opens may not have one:
+    // written as a reference, it reads as punctuation.
     if (run.closes && /^[ \t]$/.test(before() ?? "")) encode("before");
     if (run.opens && /^[ \t]$/.test(after() ?? "")) encode("after");
     if (flanks(before(), after(), run)) continue;
