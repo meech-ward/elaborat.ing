@@ -143,17 +143,6 @@ whose layouts start less than 10 s apart run two engines at once (about 920 MB
 at the peak), as when an agent writes two diagrams back to back. That can be
 too much for a phone. Share one engine between cards, or queue their layouts.
 
-## T42: the card's messages to the model don't replace each other
-
-**Status:** Ready
-
-The card tells the model things with `ui/update-model-context`
-(`host.tellModel` in `src/chat-card/bridge.ts`): a save made in the card, a
-component preview that failed, and each diagram it couldn't draw. Each call
-replaces the card's previous context, as the spec says, so a save's message
-and the diagram messages replace each other; only the diagram messages repeat
-one another. Keep one context that holds all of them.
-
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it
@@ -247,6 +236,7 @@ matters.
 - T32: a stale message from the rendered frame never shows as a render error (branch claude/t32-stale-frame)
 - T33: a new file asks for its name, and an unsaved new note can be renamed (#32)
 - T36: show_file keeps a note's component files under the size cap (by the maintainer)
+- T42: the card's messages to the model don't replace each other (by the maintainer)
 
 After T33 the work was tracked elsewhere until the queue came back here in
 October 2026; `git log` describes each change by its outcome.

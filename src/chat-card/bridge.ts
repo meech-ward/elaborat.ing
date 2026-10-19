@@ -40,8 +40,13 @@ export type HostBridge = {
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Opens an http(s) or mailto link, resolved against `base`, through the host. */
   openLink(href: string, base: string): void
-  /** Gives the model context for its next turn, without starting one. */
-  tellModel(text: string): void
+  /**
+   * Gives the model context for its next turn, without starting one. A host
+   * keeps only the latest context the card gives it, so the card keeps one:
+   * the latest `text` on each `topic` (a save, a preview, each diagram), in
+   * the order the topics first came, all of it sent each time.
+   */
+  tellModel(topic: string, text: string): void
   /** Whether the host can show the card full screen. */
   canFullscreen(): boolean
   /** Asks the host to show the card inline or full screen; the host may say no. */
@@ -243,6 +248,8 @@ export function connectHost(appVersion: string): HostBridge {
   const partials = partialRelay((args) => emit({ type: "tool-input-partial", args }))
   // Every partial input the host sent, before they are passed on at most once a frame.
   const sent = { count: 0, firstMs: null as number | null }
+  // The card's one context for the model, by topic.
+  const context = new Map<string, string>()
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return
@@ -327,8 +334,10 @@ export function connectHost(appVersion: string): HostBridge {
       if (capabilities.openLinks) request("ui/open-link", { url: url.href }).catch(fallback)
       else fallback()
     },
-    tellModel(text) {
-      request("ui/update-model-context", { content: [{ type: "text", text }] }).catch(() => {})
+    tellModel(topic, text) {
+      if (context.get(topic) === text) return
+      context.set(topic, text)
+      request("ui/update-model-context", { content: [{ type: "text", text: [...context.values()].join("\n") }] }).catch(() => {})
     },
     canFullscreen: () => hostModes.includes("fullscreen") || typeof openai()?.requestDisplayMode === "function",
     requestDisplayMode(mode) {

@@ -42,23 +42,22 @@ const started = new Map<string, Promise<void>>()
 let settled: ReadonlyMap<string, string | null> = new Map()
 const listeners = new Set<() => void>()
 
-/** What the model hears about each diagram the card could not draw, by path, and who tells it. */
-const notes = new Map<string, string>()
-const tellers = new Set<(text: string) => void>()
+/** Who tells the model about each diagram the card could not draw. */
+const tellers = new Set<(path: string, text: string) => void>()
 
 /**
- * Calls `tell` once for each diagram the card could not draw, with what the
- * model should hear about it and each one before it: a host keeps only the
- * latest context the card gives it.
+ * Calls `tell` once for each diagram the card could not draw, with its path
+ * and what the model should hear about it, which takes the place of what it
+ * heard about that diagram before.
  */
-export function onNotDrawn(tell: (text: string) => void): () => void {
+export function onNotDrawn(tell: (path: string, text: string) => void): () => void {
   tellers.add(tell)
   return () => {
     tellers.delete(tell)
   }
 }
 
-/** Tells the model why the diagram at `path` could not be drawn, unless it heard the same already. */
+/** Tells the model why the diagram at `path` could not be drawn. */
 function tellNotDrawn(path: string, sent: DiagramSource, { problem, message }: NotDrawn) {
   console.warn(`${path} could not be drawn here.`, message)
   const card = `The elaborat.ing card could not draw the diagram ${path}`
@@ -69,10 +68,7 @@ function tellNotDrawn(path: string, sent: DiagramSource, { problem, message }: N
       : problem === "engine"
         ? `${card}: this chat does not let it run D2's engine. The user sees ${sees}. If they want to see it in the chat, offer to make it as an Excalidraw drawing with create_and_show and a .excalidraw path.`
         : `${card}. ${message}`
-  if (notes.get(path) === note) return
-  notes.set(path, note)
-  const text = [...notes.values()].join("\n")
-  for (const tell of tellers) tell(text)
+  for (const tell of tellers) tell(path, note)
 }
 
 function draw(path: string, sent: DiagramSource): Promise<void> {

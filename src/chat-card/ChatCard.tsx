@@ -313,7 +313,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
   }, [host, feed])
 
   // The model hears, on its next turn, why the card could not draw a diagram.
-  useEffect(() => onNotDrawn((text) => host.tellModel(text)), [host])
+  useEffect(() => onNotDrawn((path, text) => host.tellModel(`diagram ${path}`, text)), [host])
 
   const shown = state.phase === "shown" ? state : null
   // The file with the drawings and diagrams that did not fit in its result, as they load,
@@ -340,7 +340,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
             onOutcome={(next) => {
               setPreviewed({ file: previewFile, outcome: next })
               const note = previewFile.kind === "component" ? previewNote(previewFile.path, next) : null
-              if (note) host.tellModel(note)
+              if (note) host.tellModel("preview", note)
             }}
             onLink={(href, spot) => {
               const url = linkUrl(href, previewFile.url ?? APP_ORIGIN)
@@ -406,7 +406,7 @@ export function ChatCard({ host }: { host: HostBridge }) {
       if (outcome.kind === "failed") throw new Error(outcome.message)
       if (outcome.kind === "conflict") return dispatch({ type: "conflict" })
       attempt.current = null
-      host.tellModel(modelNote(file.path, outcome.version))
+      host.tellModel("save", modelNote(file.path, outcome.version))
       await reload(file, outcome.version)
     } catch (error) {
       dispatch({ type: "save-failed", message: error instanceof Error ? error.message : "" })

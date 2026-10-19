@@ -895,8 +895,10 @@ The production server's tools are unchanged.
   diagram that surely lays out fails too), that the chat does not let the
   card run D2's engine, what the user sees instead, and that it can offer to
   make it as an Excalidraw drawing with `create_and_show`. A host keeps only
-  the latest context a view gives it, so each one repeats the diagrams told
-  before it.
+  the latest context a view gives it, so the card keeps one context with all
+  it has to tell the model (a save made in it, a component preview that
+  failed, each diagram it could not draw), the latest on each, and sends all
+  of it each time (`tellModel` in `src/chat-card/bridge.ts`).
 - **Notes are edited in the card.** Where the host lets views call tools, a
   note's card has Edit: it runs the app's own rendered editor
   (`FluidEditor` and `prepareFluidTransaction`, so each edit is an exact

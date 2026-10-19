@@ -623,6 +623,30 @@ test("where the host's policy does not let D2's engine run, a new diagram says t
   expect(await violations(page)).toEqual(["worker-src blob"])
 })
 
+test("the model hears all the card has told it in one context: a diagram the card could not draw, a save, then another diagram", async ({ page }) => {
+  // The view's declared policy does not let D2's engine run.
+  const card = await openHost(page, { tools: true, theme: "light", result: noteShown({ [SIGN_IN]: SIGN_IN_D2 }) })
+  const sees = "only a link to open it in elaborat.ing"
+  await expect.poll(() => contexts(page)).toEqual([engineNote(SIGN_IN, sees)])
+  await card.getByRole("button", { name: "Edit" }).click()
+  await card.locator(".ProseMirror").getByText("How someone signs in.").click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" Then the audit log.")
+  // Saved, the note comes back with a second new diagram.
+  const saved = noteShown({ [SIGN_IN]: SIGN_IN_D2, "flows/audit.d2": "audit: Audit log\n" })
+  await answer(page, "write_file", { content: [{ type: "text", text: "{}" }], structuredContent: { status: "saved", changes: [{ op: "put", path: "notes/sign-in.mdx", version: 2 }] } })
+  await answer(page, "show_file", { ...saved, structuredContent: { ...saved.structuredContent, version: 2 } })
+  await card.getByRole("button", { name: "Save" }).click()
+  await expect(card.getByText("Saved as v2.")).toBeVisible()
+  // A host keeps only the latest context the card gives it: the save keeps the diagram before it, and the diagram after it keeps the save.
+  const save = "The user edited notes/sign-in.mdx in the elaborat.ing card and saved it as version 2. Read it again before changing it."
+  await expect.poll(() => contexts(page)).toEqual([
+    engineNote(SIGN_IN, sees),
+    `${engineNote(SIGN_IN, sees)}\n${save}`,
+    `${engineNote(SIGN_IN, sees)}\n${save}\n${engineNote("flows/audit.d2", sees)}`,
+  ])
+})
+
 test("D2's engine loads only for a card with a diagram to draw", async ({ page }) => {
   test.setTimeout(60_000)
   // A diagram the app has drawn, and a drawing: there is nothing for the card to draw.
