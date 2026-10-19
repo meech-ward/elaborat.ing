@@ -8,8 +8,9 @@
  * structuredContent, since a host may leave `_meta` out of the result of a
  * call the card makes. Until then its embed says it is loading. A call that
  * fails, or that the host has not answered in 20 s, and a host that does not
- * let the card call tools, leave its link. A newer file for the card stops
- * the calls.
+ * let the card call tools, leave its link. Once the host has not answered
+ * one, the rest leave theirs at once, with no more calls. A newer file for
+ * the card stops the calls.
  */
 import { useEffect, useMemo, useState } from "react"
 import type { HostBridge } from "./bridge"
@@ -26,11 +27,14 @@ const NONE: Loaded = new Map()
 /** The paths of `file`'s deferred embeds, each once, in the note's order. */
 const deferredPaths = (file: CardFile): string[] => [...new Set(file.embeds.flatMap((embed) => (embed?.status === "deferred" ? [embed.path] : [])))]
 
-/** What `promise` settles to, or a failure once `ms` pass without it. */
-function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+/** What `within` settles to when no answer came in time. */
+const NO_ANSWER = Symbol("no answer")
+
+/** What `promise` settles to, or NO_ANSWER once `ms` pass without it. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | typeof NO_ANSWER> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("No answer in time")), ms)
+  const late = new Promise<typeof NO_ANSWER>((resolve) => {
+    timer = setTimeout(() => resolve(NO_ANSWER), ms)
   })
   return Promise.race([promise, late]).finally(() => clearTimeout(timer))
 }
@@ -63,15 +67,24 @@ export function useLoadedFile(file: CardFile | null, host: HostBridge | null): C
     if (!file || !host) return
     let stopped = false
     void (async () => {
-      for (const path of deferredPaths(file)) {
-        let got: LoadedEmbed | null = null
+      const paths = deferredPaths(file)
+      for (const [index, path] of paths.entries()) {
+        let answer: unknown = null
         try {
-          got = parseEmbedResult(await within(host.callTool("card_embed", { project_id: file.projectId, path }), LOAD_TIMEOUT_MS), path)
+          answer = await within(host.callTool("card_embed", { project_id: file.projectId, path }), LOAD_TIMEOUT_MS)
         } catch {
-          // Refused, failed or not answered in time: the link stays.
+          // Refused or failed: the link stays.
         }
         if (stopped) return
-        setLoaded((current) => ({ file, got: new Map(current?.file === file ? current.got : NONE).set(path, got) }))
+        // Not answered in time: the host stopped answering, so this link and the rest stay at once, with no more calls.
+        const silent = answer === NO_ANSWER
+        const got = silent ? null : parseEmbedResult(answer, path)
+        setLoaded((current) => {
+          const next = new Map(current?.file === file ? current.got : NONE)
+          for (const each of silent ? paths.slice(index) : [path]) next.set(each, got)
+          return { file, got: next }
+        })
+        if (silent) return
       }
     })()
     return () => {

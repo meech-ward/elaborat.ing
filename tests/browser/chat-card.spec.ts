@@ -454,21 +454,20 @@ test("a drawing that did not fit in the result is loaded with card_embed and dra
   expect(await calls(page)).toEqual([])
 })
 
-test("a drawing that did not fit in the result keeps its link once the host has not answered the card's call for 20 s", async ({ page }) => {
+test("drawings that did not fit in the result all keep their links once the host has not answered the card's first call for 20 s", async ({ page }) => {
   await page.clock.install()
   const card = await openHost(page, { tools: true, theme: "light", result: DEFERRED_NOTE, silent: true })
   const [later, gone] = [LATER, GONE].map((path) => card.getByRole("figure").filter({ hasText: path }))
   await expect(later).toContainText("Loading it")
+  await expect(gone).toContainText("Loading it")
   await page.clock.fastForward(15_000)
   await expect(later).toContainText("Loading it")
   await page.clock.fastForward(5_000)
+  // The host stopped answering: the next one shows its link at once, with no call that would wait 20 s more.
   await expect(later).toContainText(NOT_LOADED)
-  // Then the next one's call, which waits 20 s of its own.
-  await expect(gone).toContainText("Loading it")
-  await page.clock.fastForward(20_000)
   await expect(gone).toContainText(NOT_LOADED)
   await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
-  expect((await calls(page)).map((call) => call.arguments.path)).toEqual([LATER, GONE])
+  expect((await calls(page)).map((call) => call.arguments.path)).toEqual([LATER])
 })
 
 // D2 diagrams the app has not drawn from their source yet: a new one, with no

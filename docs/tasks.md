@@ -89,17 +89,6 @@ to 1.8 s with ELK (about 150 MB), so a small container service would do, at
 some cost. Done when this is decided, and, if built, `show_file` sends a
 server-drawn SVG for a diagram the app hasn't drawn yet.
 
-## T37: stop loading deferred drawings once the host stops answering
-
-**Status:** Ready
-
-The chat card loads the drawings that didn't fit in a result with
-`card_embed`, one at a time, giving each call 20 s
-(`src/chat-card/cardDeferred.ts`). A host that never answers shows the last
-link only after 20 s for each drawing. After the first call times out, show
-the rest of the links at once. The chat-card stand-in host's `silent` option
-and Playwright's clock cover it.
-
 ## T38: panel_pass works where a host drops _meta from the view's own calls
 
 **Status:** Waiting (T34's answer on `_meta`)
@@ -199,6 +188,11 @@ matters.
 - Switching a note from Source or Rendered to Split doesn't carry the caret
   or the text at the top to the pane that appears, as switching between
   Source and Rendered does (WorkspaceSession's `showMode`).
+- A note whose component files pass the app's 2 MiB in all is sent only the
+  ones read before the limit (`componentSources` in
+  `supabase/functions/mcp-server/tools/componentSources.ts`); where those fit
+  in the chat card, its preview says the next file is missing, not that the
+  files pass 2 MiB.
 
 ## Done
 
@@ -236,6 +230,7 @@ matters.
 - T32: a stale message from the rendered frame never shows as a render error (branch claude/t32-stale-frame)
 - T33: a new file asks for its name, and an unsaved new note can be renamed (#32)
 - T36: show_file keeps a note's component files under the size cap (by the maintainer)
+- T37: stop loading deferred drawings once the host stops answering (by the maintainer)
 - T42: the card's messages to the model don't replace each other (by the maintainer)
 
 After T33 the work was tracked elsewhere until the queue came back here in

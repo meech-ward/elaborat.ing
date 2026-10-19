@@ -846,7 +846,8 @@ The production server's tools are unchanged.
   the user and with the same limits and errors, and sends its SVG, or what
   the card draws a diagram from, in `structuredContent`, since a host may
   leave `_meta` out of the result of a call the view makes. A call that
-  fails, or that the host has not answered in 20 s, leaves the link. 3,000
+  fails, or that the host has not answered in 20 s, leaves the link, and
+  once the host has not answered one, the rest leave theirs at once. 3,000
   elements per scene. The view is on its own tool, not on `read_file`, so
   agents can read files without filling the chat with views.
 - **Decision: the card draws a D2 diagram the app has not drawn from its
