@@ -10,7 +10,7 @@ import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
 import type { WriteIn } from "@/features/document/writeIn";
 import { LazyRenderedEditor, preloadRenderedEditor } from "./LazyRenderedEditor";
-import type { RenderedPatchOptions } from "../source/renderedHistory";
+import type { NotePlace, RenderedPatchOptions } from "../source/renderedHistory";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
 import type { ConflictChoice } from "@/features/project-storage/sync";
 import { ConflictBanner } from "./ConflictBanner";
@@ -170,11 +170,55 @@ export function WorkspaceSession({
     return () => { alive = false; };
   }, [client, initial.path, notAnEdit, openFile.baseRevision, readOnly, snapshot.dirty, snapshot.text]);
   const editorApi = useRef<SourceEditorApi | null>(null);
+  const renderedApi = useRef<RenderedEditorApi | null>(null);
   const [renderedPending, setRenderedPending] = useState(false);
   const renderedPendingRef = useRef(false);
   // Whatever waits for a rendered edit to finish (a duplicate), let go once it has.
   const editWaiters = useRef<Array<() => void>>([]);
   const pendingMode = useRef<Mode | null>(null);
+  // Switching between Source and Rendered keeps the person's place: the view
+  // shown takes the caret or selection from the other, or the text at its top
+  // (NotePlace). Source shows once Rendered has said where it is; Rendered
+  // shows Source's place once it has the note's current text.
+  const [renderedPlace, setRenderedPlace] = useState<NotePlace | null>(null);
+  const renderedPlaceShown = useCallback(() => setRenderedPlace(null), []);
+  const sourcePlace = useRef<NotePlace | null>(null);
+  const shownView = useRef(view);
+  useLayoutEffect(() => {
+    shownView.current = view;
+  }, [view]);
+  const placeAsked = useRef(0);
+  const showMode = useCallback((next: Mode) => {
+    const asked = ++placeAsked.current;
+    const from = shownView.current;
+    setRenderedPlace(from === "source" && next === "rendered" ? (editorApi.current?.place() ?? null) : null);
+    const show = (place: NotePlace | null) => {
+      sourcePlace.current = place;
+      setMode(next);
+      if (next !== "source") setRenderedEver(true);
+    };
+    const rendered = renderedApi.current;
+    if (from !== "rendered" || next !== "source" || !rendered) {
+      show(null);
+      return;
+    }
+    void rendered.place().then((place) => {
+      if (asked !== placeAsked.current) return;
+      // An edit begun meanwhile finishes first; the switch asks again then.
+      if (renderedPendingRef.current) {
+        pendingMode.current = next;
+        setNotice("Finishing edit…");
+        return;
+      }
+      show(place);
+    });
+  }, []);
+  // Source takes the place from Rendered once it shows.
+  useEffect(() => {
+    const place = sourcePlace.current;
+    sourcePlace.current = null;
+    if (place && view === "source") editorApi.current?.showPlace(place);
+  }, [view]);
   const handleRenderedPending = useCallback((pending: boolean) => {
     renderedPendingRef.current = pending;
     setRenderedPending(pending);
@@ -182,11 +226,10 @@ export function WorkspaceSession({
     if (!pending && pendingMode.current !== null) {
       const next = pendingMode.current;
       pendingMode.current = null;
-      setMode(next);
-      if (next !== 'source') setRenderedEver(true);
+      showMode(next);
       setNotice(current => current === 'Finishing edit…' ? null : current);
     }
-  }, []);
+  }, [showMode]);
   const savingRef = useRef(false);
   const pendingOperation = useRef(0);
   const frozen = useRef(false);
@@ -387,9 +430,8 @@ export function WorkspaceSession({
       return;
     }
     pendingMode.current = null;
-    setMode(next);
-    if (next !== "source") setRenderedEver(true);
-  }, [settle]);
+    showMode(next);
+  }, [settle, showMode]);
 
   // A note that asks again (a component file changed) stops its rendered
   // view, so an edit it had under way is let go.
@@ -403,7 +445,6 @@ export function WorkspaceSession({
   // The note's comments: the panel's file while it is on screen, and the
   // commented text both views mark. The panel shows a thread's text in the
   // views on screen; the source takes the keyboard, or the note on its own.
-  const renderedApi = useRef<RenderedEditorApi | null>(null);
   const noteComments = useNoteComments({
     path: initial.path,
     server,
@@ -922,6 +963,8 @@ export function WorkspaceSession({
                 writeIn={arrived}
                 onShown={embedded ? renderedShown : undefined}
                 onActivity={onActivity}
+                place={renderedPlace}
+                onPlaceShown={renderedPlaceShown}
                 apiRef={renderedApi}
               />
               )}

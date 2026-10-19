@@ -101,9 +101,11 @@ this repository once the steps before them have landed.
     unsaved edits first. Drawings and
     diagrams got their views in steps 13 and 14, and renaming and moving came
     with step 12. The rendered view keeps its place and focus across a Source
-    round trip, a touch scroll never focuses it while a tap does, one undo
-    history serves both views, and undoing back to the saved text clears
-    "Unsaved changes".
+    round trip, and switching between Source and Rendered carries the caret
+    or selection to the other view, in view and with the keyboard (with
+    neither, the text at the top). A touch scroll never focuses the rendered
+    view while a tap does, one undo history serves both views, and undoing
+    back to the saved text clears "Unsaved changes".
 11. **Custom MDX components load from project files (done).** A note imports
     named components from other MDX files with `workspace:` specifiers.
     Modules load from their saved copies and run only in the frame, and a

@@ -92,6 +92,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   const commentMarksRef = useRef<((marks: readonly CommentMark[], source: string) => void) | null>(null);
   // What a newer saved version added, writing in (sourceTypeIn.ts).
   const typingRef = useRef<SourceTypeIn | null>(null);
+  // Whether the person used the editor since it last showed, for its place
+  // when the view switches to Rendered (SourceEditorApi.place): its text took
+  // the keyboard, or they scrolled it (the wheel, a touch, the scroll bar).
+  const usedRef = useRef({ text: false, scroll: false });
   // When a key was last pressed in the editor (see TYPING_MS).
   const typedAtRef = useRef(-Infinity);
   // Latest callbacks without rebinding the mount-once editor. Assigned in
@@ -442,7 +446,16 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
       editor.onKeyDown(() => {
         typedAtRef.current = performance.now();
       }),
+      editor.onDidFocusEditorText(() => {
+        usedRef.current.text = true;
+      }),
     );
+    const scrolled = () => {
+      usedRef.current.scroll = true;
+    };
+    const scrolls = ["wheel", "touchstart", "pointerdown"] as const;
+    for (const type of scrolls) container.addEventListener(type, scrolled, { capture: true, passive: true });
+    disposables.push({ dispose: () => scrolls.forEach((type) => container.removeEventListener(type, scrolled, { capture: true })) });
 
     // The formatted text as one undo step of its own.
     const applyFormatted = (formatted: string) => {
@@ -551,6 +564,30 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
           editor.setPosition(range.getStartPosition());
           editor.focus();
         }
+      },
+      place() {
+        const selection = editor.getSelection();
+        if (usedRef.current.text && selection)
+          return { selection: { anchor: offsetAt(model, selection.getSelectionStart()), head: offsetAt(model, selection.getPosition()) } };
+        // The first line wholly in view.
+        const shown = editor.getVisibleRanges()[0];
+        return usedRef.current.scroll && shown ? { top: offsetAt(model, shown.getStartPosition()) } : null;
+      },
+      showPlace(place) {
+        // The editor may only now be coming out of hiding.
+        editor.layout();
+        if ("selection" in place) {
+          const selection = selectionAt(place.selection);
+          editor.setSelection(selection);
+          editor.revealRangeInCenterIfOutsideViewport(selection, monaco.editor.ScrollType.Immediate);
+          editor.focus();
+          usedRef.current.text = true;
+          return;
+        }
+        const at = positionAt(model, place.top);
+        const top = editor.getTopForPosition(at.lineNumber, at.column);
+        // The first line keeps the space above it.
+        editor.setScrollTop(top > editor.getTopForLineNumber(1) ? top : 0);
       },
     };
 
@@ -711,7 +748,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   // The component stays mounted in rendered mode (history preserved);
   // relayout when it becomes visible again.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      usedRef.current = { text: false, scroll: false };
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       editorRef.current?.layout();
     });

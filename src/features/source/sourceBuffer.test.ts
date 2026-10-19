@@ -115,14 +115,20 @@ describe("createSourceHandoff", () => {
       history: (direction) => (calls.push(direction), { text: "", selection: { anchor: 0, head: 0 } }),
       focus: () => void calls.push("focus"),
       revealRange: (from, to, focus) => void calls.push(`reveal ${from}-${to} ${focus}`),
+      place: () => ({ top: 1 }),
+      showPlace: (place) => void calls.push(`place ${JSON.stringify(place)}`),
     }
+    // Before it shows, nobody has a place in the editor, and one to show waits for it.
+    expect(h.api.place()).toBeNull()
+    h.api.showPlace({ selection: { anchor: 0, head: 1 } })
     h.api.revealRange(0, 1, true)
     h.attach(editor)
     expect(h.attached()).toBe(true)
+    expect(h.api.place()).toEqual({ top: 1 })
     h.api.applyExternalPatches([insert(1, "c")])
     h.api.history("redo")
     h.api.focus()
-    expect(calls).toEqual(["reveal 0-1 true", "patch", "redo", "focus"])
+    expect(calls).toEqual(['place {"selection":{"anchor":0,"head":1}}', "reveal 0-1 true", "patch", "redo", "focus"])
     expect(h.buffer.getValue()).toBe("a")
     h.detach()
     expect(h.attached()).toBe(false)

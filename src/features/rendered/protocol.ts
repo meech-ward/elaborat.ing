@@ -393,6 +393,21 @@ export const parentMessageSchema = z.union([
     to: whole,
     focus: z.boolean(),
   }),
+  // The view is switching to Source: say where the person is (`place`).
+  z.strictObject({
+    kind: z.literal("place-request"),
+    session: z.string().check(z.minLength(8)),
+  }),
+  // Where the person was in Source, as document positions of this revision:
+  // select `selection` and take the keyboard, or bring the text at `top` to
+  // the top of the frame.
+  z.strictObject({
+    kind: z.literal("place-show"),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    selection: z.optional(z.strictObject({ anchor: whole, head: whole })),
+    top: z.optional(whole),
+  }),
 ]);
 
 export type ParentMessage = z.infer<typeof parentMessageSchema>;
@@ -582,6 +597,17 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     from: whole,
     to: whole,
   }),
+  // The answer to `place-request`: the caret or selection, once the person
+  // has put one in the note's text, and the position of the text at the top
+  // of the frame. Positions are proposals: the parent maps them through its
+  // own projection.
+  z.strictObject({
+    kind: z.literal("place"),
+    session: z.string().check(z.minLength(1)),
+    revision: whole,
+    selection: z.nullable(z.strictObject({ anchor: whole, head: whole })),
+    top: z.nullable(whole),
+  }),
   z.object({
     kind: z.literal("render-error"),
     session: z.string().check(z.minLength(1)),
@@ -687,6 +713,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "comment-shortcut":
     case "comment-markers":
     case "open-link":
+    case "place":
       return "drop";
     case "edit-rejected":
       return "refusal";

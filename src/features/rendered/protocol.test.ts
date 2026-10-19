@@ -215,6 +215,7 @@ describe('staleChildMessage', () => {
       'comment-markers': 'drop',
       'open-link': 'drop',
       'comment-shortcut': 'drop',
+      place: 'drop',
       'edit-rejected': 'refusal',
       'fluid-transaction': 'lost-edit',
       'fluid-history': 'lost-edit',

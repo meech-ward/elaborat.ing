@@ -767,6 +767,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         if (follow) revealWrittenIn(editor, $start.parent.isTextblock ? $start.before() : start);
         typing = typeIn(editor.view, start, keepWritingInView);
       }
+      showPlace();
       return;
     }
     // The JSX runtime stays in evaluation scope; document components arrive
@@ -894,6 +895,15 @@ function onParentMessage(event: MessageEvent): void {
   if (message.kind === "comment-reveal") {
     // Ranges are for the revision on screen; one for another is dropped.
     if (fluidEditor?.shownRevision === message.revision) fluidEditor.revealCommentRange(message.from, message.to, message.focus);
+    return;
+  }
+  if (message.kind === "place-request") {
+    answerPlace();
+    return;
+  }
+  if (message.kind === "place-show") {
+    placeToShow = message;
+    showPlace();
     return;
   }
   if (message.kind === "resources") {
@@ -1054,6 +1064,74 @@ function keepWritingInView(at: Element): void {
   const box = at.getBoundingClientRect();
   const below = Math.min(box.bottom + FOLLOW_MARGIN - scroller.clientHeight, box.top - FOLLOW_MARGIN);
   if (below > 0) followTo(scroller.scrollTop + below);
+}
+
+/**
+ * The person's place, as the app switches between Source and the note
+ * (WorkspaceSession). Asked (`place-request`), the frame says where the caret
+ * or selection is, once the person has put one in the note's text (the text
+ * took the keyboard, or Source gave it one), and which text is at the top.
+ * Given one from Source (`place-show`), it selects it and takes the keyboard,
+ * or brings the text at `top` to the top (with room above it), once it shows
+ * that revision and is laid out again (hidden, the note has no layout: see the
+ * reading position above). The person's own press or key before then wins.
+ */
+let placed = false;
+let placeToShow: { revision: number; selection?: { anchor: number; head: number }; top?: number } | null = null;
+document.addEventListener("focusin", (event) => {
+  if (fluidEditor && event.target === fluidEditor.view.dom) placed = true;
+});
+for (const type of ["pointerdown", "keydown"])
+  window.addEventListener(type, () => {
+    placeToShow = null;
+  }, { capture: true, passive: true });
+
+function answerPlace(): void {
+  placeToShow = null;
+  const editor = fluidEditor;
+  if (!activeSession) return;
+  if (!editor) {
+    postToParent({ kind: "place", session: activeSession, revision: activeRevision, selection: null, top: null });
+    return;
+  }
+  const { view } = editor;
+  const box = view.dom.getBoundingClientRect();
+  const top = box.height > 0 ? (view.posAtCoords({ left: box.left + box.width / 2, top: Math.max(box.top, 0) + 1 })?.pos ?? null) : null;
+  const { anchor, head } = view.state.selection;
+  postToParent({ kind: "place", session: activeSession, revision: editor.shownRevision, selection: placed ? { anchor, head } : null, top });
+}
+
+function showPlace(): void {
+  const place = placeToShow;
+  const editor = fluidEditor;
+  const scroller = document.scrollingElement;
+  if (!place || !editor || !scroller || editor.shownRevision !== place.revision) return;
+  const { view } = editor;
+  if (view.dom.getBoundingClientRect().height === 0) return;
+  placeToShow = null;
+  const size = view.state.doc.content.size;
+  const at = (pos: number) => view.state.doc.resolve(Math.min(pos, size));
+  if (place.selection) {
+    const selection = TextSelection.between(at(place.selection.anchor), at(place.selection.head));
+    view.dispatch(view.state.tr.setSelection(selection));
+    view.focus();
+    placed = true;
+    // Its middle in the middle, when it is out of view.
+    const caret = view.coordsAtPos(selection.head);
+    const height = scroller.clientHeight;
+    if (caret.top < 0 || caret.bottom > height) scroller.scrollTop += (caret.top + caret.bottom - height) / 2;
+  } else if (place.top !== undefined) {
+    placed = false;
+    scroller.scrollTop += view.coordsAtPos(Math.min(place.top, size)).top - FOLLOW_MARGIN;
+  }
+  // The reading position to keep is this one now.
+  savedReadingTop = { revision: activeRevision, top: scroller.scrollTop };
+}
+window.addEventListener("resize", showPlace);
+if (typeof IntersectionObserver !== "undefined" && document.documentElement) {
+  new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) showPlace();
+  }).observe(document.documentElement);
 }
 
 /**

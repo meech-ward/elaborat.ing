@@ -1,7 +1,7 @@
 import type { SourcePatch } from "@/features/document";
 import { formatMarkdown } from "./formatMarkdown";
 import { createModelDocumentSync, type TextModelLike } from "./modelSync";
-import type { RenderedPatchOptions, SourceHistoryResult, SourceSelection } from "./renderedHistory";
+import type { NotePlace, RenderedPatchOptions, SourceHistoryResult, SourceSelection } from "./renderedHistory";
 
 /**
  * The code editor (Monaco) loads when Source, Split or Code first shows. Until
@@ -124,6 +124,14 @@ export type SourceEditorApi = {
   focus(): void;
   /** Scroll source[from, to) into view and flash it; `focus` puts the cursor at its start. */
   revealRange(from: number, to: number, focus: boolean): void;
+  /**
+   * Where the person is, if they used the editor since it last showed: its
+   * selection once its text took the keyboard, else the line at the top once
+   * they scrolled it. Null when they did neither.
+   */
+  place(): NotePlace | null;
+  /** Show a place from Rendered: select it, scroll it into view and take the keyboard, or bring `top`'s line to the top. */
+  showPlace(place: NotePlace): void;
 };
 
 /**
@@ -154,6 +162,7 @@ export function createSourceHandoff(text: string, docId: number): SourceHandoff 
   // Asked for before the editor showed: done when it attaches.
   let pendingFocus = false;
   let pendingReveal: { from: number; to: number; focus: boolean } | null = null;
+  let pendingPlace: NotePlace | null = null;
   return {
     connect(next) {
       parent = next;
@@ -163,8 +172,10 @@ export function createSourceHandoff(text: string, docId: number): SourceHandoff 
     attached: () => editor !== null,
     attach(next) {
       editor = next;
+      if (pendingPlace) next.showPlace(pendingPlace);
       if (pendingReveal) next.revealRange(pendingReveal.from, pendingReveal.to, pendingReveal.focus);
       else if (pendingFocus) next.focus();
+      pendingPlace = null;
       pendingReveal = null;
       pendingFocus = false;
     },
@@ -197,6 +208,12 @@ export function createSourceHandoff(text: string, docId: number): SourceHandoff 
       revealRange(from, to, focus) {
         if (editor) editor.revealRange(from, to, focus);
         else pendingReveal = { from, to, focus };
+      },
+      // The person has not used an editor that has not shown.
+      place: () => editor?.place() ?? null,
+      showPlace(place) {
+        if (editor) editor.showPlace(place);
+        else pendingPlace = place;
       },
     },
   };

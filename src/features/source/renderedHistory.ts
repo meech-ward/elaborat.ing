@@ -6,6 +6,12 @@ export type RenderedPatchOptions = {
   after?: SourceSelection;
 };
 export type SourceHistoryResult = { text: string; selection: SourceSelection };
+/**
+ * Where the person is in a note, carried between Source and Rendered when the
+ * view switches: what they selected (a caret when anchor = head), or, with
+ * nothing selected, the text at the top of the view. Source offsets.
+ */
+export type NotePlace = { selection: SourceSelection } | { top: number };
 
 /** A text replacement can remove paragraph boundaries, but is still one
  * typing burst. Enter/join and explicit mark commands are separate actions. */

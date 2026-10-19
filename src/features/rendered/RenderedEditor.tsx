@@ -61,6 +61,7 @@ import {
   type FluidProjection,
 } from "./fluidProjection";
 import type {
+  NotePlace,
   RenderedPatchOptions,
   SourceHistoryResult,
 } from "../source/renderedHistory";
@@ -164,6 +165,13 @@ export type RenderedEditorProps = {
   onShown?: () => void;
   /** The person used the frame: a key, a press or the wheel there, which the page around it cannot see. */
   onActivity?: () => void;
+  /**
+   * Where the person was in Source when the view switched here: shown once
+   * the note shows its current text (selected, in view and with the
+   * keyboard, or its text at the top), and then `onPlaceShown` is called.
+   */
+  place?: NotePlace | null;
+  onPlaceShown?: () => void;
   apiRef?: React.RefObject<RenderedEditorApi | null>;
 };
 
@@ -189,7 +197,39 @@ export type RenderedComments = {
 export type RenderedEditorApi = {
   /** Scroll the rendered text of source[from, to) into view and flash it; `focus` moves the keyboard to its start. */
   revealRange(from: number, to: number, focus: boolean): void;
+  /**
+   * Where the person is, as the frame says when asked: the caret or
+   * selection once they have put one in the note's text, else the text at
+   * the top. Null when the frame cannot say in time.
+   */
+  place(): Promise<NotePlace | null>;
 };
+
+/** How long `place` waits for the frame's answer. */
+const PLACE_WAIT_MS = 250;
+
+/** The frame's answer to a place request, in document positions. */
+type FramePlace = { selection: { anchor: number; head: number } | null; top: number | null };
+
+/** The source place for the frame's answer, through the parent's own projection. */
+function sourcePlace(projection: Pick<FluidProjection, "mapping">, found: FramePlace): NotePlace | null {
+  if (found.selection) {
+    const { anchor, head } = found.selection;
+    const range =
+      sourceRangeForFluid(projection, Math.min(anchor, head), Math.max(anchor, head)) ?? sourceRangeForFluid(projection, head, head);
+    if (range) return { selection: anchor <= head ? { anchor: range.from, head: range.to } : { anchor: range.to, head: range.from } };
+  }
+  const top = found.top === null ? null : sourceRangeForFluid(projection, found.top, found.top);
+  return top ? { top: top.from } : null;
+}
+
+/** The document selection for a source selection: its rendered text, or the caret nearest its head. */
+function fluidSelectionFor(projection: FluidProjection, { anchor, head }: { anchor: number; head: number }) {
+  const range = anchor === head ? null : fluidRangeForSource(projection, Math.min(anchor, head), Math.max(anchor, head));
+  if (range) return anchor < head ? { anchor: range.from, head: range.to } : { anchor: range.to, head: range.from };
+  const caret = fluidPositionForSourceOffset(projection, head);
+  return caret === null ? null : { anchor: caret, head: caret };
+}
 
 /** A comment action floating over the frame, at a place in the editor's box. */
 type CommentAction = { top: number; left: number; request: NoteCommentRequest; source: string };
@@ -272,6 +312,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     writeIn = null,
     onShown,
     onActivity,
+    place = null,
+    onPlaceShown,
     apiRef,
   } = props;
   const pendingOwners = useRef({ fluid: false, draft: false });
@@ -682,6 +724,24 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     portRef.current?.postMessage(message);
   }, [commentReports, commentMarks, commentSource, exposed, readyTick, session]);
 
+  // Where the person was in Source (`place`): sent after the render of the
+  // note's current text, and shown by the frame once it shows it.
+  useEffect(() => {
+    const port = portRef.current;
+    const frame = frameRef.current;
+    if (!place || !active || !exposed || !port || !frame || exposed.identity !== documentId || exposed.text !== document.text) return;
+    const selection = "selection" in place ? fluidSelectionFor(exposed, place.selection) : null;
+    const top = "top" in place ? fluidPositionForSourceOffset(exposed, place.top) : null;
+    if (selection) {
+      // The frame can take the keyboard only once the page gives it to the frame.
+      frame.focus();
+      port.postMessage({ kind: "place-show", session, revision: exposed.revision, selection });
+    } else if (top !== null) port.postMessage({ kind: "place-show", session, revision: exposed.revision, top });
+    onPlaceShown?.();
+  }, [active, document.text, documentId, exposed, onPlaceShown, place, readyTick, session]);
+
+  // The frame's answer to the place request being waited for.
+  const placeAnswer = useRef<((found: FramePlace | null) => void) | null>(null);
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
@@ -694,6 +754,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         // The frame can take the keyboard only once the page gives it to the frame.
         if (focus) frame.focus();
         port.postMessage({ kind: "comment-reveal", session, revision: current.revision, from: range.from, to: range.to, focus });
+      },
+      place() {
+        const port = portRef.current;
+        if (!port || !authority.current) return Promise.resolve(null);
+        placeAnswer.current?.(null);
+        return new Promise((resolve) => {
+          const answer = (found: FramePlace | null) => {
+            window.clearTimeout(timer);
+            if (placeAnswer.current === answer) placeAnswer.current = null;
+            // A checked answer is about the revision on screen, as the projection is.
+            const current = authority.current;
+            resolve(found && current ? sourcePlace(current, found) : null);
+          };
+          const timer = window.setTimeout(() => answer(null), PLACE_WAIT_MS);
+          placeAnswer.current = answer;
+          port.postMessage({ kind: "place-request", session });
+        });
       },
     };
     return () => {
@@ -761,6 +838,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         // routine while the source changes under it: never a render error.
         if (parsed.success && parsed.data.session === session && stale) {
           const message = parsed.data;
+          // Where the person is in an older revision says nothing about this one.
+          if (message.kind === "place") placeAnswer.current?.(null);
           const outcome = staleChildMessage(message.kind);
           if (outcome === "status" && message.kind === "fluid-pending") onPendingChange?.(message.pending);
           if (outcome === "refusal" && message.kind === "edit-rejected") setEditNotice(message.message);
@@ -799,6 +878,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       }
       if (message.kind === "activity") {
         onActivity?.();
+        return;
+      }
+      if (message.kind === "place") {
+        placeAnswer.current?.(message);
         return;
       }
       if (message.kind === "shortcut") {

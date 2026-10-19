@@ -221,6 +221,9 @@ matters.
   transaction; source has changed." (the `onError` calls in
   `src/features/rendered/RenderedEditor.tsx`), not the plain "Edit not
   applied:" notice.
+- Switching a note from Source or Rendered to Split doesn't carry the caret
+  or the text at the top to the pane that appears, as switching between
+  Source and Rendered does (WorkspaceSession's `showMode`).
 
 ## Done
 
