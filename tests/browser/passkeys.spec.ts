@@ -70,8 +70,11 @@ test("a person adds a passkey in Settings, signs out, and signs back in with it"
   // No email: the authenticator offers the account's passkey, and Auth signs
   // in whoever it belongs to, then the page that asked for sign-in opens.
   await page.goto(new URL("sign-in?next=%2Fagents", APP).href)
+  // The sign-in page's code loads after the shell: check it once it shows.
+  const withPasskey = page.getByRole("button", { name: "Sign in with a passkey" })
+  await expect(withPasskey).toBeVisible()
   await noAxeViolations(page)
-  await page.getByRole("button", { name: "Sign in with a passkey" }).click()
+  await withPasskey.click()
   await expect(page).toHaveURL(new URL("agents", APP).href)
   await expect(page.getByRole("banner").getByRole("button", { name: `Signed in as ${person.email}` })).toBeVisible()
   expect(fake.passkeys[0].last_used_at).toBeDefined()
