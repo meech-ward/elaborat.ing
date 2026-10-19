@@ -195,6 +195,16 @@ matters.
 - If the first click into a note is reported more than 20 ms late,
   ProseMirror's check after focus writes the old selection back over it; the
   workaround catches up only when keys were pressed since focus.
+- In a note's Rendered view, bold or italics on a selection that ends in a
+  space before a letter (a double-clicked word, in some browsers) is refused:
+  the closing `**` or `*` would follow the space. The references a delete
+  writes there (`flanked` in `src/features/rendered/fluidProjection.ts`) are
+  tried only for typing and deletes.
+- A delete in a note's Rendered view that leaves italics ending in a space or
+  a quote right before a letter writes numeric references into the source
+  (`*a&#32;*&#98;`): exact, but hard to read in Source. `*a* b` reads better
+  but takes the space out of the italics, so the editor would have to take the
+  document the source makes in place of its own.
 
 ## Done
 

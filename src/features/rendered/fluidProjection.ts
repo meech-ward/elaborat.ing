@@ -702,6 +702,8 @@ function canonicalFrame(
   throw new Error("Unsupported inline mark");
 }
 type SyntaxFrame = Pick<Frame, "mark" | "open" | "close">;
+/** A delimiter `inlineSource` wrote: where in its output, and whether it opens a mark. */
+type Delimiter = { at: number; text: string; opens: boolean };
 function inlineSource(
   content: Fragment,
   format: DocumentFormat,
@@ -709,9 +711,14 @@ function inlineSource(
   end: SyntaxFrame[] = [],
   preserve?: FluidProjection,
   hint?: FluidSyntaxHint,
+  delimiters?: Delimiter[],
 ): string {
   let active = start,
     output = "";
+  const write = (text: string, opens: boolean) => {
+    delimiters?.push({ at: output.length, text, opens });
+    output += text;
+  };
   const transition = (next: SyntaxFrame[]) => {
     let shared = 0;
     while (
@@ -720,8 +727,8 @@ function inlineSource(
       active[shared].mark.eq(next[shared].mark)
     )
       shared++;
-    for (let i = active.length - 1; i >= shared; i--) output += active[i].close;
-    for (let i = shared; i < next.length; i++) output += next[i].open;
+    for (let i = active.length - 1; i >= shared; i--) write(active[i].close, false);
+    for (let i = shared; i < next.length; i++) write(next[i].open, true);
     active = [...active.slice(0, shared), ...next.slice(shared)];
   };
   content.forEach((node) => {
@@ -844,11 +851,13 @@ function inlinePatch(
   content: Fragment,
   split = false,
   hint?: FluidSyntaxHint,
+  flank = false,
 ): SourcePatch {
   assertUnprotected(projection, from, to);
   const start = endpoint(projection, from, "start", from !== to);
   const end = from === to ? start : endpoint(projection, to, "end", true);
   let insert: string;
+  const delimiters: Delimiter[] = [];
   if (split)
     insert =
       start.frames
@@ -866,8 +875,13 @@ function inlinePatch(
       end.frames,
       undefined,
       hint,
+      delimiters,
     );
-  if (start.leaf.pad && insert && !split) insert = start.leaf.pad + insert;
+  let lead = 0;
+  if (start.leaf.pad && insert && !split) {
+    insert = start.leaf.pad + insert;
+    lead = start.leaf.pad.length;
+  }
   const emptyRoot = projection.mapping.roots.find(
     (root) => root.pos + 1 === from && root.from === root.to,
   );
@@ -877,14 +891,121 @@ function inlinePatch(
     emptyRoot &&
     before !== "" &&
     !/(?:\r?\n){2}[ \t]*$/.test(before)
-  )
+  ) {
     insert = "\n\n" + insert;
-  return {
+    lead += 2;
+  }
+  const patch = {
     from: start.raw,
     to: end.raw,
     insert,
     expected: projection.text.slice(start.raw, end.raw),
   };
+  return flank
+    ? flanked(
+        projection.text,
+        patch,
+        delimiters.map((delimiter) => ({ ...delimiter, at: delimiter.at + lead })),
+      )
+    : patch;
+}
+
+/** How Markdown's parser sees a character next to `*`, `_` or `~` (micromark's classifyCharacter). */
+function flankClass(char: string | undefined): "space" | "punctuation" | "other" {
+  if (char === undefined || /\s/.test(char)) return "space";
+  return /\p{P}|\p{S}/u.test(char) ? "punctuation" : "other";
+}
+
+/**
+ * Whether a run of `*`, `_` or `~` between `before` and `after` can open
+ * (and close) what it should: CommonMark's flanking rules, as micromark's
+ * attention construct applies them. A closing `*` cannot follow a space, nor
+ * follow punctuation and come before a letter; `_` cannot open or close inside
+ * a word.
+ */
+function flanks(
+  before: string | undefined,
+  after: string | undefined,
+  run: { opens: boolean; closes: boolean; underscore: boolean },
+): boolean {
+  const left = flankClass(before),
+    right = flankClass(after);
+  const open = right === "other" || (right === "punctuation" && left !== "other");
+  const close = left === "other" || (left === "punctuation" && right !== "other");
+  const opens = run.underscore ? open && (left !== "other" || !close) : open;
+  const closes = run.underscore ? close && (right !== "other" || !open) : close;
+  return (!run.opens || opens) && (!run.closes || closes);
+}
+
+/**
+ * The patch with each emphasis, strong or strikethrough delimiter it writes
+ * placed where Markdown reads it as one. Deleting from the start of a word
+ * inside italics to plain text after them leaves the closing `*` between a
+ * space and a letter, where it closes nothing (`*a *b`). The characters
+ * beside such a delimiter are written as numeric references, which the parser
+ * reads as punctuation and the note shows as the same characters, so the
+ * source keeps exactly the text and formatting shown (`*a&#32;*&#98;`).
+ */
+function flanked(
+  text: string,
+  patch: SourcePatch,
+  delimiters: readonly Delimiter[],
+): SourcePatch {
+  let out = text.slice(0, patch.from) + patch.insert + text.slice(patch.to);
+  // Touching delimiters are one run to the parser.
+  const runs: { from: number; to: number; opens: boolean; closes: boolean; underscore: boolean }[] = [];
+  for (const delimiter of delimiters) {
+    if (!/^[*_~]+$/.test(delimiter.text)) continue;
+    const from = patch.from + delimiter.at,
+      to = from + delimiter.text.length,
+      last = runs.at(-1);
+    const run = last?.to === from ? last : { from, to, opens: false, closes: false, underscore: false };
+    if (run !== last) runs.push(run);
+    run.to = to;
+    run.opens ||= delimiter.opens;
+    run.closes ||= !delimiter.opens;
+    run.underscore ||= delimiter.text.includes("_");
+  }
+  let changed = false;
+  // Right to left, so a reference written after a run never moves one before it.
+  for (const run of runs.reverse()) {
+    const before = () => Array.from(out.slice(Math.max(0, run.from - 2), run.from)).at(-1);
+    const after = () => Array.from(out.slice(run.to, run.to + 2))[0];
+    const encode = (side: "before" | "after") => {
+      const char = side === "before" ? before() : after();
+      if (char === undefined) return;
+      const reference = `&#${char.codePointAt(0)};`;
+      changed = true;
+      if (side === "after") {
+        out = out.slice(0, run.to) + reference + out.slice(run.to + char.length);
+        return;
+      }
+      out = out.slice(0, run.from - char.length) + reference + out.slice(run.from);
+      run.from += reference.length - char.length;
+      run.to += reference.length - char.length;
+    };
+    if (flanks(before(), after(), run)) continue;
+    // A space or tab where the run may not have one: written as a reference,
+    // it reads as punctuation.
+    if (run.closes && /^[ \t]$/.test(before() ?? "")) encode("before");
+    if (run.opens && /^[ \t]$/.test(after() ?? "")) encode("after");
+    if (flanks(before(), after(), run)) continue;
+    // Punctuation on one side and a letter on the other (or letters on both
+    // sides of `_`): the letter as a reference, so both sides are punctuation.
+    if (run.closes && flankClass(after()) === "other") encode("after");
+    if (run.opens && flankClass(before()) === "other") encode("before");
+  }
+  if (!changed) return patch;
+  // The patch is the change from the text to the result.
+  let from = 0,
+    oldTo = text.length,
+    newTo = out.length;
+  while (from < oldTo && from < newTo && text[from] === out[from]) from++;
+  while (oldTo > from && newTo > from && text[oldTo - 1] === out[newTo - 1]) {
+    oldTo--;
+    newTo--;
+  }
+  return { from, to: oldTo, insert: out.slice(from, newTo), expected: text.slice(from, oldTo) };
 }
 
 /**
@@ -1370,18 +1491,22 @@ export async function prepareFluidTransaction(
     const attempts: Array<() => SourcePatch> = [];
     if (heading) attempts.push(() => heading);
     if (task) attempts.push(() => task);
+    // A delete or typing: inline content in place of a range.
+    const inline =
+      step instanceof ReplaceStep &&
+      step.slice.openStart === 0 &&
+      step.slice.openEnd === 0 &&
+      step.slice.content.content.every((node) => node.isInline)
+        ? step.slice.content
+        : null;
     if (step instanceof ReplaceStep) {
-      const inlineOnly =
-        step.slice.openStart === 0 &&
-        step.slice.openEnd === 0 &&
-        step.slice.content.content.every((node) => node.isInline);
       const split =
         parsed.from === parsed.to &&
         step.slice.openStart === 1 &&
         step.slice.openEnd === 1 &&
         step.slice.content.childCount === 2 &&
         !step.slice.content.textBetween(0, step.slice.content.size);
-      if (inlineOnly || split)
+      if (inline || split)
         attempts.push(() =>
           inlinePatch(
             candidate,
@@ -1405,6 +1530,11 @@ export async function prepareFluidTransaction(
       );
     }
     attempts.push(() => structuralPatch(candidate, result.doc!, hint));
+    // Last, a delete or typing that leaves a formatting delimiter where
+    // Markdown would not read it as one, with the characters beside it
+    // written as references (`flanked`).
+    if (inline)
+      attempts.push(() => inlinePatch(candidate, parsed.from, parsed.to, inline, false, hint, true));
     let accepted: FluidProjection | undefined, failure: unknown;
     for (const attempt of attempts) {
       try {

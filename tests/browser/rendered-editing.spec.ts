@@ -433,3 +433,38 @@ for (const [width, scheme] of [
     expect(serious.map((violation) => ({ id: violation.id, nodes: violation.nodes.map((node) => node.target) }))).toEqual([])
   })
 }
+
+test.describe("edits Markdown has to write with care", () => {
+  // A list item shaped like a rough line quoted in italics, then plain text.
+  const item = '- *Ann (draft): "Those limits really make logins weaker."* The fair version to start from: these limits push you into weak logins.'
+  const note = `Intro paragraph.\n\n${item}\n- Another item.\n`
+  const shown = 'Ann (draft): "Those limits really make logins weaker." The fair version to start from: these limits push you into weak logins.'
+
+  test("deleting a selection from inside italics to the plain text after them deletes it, wherever it starts", async ({ page }) => {
+    // From the start of a word, the closing `*` would sit after a space,
+    // where Markdown cannot close italics; after the quote, between
+    // punctuation and a letter. The characters beside it become references.
+    for (const [from, key, written, italic] of [
+      ["really", "Backspace", item.replace(/ really make .* from: t/, "&#32;*&#116;"), 'Ann (draft): "Those limits '],
+      ['Those', "Delete", item.replace(/Those .* from: t/, "*&#116;"), 'Ann (draft): "'],
+      ["ally make", "Backspace", item.replace(/ally make .* from: /, "*"), 'Ann (draft): "Those limits re'],
+    ] as const) {
+      const mark = await load(page, note, "mdx", "Intro paragraph.")
+      const start = await point(page, shown, shown.indexOf(from))
+      const end = await point(page, shown, shown.indexOf("these"))
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      await page.mouse.move(end.x, end.y, { steps: 12 })
+      await page.mouse.up()
+      expect((await selection(page)).text, from).toBe(shown.slice(shown.indexOf(from), shown.indexOf("these")))
+      await press(page, key)
+      await accepted(page, mark)
+      await expect.poll(() => source(page), { message: from }).toBe(note.replace(item, written))
+      await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+      // The source shows what the editor showed: the same words, the same italics.
+      await load(page, await source(page), "mdx", "these limits push you")
+      const text = await paragraph(page, "these limits push you").evaluate((p) => ({ shown: p.textContent, italic: p.querySelector("em")?.textContent }))
+      expect(text, from).toEqual({ shown: `${italic}these limits push you into weak logins.`, italic })
+    }
+  })
+})

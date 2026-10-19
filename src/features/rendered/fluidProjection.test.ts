@@ -720,3 +720,39 @@ test("a new list item holding a protected object is refused", async () => {
   const step = new ReplaceStep(at, at, new Slice(Fragment.from(copy), 0, 0)).toJSON();
   await expect(edit(text, [step])).rejects.toThrow("Selection crosses a protected object");
 });
+
+test("a delete from inside italics to plain text after them is written, wherever in the italics it starts", async () => {
+  const text = '- First item.\n- *Ann (draft): "Those limits really make logins weaker."* The fair version to start from: these limits push you into weak logins.\n- Last item.\n';
+  const projection = await projectFluidSource(text, "mdx");
+  let at = -1;
+  projection.doc.descendants((node, pos) => {
+    if (node.isTextblock && node.textContent.includes("fair version")) at = pos + 1;
+  });
+  const shown = projection.doc.resolve(at).parent.textContent;
+  const remove = (from: number, to: number) => edit(text, [new ReplaceStep(at + from, at + to, Slice.empty).toJSON()]);
+  // Every start in the italics, with the plain text after it starting with a
+  // letter, a space, or the italics' own closing punctuation kept.
+  for (let start = 1; start < shown.indexOf(" The fair"); start++)
+    for (const end of [shown.indexOf("these"), shown.indexOf(" these"), shown.indexOf("The fair")])
+      await remove(start, end);
+  const removed = async (from: string, to: string) => (await remove(shown.indexOf(from), shown.indexOf(to))).text;
+  // As written by hand where Markdown can close the italics there; where it
+  // cannot (after a space or a quote, before a letter), the characters beside
+  // the closing `*` are references, so the note shows exactly what it showed.
+  expect(await removed("ally", "these")).toBe(text.replace(/ally make .* from: /, "*"));
+  expect(await removed("really", "these")).toBe(text.replace(/ really make .* from: t/, "&#32;*&#116;"));
+  expect(await removed("Those", "these")).toBe(text.replace(/Those .* from: t/, "*&#116;"));
+});
+
+test("a delete from plain text into italics after it opens them where Markdown can", async () => {
+  const text = "Some plain words *then italic words* end.";
+  const projection = await projectFluidSource(text, "mdx");
+  const shown = projection.doc.textContent;
+  const remove = async (from: number, to: number) =>
+    (await edit(text, [new ReplaceStep(1 + from, 1 + to, Slice.empty).toJSON()])).text;
+  for (let start = 0; start < shown.indexOf("then"); start++)
+    for (const end of [shown.indexOf("hen"), shown.indexOf(" italic"), shown.indexOf("italic"), shown.indexOf(" end.") - 1])
+      await remove(start, end);
+  expect(await remove(shown.indexOf("words"), shown.indexOf(" italic"))).toBe("Some plain *&#32;italic words* end.");
+  expect(await remove(shown.indexOf("rds"), shown.indexOf("hen"))).toBe("Some plain wo*hen italic words* end.");
+});
