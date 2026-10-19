@@ -38,9 +38,10 @@ const original = `${prefix}${first}\n\n${second}${suffix}`
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
-// What "Edit not applied:" says for an edit to computed or unshown source, and for one Markdown cannot hold.
+// What "Edit not applied:" says for an edit to computed or unshown source, for one Markdown cannot hold, and for one made as the note changed.
 const PROTECTED = "This part of the note comes from code or isn't shown here, so it can't be changed in Rendered. Change it in Source."
 const UNWRITABLE = "This change can't be written into the note's Markdown exactly as it looks here, so it was undone. Make it in Source."
+const STALE = "The note changed while you were typing, so this change was undone. Try again."
 
 let errors: string[] = []
 test.beforeEach(async ({ page }) => {
@@ -213,6 +214,31 @@ test.describe("while an edit is in flight", () => {
     await settled(page)
     await expect.poll(() => source(page)).toBe(`Pending123${initial}`)
     expect(await page.evaluate(() => window.renderedHarness.state().pending)).toBe(false)
+  })
+
+  test("an edit that arrives after the note changed in Source is refused in plain words, not as an error", async ({ page }) => {
+    const initial = "Anchor\n\nOther paragraph.\n"
+    const changed = "Anchor\n\nOther paragraph, changed in Source.\n"
+    await load(page, initial, "mdx", /^Anchor$/)
+    await page.evaluate(() => {
+      window.transactionGate.enabled = true
+    })
+    await clickAt(page, "Anchor", 0)
+    await press(page, "Home")
+    await page.keyboard.type("X")
+    await page.waitForFunction(() => window.transactionGate.held.length > 0)
+    // The note changes in Source, and the edit arrives once the view knows it
+    // changed but before it has the new text: the edit is about the old one.
+    await page.evaluate(async (text) => {
+      window.renderedHarness.edit(text)
+      await Promise.resolve()
+      window.transactionGate.enabled = false
+      for (const { port, data } of window.transactionGate.held.splice(0)) port.dispatchEvent(new MessageEvent("message", { data }))
+    }, changed)
+    await expect(page.getByRole("status").filter({ hasText: /^Edit not applied:/ })).toHaveText(`Edit not applied: ${STALE}`)
+    expect(await page.evaluate(() => window.renderedHarness.state().error)).toBeNull()
+    await expect(paragraph(page, "Other paragraph, changed in Source.")).toBeVisible()
+    expect(await source(page)).toBe(changed)
   })
 })
 

@@ -215,11 +215,12 @@ matters.
   bold writes the space as a reference (`*&#32;two*`), which holds it exactly;
   `*two*` would read better, but the editor would then take a document
   without the space.
-- A few refusals in a note's Rendered view still reach the error banner above
-  the views in the check's own words, such as "Rejected stale rendered
-  transaction; source has changed." (the `onError` calls in
-  `src/features/rendered/RenderedEditor.tsx`), not the plain "Edit not
-  applied:" notice.
+- In a note's Rendered view, a request to view or edit a drawing or diagram
+  that the app refuses (made as the note changes, or for a path the note does
+  not hold) still reaches the error banner in the check's own words, such as
+  "Rejected stale view request; source has changed." (`onError` in
+  `src/features/rendered/RenderedEditor.tsx`); the plain "Edit not applied:"
+  notice is for edits.
 - Switching a note from Source or Rendered to Split doesn't carry the caret
   or the text at the top to the pane that appears, as switching between
   Source and Rendered does (WorkspaceSession's `showMode`).

@@ -387,6 +387,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // The error the note's text gave, with the text it was found in.
   const [compileError, setCompileError] = useState<{ text: string; message: string } | null>(null);
   const [editNotice, setEditNotice] = useState<string | null>(null);
+  // An edit was lost to a change of the note whose projection is still on its
+  // way: when that lands, the notice saying so stays.
+  const keepNotice = useRef(false);
   const [readyTick, setReadyTick] = useState(0);
   // Frame modules sent to the frame since it last said ready: it asks for
   // each once, and again only after a failed load.
@@ -592,7 +595,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           authority.current = next;
           setExposed(next);
           setCompileError(null);
-          setEditNotice(null);
+          if (!keepNotice.current) setEditNotice(null);
+          keepNotice.current = false;
           onError?.(null);
         } catch (error: unknown) {
           if (cancelled) return;
@@ -852,8 +856,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           }
           return;
         }
+        // An edit that fails the check (such as one with more steps than a
+        // message may carry) is refused in plain words, as every edit is.
+        if ((event.data as { kind?: unknown } | null)?.kind === "fluid-transaction") {
+          setEditNotice(notApplied(checked.error));
+          resetFrame();
+          return;
+        }
         onError?.(checked.error);
-        if ((event.data as { kind?: unknown } | null)?.kind === "fluid-transaction") resetFrame();
         return;
       }
       const message = checked.message;
@@ -985,7 +995,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           snapshot.text !== before.text ||
           snapshot.revision !== before.revision
         ) {
-          onError?.("Rejected stale rendered transaction; source has changed.");
+          keepNotice.current = true;
+          setEditNotice(notApplied("Rejected stale rendered transaction; source has changed."));
           return;
         }
         void acceptSourceTransaction({
@@ -1202,12 +1213,18 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         setViewer({ path: message.path, svg });
         return;
       }
+      // An edit refused here says why in plain words, as every refusal does.
+      const refuse = (reason: string) => {
+        const notice = notApplied(reason);
+        setEditNotice(notice);
+        settle("draftId" in message ? message.draftId : undefined, "rejected", notice);
+      };
       if (!exposed) {
-        onError?.("Rejected frame edit with no rendered document.");
+        refuse("Rejected frame edit with no rendered document.");
         return;
       }
       if (message.revision !== document.revision) {
-        onError?.("Rejected stale rendered edit; source has changed.");
+        refuse("Rejected stale rendered edit; source has changed.");
         return;
       }
       if (
@@ -1254,7 +1271,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
                 };
           onPatch(message.revision, [result.patch]);
         } catch (error) {
-          onError?.(error instanceof Error ? error.message : String(error));
+          refuse(error instanceof Error ? error.message : String(error));
         }
         return;
       }
