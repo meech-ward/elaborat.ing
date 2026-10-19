@@ -215,9 +215,6 @@ matters.
   bold writes the space as a reference (`*&#32;two*`), which holds it exactly;
   `*two*` would read better, but the editor would then take a document
   without the space.
-- In a note's Rendered view, a second empty line between two blocks (Enter on
-  an empty line Enter made) is refused: blank lines between blocks make one
-  empty paragraph at most.
 - A few refusals in a note's Rendered view still reach the error banner above
   the views in the check's own words, such as "Rejected stale rendered
   transaction; source has changed." (the `onError` calls in

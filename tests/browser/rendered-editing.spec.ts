@@ -612,6 +612,32 @@ test.describe("edits Markdown has to write with care", () => {
     expect(warnings.join("\n")).toContain("Source projection differs from proposed editor transaction")
   })
 
+  test("a second Enter on the empty line Enter made between two blocks does nothing, and says nothing", async ({ page }) => {
+    const note = "First paragraph.\n\nSecond paragraph.\n"
+    let mark = await load(page, note, "mdx", "Second paragraph.")
+    await clickAt(page, "First paragraph.", 2)
+    await press(page, "End")
+    await press(page, "Enter")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("First paragraph.\n\n\n\nSecond paragraph.\n")
+    // Markdown keeps one empty paragraph between two blocks: the caret stays on that one, where typing goes.
+    // No notice shows, not even for a moment.
+    await page.evaluate(() => {
+      const seen = { notice: false }
+      ;(window as unknown as { seen: typeof seen }).seen = seen
+      new MutationObserver(() => {
+        if (document.body.textContent?.includes("Edit not applied:")) seen.notice = true
+      }).observe(document.body, { childList: true, subtree: true, characterData: true })
+    })
+    mark = await revision(page)
+    await press(page, "Enter")
+    await page.keyboard.type("Z")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("First paragraph.\n\nZ\n\nSecond paragraph.\n")
+    await expect(frameOf(page).locator(".ProseMirror > p")).toHaveText(["First paragraph.", "Z", "Second paragraph."])
+    expect(await page.evaluate(() => (window as unknown as { seen: { notice: boolean } }).seen.notice)).toBe(false)
+  })
+
   test("Enter at the start of a line in a quote puts an empty paragraph just outside the quote, and typing goes on in the quote", async ({ page }) => {
     const quote = "Intro.\n\n> A quoted line.\n\nMore text.\n"
     const lines = "> First line.\n>\n> Second line.\n\nMore text.\n"

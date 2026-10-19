@@ -20,8 +20,8 @@ import {
   sinkListItem,
   wrapInList,
 } from "prosemirror-schema-list";
-import { emptyListBackspace, quoteStartEnter } from "./fluidCommands";
-import { splitBlock } from "prosemirror-commands";
+import { emptyListBackspace, keepingEmptyParagraphs, quoteStartEnter } from "./fluidCommands";
+import { baseKeymap, splitBlock } from "prosemirror-commands";
 
 const guard = "export const preserved = 7;\n\n{/* keep  this comment */}\n\n";
 const tail = "\n\n<Counter initial={preserved} />\n\nUntouched tail.";
@@ -838,6 +838,28 @@ test("Enter at the start of a line in a quote puts an empty paragraph just outsi
   expect(await enter(lines, lines.indexOf("Second"))).toBe("> First line.\n\n\n\n> Second line.\n\nMore.\n");
   // Only at the start of a line with text in it.
   expect(await enter(quote, quote.indexOf("quoted"))).toBeNull();
+});
+
+test("Enter that would leave two empty paragraphs side by side where Markdown keeps one does nothing", async () => {
+  const enter = async (text: string, block: number) => {
+    const projection = await projectFluidSource(text, "mdx");
+    let pos = 1;
+    for (let i = 0; i < block; i++) pos += projection.doc.child(i).nodeSize;
+    const state = EditorState.create({ doc: projection.doc, selection: TextSelection.create(projection.doc, pos) });
+    let transaction: Transaction | undefined;
+    expect(keepingEmptyParagraphs(baseKeymap.Enter)(state, (tr) => (transaction = tr))).toBe(true);
+    return transaction ? (await edit(text, transaction.steps.map((step) => step.toJSON()))).text : null;
+  };
+  // On the empty line Enter made between two blocks, at the start of the
+  // block after it, on one before the first block, and on the note's second
+  // last empty line: nothing changes, and nothing is refused.
+  expect(await enter("A\n\n\n\nB", 1)).toBeNull();
+  expect(await enter("A\n\n\n\nB", 2)).toBeNull();
+  expect(await enter("\n\n\n\nA", 0)).toBeNull();
+  expect(await enter("A\n\n\n\n", 2)).toBeNull();
+  // The note's last empty line takes a second one after it, as before.
+  expect(await enter("A\n\n", 1)).toBe("A\n\n\n\n");
+  expect(await enter("A\n\nB", 0)).toBe("\n\n\n\nA\n\nB");
 });
 
 test("a step that only adds whitespace Markdown drops changes nothing, and an empty paragraph in a quote is still refused", async () => {

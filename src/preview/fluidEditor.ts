@@ -28,6 +28,7 @@ import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
   codeFenceOpener,
   emptyListBackspace,
+  keepingEmptyParagraphs,
   quoteStartEnter,
 } from "../features/rendered/fluidCommands";
 import { changeTo, rebaseSteps } from "../features/rendered/nearestForm";
@@ -316,7 +317,7 @@ export class FluidEditor {
             "Mod-b": toggleMark(fluidSchema.marks.strong),
             "Mod-i": toggleMark(fluidSchema.marks.em),
             "Mod-`": toggleMark(fluidSchema.marks.code),
-            Enter: chainCommands(
+            Enter: keepingEmptyParagraphs(chainCommands(
               (state) => {
                 const { $from, empty } = state.selection;
                 if (
@@ -383,7 +384,7 @@ export class FluidEditor {
                 return splitListItem(nodes.list_item, task ? { checked: false } : undefined)(state, dispatch);
               },
               baseKeymap.Enter,
-            ),
+            )),
             Tab: sinkListItem(nodes.list_item),
             "Shift-Tab": liftListItem(nodes.list_item),
             ...Object.fromEntries(

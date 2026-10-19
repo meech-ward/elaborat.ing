@@ -1,4 +1,4 @@
-import type { Command } from "prosemirror-state";
+import type { Command, Transaction } from "prosemirror-state";
 import type { Node as PMNode } from "prosemirror-model";
 import { liftListItem } from "prosemirror-schema-list";
 import { fluidSchema } from "./fluidSchema";
@@ -61,3 +61,37 @@ export const quoteStartEnter: Command = (state, dispatch) => {
   }
   return true;
 };
+
+/**
+ * Whether Markdown can write the empty paragraphs between a note's blocks:
+ * blank lines make one at most between two blocks or before the first, and
+ * two at the end of the note (`blankParagraphPatch` in fluidProjection.ts).
+ */
+export function holdsEmptyParagraphs(doc: PMNode): boolean {
+  let run = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const block = doc.child(i);
+    if (block.type === fluidSchema.nodes.paragraph && !block.content.size) {
+      run++;
+      continue;
+    }
+    if (run > 1) return false;
+    run = 0;
+  }
+  return run <= (run === doc.childCount ? 1 : 2);
+}
+
+/**
+ * `command`, except where its change would leave empty paragraphs side by
+ * side that Markdown cannot write (`holdsEmptyParagraphs`), such as Enter on
+ * an empty line Enter made between two blocks: there it does nothing, and the
+ * caret stays where it is, instead of an edit that would be refused.
+ */
+export function keepingEmptyParagraphs(command: Command): Command {
+  return (state, dispatch, view) => {
+    let made: Transaction | undefined;
+    if (!command(state, dispatch && ((tr) => (made = tr)), view)) return false;
+    if (made && dispatch && (holdsEmptyParagraphs(made.doc) || !holdsEmptyParagraphs(state.doc))) dispatch(made);
+    return true;
+  };
+}
