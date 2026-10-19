@@ -21,6 +21,7 @@ import {
   wrapInList,
 } from "prosemirror-schema-list";
 import { emptyListBackspace } from "./fluidCommands";
+import { splitBlock } from "prosemirror-commands";
 
 const guard = "export const preserved = 7;\n\n{/* keep  this comment */}\n\n";
 const tail = "\n\n<Counter initial={preserved} />\n\nUntouched tail.";
@@ -755,6 +756,48 @@ test("a delete from plain text into italics after it opens them where Markdown c
       await remove(start, end);
   expect(await remove(shown.indexOf("words"), shown.indexOf(" italic"))).toBe("Some plain *&#32;italic words* end.");
   expect(await remove(shown.indexOf("rds"), shown.indexOf("hen"))).toBe("Some plain wo*hen italic words* end.");
+});
+
+test("Enter right before a space splits there, and the new paragraph or heading starts with the next word", async () => {
+  const enter = async (text: string, offset: number) => {
+    const projection = await projectFluidSource(text, "mdx");
+    const state = EditorState.create({
+      doc: projection.doc,
+      selection: TextSelection.create(projection.doc, fluidPositionForSourceOffset(projection, offset)!),
+    });
+    let transaction: Transaction | undefined;
+    expect(splitBlock(state, (tr) => (transaction = tr))).toBe(true);
+    const next = await edit(text, transaction!.steps.map((step) => step.toJSON()));
+    // Where the editor's caret is in the document the source makes, which it takes.
+    const caret = next.projection.doc.resolve(next.nearest ? next.nearest(transaction!.selection.head) : transaction!.selection.head);
+    return { text: next.text, nearest: next.nearest !== null, caret: [caret.parent.textContent, caret.parentOffset] };
+  };
+  // Between two sentences, after the period: the space leaves the source too.
+  expect(await enter("First sentence. Second sentence.\n", "First sentence.".length)).toEqual({
+    text: "First sentence.\n\nSecond sentence.\n",
+    nearest: true,
+    caret: ["Second sentence.", 0],
+  });
+  // More than one space, two words of a heading, and a line in a quote.
+  expect((await enter("One.   Two.", 4)).text).toBe("One.\n\nTwo.");
+  expect(await enter("## Two words\n", "## Two".length)).toEqual({ text: "## Two\n\n## words\n", nearest: true, caret: ["words", 0] });
+  expect((await enter("> Quoted. Line.\n", "> Quoted.".length)).text).toBe("> Quoted.\n> \n> Line.\n");
+  // A split Markdown holds exactly is written as before: after the space, or in a code span.
+  expect(await enter("First. Second.", "First. ".length)).toMatchObject({ text: "First. \n\nSecond.", nearest: false });
+  expect(await enter("A `b c` d", "A `b".length)).toMatchObject({ text: "A `b`\n\n` c` d", nearest: false });
+});
+
+test("a step that only adds whitespace Markdown drops changes nothing, and an empty paragraph in a quote is still refused", async () => {
+  // A space typed at the start of a paragraph.
+  const typed = await edit("Hello.\n", [replace(1, 1, " ")]);
+  expect(typed.text).toBe("Hello.\n");
+  expect(typed.patches).toEqual([]);
+  expect(typed.nearest!(2)).toBe(1);
+  // Splitting a quote's line at its start leaves an empty paragraph in the
+  // quote, which Markdown has no way to write: a real difference.
+  const quote = "> A quoted line.\n";
+  const split = new Transform((await projectFluidSource(quote, "mdx")).doc).split(2);
+  await expect(edit(quote, split.steps.map((step) => step.toJSON()))).rejects.toThrow("Source projection differs");
 });
 
 test("an empty paragraph added before a heading, the note's first block or after its last is written as blank lines", async () => {

@@ -283,6 +283,8 @@ type Exposed = FluidProjection & {
   reset: boolean;
   focus?: number;
   selection?: { anchor: number; head: number };
+  /** The frame's edit in flight was accepted in the nearest form Markdown can store: this document, which it takes. */
+  nearest?: boolean;
   editAck?: NonNullable<RenderMessage['authoring']>['editAck'];
 };
 
@@ -637,6 +639,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         runtimeKey: exposed.runtimeKey,
         doc: exposed.doc.toJSON(),
         selection: exposed.selection,
+        nearest: !exposed.reset && exposed.nearest ? true : undefined,
         islands: exposed.islands.map(({ id, from }) => ({ id, from })),
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
@@ -1030,13 +1033,17 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
               epoch: before.epoch,
               operation: message.operation,
               reset: false,
+              nearest: result.nearest !== null,
             };
+            // The caret after the edit, in the document the source makes.
+            const place = result.nearest;
+            const after = place ? { anchor: place(message.after.anchor), head: place(message.after.head) } : message.after;
             authority.current = next;
             if (
               onPatch(before.revision, result.patches, {
                 group: `${session}:${message.group}`,
                 before: sourceSelection(before, message.before),
-                after: sourceSelection(result.projection, message.after),
+                after: sourceSelection(result.projection, after),
               }) === false
             ) {
               authority.current = before;

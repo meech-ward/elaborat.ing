@@ -25,6 +25,7 @@ import {
 } from "./instrumentation";
 import { fluidSchema } from "./fluidSchema";
 import { codeFenceOpener } from "./fluidCommands";
+import { changeTo, rebaseSteps, sameMarkdownForm } from "./nearestForm";
 import { prepareComponentEnvironment, type ComponentEnvironment } from '../document/componentModules';
 import { COMPONENT_CATALOG } from '../document/componentCatalog';
 export interface FluidIsland {
@@ -844,6 +845,8 @@ function assertUnprotected(
       throw new Error("Selection crosses protected unrendered source");
   }
 }
+/** Formatting written with `*`, `_` or `~` delimiters. */
+const DELIMITED = ["em", "strong", "strike"];
 function inlinePatch(
   projection: FluidProjection,
   from: number,
@@ -857,8 +860,9 @@ function inlinePatch(
   const start = endpoint(projection, from, "start", from !== to);
   const end = from === to ? start : endpoint(projection, to, "end", true);
   let insert: string;
+  let sourceTo = end.raw;
   const delimiters: Delimiter[] = [];
-  if (split)
+  if (split) {
     insert =
       start.frames
         .slice()
@@ -867,7 +871,13 @@ function inlinePatch(
         .join("") +
       "\n\n" +
       start.frames.map((frame) => frame.open).join("");
-  else
+    // Spaces or tabs right after the split would start the new paragraph,
+    // where Markdown drops them (and after a reopened `*`, keep it from
+    // opening): they leave the source too, the nearest form Markdown can
+    // store. In a code span or a link's text they are kept, as written.
+    if (start.frames.every((frame) => DELIMITED.includes(frame.mark.type.name)))
+      sourceTo += /^[ \t]*/.exec(projection.text.slice(start.raw))![0].length;
+  } else
     insert = inlineSource(
       content,
       projection.format,
@@ -897,9 +907,9 @@ function inlinePatch(
   }
   const patch = {
     from: start.raw,
-    to: end.raw,
+    to: sourceTo,
     insert,
-    expected: projection.text.slice(start.raw, end.raw),
+    expected: projection.text.slice(start.raw, sourceTo),
   };
   return flank
     ? flanked(
@@ -1113,22 +1123,15 @@ function blockSource(
     ? projection.mapping.nodes.find((entry) => entry.node.eq(node))
     : undefined;
   if (old) return projection.text.slice(old.from, old.to);
+  // Markdown drops spaces and tabs at the start of a paragraph or heading, so
+  // they are not written (the editor takes the document without them).
+  const text = () =>
+    inlineSource(node.content, projection.format, [], [], projection, hint).replace(/^[ \t]+/, "");
   switch (node.type.name) {
     case "paragraph":
-      return inlineSource(
-        node.content,
-        projection.format,
-        [],
-        [],
-        projection,
-        hint,
-      );
+      return text();
     case "heading":
-      return (
-        "#".repeat(node.attrs.level) +
-        " " +
-        inlineSource(node.content, projection.format, [], [], projection, hint)
-      );
+      return "#".repeat(node.attrs.level) + " " + text();
     case "horizontal_rule":
       return "---";
     case "blockquote": {
@@ -1470,6 +1473,17 @@ const stepShape = z.looseObject({
 });
 /** Zod's English messages, which a refused step's error shows (zod/mini has none of its own). */
 const english = { error: en().localeError };
+/**
+ * The editor's steps as one change of the note's source. Each step is written
+ * the first way whose source reads back as exactly the document the step made,
+ * so every edit Markdown can hold is written as it always was. When none does,
+ * the step's nearest form is taken: a way whose document differs from the
+ * step's only by whitespace Markdown cannot hold (nearestForm.ts), or no
+ * change at all when that is all the step did (a space typed at the start of a
+ * paragraph). `nearest` then says where a position in the editor's document
+ * is in the one the source makes, which the editor takes in place of its own;
+ * it is null when the two are the same.
+ */
 export async function prepareFluidTransaction(
   snapshot: DocumentSnapshot,
   projection: FluidProjection,
@@ -1479,6 +1493,7 @@ export async function prepareFluidTransaction(
   patches: SourcePatch[];
   text: string;
   projection: FluidProjection;
+  nearest: ((pos: number) => number) | null;
 }> {
   const hint =
     syntaxHint === undefined
@@ -1496,19 +1511,27 @@ export async function prepareFluidTransaction(
     throw new Error("Stale source projection");
   if (!steps.length || steps.length > 256)
     throw new Error("Invalid transaction batch size");
+  // The steps as the editor made them, one after another from the document shown.
+  const proposed = steps.map((json) =>
+    Step.fromJSON(fluidSchema, stepShape.parse(json, english)),
+  );
+  // The steps still to write, made on `candidate.doc`: the editor's own until
+  // one is taken in its nearest form, then redone on that.
+  let queue = proposed;
   let candidate = projection;
-  for (const json of steps) {
-    const parsed = stepShape.parse(json, english);
-    if (parsed.from > parsed.to || parsed.to > candidate.doc.content.size)
+  let nearest = false;
+  for (let index = 0; index < queue.length; index++) {
+    const step = queue[index];
+    const { from, to } = step as unknown as { from: number; to: number };
+    if (from > to || to > candidate.doc.content.size)
       throw new Error("Invalid projection step range");
-    const step = Step.fromJSON(fluidSchema, parsed);
     const result = step.apply(candidate.doc);
     if (result.failed || !result.doc)
       throw new Error(result.failed ?? "Invalid projection step");
     const heading = protectedHeadingPatch(candidate, result.doc);
     // A task box patch touches only the box, so an item holding an island can be ticked too.
-    const task = heading ? null : taskBoxPatch(candidate, result.doc, parsed.from);
-    if (!heading && !task) assertUnprotected(candidate, parsed.from, parsed.to);
+    const task = heading ? null : taskBoxPatch(candidate, result.doc, from);
+    if (!heading && !task) assertUnprotected(candidate, from, to);
     const attempts: Array<() => SourcePatch> = [];
     if (heading) attempts.push(() => heading);
     if (task) attempts.push(() => task);
@@ -1522,29 +1545,22 @@ export async function prepareFluidTransaction(
         : null;
     if (step instanceof ReplaceStep) {
       const split =
-        parsed.from === parsed.to &&
+        from === to &&
         step.slice.openStart === 1 &&
         step.slice.openEnd === 1 &&
         step.slice.content.childCount === 2 &&
         !step.slice.content.textBetween(0, step.slice.content.size);
       if (inline || split)
         attempts.push(() =>
-          inlinePatch(
-            candidate,
-            parsed.from,
-            parsed.to,
-            step.slice.content,
-            split,
-            hint,
-          ),
+          inlinePatch(candidate, from, to, step.slice.content, split, hint),
         );
     } else if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
       attempts.push(() =>
         inlinePatch(
           candidate,
-          parsed.from,
-          parsed.to,
-          result.doc!.slice(parsed.from, parsed.to).content,
+          from,
+          to,
+          result.doc!.slice(from, to).content,
           false,
           hint,
         ),
@@ -1555,8 +1571,10 @@ export async function prepareFluidTransaction(
     // Markdown would not read it as one, with the characters beside it
     // written as references (`flanked`).
     if (inline)
-      attempts.push(() => inlinePatch(candidate, parsed.from, parsed.to, inline, false, hint, true));
-    let accepted: FluidProjection | undefined, failure: unknown;
+      attempts.push(() => inlinePatch(candidate, from, to, inline, false, hint, true));
+    let accepted: FluidProjection | undefined,
+      near: FluidProjection | undefined,
+      failure: unknown;
     for (const attempt of attempts) {
       try {
         const patch = attempt();
@@ -1570,17 +1588,28 @@ export async function prepareFluidTransaction(
           snapshot.format,
           candidate.components,
         );
-        if (!projected.doc.eq(result.doc))
-          throw new Error(
-            "Source projection differs from proposed editor transaction",
-          );
-        accepted = projected;
-        break;
+        if (projected.doc.eq(result.doc)) {
+          accepted = projected;
+          break;
+        }
+        if (!near && sameMarkdownForm(projected.doc, result.doc)) near = projected;
+        throw new Error(
+          "Source projection differs from proposed editor transaction",
+        );
       } catch (error) {
         failure = error;
       }
     }
-    if (!accepted) throw failure ?? new Error("Unsupported source transaction");
+    if (!accepted) {
+      accepted = sameMarkdownForm(candidate.doc, result.doc) ? candidate : near;
+      if (!accepted) throw failure ?? new Error("Unsupported source transaction");
+      nearest = true;
+      // The editor made the steps after this one on its own document.
+      const rest = rebaseSteps(queue.slice(index + 1), result.doc, accepted.doc);
+      if (!rest)
+        throw new Error("Source projection differs from proposed editor transaction");
+      queue = [...queue.slice(0, index + 1), ...rest.steps];
+    }
     candidate = accepted;
   }
   // Compose all temporary edits into one exact source change only after every
@@ -1613,5 +1642,18 @@ export async function prepareFluidTransaction(
             expected: snapshot.text.slice(from, oldTo),
           },
         ];
-  return { patches, text: candidate.text, projection: candidate };
+  let place: ((pos: number) => number) | null = null;
+  if (nearest) {
+    let editor = projection.doc;
+    for (const step of proposed) {
+      const next = step.apply(editor).doc;
+      if (!next) throw new Error("Invalid projection step");
+      editor = next;
+    }
+    if (!editor.eq(candidate.doc)) {
+      const change = changeTo(editor, candidate.doc).mapping;
+      place = (pos) => change.map(pos);
+    }
+  }
+  return { patches, text: candidate.text, projection: candidate, nearest: place };
 }

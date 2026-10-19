@@ -252,6 +252,13 @@ export const fluidRenderSchema = z.object({
   doc: fluidJsonObject,
   selection: z.optional(fluidSelection),
   /**
+   * The edit in flight was accepted in the nearest form Markdown can store:
+   * `doc`, which differs from the document it made in the frame only by
+   * whitespace Markdown cannot hold (nearestForm.ts). The frame takes it in
+   * place of its own and redoes on it the edits made since.
+   */
+  nearest: z.optional(z.boolean()),
+  /**
    * The document is a newer saved version that added to the end of the one
    * on screen (such as an agent's section): the position where the added
    * blocks start. The frame writes them in, unless the person prefers

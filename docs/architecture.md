@@ -1506,6 +1506,36 @@ between. If ProseMirror fixes this upstream, both can go; the browser test
 "Enter straight after arrow keys splits at the caret, every time" shows
 whether they are still needed.
 
+**Decision: an edit Markdown cannot store exactly is taken in its nearest
+form, a document that differs from the editor's only by whitespace Markdown
+cannot hold.** The frame proposes each edit as ProseMirror steps; the app
+writes each step into the note's source and reads the source back
+(`prepareFluidTransaction`, `src/features/rendered/fluidProjection.ts`). The
+first way of writing a step whose source reads back as exactly the proposed
+document wins, so an edit Markdown can hold is written as it always was. When
+none does, a way whose document equals the proposal after one small
+normalization, applied to both, is taken (`markdownForm`,
+`src/features/rendered/nearestForm.ts`): spaces and tabs at the start of a
+paragraph or heading are dropped, and spaces and tabs at the start or end of
+bold, italics or strikethrough move just outside them. Everything else must
+match: every other character, including a space between words or at the end
+of a paragraph and a line break, the formatting on it, a link's text, and
+every block. So a lost letter or word is still refused, with the plain
+"Edit not applied" notice. A step that only adds such whitespace, such as a
+space typed at the start of a paragraph, changes nothing. Enter right before
+a space writes the new paragraph without it (`One.\n\nTwo.`).
+
+The editor then takes the document the source makes in place of its own. The
+app's acknowledgement of that edit carries the document and `nearest`; the
+frame moves to it through the normalization's own steps, so the caret keeps
+its place, and redoes on it the edits typed meanwhile, which the app has not
+been sent yet, with their positions mapped (`rebaseSteps`, as
+prosemirror-collab rebases steps not yet confirmed). The reset a refusal uses
+would drop those keys. Ignoring whitespace altogether would accept a lost
+space between words; and only the app can say what the source holds (a space
+kept as `&#32;` reads back exactly), so the frame does not normalize its own
+document.
+
 **Decision: the code editor and the rendered note load when they first show.**
 Monaco (about 1 MB gzip) loads with the first Source, Split or Code view, and
 the rendered note with its frame (about 0.6 MB) with the first Rendered or

@@ -472,6 +472,50 @@ test.describe("edits Markdown has to write with care", () => {
     }
   })
 
+  test("Enter right before a space splits there, and the new paragraph or heading starts with the next word", async ({ page }) => {
+    const note = "Intro.\n\nFirst sentence. Second sentence.\n\n## Two words\n\nEnd.\n"
+    let mark = await load(page, note, "mdx", "End.")
+    await clickAt(page, "First sentence. Second sentence.", 2)
+    await press(page, "Home")
+    await press(page, "ArrowRight", "First sentence.".length)
+    await press(page, "Enter")
+    await accepted(page, mark)
+    // Markdown drops the space at the start of a paragraph: the source leaves it out, and so does the note.
+    await expect.poll(() => source(page)).toBe(note.replace("First sentence. ", "First sentence.\n\n"))
+    await expect(paragraph(page, /^Second sentence\.$/)).toBeVisible()
+    expect((await selection(page)).focus).toEqual({ paragraph: "Second sentence.", offset: 0 })
+
+    mark = await revision(page)
+    await frameOf(page).locator(".ProseMirror > h2").filter({ hasText: "Two words" }).click()
+    await press(page, "Home")
+    await press(page, "ArrowRight", "Two".length)
+    await press(page, "Enter")
+    await accepted(page, mark)
+    await expect(frameOf(page).locator(".ProseMirror > h2")).toHaveText(["Two", "words"])
+    await expect.poll(() => source(page)).toBe(note.replace("First sentence. ", "First sentence.\n\n").replace("## Two words", "## Two\n\n## words"))
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
+  test("keys typed right after Enter before a space are all kept", async ({ page }) => {
+    const note = "First sentence. Second sentence.\n"
+    await load(page, note, "mdx", "First sentence.")
+    await clickAt(page, "First sentence. Second sentence.", 2)
+    await press(page, "Home")
+    await press(page, "ArrowRight", "First sentence.".length)
+    // The Enter waits with the app while the keys after it are typed.
+    await page.evaluate(() => {
+      window.transactionGate.enabled = true
+    })
+    await press(page, "Enter")
+    await page.waitForFunction(() => window.transactionGate.held.length > 0)
+    await page.keyboard.type("New. ")
+    expect(await releaseTransactions(page)).toBe(1)
+    await expect.poll(() => source(page)).toBe("First sentence.\n\nNew. Second sentence.\n")
+    await expect(paragraph(page, /^New\. Second sentence\.$/)).toBeVisible()
+    expect((await selection(page)).focus).toEqual({ paragraph: "New. Second sentence.", offset: "New. ".length })
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
   test("Enter at the start of a heading puts an empty paragraph above it, and typing goes on in the heading", async ({ page }) => {
     const sections = "## Top heading\n\nIntro paragraph.\n\n## 2. Second part\n\nBody text.\n"
     for (const [heading, written] of [

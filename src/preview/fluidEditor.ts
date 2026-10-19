@@ -23,11 +23,13 @@ import {
   wrapInList,
 } from "prosemirror-schema-list";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
+import { Step, type Mapping } from "prosemirror-transform";
 import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
   codeFenceOpener,
   emptyListBackspace,
 } from "../features/rendered/fluidCommands";
+import { changeTo, rebaseSteps } from "../features/rendered/nearestForm";
 import type {
   RenderMessage,
   FluidSyntaxHint,
@@ -42,10 +44,16 @@ type Operation = {
   after: Selection;
   group: string;
   syntax?: FluidSyntaxHint;
+  /** The document the edit made here. Never sent. */
+  doc: PMNode;
 };
 const selectionOf = (state: EditorState): Selection => ({
   anchor: state.selection.anchor,
   head: state.selection.head,
+});
+const mapSelection = ({ anchor, head }: Selection, mapping: Mapping): Selection => ({
+  anchor: mapping.map(anchor),
+  head: mapping.map(head),
 });
 /** A DOM node in the editable document, outside any object island. */
 function inProse(view: EditorView, node: Node): boolean {
@@ -253,6 +261,8 @@ export class FluidEditor {
   private epoch = -1;
   private operation = 0;
   private inFlight = false;
+  /** The document the edit in flight made here. */
+  private sent: PMNode | null = null;
   private queue: Operation[] = [];
   private group = 0;
   private lastInput = 0;
@@ -659,6 +669,7 @@ export class FluidEditor {
       after: selectionOf(this.view.state),
       group: `${this.epoch}:${this.group}`,
       syntax: tr.getMeta("fluidSyntax"),
+      doc: this.view.state.doc,
     });
     if (!this.inFlight && this.queue.length === 1)
       this.post({ kind: "fluid-pending", pending: true });
@@ -677,6 +688,42 @@ export class FluidEditor {
     this.history("undo");
   }
 
+  /**
+   * The parent accepted the edit in flight in the nearest form Markdown can
+   * store: `doc`, in place of `sent`, the document the edit made here
+   * (src/features/rendered/nearestForm.ts). The editor takes it, with the
+   * caret where it was, and redoes on it each edit made since, which the
+   * parent has not been sent yet, so none is lost.
+   */
+  private takeNearest(doc: PMNode, sent: PMNode) {
+    const { state } = this.view;
+    const queued = this.queue.flatMap((op) => op.steps.map((json) => Step.fromJSON(fluidSchema, json)));
+    const redone = rebaseSteps(queued, sent, doc);
+    let next = doc;
+    let mapping: Mapping;
+    if (redone) {
+      let at = 0;
+      for (const op of this.queue) {
+        const first = at;
+        at += op.steps.length;
+        op.steps = redone.steps.slice(first, at).map((step) => step.toJSON());
+        op.before = mapSelection(op.before, redone.mapping(first));
+        op.after = mapSelection(op.after, redone.mapping(at));
+        op.doc = redone.docs[at];
+      }
+      next = redone.docs[at];
+      mapping = redone.mapping(at);
+    } else {
+      // An edit made since no longer applies there (rare): the document alone is taken.
+      this.queue = [];
+      mapping = changeTo(state.doc, doc).mapping;
+    }
+    const tr = state.tr;
+    for (const step of changeTo(state.doc, next).steps) tr.step(step);
+    if (this.fence) this.fence.pos = mapping.map(this.fence.pos);
+    this.view.updateState(state.apply(tr.setSelection(state.selection.map(tr.doc, mapping))));
+  }
+
   /** What was typed while the code block now shown was being made. */
   get typedForCodeBlock(): string {
     return this.fenceTyped;
@@ -686,12 +733,14 @@ export class FluidEditor {
     if (this.inFlight || this.epoch < 0) return;
     const next = this.queue.shift();
     if (next) {
+      const { doc, ...edit } = next;
       this.inFlight = true;
+      this.sent = doc;
       this.post({
         kind: "fluid-transaction",
         epoch: this.epoch,
         operation: ++this.operation,
-        ...next,
+        ...edit,
       });
     } else if (this.fence && !this.fence.sent) {
       // Every earlier edit is checked, so the parent has this paragraph too.
@@ -721,6 +770,7 @@ export class FluidEditor {
       this.epoch = fluid.epoch;
       this.operation = fluid.operation;
       this.inFlight = false;
+      this.sent = null;
       this.queue = [];
       this.historyPending = null;
       this.group++;
@@ -742,8 +792,12 @@ export class FluidEditor {
       if (fluid.selection) this.view.focus();
     } else if (fluid.operation === this.operation) {
       // The optimistic document and selection are already ahead during a
-      // burst. An ack only advances authority; it never overwrites that view.
+      // burst. An ack only advances authority; it never overwrites that view,
+      // except with the nearest form Markdown can store of the edit in flight.
+      if (fluid.nearest && this.inFlight && this.sent)
+        this.takeNearest(fluidSchema.nodeFromJSON(fluid.doc), this.sent);
       this.inFlight = false;
+      this.sent = null;
     }
     // The render may have changed whether the document is read-only.
     if (this.view.editable === isReadOnly()) {

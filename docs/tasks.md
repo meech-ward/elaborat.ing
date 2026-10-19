@@ -210,9 +210,10 @@ matters.
   paragraph inside a quote. Putting the empty paragraph above the quote, as
   Enter at the start of a heading does (`src/preview/fluidEditor.ts`), would
   work.
-- In a note's Rendered view, Enter right before a space (between two
-  sentences, or two words of a heading) is refused: the new paragraph starts
-  with the space, which Markdown drops.
+- In a note's Rendered view, Enter right before a space inside italics or
+  bold writes the space as a reference (`*&#32;two*`), which holds it exactly;
+  `*two*` would read better, but the editor would then take a document
+  without the space.
 - In a note's Rendered view, a second empty line between two blocks (Enter on
   an empty line Enter made) is refused: blank lines between blocks make one
   empty paragraph at most.

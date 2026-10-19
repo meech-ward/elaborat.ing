@@ -178,7 +178,7 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
     }
   }
 
-  const render = (reset: boolean, selection?: { anchor: number; head: number }) => {
+  const render = (reset: boolean, selection?: { anchor: number; head: number }, nearest?: boolean) => {
     editor.receive({
       kind: 'render',
       session: SESSION,
@@ -192,6 +192,7 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
         runtimeKey: projection.runtimeKey,
         doc: projection.doc.toJSON(),
         selection,
+        nearest,
         islands: projection.islands.map(({ id, from }) => ({ id, from })),
       },
     })
@@ -236,7 +237,8 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
       projection = result.projection
       if (result.text !== before.text) revision++
       operation = message.operation
-      render(false)
+      // An edit taken in the nearest form Markdown can store: the editor takes that document.
+      render(false, undefined, result.nearest !== null)
       notice(null)
       change(projection.text !== original)
     } catch {
