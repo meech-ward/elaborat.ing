@@ -28,6 +28,7 @@ import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
   codeFenceOpener,
   emptyListBackspace,
+  quoteStartEnter,
 } from "../features/rendered/fluidCommands";
 import { changeTo, rebaseSteps } from "../features/rendered/nearestForm";
 import type {
@@ -374,6 +375,7 @@ export class FluidEditor {
                 dispatch?.(state.tr.insert($from.before(), nodes.paragraph.create()).scrollIntoView());
                 return true;
               },
+              quoteStartEnter,
               // A new item after a task item is a task too, not yet ticked.
               (state, dispatch) => {
                 const { $from } = state.selection;

@@ -203,11 +203,14 @@ matters.
 - A delete in a note's Rendered view from plain text into italics that leaves
   them starting with a space writes it as a reference (`*&#32;italic*`), which
   holds it exactly; ` *italic*` would read better.
-- In a note's Rendered view, Enter at the start of a line in a quote is
-  refused: it splits the quote's paragraph, and Markdown has no empty
-  paragraph inside a quote. Putting the empty paragraph above the quote, as
-  Enter at the start of a heading does (`src/preview/fluidEditor.ts`), would
-  work.
+- In a note's Rendered view, Enter at the start or end of a line the source
+  wraps (a line break inside a paragraph) is refused: one of the two
+  paragraphs would start or end with that line break, which Markdown drops.
+  Taking it as whitespace Markdown cannot hold (`markdownForm` in
+  `src/features/rendered/nearestForm.ts`) would apply it.
+- Enter at the start of a later paragraph of a quote whose earlier paragraph
+  spans several lines is refused: the quote is written again, and that
+  paragraph's source already holds its `> ` markers, so they are doubled.
 - In a note's Rendered view, Enter right before a space inside italics or
   bold writes the space as a reference (`*&#32;two*`), which holds it exactly;
   `*two*` would read better, but the editor would then take a document

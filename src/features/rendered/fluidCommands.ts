@@ -33,3 +33,31 @@ export const emptyListBackspace: Command = (state, dispatch, view) => {
     return false;
   return liftListItem(fluidSchema.nodes.list_item)(state, dispatch, view);
 };
+
+/**
+ * Enter at the start of a line in a quote. Markdown has no empty paragraph
+ * inside a quote, so the empty paragraph goes just outside it, above that
+ * line: above the quote at its first line, as Enter at the start of a
+ * heading puts one above the heading, or at a later line between the two
+ * quotes it splits into there. The caret stays at the start of the line.
+ */
+export const quoteStartEnter: Command = (state, dispatch) => {
+  const { $from, empty } = state.selection;
+  if (
+    !empty ||
+    $from.depth !== 2 ||
+    $from.parentOffset !== 0 ||
+    $from.parent.type !== fluidSchema.nodes.paragraph ||
+    !$from.parent.content.size ||
+    $from.node(1).type !== fluidSchema.nodes.blockquote
+  )
+    return false;
+  if (dispatch) {
+    const tr = state.tr;
+    const paragraph = fluidSchema.nodes.paragraph.create();
+    if ($from.index(1) === 0) tr.insert($from.before(1), paragraph);
+    else tr.split($from.before()).insert($from.before() + 1, paragraph);
+    dispatch(tr.scrollIntoView());
+  }
+  return true;
+};

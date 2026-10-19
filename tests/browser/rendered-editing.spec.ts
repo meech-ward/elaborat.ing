@@ -597,16 +597,44 @@ test.describe("edits Markdown has to write with care", () => {
     page.on("console", (message) => {
       if (message.type() === "warning") warnings.push(message.text())
     })
-    // Markdown has no empty paragraph inside a quote.
-    const quote = "Intro.\n\n> A quoted line.\n\nMore text.\n"
-    await load(page, quote, "mdx", "More text.")
-    await clickAt(page, "A quoted line.", 2)
+    // Enter at the start of a line the source wraps would end the paragraph
+    // before it with that line break, which Markdown drops.
+    const wrapped = "Intro.\n\nFirst line\nsecond line.\n\nMore text.\n"
+    await load(page, wrapped, "mdx", "More text.")
+    await clickAt(page, "First line\nsecond line.", "First line\nsec".length)
     await press(page, "Home")
+    expect((await selection(page)).focus).toEqual({ paragraph: "First line\nsecond line.", offset: "First line\n".length })
     await press(page, "Enter")
     const notice = page.getByRole("status").filter({ hasText: /^Edit not applied:/ })
     await expect(notice).toHaveText(`Edit not applied: ${UNWRITABLE}`)
-    await expect(paragraph(page, "A quoted line.")).toBeVisible()
-    expect(await source(page)).toBe(quote)
+    await expect(paragraph(page, "First line\nsecond line.")).toBeVisible()
+    expect(await source(page)).toBe(wrapped)
     expect(warnings.join("\n")).toContain("Source projection differs from proposed editor transaction")
+  })
+
+  test("Enter at the start of a line in a quote puts an empty paragraph just outside the quote, and typing goes on in the quote", async ({ page }) => {
+    const quote = "Intro.\n\n> A quoted line.\n\nMore text.\n"
+    const lines = "> First line.\n>\n> Second line.\n\nMore text.\n"
+    for (const [note, line, written] of [
+      // At its first line, above the quote.
+      [quote, "A quoted line.", quote.replace("> A quoted", "\n\n> XA quoted")],
+      // At a later line, between the quote's two parts.
+      [lines, "Second line.", lines.replace("\n>\n> Second", "\n\n\n\n> XSecond")],
+    ] as const) {
+      let mark = await load(page, note, "mdx", "More text.")
+      await clickAt(page, line, 2)
+      await press(page, "Home")
+      await press(page, "Enter")
+      await accepted(page, mark)
+      const quoted = frameOf(page).locator(".ProseMirror > blockquote").filter({ hasText: line })
+      await expect(quoted).toHaveText(line)
+      expect(await quoted.evaluate((element) => [element.previousElementSibling?.tagName, element.previousElementSibling?.textContent]), line).toEqual(["P", ""])
+      expect((await selection(page)).focus, line).toEqual({ paragraph: line, offset: 0 })
+      mark = await revision(page)
+      await page.keyboard.type("X")
+      await accepted(page, mark)
+      await expect.poll(() => source(page), { message: line }).toBe(written)
+      await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+    }
   })
 })

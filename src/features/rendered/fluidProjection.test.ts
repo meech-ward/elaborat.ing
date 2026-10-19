@@ -20,7 +20,7 @@ import {
   sinkListItem,
   wrapInList,
 } from "prosemirror-schema-list";
-import { emptyListBackspace } from "./fluidCommands";
+import { emptyListBackspace, quoteStartEnter } from "./fluidCommands";
 import { splitBlock } from "prosemirror-commands";
 
 const guard = "export const preserved = 7;\n\n{/* keep  this comment */}\n\n";
@@ -814,6 +814,30 @@ test("Enter right before a space splits there, and the new paragraph or heading 
   // A split Markdown holds exactly is written as before: after the space, or in a code span.
   expect(await enter("First. Second.", "First. ".length)).toMatchObject({ text: "First. \n\nSecond.", nearest: false });
   expect(await enter("A `b c` d", "A `b".length)).toMatchObject({ text: "A `b`\n\n` c` d", nearest: false });
+});
+
+test("Enter at the start of a line in a quote puts an empty paragraph just outside the quote, above that line", async () => {
+  const enter = async (text: string, offset: number) => {
+    const projection = await projectFluidSource(text, "mdx");
+    const state = EditorState.create({
+      doc: projection.doc,
+      selection: TextSelection.create(projection.doc, fluidPositionForSourceOffset(projection, offset)!),
+    });
+    let transaction: Transaction | undefined;
+    if (!quoteStartEnter(state, (tr) => (transaction = tr))) return null;
+    const next = await edit(text, transaction!.steps.map((step) => step.toJSON()));
+    expect(next.projection.doc.eq(transaction!.doc)).toBe(true);
+    // The caret stays at the start of the line.
+    expect(next.projection.doc.resolve(transaction!.selection.head).parent.textContent).toBe(state.selection.$head.parent.textContent);
+    return next.text;
+  };
+  const quote = "Intro.\n\n> A quoted line.\n\nMore text.\n";
+  expect(await enter(quote, quote.indexOf("A quoted"))).toBe(quote.replace("> A", "\n\n> A"));
+  expect(await enter("> First.\n", 2)).toBe("\n\n\n\n> First.\n");
+  const lines = "> First line.\n>\n> Second line.\n\nMore.\n";
+  expect(await enter(lines, lines.indexOf("Second"))).toBe("> First line.\n\n\n\n> Second line.\n\nMore.\n");
+  // Only at the start of a line with text in it.
+  expect(await enter(quote, quote.indexOf("quoted"))).toBeNull();
 });
 
 test("a step that only adds whitespace Markdown drops changes nothing, and an empty paragraph in a quote is still refused", async () => {
