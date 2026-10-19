@@ -107,7 +107,7 @@ test("an edit the frame made against an older revision is lost with a plain noti
       },
     )
   })
-  await expect(page.getByText("Edit not applied: the note changed at the same time. Make the edit again.")).toBeVisible()
+  await expect(page.getByText("Edit not applied: The note changed while you were typing, so this change was undone. Try again.")).toBeVisible()
   expect(await renderErrors(page)).toEqual([])
   await expect(page.frameLocator(FRAME).locator("p").filter({ hasText: "First paragraph here." })).toBeVisible()
 })

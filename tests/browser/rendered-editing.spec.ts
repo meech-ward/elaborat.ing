@@ -38,6 +38,10 @@ const original = `${prefix}${first}\n\n${second}${suffix}`
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
+// What "Edit not applied:" says for an edit to computed or unshown source, and for one Markdown cannot hold.
+const PROTECTED = "This part of the note comes from code or isn't shown here, so it can't be changed in Rendered. Change it in Source."
+const UNWRITABLE = "This change can't be written into the note's Markdown exactly as it looks here, so it was undone. Make it in Source."
+
 let errors: string[] = []
 test.beforeEach(async ({ page }) => {
   errors = await openHarness(page)
@@ -250,8 +254,8 @@ test.describe("MDX documents", () => {
     await press(page, "Home")
     await press(page, "ArrowRight")
     await page.keyboard.type(" ")
-    // The notice is the library's banner, a status.
-    const notice = page.getByRole("status").filter({ hasText: /Selection crosses a protected object/ }).first()
+    // The notice is the library's banner, a status, and says why in plain words.
+    const notice = page.getByRole("status").filter({ hasText: PROTECTED }).first()
     await expect(notice).toBeVisible()
     await expect(notice).toHaveText(/^Edit not applied:/)
     expect(await source(page)).toBe(heading)
@@ -512,5 +516,23 @@ test.describe("edits Markdown has to write with care", () => {
     await accepted(page, mark)
     await expect.poll(() => source(page)).toBe(table.replace("| x | y |\n", "| x | y |\n\nZ\n"))
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
+  test("an edit Markdown cannot hold is undone with a plain reason, and the check's own message goes to the console", async ({ page }) => {
+    const warnings: string[] = []
+    page.on("console", (message) => {
+      if (message.type() === "warning") warnings.push(message.text())
+    })
+    // Markdown has no empty paragraph inside a quote.
+    const quote = "Intro.\n\n> A quoted line.\n\nMore text.\n"
+    await load(page, quote, "mdx", "More text.")
+    await clickAt(page, "A quoted line.", 2)
+    await press(page, "Home")
+    await press(page, "Enter")
+    const notice = page.getByRole("status").filter({ hasText: /^Edit not applied:/ })
+    await expect(notice).toHaveText(`Edit not applied: ${UNWRITABLE}`)
+    await expect(paragraph(page, "A quoted line.")).toBeVisible()
+    expect(await source(page)).toBe(quote)
+    expect(warnings.join("\n")).toContain("Source projection differs from proposed editor transaction")
   })
 })

@@ -216,6 +216,11 @@ matters.
 - In a note's Rendered view, a second empty line between two blocks (Enter on
   an empty line Enter made) is refused: blank lines between blocks make one
   empty paragraph at most.
+- A few refusals in a note's Rendered view still reach the error banner above
+  the views in the check's own words, such as "Rejected stale rendered
+  transaction; source has changed." (the `onError` calls in
+  `src/features/rendered/RenderedEditor.tsx`), not the plain "Edit not
+  applied:" notice.
 
 ## Done
 

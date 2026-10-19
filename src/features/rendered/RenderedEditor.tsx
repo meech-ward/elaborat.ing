@@ -98,6 +98,7 @@ import { encodeTextLeaf } from './instrumentation';
 import { componentValuePatch } from './componentValueEdit';
 import { applySourcePatches } from '../document';
 import { appendedFrom, type WriteIn } from '../document/writeIn';
+import { REFUSAL, refusalNotice } from './refusal';
 
 export type RenderedEditorProps = {
   document: DocumentSnapshot;
@@ -193,8 +194,14 @@ export type RenderedEditorApi = {
 /** A comment action floating over the frame, at a place in the editor's box. */
 type CommentAction = { top: number; left: number; request: NoteCommentRequest; source: string };
 
-/** Shown after "Edit not applied:" when an edit in the frame was made against an older revision of the note. */
-const LOST_EDIT = "the note changed at the same time. Make the edit again.";
+/**
+ * The plain notice shown after "Edit not applied:" for an edit refused for
+ * `reason`, the check's own message, which goes to the console for debugging.
+ */
+function notApplied(reason: string): string {
+  console.warn(`Rendered edit not applied: ${reason}`);
+  return refusalNotice(reason);
+}
 
 /**
  * The `srcdoc` frame (src/preview/frame.ts): the frame without a sandbox
@@ -745,8 +752,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           return;
         }
         if (parsed.success && parsed.data.session === session && 'draftId' in parsed.data) {
-          settle(parsed.data.draftId, 'rejected', checked.error);
-          setEditNotice(stale ? LOST_EDIT : checked.error);
+          const notice = notApplied(checked.error);
+          settle(parsed.data.draftId, 'rejected', notice);
+          setEditNotice(notice);
           return;
         }
         // The frame spoke about an older revision of the note, which is
@@ -757,7 +765,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (outcome === "status" && message.kind === "fluid-pending") onPendingChange?.(message.pending);
           if (outcome === "refusal" && message.kind === "edit-rejected") setEditNotice(message.message);
           if (outcome === "lost-edit") {
-            setEditNotice(LOST_EDIT);
+            setEditNotice(REFUSAL.stale);
             if (message.kind === "fluid-transaction") resetFrame();
           }
           return;
@@ -966,7 +974,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           };
           authority.current = reset;
           setExposed(reset);
-          setEditNotice(error instanceof Error ? error.message : String(error));
+          setEditNotice(notApplied(error instanceof Error ? error.message : String(error)));
         });
         return;
       }
@@ -1167,9 +1175,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (patch) commitLocalEdit(message.revision, [patch], message.draftId);
           else settle(message.draftId, 'noop');
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          setEditNotice(reason);
-          settle(message.draftId, 'rejected', reason);
+          const notice = notApplied(error instanceof Error ? error.message : String(error));
+          setEditNotice(notice);
+          settle(message.draftId, 'rejected', notice);
         }
         return;
       }
@@ -1205,9 +1213,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         ], message.draftId);
         setEditNotice(null);
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          setEditNotice(reason);
-          settle(message.draftId, 'rejected', reason);
+          const notice = notApplied(error instanceof Error ? error.message : String(error));
+          setEditNotice(notice);
+          settle(message.draftId, 'rejected', notice);
         }
         return;
       }
@@ -1226,9 +1234,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       ], message.draftId);
       setEditNotice(null);
       } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        setEditNotice(reason);
-        settle(message.draftId, 'rejected', reason);
+        const notice = notApplied(error instanceof Error ? error.message : String(error));
+        setEditNotice(notice);
+        settle(message.draftId, 'rejected', notice);
       }
     };
     onPortMessage.current = onMessage;
