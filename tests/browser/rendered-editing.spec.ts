@@ -475,6 +475,33 @@ test.describe("edits Markdown has to write with care", () => {
     }
   })
 
+  test("bold on a word and the space after it, or taken off one word of a bold phrase, keeps the spaces outside the bold", async ({ page }) => {
+    const note = "Intro.\n\nPlain one two three.\n\n**Bold one two three.**\n"
+    const plainBold = note.replace("Plain one two three.", "Plain one **two** three.")
+    let mark = await load(page, note, "mdx", "Intro.")
+    // The word and the space after it, as a double-click selects them in some browsers.
+    await clickAt(page, "Plain one two three.", 2)
+    await press(page, "Home")
+    await press(page, "ArrowRight", "Plain one ".length)
+    await press(page, "Shift+ArrowRight", "two ".length)
+    expect((await selection(page)).text).toBe("two ")
+    await press(page, "ControlOrMeta+b")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe(plainBold)
+    // One word in the middle of a bold phrase.
+    mark = await revision(page)
+    await clickAt(page, "Bold one two three.", 2)
+    await press(page, "Home")
+    await press(page, "ArrowRight", "Bold one ".length)
+    await press(page, "Shift+ArrowRight", "two".length)
+    expect((await selection(page)).text).toBe("two")
+    await press(page, "ControlOrMeta+b")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe(plainBold.replace("**Bold one two three.**", "**Bold one** two **three.**"))
+    await expect(paragraph(page, "Bold one two three.").locator("strong")).toHaveText(["Bold one", "three."])
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
   test("Enter right before a space splits there, and the new paragraph or heading starts with the next word", async ({ page }) => {
     const note = "Intro.\n\nFirst sentence. Second sentence.\n\n## Two words\n\nEnd.\n"
     let mark = await load(page, note, "mdx", "End.")

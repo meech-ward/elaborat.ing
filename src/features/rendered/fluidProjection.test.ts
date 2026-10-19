@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AddMarkStep, ReplaceStep, Transform } from "prosemirror-transform";
+import { AddMarkStep, RemoveMarkStep, ReplaceStep, Transform } from "prosemirror-transform";
 import { Slice, Fragment } from "prosemirror-model";
 import { fluidSchema } from "./fluidSchema";
 import { codeFenceFromParagraph, projectFluidSource, prepareFluidTransaction } from "./fluidProjection";
@@ -768,6 +768,23 @@ test("a delete from plain text into italics after it opens them where Markdown c
       await remove(start, end);
   expect(await remove(shown.indexOf("words"), shown.indexOf(" italic"))).toBe("Some plain *&#32;italic words* end.");
   expect(await remove(shown.indexOf("rds"), shown.indexOf("hen"))).toBe("Some plain wo*hen italic words* end.");
+});
+
+test("bold or italics added up to the space before a word, or taken off a word inside them, are written with the space outside them", async () => {
+  const format = async (text: string, from: string, to: string, change: typeof AddMarkStep | typeof RemoveMarkStep, mark = fluidSchema.marks.strong) => {
+    const shown = (await projectFluidSource(text, "mdx")).doc.textContent;
+    const next = await edit(text, [new change(1 + shown.indexOf(from), 1 + shown.indexOf(to), mark.create()).toJSON()]);
+    return { text: next.text, nearest: next.nearest !== null };
+  };
+  // A selection that ends in a space before a letter (a double-clicked word, in some browsers).
+  expect(await format("one two three", "two", "three", AddMarkStep)).toEqual({ text: "one **two** three", nearest: true });
+  expect(await format("one two three", "two", "three", AddMarkStep, fluidSchema.marks.em)).toEqual({ text: "one *two* three", nearest: true });
+  // Bold taken off one word of a bold phrase, with the space after it or without.
+  expect(await format("**one two three**", "two", "three", RemoveMarkStep)).toEqual({ text: "**one** two **three**", nearest: true });
+  expect(await format("**one two three**", "two", " three", RemoveMarkStep)).toEqual({ text: "**one** two **three**", nearest: true });
+  expect(await format("*one two three*", "two", " three", RemoveMarkStep, fluidSchema.marks.em)).toEqual({ text: "*one* two *three*", nearest: true });
+  // Without a space to move, the letter after the closing `**` is a reference, which holds it exactly.
+  expect(await format("one (two)three", "(two)", "three", AddMarkStep)).toEqual({ text: "one **(two)**&#116;hree", nearest: false });
 });
 
 test("Enter right before a space splits there, and the new paragraph or heading starts with the next word", async () => {

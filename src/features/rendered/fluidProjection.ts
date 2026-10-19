@@ -1574,24 +1574,20 @@ export async function prepareFluidTransaction(
         attempts.push(() =>
           inlinePatch(candidate, from, to, step.slice.content, split, hint),
         );
-    } else if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
-      attempts.push(() =>
-        inlinePatch(
-          candidate,
-          from,
-          to,
-          result.doc!.slice(from, to).content,
-          false,
-          hint,
-        ),
-      );
     }
+    // Bold, italics or another format added or taken off: the text with its new formatting.
+    const marked =
+      step instanceof AddMarkStep || step instanceof RemoveMarkStep
+        ? result.doc.slice(from, to).content
+        : null;
+    if (marked)
+      attempts.push(() => inlinePatch(candidate, from, to, marked, false, hint));
     attempts.push(() => structuralPatch(candidate, result.doc!, hint));
-    // Last, a delete or typing that leaves a formatting delimiter where
-    // Markdown would not read it as one, with the characters beside it
-    // written as references (`flanked`).
-    if (inline)
-      attempts.push(() => inlinePatch(candidate, from, to, inline, false, hint, true));
+    // Last, a delete, typing or format change that leaves a formatting
+    // delimiter where Markdown would not read it as one, with the spaces
+    // beside it moved out of the formatting or the letter a reference (`flanked`).
+    if (inline ?? marked)
+      attempts.push(() => inlinePatch(candidate, from, to, (inline ?? marked)!, false, hint, true));
     let accepted: FluidProjection | undefined,
       near: FluidProjection | undefined,
       failure: unknown;
