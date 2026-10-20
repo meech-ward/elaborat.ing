@@ -49,7 +49,7 @@ function isCanonicalWorkspacePath(path: string): boolean {
 
 // A valid 512-character wire path can have a longer JSX entity spelling.
 // Keep extraction bounded while allowing the move planner's emitted literals.
-const LINK_PATTERN = /\[([^\]\n]{1,120})\]\(([^)\s\n]{1,4096})\)/g;
+const LINK_PATTERN = /(?<!!)\[([^\]\n]{1,120})\]\(([^)\s\n]{1,4096})\)/g;
 const TAG_PATTERN = /<(Drawing|Diagram)\s+src=(?:"([^"]{1,4096})"|'([^']{1,4096})')\s*\/>/g;
 
 /** Decode the escapes emitted by source assistance and the rendered literal

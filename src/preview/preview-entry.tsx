@@ -48,6 +48,7 @@ import { connectToParent, postLinkToParent, postToParent } from './parentPort';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import { rasterImageUses } from '../features/drawings/presentation.ts';
+import type { ImagePreview } from '../features/images/transport';
 import {
   Alert,
   AlertDescription,
@@ -116,6 +117,72 @@ function subscribeResources(listener: () => void): () => void {
   return () => {
     resourceListeners.delete(listener);
   };
+}
+
+let imageTable:Record<string,ImagePreview> = Object.create(null);
+let originalImages:Record<string,{image?:ImagePreview;error?:string}> = Object.create(null);
+const imageListeners = new Set<() => void>();
+const readImages = () => imageTable;
+const readOriginalImages = () => originalImages;
+function subscribeImages(listener: () => void) {
+  imageListeners.add(listener);
+  return () => { imageListeners.delete(listener); };
+}
+/** Ignore every document-owned URL and event handler. Only parent-validated pixels display. */
+function ProjectImage(props: {src?:string;alt?:string;__imageFrom?:number;'data-image-from'?:number|string;__imageCaption?:string;'data-image-caption'?:string}): ReactNode {
+  const {src,alt = ''} = props;
+  const images = useSyncExternalStore(subscribeImages,readImages);
+  const originals = useSyncExternalStore(subscribeImages,readOriginalImages);
+  const pixels = typeof src === 'string' && Object.hasOwn(images,src) ? images[src] : undefined;
+  const original = typeof src === 'string' && Object.hasOwn(originals,src) ? originals[src] : undefined;
+  const enlarged = original?.image ?? pixels;
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const description = useRef<HTMLDialogElement>(null);
+  const captionDialog = useRef<HTMLDialogElement>(null);
+  const caption = props.__imageCaption ?? props['data-image-caption'] ?? '';
+  const [captionDraft,setCaptionDraft] = useState(caption);
+  const [draft,setDraft] = useState(alt);
+  const from = props.__imageFrom ?? (props['data-image-from'] === undefined ? undefined : Number(props['data-image-from']));
+  const edit = (action:'describe'|'replace'|'remove'|'caption',nextAlt?:string,nextCaption?:string) => {
+    if (isReadOnly() || !activeSession || from === undefined || !Number.isSafeInteger(from) || !src) return;
+    postToParent({kind:'image-edit',session:activeSession,revision:activeRevision,key:src,from,action,...(nextAlt === undefined ? {} : {alt:nextAlt}),...(nextCaption === undefined ? {} : {caption:nextCaption})});
+  };
+  return <span className="project-image" contentEditable={false}>
+    {pixels ? <button ref={trigger} type="button" className="project-image-open" aria-label={alt ? `View image: ${alt}` : 'View image'} onClick={() => {
+      dialog.current?.showModal();
+      if (activeSession && src) postToParent({kind:'view-image',session:activeSession,revision:activeRevision,key:src});
+    }}>
+      <img src={pixels.dataURL} alt={alt} width={pixels.width} height={pixels.height} loading="lazy" decoding="async" />
+    </button> : <span className="project-image-missing" role="img" aria-label={alt || 'Image unavailable'}>{alt || 'Image unavailable'}</span>}
+    {pixels ? <dialog ref={dialog} className="project-image-viewer" aria-label={alt || 'Image'} onClose={() => {
+      trigger.current?.focus({preventScroll:true});
+      originalImages = Object.create(null);
+      for (const listener of imageListeners) listener();
+    }}>
+      <button type="button" onClick={() => dialog.current?.close()}>Close image</button>
+      {original?.error ? <p role="status">{original.error}</p> : null}
+      <img src={enlarged!.dataURL} alt={alt} width={enlarged!.width} height={enlarged!.height} />
+    </dialog> : null}
+    {!isReadOnly() && from !== undefined ? <span className="project-image-actions">
+      <button type="button" onClick={() => {setDraft(alt);description.current?.showModal();}}>Edit description</button>
+      <button type="button" onClick={() => {setCaptionDraft(caption);captionDialog.current?.showModal();}}>Edit caption</button>
+      <button type="button" onClick={() => edit('replace')}>Replace image</button>
+      <button type="button" onClick={() => edit('remove')}>Remove image</button>
+    </span> : null}
+    <dialog ref={description} className="project-image-description" aria-label="Image description">
+      <label>Image description<input value={draft} maxLength={2048} onChange={event => setDraft(event.target.value)} /></label>
+      <label><input type="checkbox" checked={draft === ''} onChange={event => setDraft(event.target.checked ? '' : alt || 'Image')} />Decorative image</label>
+      <button type="button" onClick={() => description.current?.close()}>Cancel</button>
+      <button type="button" onClick={() => {edit('describe',draft);description.current?.close();}}>Apply description</button>
+    </dialog>
+    <dialog ref={captionDialog} className="project-image-description" aria-label="Image caption">
+      <label>Caption (Markdown)<textarea value={captionDraft} maxLength={4096} rows={3} onChange={event => setCaptionDraft(event.target.value)} /></label>
+      <p>Use bold, italics, links or code. Leave empty to remove the caption text.</p>
+      <button type="button" onClick={() => captionDialog.current?.close()}>Cancel</button>
+      <button type="button" onClick={() => {edit('caption',undefined,captionDraft);captionDialog.current?.close();}}>Apply caption</button>
+    </dialog>
+  </span>;
 }
 
 // Charts and code highlighting load the first time a note shows them
@@ -562,6 +629,32 @@ const subscribeIslands = (listener: () => void) => {
   };
 };
 let fluidEditor: FluidEditor | null = null;
+/** Resolve nested prose and component DOM to its top-level editor block. */
+function blockPositionAt(event: globalThis.MouseEvent | ClipboardEvent | DragEvent): number | null {
+  const view = fluidEditor?.view;
+  if (!view || fluidEditor?.hasPendingEdits || !(event.target instanceof Element)) return null;
+  if (!('clientY' in event) || event.button !== 2 && event.target === view.dom) {
+    const selection = window.getSelection();
+    if (selection?.anchorNode && view.dom.contains(selection.anchorNode)) {
+      const position = view.state.doc.resolve(view.posAtDOM(selection.anchorNode, selection.anchorOffset));
+      return position.depth ? position.before(1) : position.pos;
+    }
+  }
+  let block: Element | null = event.target;
+  if (!view.dom.contains(block) || block === view.dom) {
+    // Right-clicks in the reading margins use the block alongside the pointer.
+    block = null;
+    for (const child of view.dom.children) {
+      if (child.getBoundingClientRect().top > ('clientY' in event ? event.clientY : 0)) break;
+      block = child;
+    }
+    if (!block) return -1;
+  } else {
+    while (block.parentElement !== view.dom) block = block.parentElement!;
+  }
+  const position = view.state.doc.resolve(view.posAtDOM(block, 0));
+  return position.depth ? position.before(1) : position.pos;
+}
 /** The fluid render epoch the editor shows; -1 before its first render. */
 let shownEpoch = -1;
 /** What a newer saved version added, writing in (typeIn.ts). */
@@ -682,6 +775,11 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   // Publish the newest metadata synchronously so edits made while the new
   // code still compiles attribute to the latest revision; the slow
   // completion below is dropped unless it is still the newest generation.
+  if (activeSession !== pending.session || activeRevision !== pending.revision) {
+    imageTable = Object.create(null);
+    originalImages = Object.create(null);
+    for (const listener of imageListeners) listener();
+  }
   activeSession = pending.session;
   activeRevision = pending.revision;
   slotTable = pending.slots;
@@ -705,10 +803,10 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       if (!fluidContent || runtimeKey !== pending.fluid.runtimeKey) {
         const workspaceModules: Record<string, Awaited<ReturnType<typeof run>>> = Object.create(null);
         for (const module of pending.modules ?? []) {
-          workspaceModules[module.path] = await run(module.code, {...jsxRuntime, workspaceModules, trustedReact} as Parameters<typeof run>[1]);
+          workspaceModules[module.path] = await run(module.code, {...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage} as Parameters<typeof run>[1]);
           if (seq !== renderSeq) return;
         }
-        const result = await run(pending.code, { ...jsxRuntime, workspaceModules, trustedReact } as Parameters<typeof run>[1]);
+        const result = await run(pending.code, { ...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage } as Parameters<typeof run>[1]);
         if (seq !== renderSeq) return;
         fluidContent = result.default;
         runtimeKey = pending.fluid.runtimeKey;
@@ -749,7 +847,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       root.render(
         <StrictMode>
           <Content components={fluidComponents} />
-          <BlockPicker />
+          <BlockPicker blockPositionAt={blockPositionAt} />
         </StrictMode>,
       );
       });
@@ -775,10 +873,10 @@ async function renderDocument(pending: PendingRender): Promise<void> {
     // props.components, not from scope).
     const workspaceModules: Record<string, Awaited<ReturnType<typeof run>>> = Object.create(null);
     for (const module of pending.modules ?? []) {
-      workspaceModules[module.path] = await run(module.code, {...jsxRuntime, workspaceModules, trustedReact} as Parameters<typeof run>[1]);
+      workspaceModules[module.path] = await run(module.code, {...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage} as Parameters<typeof run>[1]);
       if (seq !== renderSeq) return;
     }
-    const { default: Content } = await run(pending.code, { ...jsxRuntime, workspaceModules, trustedReact } as Parameters<typeof run>[1]);
+    const { default: Content } = await run(pending.code, { ...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage } as Parameters<typeof run>[1]);
     if (seq !== renderSeq) return;
     flushSync(() => {
     captureDraftsBeforeRender();
@@ -792,6 +890,8 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         >
           <Content
             components={{
+              img: ProjectImage,
+              ProjectImage,
               table: ReadingTable,
               SourceText: SourceLeaf,
               SourceCode,
@@ -916,6 +1016,19 @@ function onParentMessage(event: MessageEvent): void {
     for (const listener of resourceListeners) listener();
     return;
   }
+  if (message.kind === 'images') {
+    if (message.revision !== activeRevision) return;
+    imageTable = Object.assign(message.reset ? Object.create(null) : {...imageTable},
+      Object.fromEntries(message.images.map(({key,...pixels}) => [key,pixels])));
+    for (const listener of imageListeners) listener();
+    return;
+  }
+  if (message.kind === 'image-original') {
+    if (message.revision !== activeRevision) return;
+    originalImages = {[message.key]:{image:message.image,error:message.error}};
+    for (const listener of imageListeners) listener();
+    return;
+  }
   const render: RenderMessage = message;
   // A newer render supersedes anything still compiling: only the latest
   // generation is applied, so stale compilation cannot overwrite it.
@@ -932,6 +1045,8 @@ function onParentMessage(event: MessageEvent): void {
 }
 
 const fluidComponents = {
+  img: ProjectImage,
+  ProjectImage,
   table: ReadingTable,
   FluidIsland,
   SourceText: FluidSourceLeaf,

@@ -4,6 +4,8 @@ import type { StructuralResult } from "../document/structural";
 import { isAllowedWorkspacePath } from "../workspace";
 import type { BlockBoundary } from "./blocks";
 import { encodePropLiteral } from "./protocol";
+import { imageMarkdown, relativeImagePath, safeImagePath } from '../images/paths';
+import { imageFigureMarkdown } from '../images/captions';
 
 const ordinary: Record<string, string> = {
   Paragraph: "",
@@ -12,6 +14,26 @@ const ordinary: Record<string, string> = {
   Quote: "> ",
   Divider: "---",
 };
+
+/** Trusted picker output at a parser-owned boundary; one source patch for all chosen images. */
+export function insertImages(
+  document: DocumentSnapshot,
+  revision: number,
+  boundaries: readonly BlockBoundary[],
+  boundaryId: string,
+  notePath: string,
+  images: readonly {path:string;alt:string;caption?:string}[],
+): StructuralResult {
+  if (revision !== document.revision) throw new Error('Rejected stale image insertion.');
+  const boundary = boundaries.find(entry => entry.id === boundaryId);
+  if (!boundary) throw new Error('Choose a current document position for the image.');
+  if (!images.length || images.length > 8 || images.some(image => !safeImagePath(image.path))) throw new Error('Choose up to eight project images.');
+  const content = images.map(image => image.caption?.trim() ? imageFigureMarkdown(relativeImagePath(notePath,image.path),image.alt,image.caption.trim(),document.format) : imageMarkdown(relativeImagePath(notePath,image.path),image.alt,document.format)).join('\n\n');
+  const newline = /\r\n|\n|\r/.exec(document.text)?.[0] ?? '\n';
+  const leading = boundary.offset === 0 ? '' : newline + newline;
+  const insert = leading + content.replace(/\r\n|\r|\n/g,newline) + newline + newline;
+  return {patch:{from:boundary.offset,to:boundary.offset,expected:'',insert},focus:boundary.offset + insert.length};
+}
 
 export function insertBlock(
   document: DocumentSnapshot,
@@ -55,8 +77,10 @@ export function insertBlock(
     }
   }
   const from = boundary.offset;
-  const leading = from === 0 ? "" : "\n\n";
-  const trailing = "\n\n";
+  const newline = /\r\n|\n|\r/.exec(document.text)?.[0] ?? '\n';
+  content = content.replace(/\r\n|\r|\n/g,newline);
+  const leading = from === 0 ? "" : newline + newline;
+  const trailing = newline + newline;
   const insert = leading + content + trailing;
   const focus =
     from +

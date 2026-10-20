@@ -10,7 +10,7 @@ export type DrawingElement = Record<string, unknown>
 const FENCE = /```(compressed-json|json)\s*\n([\s\S]*?)```/
 
 /** The live elements of a `.excalidraw` file or an Obsidian `.excalidraw.md`. Throws when it is not one. */
-export function parseDrawing(content: string): DrawingElement[] {
+export function parseDrawingScene(content: string): {elements:DrawingElement[];files:Record<string,unknown>} {
   const trimmed = content.trim()
   let json = trimmed
   if (!trimmed.startsWith("{")) {
@@ -18,14 +18,16 @@ export function parseDrawing(content: string): DrawingElement[] {
     if (!fence) throw new Error("no drawing in this file")
     json = fence[1] === "compressed-json" ? LZString.decompressFromBase64(fence[2].replace(/\s+/g, "")) ?? "" : fence[2]
   }
-  const scene = JSON.parse(json) as { elements?: unknown }
+  const scene = JSON.parse(json) as { elements?: unknown; files?: unknown }
   if (!scene || !Array.isArray(scene.elements)) throw new Error("no elements in this drawing")
-  return scene.elements.filter(
+  const elements = scene.elements.filter(
     (element): element is DrawingElement =>
       typeof element === "object" && element !== null && typeof (element as DrawingElement).type === "string" &&
       (element as DrawingElement).isDeleted !== true,
   )
+  return {elements,files:scene.files&&typeof scene.files==='object'&&!Array.isArray(scene.files)?scene.files as Record<string,unknown>:{}}
 }
+export function parseDrawing(content:string):DrawingElement[] {return parseDrawingScene(content).elements}
 
 /**
  * The text written in a drawing, one entry per text element (labels bound to

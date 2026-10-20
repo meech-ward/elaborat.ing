@@ -124,12 +124,10 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+[storage.buckets.project-images]
+public = false
+file_size_limit = "5MiB"
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
@@ -481,6 +479,11 @@ verify_jwt = true
 # Called by the app for a signed-in person, to delete their own account.
 [functions.delete-account]
 verify_jwt = true
+
+# Uploads verify user tokens in withSupabase; the cleanup route verifies a
+# secret key instead. Storage writes use trusted validated bytes only.
+[functions.images]
+verify_jwt = false
 
 [edge_runtime]
 enabled = true

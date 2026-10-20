@@ -75,6 +75,9 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   await page.keyboard.type(" TYPED")
   await expect(paragraph).toHaveText("The first paragraph.")
   await expect(frame.getByRole("button", { name: "+ Insert block" })).toHaveCount(0)
+  await paragraph.click({ button: "right" })
+  await expect(frame.getByRole("menu", { name: "Insert block" })).toHaveCount(0)
+  await page.keyboard.press("Escape")
   // A task's box shows it is ticked, and cannot be unticked.
   await expect(frame.getByRole("checkbox", { name: "Agree the plan" })).toBeChecked()
   await expect(frame.getByRole("checkbox", { name: "Agree the plan" })).toBeDisabled()

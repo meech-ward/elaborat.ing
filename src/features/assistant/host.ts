@@ -1,14 +1,17 @@
+import type { ImageAsset } from "../images/types"
 /**
  * What the assistant may do in the open project, which the workbench gives
  * it: the same operations a person has there, with their session. The
  * assistant never saves: a write lands as an unsaved edit in the file's tab.
  */
-export type HostFileKind = "note" | "drawing" | "diagram" | "text"
+export type HostFileKind = "note" | "drawing" | "diagram" | "image" | "text"
 
-export type HostFile = { path: string; kind: HostFileKind; unsaved: boolean }
+export type HostFile = { path: string; kind: HostFileKind; unsaved: boolean; asset?: ImageAsset | null }
 
 export type HostRead = {
   path: string
+  kind?: HostFileKind
+  asset?: ImageAsset | null
   /** The text the editor holds, the person's unsaved changes included. */
   content: string
   /** The saved version on the server, or null for a file not synced yet. */
@@ -29,6 +32,8 @@ export interface AssistantHost {
   /** Why the project can't be changed (a viewer, or archived), or null. */
   readOnly: string | null
   listFiles(): Promise<HostFile[]>
+  getImagePreview?(path: string): Promise<{ dataURL: string; asset: ImageAsset } | null>
+  importImage?(path: string, url: string): Promise<{ asset: ImageAsset }>
   /** The file as its editor holds it, or null when the project has no such file. */
   readFile(path: string): Promise<HostRead | null>
   /** The text of the file's tab when it has unsaved changes, else null. */

@@ -75,6 +75,7 @@ export function moveLocalProject(db: ProjectDatabase, partition: string, lock: L
       project: await tx.getProject(LOCAL_PROJECT_ID),
       files: await tx.listFiles(LOCAL_PROJECT_ID),
       folders: await tx.listFolders(LOCAL_PROJECT_ID),
+      assets: await tx.listAssets(LOCAL_PROJECT_ID),
     }))
     if (!found.project) return null
     const files = found.files.filter((file) => file.content !== null || file.draft !== null)
@@ -98,6 +99,7 @@ export function moveLocalProject(db: ProjectDatabase, partition: string, lock: L
       await db.transaction(partition, "readwrite", async (tx) => {
         await tx.putProject(moved)
         for (const file of files) await tx.putFile({ ...file, partition, projectId: moved.id, base: null, conflict: null })
+        for (const asset of found.assets) await tx.putAsset({ ...asset, partition, projectId: moved.id, uploaded: false })
         for (const folder of found.folders) {
           if (folder.local) await tx.putFolder({ ...folder, partition, projectId: moved.id, base: false })
         }

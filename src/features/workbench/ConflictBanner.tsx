@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Banner, BannerAction, DiffBlock, confirmAction } from "@/features/design-system";
@@ -15,7 +15,7 @@ import { dialogError } from "./dialogMessages";
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** How to compare a conflicted file: its text in a diff (with a Monaco language id), or a drawing as two pictures. */
-export type CompareAs = { kind: "text"; language: string } | { kind: "drawing" };
+export type CompareAs = { kind: "text"; language: string } | { kind: "drawing" } | { kind: "custom"; description: string; render: (copies: ConflictCopies) => ReactNode };
 
 /**
  * Sync stopped because a file changed on this device and elsewhere. The
@@ -143,9 +143,11 @@ function CompareDialog({ name, path, copies, compareAs, unsaved, resolving, erro
               ? `${name} was deleted on this device, and changed on the server.`
               : compareAs.kind === "text"
                 ? "What changed on the server and on this device. Choose which version to keep."
-                : "The drawing on the server and on this device. Choose which version to keep."}
+                : compareAs.kind === "custom"
+                  ? compareAs.description
+                  : "The drawing on the server and on this device. Choose which version to keep."}
         </DialogDescription>
-        {theirs !== null && mine !== null ? (
+        {compareAs.kind === "custom" ? compareAs.render(copies) : theirs !== null && mine !== null ? (
           compareAs.kind === "text" ? (
             <TextComparison theirs={theirs} mine={mine} language={compareAs.language} />
           ) : (
@@ -176,6 +178,7 @@ function CompareDialog({ name, path, copies, compareAs, unsaved, resolving, erro
     </Dialog>
   );
 }
+
 
 type Picture = { svg: string } | { error: string };
 

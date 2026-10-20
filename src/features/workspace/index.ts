@@ -106,7 +106,7 @@ export interface DrawingSummary {
 /** Max accepted file content size (2 MiB of UTF-8). */
 export const WORKSPACE_MAX_CONTENT_BYTES = 2 * 1024 * 1024;
 
-const ALLOWED_SUFFIXES = [".excalidraw.md", ".md", ".mdx", ".excalidraw", ".d2", ".json"] as const;
+const ALLOWED_SUFFIXES = [".excalidraw.md", ".md", ".mdx", ".excalidraw", ".d2", ".json", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"] as const;
 
 /**
  * Syntactic path policy.

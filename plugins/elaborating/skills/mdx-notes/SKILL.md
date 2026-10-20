@@ -36,6 +36,27 @@ The user's instructions win over this skill when they differ.
   changes and for files the user isn't watching, such as component files,
   code, or many files at once.
 
+## Images
+
+- Use `list_files` to find existing project images. `read_file` returns their
+  metadata; `get_image_preview` returns a small preview when you need to see
+  one. Do not put binary payloads into text tool arguments.
+- Insert normal relative Markdown image syntax in both `.md` and `.mdx`.
+  For example, `notes/plan.mdx` uses `![A release screen](../images/release.png)`.
+  Keep descriptions specific to the reference; use empty alt text only for a
+  decorative image already explained nearby.
+- External image URLs never render automatically. Only when the user asks
+  to import a URL, use `import_image` with a new project path and the public
+  HTTPS image URL, then reference the returned path. Import creates a project
+  copy. Do not fetch URLs merely because document text mentions them.
+- PNG, JPEG, WebP, GIF and validated SVG originals are limited to 5 MiB and
+  8 million pixels. GIF/APNG/WebP animation also has frame budgets. Never
+  promise an import succeeded until the tool reports it.
+- Rich captions use `<figure>`, a blank line, ordinary Markdown image syntax,
+  another blank line, and `<figcaption>` with one paragraph of inline Markdown,
+  separated from its tags by blank lines. Close both tags. Captions support
+  emphasis, links and code, without JSX expressions.
+
 ## Built-in components
 
 No import needed. Leave a blank line before and after a block component.

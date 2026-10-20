@@ -118,7 +118,7 @@ select is(
   (select array_agg(a.attname::text order by a.attnum) from pg_attribute a
    where a.attrelid = 'public.file_versions'::regclass and a.attnum > 0 and not a.attisdropped
      and has_column_privilege('authenticated', 'public.file_versions', a.attname, 'select')),
-  array['file_id', 'version', 'project_id', 'path', 'content', 'deleted', 'author_id', 'mutation_id', 'created_at'],
+  array['file_id', 'version', 'project_id', 'path', 'content', 'deleted', 'author_id', 'mutation_id', 'created_at', 'kind', 'asset_id', 'asset'],
   'Signed-in users select every file history column except the agent''s OAuth client'
 );
 select function_privs_are('public', 'set_comment_ask_agent', array['uuid', 'boolean'], 'authenticated', array['EXECUTE'], 'Signed-in users can ask an agent');

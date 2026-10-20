@@ -34,6 +34,11 @@ import { useDesktopFrame } from "./tabline";
 import { embedded } from "@/features/embed/mode";
 import type { WorkspaceStore } from "./workspaceStore";
 import { useSettledError, useTyping } from "@/lib/settledError";
+import { LazyImagePicker } from "@/features/images/LazyImages";
+import type { ImageChoice } from "@/features/images/ImagePicker";
+import type { WorkspaceFileRef } from "./workspaceStore";
+import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject";
+import { MAX_FILE_BYTES, byteLength } from "@/features/project-storage/model";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -436,6 +441,37 @@ export function DrawingView({
   // Comments on the drawing's elements: pins on the canvas, and Comment on
   // the selected element. The panel's Go to shows an element on the canvas.
   const canvasApi = useRef<DrawingCanvasApi | null>(null);
+  const [imagePicker, setImagePicker] = useState(false);
+  const [projectImages, setProjectImages] = useState<WorkspaceFileRef[]>([]);
+  const imageTarget = useRef<DrawingScene | null>(null);
+  const chooseImage = () => {
+    if (frozen.current || !active || view === "source" || !scene || !client.projectId) return;
+    imageTarget.current = latest.current.scene;
+    void client.listEntries().then((entries) => {
+      if (frozen.current) return;
+      setProjectImages(entries.files.filter((file) => file.kind === "image"));
+      setImagePicker(true);
+    }).catch((error: unknown) => setNotice(message(error)));
+  };
+  const insertImages = async (choices: ImageChoice[]) => {
+    if (frozen.current || !active || view === "source" || latest.current.scene !== imageTarget.current || !client.projectId) throw new Error("The drawing changed while the image picker was open. Choose the image again.");
+    const { prepareImage } = await import("@/features/images/prepare");
+    const { imageDataURL } = await import("@/features/images/types");
+    const images: Array<{ dataURL: string; mimeType: string; width: number; height: number; alt: string }> = [];
+    for (const choice of choices) {
+      let prepared = choice.prepared;
+      if (!prepared && choice.existingPath && client.readImage) prepared = await prepareImage(await client.readImage(choice.existingPath), client.projectId);
+      if (!prepared) throw new Error("Choose an image from this project, or upload one.");
+      if (prepared.asset.width * prepared.asset.height > 8_000_000) throw new Error("Choose an image with at most 8 million pixels for the drawing.");
+      images.push({ dataURL: imageDataURL(new Uint8Array(await prepared.bytes.arrayBuffer()), prepared.asset.media_type), mimeType: prepared.asset.media_type, width: prepared.asset.width, height: prepared.asset.height, alt: choice.alt });
+    }
+    if (frozen.current || !active || latest.current.scene !== imageTarget.current) throw new Error("The drawing changed while the images were prepared. Choose them again.");
+    const applied = canvasApi.current?.insertImages(images, (next) => {
+      const original = latest.current.original;
+      if (!original || byteLength(saveDrawingFile(next, original).text) > MAX_FILE_BYTES) throw new Error("These images would make the drawing larger than 2 MiB. Choose smaller images, or add them to a note instead.");
+    });
+    if (!applied) throw new Error("Wait for the drawing canvas, then choose the image again.");
+  };
   // From Code, Go to shows the canvas first, then the element on it.
   const revealAfterShow = useRef<string | null>(null);
   const canvasComments = useCanvasComments({
@@ -480,12 +516,30 @@ export function DrawingView({
         save={!readOnly && dirty ? { disabled: saving, onSave: () => void save() } : null}
         actions={[
           ...(readOnly ? [] : [{ label: "Save", disabled: saving, onSelect: () => void save() }]),
+          ...(!readOnly && client.projectId ? [{ label: "Insert image", disabled: locked || view === "source" || !scene, onSelect: chooseImage }] : []),
           ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, onSelect: onDuplicate }] : []),
           { label: "SVG", disabled: !scene, onSelect: () => void exportSvg() },
           { label: "PNG", disabled: !scene, onSelect: () => void exportPng() },
           { label: "Excalidraw", onSelect: exportNative },
         ] satisfies MenuEntry[]}
       />
+
+      {imagePicker && client.projectId && <LazyImagePicker
+        open={imagePicker} onOpenChange={setImagePicker} projectId={client.projectId} target="drawing"
+        images={projectImages} readImage={client.readImage} onChooseMany={insertImages}
+        onDescribe={import.meta.env.VITE_CHATGPT_PLAN ? async (choice,signal) => {
+          const { describeImage } = await import("@/features/images/describe");
+          if (choice.prepared) return describeImage(choice.prepared.preview,signal);
+          if (!choice.existingPath || !client.readImage) throw new Error("Choose an image first.");
+          const preview=await client.readImage(choice.existingPath, true);
+          signal?.throwIfAborted();
+          return describeImage(preview,signal);
+        } : undefined}
+        importFromURL={client.projectId === LOCAL_PROJECT_ID ? undefined : async (url,signal) => {
+          const { importProjectImageURL } = await import("@/features/images/importURL");
+          return importProjectImageURL(client.projectId!, url,signal);
+        }}
+      />}
 
       {/* The saved state, the drawing's counts and the last notice, for
           screen readers: Save and the tab's unsaved dot show it on screen. */}

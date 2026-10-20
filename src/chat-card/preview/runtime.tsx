@@ -28,6 +28,7 @@ import { Banner } from "@/features/design-system/ui/Banner"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { trustedReact } from "@/preview/trustedReact"
 import { CardNote, EmbedFigure, READING_CLASS } from "../cardNote"
+import { CardImage, type CardImagePixels } from '../cardImages';
 import type { CardEmbed } from "../embedText"
 import { addFonts } from "../fontFaces"
 import { componentCaption } from "./caption"
@@ -182,6 +183,14 @@ const subscribeDrawings = (listener: () => void) => {
     drawingListeners.delete(listener)
   }
 }
+let images:Record<string,CardImagePixels> = {};
+const imageListeners = new Set<() => void>();
+const subscribeImages = (listener:() => void) => {imageListeners.add(listener);return () => {imageListeners.delete(listener);};};
+function setImages(next:Record<string,CardImagePixels>) { images = next;for (const listener of imageListeners) listener(); }
+function ProjectImage({src,alt=''}:{src?:unknown;alt?:string}) {
+  const pixels = useSyncExternalStore(subscribeImages,() => images);
+  return <CardImage pixels={typeof src === 'string' && Object.hasOwn(pixels,src) ? pixels[src] : undefined} alt={alt} />;
+}
 
 /** A drawing or diagram the note embeds, drawn from the card's picture as the card draws it. */
 function Embed({ kind, src }: { kind: "drawing" | "diagram"; src?: unknown }) {
@@ -198,7 +207,7 @@ async function runModules(plan: PreviewPlan, registry: Registry): Promise<Module
     const body = registry.modules[index]
     if (!body) throw new Error(`${path} could not be loaded.`)
     try {
-      workspaceModules[path] = await body({ ...jsxRuntime, workspaceModules, trustedReact })
+      workspaceModules[path] = await body({ ...jsxRuntime, workspaceModules, trustedReact,projectImage:ProjectImage })
     } catch (error) {
       throw new Error(`${path}: ${messageOf(error)}`)
     }
@@ -222,12 +231,13 @@ async function start(plan: PreviewPlan, registry: Registry) {
   const workspaceModules = await runModules(plan, registry)
   if (plan.kind === "note") {
     if (!registry.note) throw new Error("The note could not be loaded.")
-    const exports = await registry.note({ ...jsxRuntime, workspaceModules, trustedReact })
+    const exports = await registry.note({ ...jsxRuntime, workspaceModules, trustedReact,projectImage:ProjectImage })
     const Content = exports.default as (props: { components: Record<string, unknown> }) => ReactNode
     const components = {
       ...PREVIEW_COMPONENTS,
       ...(await charts),
       [GUARD_NAME]: Guard,
+      img:ProjectImage,
       Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} />,
       Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} />,
     }
@@ -286,11 +296,12 @@ export function open(registry: Registry) {
     const message = event.data
     if (message.type === "appearance") return applyAppearance(message.appearance)
     if (message.type === "drawings") {
-      if (started) setDrawings({ embeds: message.embeds, svgs: message.svgs })
+      if (started) {setDrawings({ embeds: message.embeds, svgs: message.svgs });setImages(message.images ?? {});}
       return
     }
     if (message.type !== "setup" || started) return
     started = true
+    setImages(message.plan.images ?? {});
     if (message.plan.kind === "note") setDrawings({ embeds: message.plan.embeds, svgs: message.plan.svgs })
     applyAppearance(message.appearance)
     addFonts(message.fonts)

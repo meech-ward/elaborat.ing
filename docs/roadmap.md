@@ -2,7 +2,7 @@
 
 Tasks ready for contributors and coding agents are in the [task queue](tasks.md).
 
-Four phases, in order. Each phase ends with something that works end to end.
+The phases below are in order. Each phase ends with something that works end to end.
 Tasks marked **(open for contributors)** need only this repository, plus your
 own free Supabase project for anything that touches the database. They need no
 access to the hosted project. Everything else needs the hosted project or the
@@ -231,6 +231,17 @@ Also done in this phase: the comment anchoring library (see the task below).
   email), with "via agent" on what their agent wrote; an element's pin sits
   outside its top-right corner; on a phone the text or element being
   commented on moves above the sheet.)
+
+## Phase 5: images in notes and drawings
+
+[Image support](images.md) is being verified through T43 to T50 in the
+[task queue](tasks.md#t43-prove-the-image-asset-contract-and-validation).
+
+This work adds upload, paste, drop, project reuse and explicit URL import,
+with private immutable assets, offline recovery, portable references,
+Excalidraw copies and chat/agent previews. It also includes crop and resize
+copies, rich captions, validated SVG, bounded animation and reviewable
+ChatGPT description suggestions. The document keeps its network isolation.
 
 ## Task: comment anchoring library
 

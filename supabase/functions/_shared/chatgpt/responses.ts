@@ -25,7 +25,7 @@ export function listedModels(body: unknown): PlanModel[] {
 /**
  * The request the keeper sends to OpenAI for the browser's `{ model, input }`.
  * Everything else is pinned here: no storage, a stream, the app's
- * instructions and its four tools. Any other field the browser adds is
+ * instructions and its declared tools. Any other field the browser adds is
  * dropped; a model not in the person's list, or input that is not a list of
  * items, is refused.
  */

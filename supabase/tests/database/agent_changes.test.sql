@@ -189,7 +189,7 @@ select is(
      'previous', (c -> 'previous') - 'path', 'thread', (c -> 'thread') - 'comment_id')
    from pg_temp.change('notes/a.md') c),
   '{"agent": "Claude", "by": "alice@example.com", "size": 2, "latest": true,
-    "previous": {"version": 1, "deleted": false, "size": 2, "same_content": false},
+    "previous": {"version": 1, "deleted": false, "size": 2, "same_content": false, "kind":"text", "asset_id":null, "asset":null},
     "thread": {"id": "c0000000-0000-4000-8000-000000000001", "opening": "Say it twice"}}'::jsonb,
   'Each has the agent''s name and its person, its size, the previous version''s, and the thread its reply answered'
 );
@@ -202,12 +202,12 @@ select ok(
 );
 select is(
   pg_temp.contents('notes/a.md'),
-  jsonb_build_object('file_id', pg_temp.file_id('notes/a.md'), 'version', 2, 'content', 'A2', 'previous', jsonb_build_object('version', 1, 'content', 'A1')),
+  jsonb_build_object('file_id', pg_temp.file_id('notes/a.md'), 'version', 2, 'content', 'A2', 'kind', 'text', 'asset_id', null, 'asset', null, 'previous', jsonb_build_object('version', 1, 'content', 'A1', 'kind', 'text', 'asset_id', null, 'asset', null)),
   'A reader gets one change''s content and its previous version''s'
 );
 select is(
   pg_temp.contents('notes/a.md', true) - 'file_id',
-  '{"version": 2, "content": null, "previous": {"version": 1, "content": "A1"}}'::jsonb,
+  '{"version": 2, "content": null, "kind":"text", "asset_id":null, "asset":null, "previous": {"version": 1, "content": "A1", "kind":"text", "asset_id":null, "asset":null}}'::jsonb,
   'or only the previous version''s, for Revert'
 );
 select throws_ok(

@@ -107,7 +107,7 @@ test("refuses relevant images, HTML and JSX links and moved-note relative destin
     expect(one(source).blockers.length, source).toBeGreaterThan(0);
     expect(one(source, "note.md").blockers.length, source).toBeGreaterThan(0);
   }
-  for (const source of ['[x](../photo.png)', '![x](./photo.png)', '<img src="../photo.png" />']) {
+  for (const source of ['[x](../photo.png)', '<img src="../photo.png" />']) {
     expect(one(source, "note.md", "note.md", "new/note.md").blockers.length, source).toBeGreaterThan(0);
   }
   const outside = one('[x](https://x.test/a) [y](#part)', "note.md", "note.md", "new/note.md");
@@ -245,4 +245,68 @@ test("finds references to files without rewriting anything, for a delete", () =>
     ],
   }]);
   expect(findReferences(files, ["gone.md"])).toEqual([]);
+});
+
+test('moves image destinations relative to the note and preserves surrounding Markdown and shared definitions',() => {
+  const source = 'Before **exact**.\n\n![A](../assets/photo%20%281%29.png "keep title")\n\n![B][picture]\n\n[picture]: <../assets/photo%20%281%29.png> \'keep title\'\n\n`![example](../assets/photo%20%281%29.png)`';
+  const result = one(source,'notes/note.md','assets/photo (1).png','images/new #?.webp');
+  expect(result.blockers).toEqual([]);
+  expect(result.updates[0]?.content).toBe(source.replaceAll('../assets/photo%20%281%29.png "keep title"','../images/new%20%23%3F.webp "keep title"').replace('<../assets/photo%20%281%29.png>','<../images/new%20%23%3F.webp>'));
+  expect(result.updates[0]?.references).toEqual([
+    {from:'assets/photo (1).png',to:'images/new #?.webp',line:3},
+    {from:'assets/photo (1).png',to:'images/new #?.webp',line:7},
+  ]);
+});
+
+test('moving a note or its folder rebases image URLs even when the assets stay put',() => {
+  const source = '![A](./photo.png)\n\n![B](../assets/shared.png)';
+  const moved = one(source,'notes/note.md','notes/note.md','archive/deep/note.md');
+  expect(moved.blockers).toEqual([]);
+  expect(moved.updates[0]?.content).toBe('![A](../../notes/photo.png)\n\n![B](../../assets/shared.png)');
+  const together = planMoveReferences([{path:'notes/note.md',content:source}],[
+    {from:'notes/note.md',to:'archive/note.md'},
+    {from:'notes/photo.png',to:'archive/photo.png'},
+  ]);
+  expect(together.blockers).toEqual([]);
+  expect(together.updates[0]?.content).toBe('![A](photo.png)\n\n![B](../assets/shared.png)');
+});
+
+test('literal HTML and JSX image URLs move in place with their quote and description intact',() => {
+  for (const [path,source] of [
+    ['notes/note.md', '<img alt=\'Keep src="example"\' src="../assets/a.png" width="100">'],
+    ['notes/note.mdx','<img alt="Keep this" src=\'../assets/a.png\' width="100" />'],
+    ['components/picture.mdx','export const Picture = () => <img alt="Keep this" src="../assets/a.png" />'],
+  ]) {
+    const result = one(source,path,'assets/a.png','images/b.png');
+    expect(result.blockers).toEqual([]);
+    expect(result.updates[0]?.content).toBe(source.replace('../assets/a.png','../images/b.png'));
+  }
+});
+
+test('relative image ownership prevents rewriting the same literal belonging to another folder',() => {
+  for (const source of ['![A](photo.png)','<img src="photo.png" />']) {
+    const result = one(source,'notes/note.mdx','photo.png','changed.png');
+    expect(result).toEqual({updates:[],blockers:[]});
+  }
+});
+
+test('computed and spread image targets block affected moves without pretending to be ordinary links',() => {
+  for (const source of ['<img src={chosen} />','<img {...props} src="other.png" />','export const Picture = () => <img src={chosen} />']) {
+    const result = one(source,'notes/note.mdx','assets/a.png','assets/b.png');
+    expect(result.blockers.some(blocker => blocker.reason.includes('computed or spread image'))).toBe(true);
+    expect(result.updates).toEqual([]);
+  }
+  const unrelated = one('<img src={"other.png"} />','notes/note.mdx','assets/a.png','assets/b.png');
+  expect(unrelated).toEqual({updates:[],blockers:[]});
+});
+
+test('image deletion planning lists inline, reference, HTML and executable JSX usages',() => {
+  const files = [
+    {path:'notes/note.md',content:'![A](../assets/a.png)\n\n![B][x]\n\n[x]: ../assets/a.png'},
+    {path:'notes/other.md',content:'<img src="../assets/a.png" alt="A">'},
+    {path:'components/picture.mdx',content:'export const Picture = () => <img src="../assets/a.png" />'},
+  ];
+  const found = findReferences(files,['assets/a.png']);
+  expect(found.map(file => [file.path,file.references.length])).toEqual([['notes/note.md',2],['notes/other.md',1],['components/picture.mdx',1]]);
+  expect(found.every(file => file.references.every(reference => reference.to === 'assets/a.png'))).toBe(true);
 });

@@ -9,7 +9,7 @@ import type { AssistantHost } from "./host"
 /**
  * The tool bridge: runs the assistant's function calls through the app's
  * own operations (the workbench's AssistantHost), as the person. Only the
- * four tools exist; any other name is refused and does nothing. A write
+ * declared tools exist; any other name is refused and does nothing. A write
  * never saves: it lands as an unsaved edit, and over the person's own
  * unsaved edits only once they say yes.
  */
@@ -21,6 +21,7 @@ export type ToolOutcome = {
   path: string | null
   /** What the model is told, as a JSON string. */
   output: string
+  image?: { dataURL: string }
   /** done; kept (the person kept their own changes); or error. */
   result: "done" | "kept" | "error"
 }
@@ -73,7 +74,18 @@ export async function runTool(call: ToolCall, context: BridgeContext): Promise<T
         const file = await host.readFile(path)
         if (!file) return failed(tool, path, `${path} is not in this project.`)
         if (file.content.length > MAX_READ_CHARS) return failed(tool, path, `${path} is too large for the assistant to read (${file.content.length} characters).`)
-        return { tool, path, result: "done", output: JSON.stringify({ path, version: file.version, unsaved_changes: file.unsaved, content: file.content }) }
+        return { tool, path, result: "done", output: JSON.stringify({ path, version: file.version, unsaved_changes: file.unsaved, ...(file.kind === "image" ? { kind: "image", asset: file.asset } : { content: file.content }) }) }
+      }
+      case "get_image_preview": {
+        if (!path || !host.getImagePreview) return failed(tool, path, "Choose an image in this project.");
+        const preview = await host.getImagePreview(path);
+        if (!preview) return failed(tool, path, "The image is unavailable.");
+        return { tool, path, result: "done", output: JSON.stringify({ path, asset: preview.asset }), image: { dataURL: preview.dataURL } };
+      }
+      case "import_image": {
+        if (host.readOnly || !path || typeof args.url !== "string" || !host.importImage) return failed(tool, path, "Image import is unavailable.");
+        const imported = await host.importImage(path, args.url);
+        return { tool, path, result: "done", output: JSON.stringify({ path, asset: imported.asset, saved: false, note: "Image kept as a local draft. Reference this path in a note; the person saves both together." }) };
       }
       case "list_comments": {
         if (!path) return failed(tool, null, "list_comments needs a path.")
@@ -82,6 +94,7 @@ export async function runTool(call: ToolCall, context: BridgeContext): Promise<T
       }
       case "write_file": {
         if (host.readOnly) return failed(tool, path, `This project can't be changed: ${host.readOnly}`)
+        if (path && kindForPath(path) === "image") return failed(tool, path, "Images cannot be written as text. Reuse an existing image or import an image URL.");
         if (!path || typeof args.content !== "string") return failed(tool, path, "write_file needs a path and the complete content.")
         let content: string
         try {

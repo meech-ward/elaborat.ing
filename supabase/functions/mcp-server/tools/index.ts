@@ -5,6 +5,7 @@ import { registerCommentTools } from './comments.ts'
 import { registerComponentPreview } from './componentPreview.ts'
 import { registerDrawTool } from './draw.ts'
 import { registerFileView } from './fileView.ts'
+import { registerImageTools } from './imageAssets.ts'
 import { registerPanel } from './panel.ts'
 import { registerProjectTools } from './projects.ts'
 import { registerSearchTool } from './search.ts'
@@ -20,7 +21,7 @@ export type { ToolContext } from './types.ts'
 // that changes or removes anything (a file, a title, a thread's state, who
 // has access) is destructive, even when it can be undone; only a tool that
 // just adds is not. No tool reaches outside the user's own account, so
-// openWorldHint is always false. annotations.test.ts holds the list.
+// Only explicit image imports reach an external URL. annotations.test.ts holds the list.
 //
 // `embedView` (EMBED_VIEW_ENABLED, see panel.ts) adds open_panel and its view;
 // without it the tools and resources are exactly those below.
@@ -29,6 +30,7 @@ export function registerTools(server: McpServer, context: ToolContext, { embedVi
   registerProjectTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
+  registerImageTools(server, context)
   registerDrawTool(server, context)
   registerAppendToNote(server, context)
   registerComponentPreview(server, context)

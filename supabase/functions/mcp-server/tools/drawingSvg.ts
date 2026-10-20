@@ -17,6 +17,7 @@ export { parseDrawing } from '../../_shared/drawing.ts'
 // container), that the view paints in its palette's diagram colour.
 // The options mirror Excalidraw 0.18's renderer (element/src/shape.ts).
 
+export type RasterImage = {dataURL:string;width:number;height:number}
 type Element = Record<string, unknown>
 type Point = [number, number]
 
@@ -249,7 +250,7 @@ function textSvg(element: Element, width: number, height: number, onArrow: boole
 }
 
 /** One element's SVG in its own coordinates, and its box there. */
-function elementSvg(element: Element, types: Map<unknown, unknown>, diagram: boolean): { body: string; box: [number, number, number, number] } | null {
+function elementSvg(element: Element, types: Map<unknown, unknown>, diagram: boolean, images:Record<string,RasterImage>): { body: string; box: [number, number, number, number] } | null {
   const width = Math.abs(num(element.width))
   const height = Math.abs(num(element.height))
   const box: [number, number, number, number] = [0, 0, width, height]
@@ -310,8 +311,22 @@ function elementSvg(element: Element, types: Map<unknown, unknown>, diagram: boo
     }
     case 'text':
       return { body: textSvg(element, width, height, types.get(element.containerId) === 'arrow'), box }
-    case 'image':
+    case 'image': {
+      const image=typeof element.fileId==='string'?images[element.fileId]:undefined
+      if(image && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(image.dataURL) && image.dataURL.length<=44000) {
+        const crop=element.crop&&typeof element.crop==='object'?element.crop as Record<string,unknown>:null
+        const naturalWidth=num(crop?.naturalWidth,image.width),naturalHeight=num(crop?.naturalHeight,image.height)
+        const cropX=Math.max(0,num(crop?.x)),cropY=Math.max(0,num(crop?.y))
+        const cropWidth=num(crop?.width,naturalWidth),cropHeight=num(crop?.height,naturalHeight)
+        if(naturalWidth>0&&naturalHeight>0&&cropWidth>0&&cropHeight>0&&cropX+cropWidth<=naturalWidth+0.01&&cropY+cropHeight<=naturalHeight+0.01) {
+          const scale=Array.isArray(element.scale)?element.scale:[]
+          const sx=scale[0]===-1?-1:1,sy=scale[1]===-1?-1:1
+          const body=`<g transform="translate(${fmt(sx<0?width:0)} ${fmt(sy<0?height:0)}) scale(${sx} ${sy})"><svg width="${fmt(width)}" height="${fmt(height)}" viewBox="${fmt(cropX)} ${fmt(cropY)} ${fmt(cropWidth)} ${fmt(cropHeight)}" preserveAspectRatio="none" overflow="hidden"><image width="${fmt(naturalWidth)}" height="${fmt(naturalHeight)}" href="${escapeAttr(image.dataURL)}" preserveAspectRatio="none"/></svg></g>`
+          return {body,box}
+        }
+      }
       return { body: `<rect width="${fmt(width)}" height="${fmt(height)}" rx="8" stroke="#868e96" stroke-width="1.5" stroke-dasharray="6 6" fill="none"/>`, box }
+    }
     default:
       return null
   }
@@ -329,8 +344,8 @@ export type Box = [number, number, number, number]
  * card's live view draws with this too, so what it draws is what the saved
  * card shows.
  */
-export function drawElement(element: Element, types: Map<unknown, unknown>, diagram = false): { part: string; box: Box } | null {
-  const drawn = elementSvg(element, types, diagram)
+export function drawElement(element: Element, types: Map<unknown, unknown>, diagram = false, images:Record<string,RasterImage>={}): { part: string; box: Box } | null {
+  const drawn = elementSvg(element, types, diagram, images)
   if (!drawn) return null
   const x = num(element.x)
   const y = num(element.y)
@@ -365,14 +380,14 @@ function svgAround(parts: string, [minX, minY, maxX, maxY]: Box): string {
  * The scene as one SVG on a transparent background, or why it is not drawn.
  * A diagram's canvas (`diagram`) gets its generated shapes filled.
  */
-export function drawingSvg(elements: Element[], maxChars = MAX_SVG_CHARS, { diagram = false }: { diagram?: boolean } = {}): DrawingSvg {
+export function drawingSvg(elements: Element[], maxChars = MAX_SVG_CHARS, { diagram = false, images = {} }: { diagram?: boolean; images?:Record<string,RasterImage> } = {}): DrawingSvg {
   if (elements.length > MAX_ELEMENTS) return { problem: 'too_big' }
   const types = new Map(elements.map((element) => [element.id, element.type]))
   const parts: string[] = []
   const bounds: Box = [Infinity, Infinity, -Infinity, -Infinity]
   let size = 0
   for (const element of elements) {
-    const drawn = drawElement(element, types, diagram)
+    const drawn = drawElement(element, types, diagram, images)
     if (!drawn) continue
     bounds[0] = Math.min(bounds[0], drawn.box[0])
     bounds[1] = Math.min(bounds[1], drawn.box[1])

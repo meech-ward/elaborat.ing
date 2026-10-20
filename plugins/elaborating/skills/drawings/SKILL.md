@@ -60,6 +60,16 @@ The user's instructions win over this skill when they differ.
   show it with `show_file`. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.
 
+## Images in drawings
+
+Native Excalidraw scenes keep image bytes in their `files` map. Preserve
+existing file entries while editing elements. Never replace a file's data URL
+with a network or Storage URL. The app's Insert image action copies a project
+image into the scene; later project image changes do not change that copy.
+The complete serialized drawing, embedded images included, must fit 2 MiB.
+Server chat previews validate embedded images and may show a fallback for an
+unsupported legacy entry; preserve its original bytes when editing.
+
 ## The scene
 
 `create_and_show`, `update_and_show` and `write_file` take the same short

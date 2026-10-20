@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { ImageAssetSchema } from "../images/types"
 import { z } from "zod/mini"
 import { ProjectPath } from "../project-storage/model"
 import { classify, RemoteError } from "../project-storage/remote"
@@ -11,6 +12,7 @@ import { classify, RemoteError } from "../project-storage/remote"
  */
 
 const Person = z.nullable(z.object({ user_id: z.uuid(), email: z.nullable(z.string()), name: z.nullish(z.string()) }))
+const ImageFields = { kind: z.optional(z.enum(["text", "image"])), asset: z.optional(z.nullable(ImageAssetSchema)) }
 const Version = z.int().check(z.positive())
 const Revision = z.int().check(z.nonnegative())
 /** A content's size in bytes, or null when the version is a deletion. */
@@ -21,6 +23,7 @@ export const DIFF_LIMIT_BYTES = 1024 * 1024
 
 /** One version an agent saved, with the file's version before it, without their contents (`contents` has them). */
 export const AgentChange = z.object({
+  ...ImageFields,
   file_id: z.uuid(),
   /** The project revision it was saved at: several files saved together share it. */
   version: Version,
@@ -38,6 +41,7 @@ export const AgentChange = z.object({
   /** The file's version before this one, or null when the agent created the file. */
   previous: z.nullable(
     z.object({
+      ...ImageFields,
       version: Version,
       path: ProjectPath,
       deleted: z.boolean(),
@@ -63,10 +67,11 @@ export type AgentChangeList = z.infer<typeof AgentChangeList>
 
 /** One change's content and its file's previous version's (null when the agent created the file); null content is a deletion. */
 export const AgentChangeContents = z.object({
+  ...ImageFields,
   file_id: z.uuid(),
   version: Version,
   content: z.nullable(z.string()),
-  previous: z.nullable(z.object({ version: Version, content: z.nullable(z.string()) })),
+  previous: z.nullable(z.object({ ...ImageFields, version: Version, content: z.nullable(z.string()) })),
 })
 export type AgentChangeContents = z.infer<typeof AgentChangeContents>
 

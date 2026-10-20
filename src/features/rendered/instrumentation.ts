@@ -23,6 +23,9 @@ import { collectBlocks, type BlockMap } from "./blocks";
 import { COMPONENT_CATALOG, type ComponentDefinition } from "../document/componentCatalog";
 import { workspaceImportPlugin } from "../document/componentModules";
 import { codeRegion, type CodeRegion } from './sourceRegions';
+import { projectImagesPlugin } from '../images/compileImages';
+import { literalHtmlImage } from '../images/references';
+import { normalizeImageFigures } from '../images/figureNodes';
 export { encodeTextLeaf } from './sourceRegions';
 
 export type SourceRange = { from: number; to: number };
@@ -452,6 +455,7 @@ export async function instrumentMarkdownSource(
       format: "md",
       remarkPlugins: [
         ...SHARED_REMARK_PLUGINS,
+        () => normalizeImageFigures,
         [capturePlugin, collected] as never,
       ],
     });
@@ -724,8 +728,63 @@ export async function compileForPreview(
   const file = await compile(source, {
     outputFormat: "function-body",
     format,
+    recmaPlugins: [projectImagesPlugin],
     remarkPlugins: [
       ...SHARED_REMARK_PLUGINS,
+      ...format === 'md' ? [(() => normalizeImageFigures)] : [],
+      ...format === 'md' ? [(() => (tree: unknown) => {
+        const convert = (node: Record<string,unknown>, parent?: Record<string,unknown>) => {
+          if (node.type === 'html' && typeof node.value === 'string') {
+            const image = literalHtmlImage(node.value);
+            if (image) {
+              node.type = parent?.type === 'paragraph' ? 'mdxJsxTextElement' : 'mdxJsxFlowElement';
+              node.name = 'ProjectImage';
+              node.attributes = [
+                {type:'mdxJsxAttribute',name:'src',value:image.src},
+                {type:'mdxJsxAttribute',name:'alt',value:image.alt},
+              ];
+              node.children = [];
+              delete node.value;
+            }
+          }
+          for (const child of (node.children as Record<string,unknown>[] | undefined) ?? []) convert(child,node);
+        };
+        convert(tree as Record<string,unknown>);
+      })] : [],
+      (() => (tree: unknown) => {
+        visit(tree as never,(value:unknown) => {
+          const figure = value as Record<string,unknown>;
+          if (figure.name !== 'figure') return;
+          const children = figure.children as Record<string,unknown>[] | undefined;
+          const caption = children?.find(child => child.name === 'figcaption');
+          const content = caption?.children as Array<{position?:{start:{offset?:number};end:{offset?:number}}}> | undefined;
+          const from = content?.[0]?.position?.start.offset,to = content?.at(-1)?.position?.end.offset;
+          if (from === undefined || to === undefined) return;
+          const text = source.slice(from,to);
+          visit(figure as never,(value:unknown) => {
+            const image = value as Record<string,unknown>;
+            if (image.type === 'image' || image.type === 'imageReference') {
+              const data = (image.data ??= {}) as Record<string,unknown>;
+              data.hProperties = {...data.hProperties as object,'data-image-caption':text};
+            }
+            if (image.name === 'img' || image.name === 'ProjectImage')
+              (image.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageCaption',value:text});
+          });
+        });
+        visit(tree as never,(value: unknown) => {
+          const node = value as Record<string,unknown>;
+          const position = node.position as {start:{offset?:number}} | undefined;
+          const from = position?.start.offset;
+          if (from === undefined) return;
+          if (node.type === 'image' || node.type === 'imageReference') {
+            const data = (node.data ??= {}) as Record<string,unknown>;
+            data.hProperties = {...data.hProperties as object,'data-image-from':from};
+          }
+          if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && ['img','ProjectImage'].includes(String(node.name))) {
+            (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageFrom',value:expressionLiteral(String(from))});
+          }
+        });
+      }),
       ...(projectAst ? [(() => projectAst.before) as never] : []),
       markPlugin(source, slots, authoring) as never,
       (() => (tree: unknown) => {

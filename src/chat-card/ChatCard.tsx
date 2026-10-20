@@ -49,6 +49,7 @@ import type { CardEditor, EmbedRef } from "./cardEditor"
 import { useLoadedFile } from "./cardDeferred"
 import { drawDiagrams, hasDiagramsToDraw, onNotDrawn, startDiagramEngine, useDrawnFile } from "./cardDiagrams"
 import { CardNote, READING_CLASS } from "./cardNote"
+import { CardImage } from './cardImages';
 import { cardReducer, CARD_TEXT, INITIAL_CARD_STATE, type LiveKind } from "./cardState"
 import { CardView, EditorFrame, EmbedFigure, LoadingLines, type CardPreview } from "./CardView"
 import { addCardFonts } from "./fonts"
@@ -546,7 +547,7 @@ function LiveView({ kind, path, feed, sound, reducedMotion }: { kind: LiveKind; 
   )
 }
 
-type Island = { id: number; host: HTMLElement; embed: CardEmbed }
+type Island = { id: number; host: HTMLElement } & ({embed:CardEmbed}|{image:{key:string;alt:string}})
 
 /**
  * The app's rendered editor on the note's source (cardEditor.ts, loaded the
@@ -588,7 +589,15 @@ function NoteEditor({
         mount: element,
         text: file.source ?? "",
         format: file.path.toLowerCase().endsWith(".mdx") ? "mdx" : "md",
+        path:file.path,
         embed,
+        image:reference => {
+          const host = document.createElement('span');
+          host.className = 'not-prose card-image-slot';
+          const id = next++;
+          setIslands(list => [...list.filter(island => island.host.isConnected),{id,host,image:reference}]);
+          return host;
+        },
         code: (text, language) => {
           const block = codeBlock(text, language)
           if (language) highlighter().then((highlight) => highlightBlock(block, highlight), () => {})
@@ -635,7 +644,8 @@ function NoteEditor({
       {islands.map((island) =>
         createPortal(
           // As the file has it now: a diagram the card draws may have been drawn since.
-          <EmbedFigure embed={file.embeds.find((entry) => entry?.path === island.embed.path) ?? island.embed} svgs={file.svgs} />,
+          'embed' in island ? <EmbedFigure embed={file.embeds.find((entry) => entry?.path === island.embed.path) ?? island.embed} svgs={file.svgs} /> :
+            <CardImage pixels={file.images?.[island.image.key]} alt={island.image.alt} loading={file.imageRefs?.some(reference => reference.key === island.image.key && reference.status === 'loading')} />,
           island.host,
           String(island.id),
         ),

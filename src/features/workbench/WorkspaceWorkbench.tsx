@@ -39,6 +39,7 @@ import type { ConflictChoice } from "@/features/project-storage/sync";
 import { parseDrawingFile } from "@/features/drawings/parse";
 import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
+import { LazyWorkspaceImageSession } from "./LazyWorkspaceImageSession";
 import { WorkspaceSession } from "./WorkspaceSession";
 import { TablineProvider } from "./tabline";
 import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, commentsShortcut, isApplePlatform } from "@/features/design-system";
@@ -890,7 +891,7 @@ export function WorkspaceWorkbench({
   // A drawing or a diagram on screen is the comments panel's file (a note's
   // session says so itself, as it also places the threads in its text).
   // A diagram's element comments hang on its generated canvas file.
-  const commentsPath = !hideSessions && state.active && kindForPath(state.active) !== "note" && kindForPath(state.active) !== "text" ? state.active : null;
+  const commentsPath = !hideSessions && state.active && kindForPath(state.active) !== "note" && kindForPath(state.active) !== "text" && kindForPath(state.active) !== "image" ? state.active : null;
   const commentsServer = commentsPath ? (files.find((file) => file.path === commentsPath)?.server ?? null) : null;
   const commentsFileId = commentsServer?.id ?? null;
   const commentsVersion = commentsServer?.version ?? null;
@@ -1306,6 +1307,11 @@ export function WorkspaceWorkbench({
                             onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
                           />
+                        ) : files.find(file => file.path === tab.path)?.kind === "image" ? (
+                          <LazyWorkspaceImageSession path={tab.path} file={files.find(file => file.path === tab.path)} client={client}
+                            active={!hideSessions && state.active === tab.path} navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
+                            readOnly={readOnly} onState={onState} refreshList={refreshFiles}
+                            onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined} />
                         ) : (
                           <WorkspaceSession
                             navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}

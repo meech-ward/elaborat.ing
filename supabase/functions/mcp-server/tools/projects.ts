@@ -98,7 +98,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         const [files, folders, authors] = await Promise.all([
           supabase
             .from('project_files')
-            .select('path, version, updated_at')
+            .select('path, kind, asset, version, updated_at')
             .eq('project_id', project_id)
             .order('path'),
           supabase.from('project_folders').select('path').eq('project_id', project_id).order('path'),
@@ -125,7 +125,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'read_file',
     {
       description:
-        'Read one file: its content and its version. Pass the version as base_version when you save changes to it.',
+        'Read one file: text content or image metadata, and its version. Image bytes are not returned. Pass the version as base_version when you save changes to it. Insert an existing image into a note with a document-relative Markdown image reference.',
       inputSchema: z.object({ project_id: projectId, path }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       // update_and_show's card reads the file as saved before the change, to show what stays.
@@ -135,12 +135,16 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       try {
         const { data, error } = await supabase
           .from('project_files')
-          .select('path, content, version, updated_at')
+          .select('path, content, kind, asset, version, updated_at')
           .eq('project_id', project_id)
           .eq('path', path)
           .maybeSingle()
         if (error) throw error
         if (!data) return errorResult(`No file at ${path} in this project. Use list_files to see what exists.`)
+        if (data.kind === 'image') {
+          const { content: _content, ...metadata } = data
+          return jsonResult(metadata)
+        }
         return jsonResult(data)
       } catch (error) {
         return runtimeErrorResult(error)
@@ -172,7 +176,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'write_file',
     {
       description:
-        'Create or replace one file. To create a new file, omit base_version. To change an existing file, pass the version you read. ' +
+        'Create or replace one text file. Existing image files cannot be overwritten as text. To create a new file, omit base_version. To change an existing file, pass the version you read. ' +
         'If the result status is "conflict", someone changed the file first: read it again, merge, and retry. ' +
         'New notes are .mdx; embed drawings and diagrams with <Drawing src="..." /> and <Diagram src="..." /> (see the server instructions).',
       inputSchema: z.object({

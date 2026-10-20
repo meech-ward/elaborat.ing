@@ -5,6 +5,8 @@ work with.
 
 - Write notes in MDX (Markdown plus components), with a code editor, an
   editable rendered view, or both side by side.
+- Add [project images](docs/images.md) to notes and drawings, with captions,
+  crop and resize copies, offline access and explicit URL import.
 - Draw on native Excalidraw canvases, and write diagrams as D2 code.
 - Connect Claude, ChatGPT or any MCP client to your account, and work on the
   same documents together.

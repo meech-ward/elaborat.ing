@@ -4,6 +4,7 @@ import { z } from 'npm:zod@4.4.3'
 import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser } from './componentSources.ts'
 import { FILE_VIEW_URI, MAX_META_CHARS, fileUrl, projectUrl } from './fileView.ts'
 import { path, projectId } from './projects.ts'
+import { IMAGES_META_KEY, imageReferences, imageViews } from './imageAssets.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
@@ -67,7 +68,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
         const which = draft ? 'a draft, not saved' : `version ${data?.version}`
         const url = data ? fileUrl(project_id, path) : projectUrl(project_id)
         // The sources reach the view, not the model.
-        const meta = { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } }
+        const meta:Record<string,unknown> = { [COMPONENTS_META_KEY]: { modules, ...(editors ? { editors } : {}) } }
         // Over the file view's cap a chat may show no card at all (fileView.ts MAX_META_CHARS).
         const size = JSON.stringify(meta).length
         if (size > MAX_META_CHARS) {
@@ -76,6 +77,9 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
               `${draft ? 'Save it and open it' : 'Open it'} in elaborat.ing to see it: ${url}`
           )
         }
+        const refs=await imageReferences('',path,modules)
+        const images=refs.length?await imageViews(supabase,project_id,refs,Math.max(0,MAX_META_CHARS-size-100)):null
+        if(images&&Object.keys(images.previews).length) meta[IMAGES_META_KEY]=images.previews
         return {
           content: [{ type: 'text', text: `Showing a preview of ${what} (${which}) to the user.` }],
           structuredContent: {
@@ -91,6 +95,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
             component: component ?? null,
             props: props ?? null,
             shared,
+            ...(images?{images:images.images}:{}),
           },
           _meta: meta,
         }

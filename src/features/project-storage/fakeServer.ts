@@ -1,4 +1,4 @@
-import { isValidProjectPath, MAX_ENTRIES, MAX_PROJECT_BYTES, byteLength, type Role, type SaveChange } from "./model"
+import { isValidProjectPath, MAX_ENTRIES, MAX_PROJECT_BYTES, byteLength, type Role, type SaveChange, type ImageAsset } from "./model"
 import {
   RemoteError,
   RemoteProject,
@@ -40,6 +40,7 @@ const ancestors = (path: string) => {
 
 export class FakeProjectServer {
   readonly projects = new Map<string, ServerProject>()
+  readonly assets = new Map<string, { projectId: string; asset: ImageAsset; bytes: Blob; preview: Blob }>()
   /** Every call made, for asserting what sync sent. */
   readonly calls: Array<{ user: string; method: string; args: unknown[] }> = []
   offline = false
@@ -82,6 +83,31 @@ export class FakeProjectServer {
       listProjects: () => call("listProjects", [], () => this.list(user)),
       createProject: (id, title) => call("createProject", [id, title], () => this.create(user, id, title)),
       renameProject: (id, title) => call("renameProject", [id, title], () => this.rename(user, id, title)),
+      imageUploadStatus: (projectId, assetId) => call("imageUploadStatus", [projectId, assetId], () => {
+        this.readable(user, projectId)
+        const found = this.assets.get(`${projectId}/${assetId}`)
+        return found ? { status: "available" as const, asset: found.asset } : { status: "missing" as const }
+      }),
+      uploadImage: (projectId, asset, bytes) => call("uploadImage", [projectId, asset, bytes], () => {
+        const project = this.editable(user, projectId)
+        if (project.archivedAt) throw new RemoteError("archived", "Project is archived")
+        const key = `${projectId}/${asset.id}`
+        const existing = this.assets.get(key)
+        if (existing) {
+          if (existing.asset.sha256 !== asset.sha256) throw new RemoteError("invalid", "An image identity cannot be overwritten")
+          return existing.asset
+        }
+        const verified = { ...asset, object_key: `${key}/original`, preview_key: `${key}/preview` }
+        const preview = bytes.size === asset.preview_byte_length ? bytes : new Blob([new Uint8Array(asset.preview_byte_length)], { type: asset.preview_type })
+        this.assets.set(key, { projectId, asset: verified, bytes, preview })
+        return verified
+      }),
+      downloadImage: (projectId, asset, preview) => call("downloadImage", [projectId, asset.id, preview ?? false], () => {
+        this.readable(user, projectId)
+        const found = this.assets.get(`${projectId}/${asset.id}`)
+        if (!found) throw new RemoteError("invalid", "The image is unavailable")
+        return preview ? found.preview : found.bytes
+      }),
       saveFiles: (projectId, mutationId, changes) =>
         call("saveFiles", [projectId, mutationId, changes], () => SaveResult.parse(this.save(user, projectId, mutationId, changes))),
       changedFiles: (projectId, since, until) =>
@@ -355,13 +381,13 @@ export class FakeProjectServer {
     if (changes.length < 1 || changes.length > 4096) throw new RemoteError("invalid", "Changes must be a list of 1 to 4096 items")
 
     const touched = new Set<string>()
-    const conflicts: Array<{ path: string; base_version: number | null; current: { id: string; version: number; content: string } | null }> = []
-    const currentOf = (file: ServerFile | undefined) => (file ? { id: file.id, version: file.version, content: file.content } : null)
+    const conflicts: Array<{ path: string; base_version: number | null; current: Omit<RemoteFile, "path"> | null }> = []
+    const currentOf = (file: ServerFile | undefined) => (file ? { id: file.id, version: file.version, content: file.content, ...(file.kind === "image" ? { kind: "image" as const, asset_id: file.asset_id, asset: file.asset } : {}) } : null)
     for (const change of changes) {
       if (!isValidProjectPath(change.path)) throw new RemoteError("invalid", `Invalid path: ${change.path}`)
       if (touched.has(change.path)) throw new RemoteError("invalid", `A save can change each path only once: ${change.path}`)
       touched.add(change.path)
-      if (change.op === "put" || change.op === "delete" || change.op === "move") {
+      if (change.op === "put" || change.op === "asset" || change.op === "delete" || change.op === "move") {
         const base = "base_version" in change ? (change.base_version ?? null) : null
         const file = project.files.get(change.path)
         if ((base === null && file) || (base !== null && file?.version !== base)) {
@@ -387,16 +413,19 @@ export class FakeProjectServer {
     const addedFiles: string[] = []
     const applied: Array<{ op: SaveChange["op"]; path: string; to?: string; id?: string; version?: number }> = []
     for (const change of changes) {
-      if (change.op === "put") {
+      if (change.op === "put" || change.op === "asset") {
         const existing = files.get(change.path)
-        const file = { id: existing?.id ?? crypto.randomUUID(), path: change.path, content: change.content, version: revision }
+        if (change.op === "put" && existing?.kind === "image") throw new RemoteError("invalid", "An image cannot be overwritten with text")
+        const staged = change.op === "asset" ? this.assets.get(`${projectId}/${change.asset_id}`) : null
+        if (change.op === "asset" && !staged) throw new RemoteError("invalid", "The image must be uploaded before it is saved")
+        const file: RemoteFile = { id: existing?.id ?? crypto.randomUUID(), path: change.path, content: change.op === "put" ? change.content : "", version: revision, ...(staged ? { kind: "image" as const, asset_id: staged.asset.id, asset: staged.asset } : {}) }
         files.set(change.path, file)
         if (!existing) {
           addedPaths.push(change.path)
           addedFiles.push(change.path)
         }
         history.push({ fileId: file.id, version: revision, deleted: false })
-        applied.push({ op: "put", path: change.path, id: file.id, version: revision })
+        applied.push({ op: change.op, path: change.path, id: file.id, version: revision })
       } else if (change.op === "delete") {
         const file = files.get(change.path)!
         files.delete(change.path)
@@ -405,7 +434,11 @@ export class FakeProjectServer {
       } else if (change.op === "move") {
         const file = files.get(change.path)!
         files.delete(change.path)
-        const moved = { ...file, path: change.to, content: change.content ?? file.content, version: revision }
+        if (file.kind === "image" && change.content !== undefined) throw new RemoteError("invalid", "An image cannot be moved with text content")
+        if (change.asset_id && change.content !== undefined) throw new RemoteError("invalid", "An image move cannot contain text")
+        const staged = change.asset_id ? this.assets.get(`${projectId}/${change.asset_id}`) : null
+        if (change.asset_id && !staged) throw new RemoteError("invalid", "Upload the image before moving it")
+        const moved = { ...file, path: change.to, content: staged ? "" : change.content ?? file.content, version: revision, ...(staged ? { kind: "image" as const, asset_id: staged.asset.id, asset: staged.asset } : {}) }
         files.set(change.to, moved)
         addedPaths.push(change.to)
         addedFiles.push(change.to)
@@ -425,7 +458,7 @@ export class FakeProjectServer {
       addedFiles.find((path) => [...files.keys(), ...folders].some((other) => other.startsWith(`${path}/`)))
     if (collision) throw new RemoteError("path-taken", `Path is already used by a file or folder: ${collision}`, collision)
     if (files.size > this.maxFiles || folders.size > 4096) throw new RemoteError("limit", "A project can hold at most 4096 files and 4096 folders")
-    if ([...files.values()].reduce((sum, file) => sum + byteLength(file.content), 0) > MAX_PROJECT_BYTES) {
+    if ([...files.values()].reduce((sum, file) => sum + (file.kind === "image" ? file.asset?.byte_length ?? 0 : byteLength(file.content)), 0) > MAX_PROJECT_BYTES) {
       throw new RemoteError("limit", "A project can hold at most 64 MiB of files")
     }
 

@@ -14,7 +14,8 @@
  */
 import { useEffect, useMemo, useState } from "react"
 import type { HostBridge } from "./bridge"
-import { parseEmbedResult, type CardEmbed, type CardFile, type LoadedEmbed } from "./toolResult"
+import { parseEmbedResult, parseImagePreviewResult, type CardEmbed, type CardFile, type LoadedEmbed } from "./toolResult"
+import { cardImageBytes, type CardImagePixels } from './cardImages';
 
 /** How long the card waits for one drawing or diagram before it leaves its link. */
 const LOAD_TIMEOUT_MS = 20_000
@@ -23,6 +24,7 @@ const LOAD_TIMEOUT_MS = 20_000
 type Loaded = ReadonlyMap<string, LoadedEmbed | null>
 
 const NONE: Loaded = new Map()
+const imageIdentity = (reference:{path:string;revision?:number}) => `${reference.path}\0${reference.revision ?? 'current'}`;
 
 /** The paths of `file`'s deferred embeds, each once, in the note's order. */
 const deferredPaths = (file: CardFile): string[] => [...new Set(file.embeds.flatMap((embed) => (embed?.status === "deferred" ? [embed.path] : [])))]
@@ -61,7 +63,7 @@ function withLoaded(file: CardFile, loaded: Loaded, loading: boolean): CardFile 
 }
 
 /** `file` with its deferred drawings and diagrams loaded through `host`: null where the card cannot call tools. */
-export function useLoadedFile(file: CardFile | null, host: HostBridge | null): CardFile | null {
+function useLoadedEmbeds(file: CardFile | null, host: HostBridge | null): CardFile | null {
   const [loaded, setLoaded] = useState<{ file: CardFile; got: Loaded } | null>(null)
   useEffect(() => {
     if (!file || !host) return
@@ -92,4 +94,52 @@ export function useLoadedFile(file: CardFile | null, host: HostBridge | null): C
     }
   }, [file, host])
   return useMemo(() => file && withLoaded(file, loaded?.file === file ? loaded.got : NONE, host !== null), [file, loaded, host])
+}
+
+/** Image previews load sequentially, with the same stop-on-silent-host behavior as drawing embeds. */
+export function useLoadedFile(file:CardFile|null,host:HostBridge|null):CardFile|null {
+  const embeds = useLoadedEmbeds(file,host);
+  const [loaded,setLoaded] = useState<{file:CardFile;images:ReadonlyMap<string,CardImagePixels|null>}|null>(null);
+  useEffect(() => {
+    if (!file || !host) return;
+    let stopped = false;
+    void (async () => {
+      const jobs = [...new Map((file.imageRefs ?? []).filter(reference => !file.images?.[reference.key] && reference.status !== 'missing').map(reference => [imageIdentity(reference),{path:reference.path,revision:reference.revision}])).values()];
+      let bytes = Object.values(file.images ?? {}).reduce((total,pixels) => total + cardImageBytes(pixels),0);
+      if (file.kind === 'image' && !file.images?.[file.path] && !jobs.some(job => job.path === file.path)) jobs.push({path:file.path,revision:file.version ?? undefined});
+      for (const [index,job] of jobs.entries()) {
+        const {path,revision} = job;
+        let answer:unknown = null;
+        try { answer = await within(host.callTool('get_image_preview',{project_id:file.projectId,path,...(revision === undefined ? {} : {revision})}),LOAD_TIMEOUT_MS); } catch { /* keep the explicit app fallback */ }
+        if (stopped) return;
+        const silent = answer === NO_ANSWER;
+        const pixels = silent ? null : parseImagePreviewResult(answer,path);
+        const cost = pixels ? cardImageBytes(pixels) * Math.max(1,(file.imageRefs ?? []).filter(reference => imageIdentity(reference) === imageIdentity(job) && !file.images?.[reference.key]).length) : 0;
+        const full = bytes + cost > 2 * 1024 * 1024;
+        setLoaded(current => {
+          const images = new Map(current?.file === file ? current.images : []);
+          for (const each of silent || full ? jobs.slice(index) : [job]) images.set(imageIdentity(each),full ? null : pixels);
+          return {file,images};
+        });
+        if (silent || full) return;
+        bytes += cost;
+      }
+    })();
+    return () => { stopped = true; };
+  }, [file,host]);
+  return useMemo(() => {
+    if (!file || !embeds) return null;
+    const got = loaded?.file === file ? loaded.images : new Map<string,CardImagePixels|null>();
+    if (!(file.imageRefs?.length || file.kind === 'image')) return embeds;
+    const images = {...file.images};
+    const imageRefs = (file.imageRefs ?? []).map(reference => {
+      const pixels = got.get(imageIdentity(reference));
+      if (pixels) images[reference.key] = pixels;
+      return images[reference.key] ? {...reference,status:'ready' as const} :
+        !host || got.has(imageIdentity(reference)) ? reference : {...reference,status:'loading' as const};
+    });
+    const standalone = got.get(imageIdentity({path:file.path,revision:file.version ?? undefined}));
+    if (file.kind === 'image' && standalone) images[file.path] = standalone;
+    return {...embeds,images,imageRefs};
+  }, [file,embeds,loaded,host]);
 }

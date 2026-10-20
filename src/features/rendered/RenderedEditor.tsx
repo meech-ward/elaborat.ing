@@ -71,6 +71,7 @@ import { Banner, CommentActionButton, CommentMarker, LoadingLine, isApplePlatfor
 import type { CommentMark, NoteCommentRequest } from "@/features/comments";
 import { fluidRangeForSource, sourceRangeForFluid } from "./commentMarks";
 import {
+  blockBoundariesFor,
   checkChildMessage,
   childMessageSchema,
   checkEditResource,
@@ -84,8 +85,9 @@ import {
   type FrameRect,
   type RenderMessage,
   type ResourcesMessage,
+  type ImagesMessage,
 } from "./protocol";
-import { ResourceViewer } from "./ResourceViewer";
+import { ResourceViewer } from "./ResourceViewer.tsx";
 import type { DocumentSnapshot, SourcePatch } from "./types";
 import { useAppearance } from "../appearance";
 import {
@@ -93,7 +95,8 @@ import {
   encodeInlineInput,
   splitRichLeaf,
 } from "../document/structural";
-import { insertBlock } from "./insertBlock";
+import { insertBlock, insertImages } from "./insertBlock";
+import { imageFilesFromPayloads, type ImagePreview } from '../images/transport';
 import type { ComponentEnvironment } from '../document/componentModules';
 import { encodeTextLeaf } from './instrumentation';
 import { componentValuePatch } from './componentValueEdit';
@@ -106,6 +109,8 @@ export type RenderedEditorProps = {
   /** Mounted frames in hidden tabs/Source mode cannot own a viewer portal. */
   active?: boolean;
   documentId?: number;
+  /** Raw project identity, used to resolve ordinary relative Markdown image URLs. */
+  documentPath?: string;
   componentEnvironment?: ComponentEnvironment;
   componentError?: string;
   componentPending?: boolean;
@@ -134,6 +139,15 @@ export type RenderedEditorProps = {
    * the parent from workspace files. The frame receives pixels only.
    */
   resources?: Record<string, string>;
+  /** Validated local raster pixels, keyed by the parser's image-reference key. */
+  imageResources?: Record<string, ImagePreview>;
+  /** Read an original only after the parent has matched its key to the current parsed source. */
+  onReadImage?: (key: string) => Promise<ImagePreview>;
+  onInsertImage?: (request: {
+    files?: readonly File[];
+    initialAlt?: string;
+    commit: (images: readonly {path:string;alt:string;caption?:string}[]) => Promise<boolean>;
+  }) => void;
   /**
    * Source-parsed reference paths the child may request to edit. Requests
    * for anything else are rejected visibly.
@@ -294,6 +308,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     document,
     active = true,
     documentId,
+    documentPath = 'note.mdx',
     componentEnvironment,
     componentError,
     componentPending,
@@ -304,6 +319,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     errorBanner = true,
     typing = false,
     resources,
+    imageResources,
+    onReadImage,
+    onInsertImage,
     allowedResourcePaths,
     availableResourcePaths,
     onEditResource,
@@ -480,6 +498,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const hasExposed = exposed !== null;
   const epoch = useRef(0);
   const latestDocument = useRef(document);
+  const imageTarget = useRef({documentId,documentPath,readOnly,active,onPatch});
+  const imageReadInFlight = useRef(false);
+  useLayoutEffect(() => {
+    imageTarget.current = {documentId,documentPath,readOnly,active,onPatch};
+  }, [documentId,documentPath,readOnly,active,onPatch]);
   // The newer saved version the note last took, for the projection below,
   // which writes each one in once; and the render that does, with the
   // position where the blocks it added start.
@@ -669,6 +692,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       authoring: {
         format: exposed.format,
         boundaries: exposed.instrumentation.boundaries,
+        blockBoundaries: blockBoundariesFor(exposed.mapping.roots, exposed.instrumentation.boundaries),
         availableResourcePaths: [],
         components: exposed.components.catalog.map(({name,description}) => ({name,description})),
         focus: exposed.focus,
@@ -706,6 +730,34 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
     port.postMessage(message);
   }, [hasExposed, readyTick, session, resources]);
+
+  useEffect(() => {
+    if (!exposed) return;
+    let cancelled = false;
+    void import('../images/references').then(async ({parseImageReferences}) => {
+      const refs = await parseImageReferences(exposed.text,exposed.format,documentPath,
+        exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]));
+      if (cancelled || authority.current !== exposed) return;
+      const allowed = new Set(refs.map(ref => ref.key));
+      const entries = Object.entries(imageResources ?? {}).filter(([key]) => allowed.has(key));
+      let message:ImagesMessage = {kind:'images',session,revision:exposed.revision,reset:true,images:[]};
+      let bytes = 0;
+      for (const [key,image] of entries) {
+        if (message.images.length && (bytes + image.dataURL.length > 8 * 1024 * 1024 || message.images.length >= 32)) {
+          portRef.current?.postMessage(message);
+          message = {...message,reset:false,images:[]};
+          bytes = 0;
+        }
+        if (image.dataURL.length > 8 * 1024 * 1024) continue;
+        message.images.push({key,...image});
+        bytes += image.dataURL.length;
+      }
+      portRef.current?.postMessage(message);
+    }).catch(error => {
+      if (!cancelled) console.warn('Image references could not be resolved:',error);
+    });
+    return () => { cancelled = true; };
+  }, [exposed,documentPath,imageResources,readyTick,session]);
 
   // Presentation updates do not re-evaluate MDX or replace in-progress edits.
   useEffect(() => {
@@ -1227,6 +1279,98 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         refuse("Rejected stale rendered edit; source has changed.");
         return;
       }
+      if (message.kind === 'insert-image') {
+        if (readOnly || !onInsertImage) { refuse('This note cannot accept images.'); return; }
+        if (!exposed.instrumentation.boundaries.some(boundary => boundary.id === message.boundary)) {
+          refuse('Choose a current document position for the image.'); return;
+        }
+        try {
+          const captured = {identity:documentId,path:documentPath,snapshot:document,projection:exposed};
+          const files = message.files ? imageFilesFromPayloads(message.files) : undefined;
+          let committed = false;
+          onInsertImage({files,commit:async images => {
+            const target = imageTarget.current, snapshot = latestDocument.current;
+            if (committed || !target.active || target.readOnly || target.documentId !== captured.identity || target.documentPath !== captured.path ||
+                snapshot.text !== captured.snapshot.text || snapshot.revision !== captured.snapshot.revision ||
+                snapshot.format !== captured.snapshot.format || !authority.current) {
+              setEditNotice('The note changed while choosing an image. Choose its position again.');
+              return false;
+            }
+            try {
+              const result = insertImages(snapshot,snapshot.revision,captured.projection.instrumentation.boundaries,message.boundary,captured.path,images);
+              pendingFocus.current = {revision:snapshot.revision + 1,offset:result.focus};
+              const applied = target.onPatch(snapshot.revision,[result.patch]);
+              if (applied === false) return false;
+              committed = true;
+              setEditNotice(null);
+              return true;
+            } catch (error) {
+              setEditNotice(notApplied(error instanceof Error ? error.message : String(error)));
+              return false;
+            }
+          }});
+        } catch (error) { refuse(error instanceof Error ? error.message : String(error)); }
+        return;
+      }
+      if (message.kind === 'image-edit') {
+        if (readOnly) { refuse('This note cannot change images.'); return; }
+        const captured = {identity:documentId,path:documentPath,snapshot:document,projection:exposed};
+        const current = () => {
+          const target = imageTarget.current, snapshot = latestDocument.current;
+          return !target.readOnly && target.active && target.documentId === captured.identity && target.documentPath === captured.path &&
+            snapshot.text === captured.snapshot.text && snapshot.revision === captured.snapshot.revision && snapshot.format === captured.snapshot.format;
+        };
+        void import('../images/references').then(async ({parseImageReferences,imageReferencePatch}) => {
+          const refs = await parseImageReferences(document.text,document.format,documentPath);
+          const reference = refs.find(ref => ref.from === message.from && ref.key === message.key);
+          if (!reference || !current()) throw new Error('This image changed. Choose it again.');
+          const apply = async (next: {path:string;alt:string;caption?:string} | null) => {
+            if (!current()) return false;
+            const patch = imageReferencePatch(captured.snapshot.text,reference,captured.path,next,captured.snapshot.format);
+            const candidate = applySourcePatches(captured.snapshot,captured.snapshot.revision,[patch]);
+            // A static image can occur inside JSX. Refuse a rewrite that its exact context cannot hold.
+            await projectFluidSource(candidate.text,candidate.format,captured.projection.components);
+            if (!current()) return false;
+            pendingFocus.current = {revision:captured.snapshot.revision + 1,offset:patch.from + patch.insert.length};
+            const applied = imageTarget.current.onPatch(captured.snapshot.revision,[patch]);
+            if (applied !== false) setEditNotice(null);
+            return applied !== false;
+          };
+          if (message.action === 'replace') {
+            if (!onInsertImage) throw new Error('Image selection is unavailable.');
+            onInsertImage({initialAlt:reference.alt,commit:async images => {
+              if (images.length !== 1) throw new Error('Choose one replacement image.');
+              return apply(images[0]);
+            }});
+          } else if (message.action === 'remove') await apply(null);
+          else if (message.action === 'caption') {
+            if (message.caption === undefined) throw new Error('Add the caption to apply.');
+            await apply({path:reference.path,alt:reference.alt,caption:message.caption});
+          }
+          else {
+            if (message.alt === undefined) throw new Error('Add an image description or mark it decorative.');
+            await apply({path:reference.path,alt:message.alt});
+          }
+        }).catch(error => refuse(error instanceof Error ? error.message : String(error)));
+        return;
+      }
+      if (message.kind === 'view-image') {
+        if (!viewerActive.current || !onReadImage || imageReadInFlight.current) return;
+        imageReadInFlight.current = true;
+        const snapshot = document;
+        void import('../images/references').then(async ({parseImageReferences}) => {
+          const refs = await parseImageReferences(snapshot.text,snapshot.format,documentPath,
+            exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]));
+          if (!refs.some(reference => reference.key === message.key)) return;
+          const image = await onReadImage(message.key);
+          if (!viewerActive.current || latestDocument.current.revision !== snapshot.revision || latestDocument.current.text !== snapshot.text) return;
+          portRef.current?.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,image});
+        }).catch(error => {
+          if (viewerActive.current && latestDocument.current.revision === snapshot.revision)
+            portRef.current?.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,error:error instanceof Error ? error.message : 'The original image is unavailable.'});
+        }).finally(() => { imageReadInFlight.current = false; });
+        return;
+      }
       if (
         message.kind === "block-edit" ||
         message.kind === "insert-block" ||
@@ -1356,9 +1500,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     closeViewer,
     document,
     documentId,
+    documentPath,
     document.format,
     exposed,
     onEditResource,
+    onInsertImage,
+    onReadImage,
     onError,
     onPatch,
     onHistory,
@@ -1367,6 +1514,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onShown,
     onActivity,
     resources,
+    readOnly,
     session,
   ]);
 

@@ -1,4 +1,5 @@
 import { FileStoreError, type ConflictCopies, type FileRef, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
+import type { ImageAsset } from "@/features/images/types"
 
 /**
  * The storage the workbench edits through: one project's files on this
@@ -10,6 +11,13 @@ import { FileStoreError, type ConflictCopies, type FileRef, type LocalChange, ty
 export interface WorkspaceStore {
   /** Scopes the workbench's browser preferences (tabs, views, folders) to this project. */
   readonly persistenceKey: string
+  readonly projectId?: string
+  stageImage?(path: string, bytes: Blob, asset: ImageAsset, noteDrafts?: Array<{ path: string; content: string; baseRevision: string | null }>, preview?: Blob): Promise<WorkspaceFile>
+  readImage?(path: string, preview?: boolean): Promise<Blob>
+  readImageAsset?(assetId: string, preview?: boolean): Promise<Blob>
+  saveImages?(paths: string[], writes?: Array<{ path: string; content: string; expectedRevision: string | null }>): Promise<Array<{ path: string; revision: string; size: number }>>
+  draftImageAsset?(path: string): Promise<ImageAsset | null>
+  cacheImage?(bytes: Blob, asset: ImageAsset, preview?: Blob): Promise<void>
   /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
   listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
   read(path: string): Promise<WorkspaceFile>
@@ -55,6 +63,20 @@ export function projectWorkspace(
 ): WorkspaceStore {
   return {
     persistenceKey: workspacePersistenceKey(store.partition, store.projectId),
+    projectId: store.projectId,
+    async stageImage(path, bytes, asset, noteDrafts, preview) {
+      const file = await store.stageImage(path, bytes, asset, noteDrafts, preview)
+      return { ...file, revision: revisionOf(file.revision) }
+    },
+    readImage: (path, preview) => store.readImage(path, preview),
+    readImageAsset: (assetId, preview) => store.readImageAsset(assetId, preview),
+    async saveImages(paths, writes) {
+      const saved = await store.saveImages(paths, writes)
+      afterSave()
+      return saved
+    },
+    draftImageAsset: (path) => store.draftImageAsset(path),
+    cacheImage: (bytes, asset, preview) => store.cacheImage(bytes, asset, preview),
     async listEntries() {
       const { files, directories, folders } = await store.listEntries()
       return { files: files.map((file) => ({ ...file, revision: revisionOf(file.revision) })), directories, folders }

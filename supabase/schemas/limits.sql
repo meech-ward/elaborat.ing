@@ -20,6 +20,7 @@ as $$
     ('projects_per_day', 100, interval '1 day', 'new projects a day'),
     ('projects', 1000, null, 'projects'),
     ('saves_per_minute', 300, interval '1 minute', 'saves a minute'),
+    ('image_uploads_per_minute', 30, interval '1 minute', 'image uploads a minute'),
     ('searches_per_minute', 120, interval '1 minute', 'searches a minute'),
     ('tool_calls_per_minute', 300, interval '1 minute', 'agent tool calls a minute'),
     ('invitations_per_day', 50, interval '1 day', 'invitations a day'),

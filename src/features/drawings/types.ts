@@ -199,6 +199,8 @@ export interface DrawingCanvasApi {
    * is not there.
    */
   revealElement: (elementId: string, focus?: boolean) => boolean;
+  /** Add independent native image copies as one undoable canvas action. Validated before mutation. */
+  insertImages: (images: Array<{ dataURL: string; mimeType: string; width: number; height: number; alt?: string }>, validate: (next: DrawingScene) => void) => boolean;
 }
 
 /** Props for the controlled native canvas. Shell owns scene + saves. */

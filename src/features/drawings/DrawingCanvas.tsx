@@ -108,19 +108,21 @@ type NativeTool = Exclude<NativeAppState['activeTool']['type'], 'image' | 'custo
 interface NativeUpdateScene {
   elements?: NativeElements | null;
   appState?: Partial<NativeAppState> | null;
-  captureUpdate?: 'NEVER';
+  captureUpdate?: 'NEVER' | 'IMMEDIATELY';
 }
 
 // The vendor's element restore, scene bounds and SVG export, once the package has loaded.
 let restoreNative: typeof import('@excalidraw/excalidraw')['restoreElements'] | null = null;
 let boundsNative: typeof import('@excalidraw/excalidraw')['getCommonBounds'] | null = null;
 let exportNative: typeof import('@excalidraw/excalidraw')['exportToSvg'] | null = null;
+let convertNative: typeof import('@excalidraw/excalidraw')['convertToExcalidrawElements'] | null = null;
 
 const NativeCanvas = lazy(() =>
   Promise.all([import('@excalidraw/excalidraw'), ensureGeneratedNativeFont()]).then(([mod]) => {
     restoreNative = mod.restoreElements;
     boundsNative = mod.getCommonBounds;
     exportNative = mod.exportToSvg;
+    convertNative = mod.convertToExcalidrawElements;
     // React's own Memo wrapper is not a ComponentType statically.
     return { default: mod.Excalidraw as unknown as ComponentType<NativeProps> };
   }),
@@ -758,6 +760,29 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   useEffect(() => {
     if (!pageApiRef) return;
     pageApiRef.current = {
+      insertImages: (images, validate) => {
+        const api = apiRef.current;
+        const area = visibleArea();
+        if (!api || !area || !convertNative || viewOnly || props.active === false || !loadedRef.current) return false;
+        if (!images.length) return true;
+        const state = api.getAppState();
+        const center = canvasToScene({ x: area.left + area.width / 2, y: area.top + area.height / 2 }, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY });
+        const files: NativeFile[] = [];
+        const elements = images.flatMap((image, index) => {
+          const fileId = crypto.randomUUID() as NativeFile['id'];
+          if (!/^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,/.test(image.dataURL) || !['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].includes(image.mimeType) || image.width < 1 || image.height < 1 || image.width * image.height > 8_000_000) throw new Error('Choose a supported image with at most 8 million pixels for the drawing.');
+          const scale = Math.min(1, 600 / image.width, 400 / image.height);
+          const width = image.width * scale, height = image.height * scale;
+          files.push({ id: fileId, mimeType: image.mimeType as NativeFile['mimeType'], dataURL: image.dataURL as NativeFile['dataURL'], created: Date.now() });
+          return convertNative!([{ type: 'image', id: crypto.randomUUID(), fileId, status: 'saved', x: center.x - width / 2 + index * 24, y: center.y - height / 2 + index * 24, width, height, scale: [1, 1], customData: { altText: image.alt ?? '' } }], { regenerateIds: false });
+        });
+        const next: DrawingScene = { ...rawRef.current, elements: [...rawRef.current.elements, ...elements], files: { ...rawRef.current.files, ...Object.fromEntries(files.map((file) => [file.id, file])) } };
+        validate(next);
+        api.addFiles(files);
+        (api.updateScene as (sceneData: NativeUpdateScene) => void)({ elements: [...api.getSceneElementsIncludingDeleted(), ...elements], appState: { selectedElementIds: Object.fromEntries(elements.map((element) => [element.id, true])) as NativeAppState['selectedElementIds'] }, captureUpdate: 'IMMEDIATELY' });
+        canvasElement()?.focus();
+        return true;
+      },
       revealElement: (elementId, focus = true) => {
         const api = apiRef.current;
         const area = visibleArea();

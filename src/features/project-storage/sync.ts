@@ -1,14 +1,17 @@
 import type { ProjectDatabase, StorageTransaction } from "./database"
 import {
   canEdit,
+  assetToken,
   companionPaths,
   fileState,
   isDirty,
   MAX_ENTRIES,
   type FileConflict,
+  type ImageAsset,
   type LocalFile,
   type LocalFolder,
   type LocalProject,
+  type LocalImageAsset,
   type PendingSave,
   type SaveChange,
 } from "./model"
@@ -305,7 +308,9 @@ export class ProjectSync {
             revision: project.revision === summary.revision - 1 ? summary.revision : project.revision,
           }))
         } else {
+          step.pending = await this.uploadPendingImages(projectId, step.pending)
           const result = await this.remote.saveFiles(projectId, step.pending.mutationId, step.pending.changes)
+          if (result.status === "conflict") await this.cacheRemoteImages(projectId, result.conflicts.flatMap((conflict) => conflict.current?.asset ? [conflict.current.asset] : []))
           await this.acknowledge(projectId, step.pending, result)
         }
       } catch (error) {
@@ -319,6 +324,7 @@ export class ProjectSync {
   }
 
   private async handleError(projectId: string, pending: PendingSave | null, error: RemoteError): Promise<SyncOutcome | null> {
+    if (error.kind === "image-expired") return null
     if (error.kind === "network") return { status: "offline", projectId, message: error.message }
     // A per-account limit resets with time: keep the batch, with its mutation id, for the next sync.
     if (error.kind === "account-limit") return { status: "incomplete", projectId, message: error.message }
@@ -357,12 +363,110 @@ export class ProjectSync {
       if (!project) throw new Error("This project is not on this device.")
       const files = await tx.listFiles(oldId)
       const folders = await tx.listFolders(oldId)
+      const assets = await tx.listAssets(oldId)
       await tx.deleteProject(oldId)
       await tx.putProject({ ...project, id: newId })
       for (const file of files) await tx.putFile({ ...file, projectId: newId })
       for (const folder of folders) await tx.putFolder({ ...folder, projectId: newId })
+      for (const asset of assets) await tx.putAsset({ ...asset, projectId: newId, uploaded: false })
     })
     return newId
+  }
+
+  /** Retry committed saves unchanged; only proven expired staging gets a new identity. */
+  private async uploadPendingImages(projectId: string, pending: PendingSave): Promise<PendingSave> {
+    for (let index = 0; index < pending.changes.length; index++) {
+      const change = pending.changes[index]
+      if (change.op !== "asset" && !(change.op === "move" && change.asset_id)) continue
+      let local = await this.db.transaction(this.partition, "readonly", (tx) => tx.getAsset(projectId, change.asset_id!))
+      if (!local) throw new RemoteError("invalid", "The image bytes are missing from this device. Your note has not been saved to the server.")
+      let asset: ImageAsset | undefined
+      if (local.uploaded || local.uploadAttempted) {
+        // The RPC takes the same project lock as save_files: a missing answer
+        // cannot race a previous save that is still committing this asset.
+        const status = await this.remote.imageUploadStatus(projectId, local.id)
+        if (status.status === "available") asset = status.asset
+        else if (status.status === "expired" || status.status === "missing") {
+          const rotated = await this.rotatePendingImage(projectId, pending, local)
+          pending = rotated.pending
+          local = rotated.local
+        }
+      }
+      if (!asset) {
+        // Keep the attempt across a crash or lost response, including before
+        // the upload finished and before a preview could be downloaded.
+        local = { ...local, uploadAttempted: true }
+        await this.db.transaction(this.partition, "readwrite", async (tx) => {
+          if (await tx.getProject(projectId)) await tx.putAsset(local!)
+        })
+        asset = await this.remote.uploadImage(projectId, local.asset, local.bytes)
+      }
+      if (asset.id !== local.id || asset.sha256 !== local.asset.sha256 || asset.byte_length !== local.bytes.size || asset.media_type !== local.asset.media_type || asset.width !== local.asset.width || asset.height !== local.asset.height) throw new RemoteError("invalid", "The uploaded image does not match the local image.")
+      // New uploads use trusted preview bytes even when the browser happened
+      // to produce the same codec and length.
+      const verifiedPreview = local.uploaded && matchesImagePreview(local.preview, asset) ? local.preview! : await this.downloadImagePreview(projectId, asset)
+      await this.db.transaction(this.partition, "readwrite", async (tx) => {
+        if (!await tx.getProject(projectId)) return
+        await tx.putAsset({ ...local!, asset, preview: verifiedPreview, uploaded: true })
+        for (const file of await tx.listFiles(projectId)) {
+          if (file.asset?.id !== asset.id && file.draft?.asset?.id !== asset.id) continue
+          await tx.putFile({ ...file, ...(file.asset?.id === asset.id ? { asset } : {}), ...(file.draft?.asset?.id === asset.id ? { draft: { ...file.draft, asset } } : {}) })
+        }
+      })
+    }
+    return pending
+  }
+
+  private async rotatePendingImage(projectId: string, pending: PendingSave, previous: LocalImageAsset): Promise<{ pending: PendingSave; local: LocalImageAsset }> {
+    const id = crypto.randomUUID()
+    const asset: ImageAsset = { ...previous.asset, id, object_key: `${projectId}/${id}/original`, preview_key: `${projectId}/${id}/preview` }
+    const local: LocalImageAsset = { ...previous, id, asset, uploaded: false, uploadAttempted: false }
+    const next: PendingSave = {
+      ...pending,
+      mutationId: crypto.randomUUID(),
+      changes: pending.changes.map(change => (change.op === "asset" || change.op === "move") && change.asset_id === previous.id ? { ...change, asset_id: id } : change),
+      files: pending.files.map(file => file.asset?.id === previous.id ? { ...file, asset_id: id, asset } : file),
+    }
+    await this.db.transaction(this.partition, "readwrite", async tx => {
+      const project = await tx.getProject(projectId)
+      if (project?.pending?.mutationId !== pending.mutationId) throw new RemoteError("network", "The pending save changed. Sync again to continue.")
+      await tx.putAsset(local)
+      for (const file of await tx.listFiles(projectId)) {
+        if (file.asset?.id !== previous.id && file.draft?.asset?.id !== previous.id) continue
+        const draft = file.draft ? {
+          ...file.draft,
+          // A different replacement draft still rests on these same saved
+          // bytes. Rekeying their staging identity must not make it stale.
+          ...(file.asset?.id === previous.id && file.draft.token === assetToken(previous.asset) ? { token: assetToken(asset) } : {}),
+          ...(file.draft.asset?.id === previous.id ? { asset } : {}),
+        } : null
+        await tx.putFile({ ...file, ...(file.asset?.id === previous.id ? { asset_id: id, asset } : {}), draft })
+      }
+      await tx.putProject({ ...project, pending: next })
+    })
+    return { pending: next, local }
+  }
+
+  /** Cache originals and previews before a remote revision is considered available offline. */
+  private async cacheRemoteImages(projectId: string, assets: ImageAsset[]): Promise<void> {
+    for (const asset of new Map(assets.map((asset) => [asset.id, asset])).values()) {
+      const existing = await this.db.transaction(this.partition, "readonly", (tx) => tx.getAsset(projectId, asset.id))
+      if (existing?.asset.sha256 === asset.sha256 && existing.bytes.size === asset.byte_length && matchesImagePreview(existing.preview, asset)) continue
+      const bytes = existing?.asset.sha256 === asset.sha256 && existing.bytes.size === asset.byte_length ? existing.bytes : await this.remote.downloadImage(projectId, asset)
+      const digest = await crypto.subtle.digest("SHA-256", await bytes.arrayBuffer())
+      const sha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+      if (bytes.size !== asset.byte_length || sha256 !== asset.sha256) throw new RemoteError("invalid", "A downloaded image does not match its saved digest.")
+      const preview = await this.downloadImagePreview(projectId, asset)
+      await this.db.transaction(this.partition, "readwrite", async (tx) => {
+        if (await tx.getProject(projectId)) await tx.putAsset({ partition: this.partition, projectId, id: asset.id, asset, bytes, preview, uploaded: true })
+      })
+    }
+  }
+
+  private async downloadImagePreview(projectId: string, asset: ImageAsset): Promise<Blob> {
+    const preview = await this.remote.downloadImage(projectId, asset, true)
+    if (!matchesImagePreview(preview, asset)) throw new RemoteError("invalid", "A downloaded image preview does not match its saved size or type.")
+    return preview
   }
 
   private async acknowledge(projectId: string, pending: PendingSave, result: SaveResult): Promise<void> {
@@ -376,10 +480,11 @@ export class ProjectSync {
           const file = files.get(entry.localId)
           if (!file) continue
           const applied = result.changes[index]
+          const savedAsset = entry.asset ? (await tx.getAsset(projectId, entry.asset.id))?.asset ?? entry.asset : null
           const base =
             entry.sentPath === null || !applied?.id || !applied.version
               ? null
-              : { id: applied.id, path: entry.sentPath, version: applied.version, content: entry.sentContent ?? "" }
+              : { id: applied.id, path: entry.sentPath, version: applied.version, content: entry.sentContent ?? "", ...(entry.kind === "image" ? { kind: "image" as const, asset_id: savedAsset?.id ?? null, asset: savedAsset } : {}) }
           const next: LocalFile = { ...file, base, conflict: null }
           if (base === null && next.content === null) {
             // Deleted on both sides; keep only an unsaved draft, if any.
@@ -431,7 +536,7 @@ export class ProjectSync {
       for (const [localId, mark] of marks) {
         const file = files.get(localId)!
         // Only the path is taken: the server's copy of this file is still the one this device has.
-        const current = mark.stale ? mark.current : file.base ? { id: file.base.id, version: file.base.version, content: file.base.content } : null
+        const current = mark.stale ? mark.current : file.base ? { id: file.base.id, version: file.base.version, content: file.base.content, ...(file.base.kind === "image" ? { kind: "image" as const, asset_id: file.base.asset_id, asset: file.base.asset } : {}) } : null
         await tx.putFile({ ...file, conflict: { current, pathTaken: mark.pathTaken } })
       }
       await tx.putProject({ ...project, pending: null })
@@ -454,7 +559,7 @@ export class ProjectSync {
         ? (await tx.listFolders(projectId)).find((candidate) => candidate.path === detail)
         : undefined
       if (file) {
-        const current = file.base ? { id: file.base.id, version: file.base.version, content: file.base.content } : null
+        const current = file.base ? { id: file.base.id, version: file.base.version, content: file.base.content, ...(file.base.kind === "image" ? { kind: "image" as const, asset_id: file.base.asset_id, asset: file.base.asset } : {}) } : null
         await tx.putFile({ ...file, conflict: { current, pathTaken: true } })
       } else if (folder) {
         if (folder.base) await tx.putFolder({ ...folder, local: true })
@@ -478,6 +583,7 @@ export class ProjectSync {
       this.remote.deletedFiles(projectId, since, remoteRevision),
       this.remote.folders(projectId),
     ])
+    await this.cacheRemoteImages(projectId, changed.flatMap((file) => file.kind === "image" && file.asset ? [file.asset] : []))
     const applied = await this.db.transaction(this.partition, "readwrite", async (tx) => {
       const current = await tx.getProject(projectId)
       if (!current || current.revision !== since || current.pending) return false
@@ -505,7 +611,7 @@ export class ProjectSync {
         if (choice === "mine") {
           if (pathTaken) throw new Error(`${path} is taken on the server. Keep both, or move the file to another path.`)
           const serverPath = file.base?.path ?? file.path
-          const base = current ? { id: current.id, path: serverPath, version: current.version, content: current.content } : null
+          const base = current ? { id: current.id, path: serverPath, version: current.version, content: current.content, ...(current.kind === "image" ? { kind: "image" as const, asset_id: current.asset_id, asset: current.asset } : {}) } : null
           if (base === null && file.content === null) {
             if (file.draft) await tx.putFile({ ...file, base: null, conflict: null, batch: null })
             else await tx.deleteFile(projectId, file.path)
@@ -567,6 +673,7 @@ async function nextBatch(tx: StorageTransaction, project: LocalProject): Promise
         localId: file.localId,
         sentPath: file.content === null ? null : file.path,
         sentContent: file.content,
+        ...(file.kind === "image" ? { kind: "image" as const, asset_id: file.asset?.id ?? null, asset: file.asset } : {}),
       })),
       folders: withFiles.map((folder) => ({ path: folder.path, local: folder.local })),
     }
@@ -629,16 +736,16 @@ function changeFor(file: LocalFile): SaveChange {
   const base = file.base
   switch (fileState(file)) {
     case "created":
-      return { op: "put", path: file.path, content: file.content! }
+      return file.kind === "image" && file.asset ? { op: "asset", path: file.path, asset_id: file.asset.id } : { op: "put", path: file.path, content: file.content! }
     case "changed":
-      return { op: "put", path: file.path, content: file.content!, base_version: base!.version }
+      return file.kind === "image" && file.asset ? { op: "asset", path: file.path, asset_id: file.asset.id, base_version: base!.version } : { op: "put", path: file.path, content: file.content!, base_version: base!.version }
     case "moved":
       return {
         op: "move",
         path: base!.path,
         to: file.path,
         base_version: base!.version,
-        ...(file.content !== base!.content ? { content: file.content! } : {}),
+        ...(file.kind === "image" && file.asset && file.asset.id !== base!.asset?.id ? { asset_id: file.asset.id } : file.content !== base!.content ? { content: file.content! } : {}),
       }
     case "deleted":
       return { op: "delete", path: base!.path, base_version: base!.version }
@@ -723,8 +830,9 @@ async function applyRemoteFiles(
       projectId,
       localId: local?.localId ?? occupant?.localId ?? crypto.randomUUID(),
       path: remote.path,
-      base: { id: remote.id, path: remote.path, version: remote.version, content: remote.content },
+      base: { id: remote.id, path: remote.path, version: remote.version, content: remote.content, ...(remote.kind === "image" ? { kind: "image" as const, asset_id: remote.asset_id, asset: remote.asset } : {}) },
       content: remote.content,
+      ...(remote.kind === "image" ? { kind: "image" as const, asset_id: remote.asset_id, asset: remote.asset } : {}),
       batch: null,
       draft: draft?.content === remote.content ? null : draft,
       conflict: null,
@@ -748,7 +856,7 @@ async function applyRemoteFolders(tx: StorageTransaction, partition: string, pro
 }
 
 /** Drop this device's changes to a conflicted file and take the server's copy (or its absence). */
-async function takeTheirs(tx: StorageTransaction, projectId: string, file: LocalFile, current: { id: string; version: number; content: string } | null) {
+async function takeTheirs(tx: StorageTransaction, projectId: string, file: LocalFile, current: FileConflict["current"]) {
   await tx.deleteFile(projectId, file.path)
   if (current === null) return
   const serverPath = file.base?.path ?? file.path
@@ -757,8 +865,11 @@ async function takeTheirs(tx: StorageTransaction, projectId: string, file: Local
   await tx.putFile({
     ...file,
     path: serverPath,
-    base: { id: current.id, path: serverPath, version: current.version, content: current.content },
+    base: { id: current.id, path: serverPath, version: current.version, content: current.content, ...(current.kind === "image" ? { kind: "image" as const, asset_id: current.asset_id, asset: current.asset } : {}) },
     content: current.content,
+    kind: current.kind ?? "text",
+    asset_id: current.asset_id ?? null,
+    asset: current.asset ?? null,
     batch: null,
     draft: null,
     conflict: null,
@@ -778,4 +889,9 @@ async function copyPath(tx: StorageTransaction, projectId: string, path: string)
     if (!(await tx.getFile(projectId, candidate))) return candidate
   }
   throw new Error("Could not find a free name for the copy.")
+}
+
+/** Browser-made previews may differ from the immutable preview verified by the server. */
+function matchesImagePreview(preview: Blob | undefined, asset: ImageAsset): preview is Blob {
+  return Boolean(preview && preview.size === asset.preview_byte_length && preview.type === asset.preview_type)
 }

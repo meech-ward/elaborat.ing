@@ -5,8 +5,8 @@ between devices, search, sharing, and agents (Claude, ChatGPT or any MCP
 client) working on your projects.
 
 The app is a static site. Everything else is Supabase: Auth, Postgres with
-row-level security, Realtime and six Edge Functions (`mcp-server`, `embed`,
-`search`, `share`, `delete-account`, `send-events`). There is no other server. [Architecture](architecture.md)
+row-level security, Realtime and Edge Functions (`mcp-server`, `embed`,
+`search`, `share`, `delete-account`, `send-events`, `images`). There is no other server. [Architecture](architecture.md)
 explains the design; this page is the steps.
 
 Placeholders used below:
@@ -148,6 +148,9 @@ read -rs ELABORATING_EMBED_SECRET_KEY && export ELABORATING_EMBED_SECRET_KEY
 export ELABORATING_PROJECT_URL="https://$SUPABASE_PROJECT_ID.supabase.co"
 bunx supabase@2.118.0 db push --yes --project-ref "$SUPABASE_PROJECT_ID"
 
+# Private image bucket, declared in config.toml. config push does not create it.
+bun scripts/provision-image-bucket.ts
+
 # Auth, email, API and storage settings. Read the diff before pushing.
 read -rs SES_SMTP_USER && export SES_SMTP_USER          # skip both without SMTP
 read -rs SES_SMTP_PASSWORD && export SES_SMTP_PASSWORD
@@ -183,6 +186,18 @@ select vault.create_secret('<the secret key>', 'embed_secret_key');
 -- To change one that exists:
 select vault.update_secret((select id from vault.secrets where name = 'embed_secret_key'), '<new key>');
 ```
+
+**Image storage.** `bun scripts/provision-image-bucket.ts` provisions only the
+private `project-images` bucket from `config.toml` using the existing
+`ELABORATING_PROJECT_URL` and `ELABORATING_EMBED_SECRET_KEY`. It creates or
+updates the bucket through the Storage API without listing or deleting other
+buckets. The generic CLI seed command also manages analytics buckets, so it
+is deliberately not used here. The `images` function validates original bytes, generates a bounded
+preview and stages immutable objects. Database policies allow accepted project
+members to read saved images and refuse client overwrite or physical delete.
+Hourly cleanup uses the existing Vault project URL and embed secret to retry
+expired staging and permanent-project deletion. Original images and retained
+history count toward the project owner's 256 MiB image allowance.
 
 **Config.** `config push` writes the Auth settings (site URL, redirect URLs,
 email, templates, rate limits, the OAuth server), API, database and storage
@@ -359,7 +374,8 @@ What runs when:
 - **Deploy** (`deploy.yml`) after CI passes on `main`, or by hand, on the
   newest commit CI has passed there. Its jobs run one after another, each
   once the one before it has passed, and each is safe to repeat:
-  1. `supabase`: every function but `mcp-server`, then `db push`.
+  1. `supabase`: every function but `mcp-server`, then `db push` and private
+     image bucket provisioning.
   2. `app`: builds with `VITE_SUPABASE_URL=https://<ref>.supabase.co`, your
      publishable key and `VITE_SANDBOX_ORIGIN`, deploys the sandbox domain
      (`wrangler.sandbox.jsonc`, keeping its last few frame versions) when

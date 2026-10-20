@@ -1465,3 +1465,49 @@ test("a drawing drawing in makes a pencil stroke for its shapes where the browse
   await page.waitForTimeout(1500)
   expect(await strokes()).toBe(muted)
 })
+
+const IMAGE_PIXELS = {dataURL:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKxkAAAAASUVORK5CYII=',width:1,height:1};
+function imageResult(deferred = false, revision?:number) {
+  return {
+    structuredContent:{project_id:PROJECT,path:PATH,kind:'note',version:1,url:URL,truncated:false,embeds:[],images:[{key:'../assets/a.png',path:'assets/a.png',status:deferred ? 'deferred' : 'ready',...(revision === undefined ? {} : {revision})}]},
+    _meta:{'elaborat.ing/html':'<h1>Image note</h1><p><span data-project-image="../assets/a.png">A project photo</span></p>','elaborat.ing/source':'# Image note\n\n![A project photo](../assets/a.png)','elaborat.ing/images':deferred ? {} : {'../assets/a.png':IMAGE_PIXELS}},
+  };
+}
+
+test('project images display in card HTML and remain visible while editing the note',async ({page}) => {
+  const card = await openHost(page,{tools:true,theme:'dark',result:imageResult()});
+  await expect(card.getByRole('img',{name:'A project photo'})).toBeVisible();
+  await expect(card.getByRole('img',{name:'A project photo'})).toHaveAttribute('src',IMAGE_PIXELS.dataURL);
+  await card.getByRole('button',{name:'Edit',exact:true}).click();
+  await expect(card.locator('.ProseMirror').getByRole('img',{name:'A project photo'})).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+});
+
+test('a captioned project image retains its pixels and caption formatting in card Edit',async ({page}) => {
+  const result = imageResult();
+  result._meta['elaborat.ing/html'] = '<figure><span data-project-image="../assets/a.png">A project photo</span><figcaption>A <strong>rich</strong> caption with a <a href="https://example.com">link</a>.</figcaption></figure>';
+  result._meta['elaborat.ing/source'] = '<figure>\n\n![A project photo](../assets/a.png)\n\n<figcaption>\n\nA **rich** caption with a [link](https://example.com).\n\n</figcaption>\n</figure>';
+  const card = await openHost(page,{tools:true,theme:'light',result});
+  await expect(card.locator('figure').getByRole('img',{name:'A project photo'})).toBeVisible();
+  await card.getByRole('button',{name:'Edit',exact:true}).click();
+  const figure = card.locator('.ProseMirror figure');
+  await expect(figure.getByRole('img',{name:'A project photo'})).toBeVisible();
+  await expect(figure.locator('figcaption strong')).toHaveText('rich');
+  await expect(figure.getByRole('link',{name:'link',exact:true})).toHaveAttribute('href','https://example.com');
+});
+
+test('deferred card images load through the image tool when a host drops call meta',async ({page}) => {
+  const card = await openHost(page,{tools:true,theme:'light',result:null,manual:true,dropsCallMeta:true});
+  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as {ready?:boolean}).ready))).toBe(true);
+  await answer(page,'get_image_preview',{structuredContent:{path:'assets/a.png',status:'ready',imagePreviews:{'assets/a.png':IMAGE_PIXELS}},_meta:{'elaborat.ing/images':{'assets/a.png':IMAGE_PIXELS}}});
+  await page.evaluate(result => (window as unknown as {send:(method:string,params:unknown)=>void}).send('ui/notifications/tool-result',result),imageResult(true,7));
+  await expect(card.getByRole('img',{name:'A project photo'})).toHaveAttribute('src',IMAGE_PIXELS.dataURL);
+  expect(await calls(page)).toEqual([{name:'get_image_preview',arguments:{project_id:PROJECT,path:'assets/a.png',revision:7}}]);
+});
+
+test('a card without image tool calls retains the image description and app link',async ({page}) => {
+  const card = await openHost(page,{tools:false,theme:'light',result:imageResult(true)});
+  await expect(card.getByRole('img',{name:'A project photo'})).toHaveText('A project photo');
+  await expect(card.getByRole('link',{name:/Open in elaborat.ing/})).toBeVisible();
+  expect(await calls(page)).toEqual([]);
+});

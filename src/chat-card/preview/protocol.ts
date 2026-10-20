@@ -10,6 +10,7 @@
  */
 import type { CardEmbed } from "../embedText"
 import type { FontSource } from "../fontFaces"
+import type { CardImagePixels } from '../cardImages';
 
 /** The component the compiler wraps around each outermost element of a note, so one that throws shows an error in its place. */
 export const GUARD_NAME = "PreviewGuard"
@@ -33,6 +34,7 @@ export type PreviewPlan =
       svgs: Record<string, string>
       /** The note draws a chart: the frame loads the charts' library before it shows the note. */
       charts: boolean
+      images?:Record<string,CardImagePixels>
     }
   | {
       kind: "components"
@@ -40,13 +42,14 @@ export type PreviewPlan =
       /** The component file the items come from. */
       target: string
       items: Array<{ name: string; props: Record<string, unknown> }>
+      images?:Record<string,CardImagePixels>
     }
 
 export type CardToFrame =
   | { type: "setup"; plan: PreviewPlan; appearance: PreviewAppearance; fonts: readonly FontSource[] }
   | { type: "appearance"; appearance: PreviewAppearance }
   /** A note's drawings and diagrams as the card has them now: a diagram it draws itself (cardDiagrams.ts) comes later. */
-  | { type: "drawings"; embeds: CardEmbed[]; svgs: Record<string, string> }
+  | { type: "drawings"; embeds: CardEmbed[]; svgs: Record<string, string>;images?:Record<string,CardImagePixels> }
 
 /** A component that threw while it rendered, shown as an error in its place. */
 export type ComponentError = { name: string; message: string }

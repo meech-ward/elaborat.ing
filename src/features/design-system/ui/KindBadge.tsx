@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils"
 // letter in the file kind's colour with no fill.
 
 /** What a file holds, as the app's file kinds name it. */
-export type FileKind = "note" | "drawing" | "diagram" | "text"
+export type FileKind = "note" | "drawing" | "diagram" | "image" | "text"
 
-const LETTERS: Record<FileKind, string> = { note: "M", drawing: "D", diagram: "2", text: "" }
+const LETTERS: Record<FileKind, string> = { note: "M", drawing: "D", diagram: "2", image: "I", text: "" }
 
 /**
  * A file's kind as one letter in its kind colour: M for notes, D for
@@ -21,6 +21,7 @@ export const kindBadgeVariants = cva("shrink-0 text-center font-mono font-bold",
       note: "text-note",
       drawing: "text-drawing",
       diagram: "text-diagram",
+      image: "text-drawing",
       text: "",
     },
     size: {

@@ -58,6 +58,7 @@ export function makeAssistantHost(projectId: string, client: WorkspaceStore, lat
       return paths.map((path) => ({
         path,
         kind: kindForPath(path),
+        ...(kindForPath(path) === "image" ? { asset: files.find(file => file.path === path)?.asset ?? null } : {}),
         unsaved: Boolean(files.find((file) => file.path === path)?.draft || tabs.find((tab) => tab.path === path)?.dirty),
       }))
     },
@@ -66,7 +67,26 @@ export function makeAssistantHost(projectId: string, client: WorkspaceStore, lat
       const read = await current(path)
       if (!read) return null
       const server = deps.latest().files.find((file) => file.path === path)?.server ?? null
-      return { path, content: read.content, version: server?.version ?? null, unsaved: read.draft || read.savedContent === null }
+      return { path, content: read.content, kind: kindForPath(path), ...(read.kind === "image" ? { asset: read.asset } : {}), version: server?.version ?? null, unsaved: read.draft || read.savedContent === null }
+    },
+    async getImagePreview(path) {
+      if (!known(path) || !client.readImage) return null;
+      const file = await current(path);
+      if (file?.kind !== "image" || !file.asset) return null;
+      const blob = await client.readImage(path, true);
+      if (blob.size > 32768) throw new Error("The image preview is too large.");
+      const { imageDataURL } = await import("../images/types");
+      return { dataURL: imageDataURL(new Uint8Array(await blob.arrayBuffer()), file.asset.preview_type), asset: file.asset };
+    },
+    async importImage(path, url) {
+      if (deps.latest().readOnly || !client.stageImage || !client.projectId) throw new Error("This project cannot import images.");
+      const { safeImagePath } = await import("../images/paths");
+      if (!safeImagePath(path) || known(path)) throw new Error("Choose a new image path in this project.");
+      const { importProjectImageURL } = await import("../images/importURL");
+      const image = await importProjectImageURL(client.projectId, url);
+      await client.stageImage(path, image.bytes, image.asset, [], image.preview);
+      await deps.latest().refreshList();
+      return { asset: image.asset };
     },
     async unsavedText(path) {
       const tab = deps.tabs().find((entry) => entry.path === path)
@@ -83,6 +103,7 @@ export function makeAssistantHost(projectId: string, client: WorkspaceStore, lat
     liveContainer: () => latest().liveContainer(),
     async writeFile(path, content) {
       const state = deps.latest()
+      if (kindForPath(path) === "image") throw new Error("Images contain binary data. Reuse their path in Markdown or import an image URL.");
       if (state.readOnly) throw new Error(`This project can't be changed: ${state.readOnly}`)
       let created = false
       let base: { revision: string | null; savedContent: string | null }

@@ -99,7 +99,7 @@ const CASES: [string, Record<string, unknown>, Call[], Record<string, Answer>?][
     [
       {
         table: 'project_files',
-        query: [['select', 'path, version, updated_at'], ['eq', 'project_id', PROJECT], ['order', 'path']],
+        query: [['select', 'path, kind, asset, version, updated_at'], ['eq', 'project_id', PROJECT], ['order', 'path']],
       },
       { table: 'project_folders', query: [['select', 'path'], ['eq', 'project_id', PROJECT], ['order', 'path']] },
       { rpc: 'list_file_authors', args: { project_id: PROJECT } },
@@ -112,7 +112,7 @@ const CASES: [string, Record<string, unknown>, Call[], Record<string, Answer>?][
       {
         table: 'project_files',
         query: [
-          ['select', 'path, content, version, updated_at'],
+          ['select', 'path, content, kind, asset, version, updated_at'],
           ['eq', 'project_id', PROJECT],
           ['eq', 'path', 'notes/plan.md'],
           ['maybeSingle'],
@@ -232,6 +232,8 @@ Deno.test('the tests cover every tool the server lists', async () => {
       'card_report',
       'card_embed',
       'list_comments',
+      'get_image_preview',
+      'import_image',
       'add_comment',
       'reply_comment',
       'resolve_comment',
@@ -390,4 +392,18 @@ Deno.test('no tool permanently deletes a project, accepts an invitation, or edit
       assert(!('rpc' in call && forbidden.includes(call.rpc)), `${name} calls ${JSON.stringify(call)}`)
     }
   }
+})
+
+Deno.test('image reads and listings return metadata without original bytes', async () => {
+  const file = { path: 'assets/photo.png', content: '', kind: 'image', version: 7,
+    asset: { id: MEMBER, media_type: 'image/png', byte_length: 128, width: 2, height: 3 } }
+  const read = await callTool('read_file', { project_id: PROJECT, path: file.path }, {
+    project_files: { data: file, error: null },
+  })
+  const { content: _content, ...metadata } = file
+  assertEquals(read.result.structuredContent, metadata)
+  const listed = await callTool('list_files', { project_id: PROJECT }, {
+    project_files: { data: [metadata], error: null },
+  })
+  assertEquals(listed.result.structuredContent, { files: [metadata], folders: [] })
 })

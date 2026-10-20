@@ -25,6 +25,10 @@ import {
 import type { DocumentFormat } from '../features/document'
 import { FluidEditor } from '../preview/fluidEditor'
 import { readingTable } from './readingMarkup'
+import { parseImageReferences, type ImageReference } from '../features/images/referenceParser.ts';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
 
 /** A drawing or diagram a note embeds, as the server reads it (tools/markdown.ts). */
 export type EmbedRef = { kind: 'drawing' | 'diagram'; path: string }
@@ -33,6 +37,8 @@ export type CardEditorOptions = {
   mount: HTMLElement
   text: string
   format: DocumentFormat
+  path?: string
+  image?: (reference: {key:string;alt:string}) => HTMLElement | null
   /** The drawn embed for a `<Drawing>` or `<Diagram>` tag, or null to show the tag as written. */
   embed: (ref: EmbedRef) => HTMLElement | null
   /** A fenced code block, from its code and language ('' for none). */
@@ -63,7 +69,8 @@ export function parseEmbedTag(tag: string): EmbedRef | null {
   return { kind: match[1] === 'Diagram' ? 'diagram' : 'drawing', path }
 }
 
-type Ast = { type: string; value?: string; alt?: string | null; children?: Ast[] }
+type Ast = { type: string; value?: string; alt?: string | null; url?: string; children?: Ast[] }
+const captionParser = unified().use(remarkParse).use(remarkGfm);
 
 const textOf = (ast: Ast): string =>
   ast.type === 'text' || ast.type === 'inlineCode' ? (ast.value ?? '') : (ast.children ?? []).map(textOf).join('')
@@ -71,19 +78,38 @@ const textOf = (ast: Ast): string =>
 const PHRASING: Record<string, string> = { inlineCode: 'code', strong: 'strong', emphasis: 'em', delete: 'del', link: 'a' }
 
 /** A table cell's words, with their inline code, emphasis and links (a link that goes nowhere: the cell cannot be edited). */
-function phrasing(ast: Ast): Node[] {
+function phrasing(ast: Ast, links = false): Node[] {
   return (ast.children ?? []).map((child) => {
+    if (child.type === 'break') return document.createElement('br');
     const tag = PHRASING[child.type]
     if (!tag) return document.createTextNode(textOf(child))
     const element = document.createElement(tag)
     if (child.type === 'inlineCode') element.textContent = child.value ?? ''
-    else element.append(...phrasing(child))
+    else element.append(...phrasing(child,links))
+    if (links && child.type === 'link' && child.url) {
+      try {
+        const url = new URL(child.url,location.href);
+        if (['http:','https:','mailto:'].includes(url.protocol)) element.setAttribute('href',child.url);
+      } catch { /* Keep malformed and non-web links as words. */ }
+    }
     return element
   })
 }
 
 /** An island's content: its drawing, its code or table, or its source as written. */
-function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string, inline: boolean, { embed, code }: Pick<CardEditorOptions, 'embed' | 'code'>) {
+function renderIsland(element: HTMLElement, ast: Ast | undefined, source: string, inline: boolean, { embed, code,image }: Pick<CardEditorOptions, 'embed' | 'code' | 'image'>, imageReference?:ImageReference) {
+  const imageNode = imageReference && image?.(imageReference);
+  if (imageNode) {
+    if (imageReference.figure) {
+      const figure = document.createElement('figure');
+      const caption = document.createElement('figcaption');
+      const tree = captionParser.parse(imageReference.figure.caption) as Ast;
+      for (const block of tree.children ?? []) caption.append(...phrasing(block,true));
+      figure.append(imageNode,caption);
+      element.replaceChildren(figure);
+    } else element.replaceChildren(imageNode);
+    return;
+  }
   const ref = parseEmbedTag(source)
   const drawn = ref ? embed(ref) : null
   if (drawn) {
@@ -144,10 +170,14 @@ const SESSION = 'chat-card'
 
 /** Shows the note in `mount` as an editable rendered document. */
 export async function startCardEditor(options: CardEditorOptions): Promise<CardEditor> {
-  const { mount, format, embed, code, notice, change } = options
+  const { mount, format, embed, code, image,notice, change } = options
   const original = options.text
   const environment = { source: original, catalog: COMPONENT_CATALOG, modules: [], key: '', code: [] }
-  const project = (text: string) => projectFluidSource(text, format, { ...environment, source: text })
+  let imageReferences:ImageReference[] = [];
+  const project = async (text: string) => {
+    imageReferences = await parseImageReferences(text,format,options.path ?? `note.${format}`);
+    return projectFluidSource(text, format, { ...environment, source: text });
+  }
   let projection: FluidProjection = await project(original)
   let epoch = 0
   let operation = 0
@@ -174,7 +204,8 @@ export async function startCardEditor(options: CardEditorOptions): Promise<CardE
       const island = projection.islands.find((entry) => entry.id === id)
       if (!island) continue
       element.dataset.filled = id
-      renderIsland(element, asts.get(id), projection.text.slice(island.from, island.to), island.inline, { embed, code })
+      const reference = imageReferences.find(reference => reference.from === island.from || (reference.figure?.from === island.from && reference.figure.to <= island.to));
+      renderIsland(element, asts.get(id), projection.text.slice(island.from, island.to), island.inline, { embed, code,image },reference)
     }
   }
 

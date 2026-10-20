@@ -97,7 +97,7 @@ function useView() {
 }
 
 /** The kind of file the view names, by the app's kind for its path. */
-const KINDS = { note: "note", drawing: "drawing", diagram: "diagram", text: "other" } as const
+const KINDS = { note: "note", drawing: "drawing", diagram: "diagram", image: "other", text: "other" } as const
 
 /** The project's name in the account's library, once the library has the project; null without one. */
 function useProjectName(account: ProjectAccount | null, projectId: string | null): string | null {

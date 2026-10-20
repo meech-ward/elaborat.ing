@@ -15,6 +15,7 @@
  * the app would, with the same message.
  */
 import { compile } from "@mdx-js/mdx"
+import { projectImagesPlugin } from '@/features/images/compileImages';
 import remarkFrontmatter from "remark-frontmatter"
 import remarkGfm from "remark-gfm"
 import { CHART_COMPONENT_CATALOG } from "@/features/document/chartCatalog"
@@ -114,6 +115,7 @@ export async function compileNote(source: string, sources: Record<string, string
       await compile(source, {
         format: "mdx",
         outputFormat: "function-body",
+        recmaPlugins:[projectImagesPlugin],
         remarkPlugins: [remarkGfm, remarkFrontmatter, guardPlugin, workspaceImportPlugin],
       }),
     )

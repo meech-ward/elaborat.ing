@@ -6,6 +6,9 @@ import { useCompactWorkbench } from "./compactWorkbench";
 import { embedded, openInNewTab } from "@/features/embed/mode";
 import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
 import { SourceEditor, preloadSourceEditor, type SourceEditorApi } from "@/features/source";
+import type { ImageChoice } from "../images/ImagePicker";
+import { LazyImagePicker } from "../images/LazyImages";
+import type { ImagePreview } from "../images/transport";
 import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
 import type { WriteIn } from "@/features/document/writeIn";
@@ -153,6 +156,102 @@ export function WorkspaceSession({
   const customCode = useCustomCodePolicy();
   const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty);
   const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
+  const [imageRequest, setImageRequest] = useState<{ files?: readonly File[]; initialAlt?: string; commit: (images: readonly { path: string; alt: string }[]) => Promise<boolean> } | null>(null);
+  const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
+  const [imageEntries, setImageEntries] = useState<Awaited<ReturnType<WorkspaceStore["listEntries"]>>["files"]>([]);
+  const [imageResources, setImageResources] = useState<Record<string, ImagePreview>>({});
+  const [imageGeneration, setImageGeneration] = useState(0);
+  useEffect(() => client.subscribe(() => setImageGeneration(value => value + 1)), [client]);
+  useEffect(() => {
+    if (!imageRequest) return;
+    let live = true;
+    void client.listEntries().then(entries => { if (live) setImageEntries(entries.files.filter(file => file.kind === "image")); });
+    return () => { live = false; };
+  }, [client, imageRequest, imageGeneration]);
+  const imageModuleSources = JSON.stringify(shownComponents?.environment?.code.filter(module => module.path !== null) ?? []);
+  useEffect(() => {
+    if (!active || !client.readImage || kindForPath(initial.path) !== "note") return;
+    let live = true;
+    void (async () => {
+      const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
+      const refs = await parseImageReferences(snapshot.text, snapshot.format, initial.path, JSON.parse(imageModuleSources));
+      const pixels: Record<string, ImagePreview> = {};
+      let total = 0;
+      for (const ref of refs) {
+        if (!live) return;
+        try {
+          const file = await client.read(ref.path);
+          if (file.kind !== "image" || !file.asset || pixels[ref.key]) continue;
+          const blob = await client.readImage!(ref.path, true);
+          total += blob.size;
+          if (total > 20 * 1024 * 1024) break;
+          pixels[ref.key] = { dataURL: imageDataURL(new Uint8Array(await blob.arrayBuffer()), file.asset.preview_type), width: file.asset.width, height: file.asset.height };
+        } catch { /* Missing or incomplete images show the frame's placeholder. */ }
+      }
+      if (live) setImageResources(pixels);
+    })().catch(() => { if (live) setImageResources({}); });
+    return () => { live = false; };
+  }, [active, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
+  const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
+    if (!client.readImage) throw new Error("Image viewing is unavailable.");
+    const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
+    const refs = await parseImageReferences(store.snapshot().text, store.snapshot().format, initial.path, JSON.parse(imageModuleSources));
+    const ref = refs.find(ref => ref.key === key);
+    if (!ref) throw new Error("This image is no longer in the document.");
+    const file = await client.read(ref.path);
+    if (file.kind !== "image" || !file.asset) throw new Error("The image is unavailable.");
+    const blob = await client.readImage(ref.path);
+    return { dataURL: imageDataURL(new Uint8Array(await blob.arrayBuffer()), file.asset.media_type), width: file.asset.width, height: file.asset.height };
+  }, [client, initial.path, imageModuleSources, store]);
+  const chooseImages = async (choices: ImageChoice[]) => {
+    if (!imageRequest || readOnly || frozen.current || !client.stageImage) throw new Error("This document cannot be changed right now.");
+    const { imageExtension } = await import("../images/types");
+    const entries = await client.listEntries();
+    const taken = new Set(entries.files.map(file => file.path));
+    const staged: string[] = [];
+    let committed = false;
+    const selected: { path: string; alt: string; caption?: string }[] = [];
+    try {
+      for (const choice of choices) {
+        if (choice.prepared) {
+          const image = choice.prepared;
+          const stem = image.name.normalize("NFC").replace(/\.[^.]+$/, "").replace(/[\\/:\u0000-\u001f\u007f]/g, "_").replace(/^\.+/, "").slice(0, 100) || "image";
+          const extension = imageExtension(image.asset.media_type);
+          let path = `images/${stem}.${extension}`, number = 2;
+          while (taken.has(path)) path = `images/${stem}-${number++}.${extension}`;
+          taken.add(path);
+          let originalPath = image.originalPath;
+          if (image.original && !originalPath) {
+            const original = image.original;
+            const originalStem = original.name.normalize("NFC").replace(/\.[^.]+$/, "").replace(/[\\/:\u0000-\u001f\u007f]/g, "_").replace(/^\.+/, "").slice(0, 100) || "original";
+            const originalExtension = imageExtension(original.asset.media_type);
+            originalPath = `images/${originalStem}.${originalExtension}`;
+            let number = 2;
+            while (taken.has(originalPath)) originalPath = `images/${originalStem}-original-${number++}.${originalExtension}`;
+            taken.add(originalPath);
+            await client.stageImage(originalPath, original.bytes, { ...original.asset, draft_note: initial.path }, [], original.preview);
+            staged.push(originalPath);
+          }
+          await client.stageImage(path, image.bytes, { ...image.asset, draft_note: initial.path, ...(originalPath ? { original_path: originalPath } : {}) }, [], image.preview);
+          staged.push(path);
+          selected.push({ path, alt: choice.alt, ...(choice.caption ? { caption: choice.caption } : {}) });
+        } else if (choice.existingPath) {
+          const file = await client.read(choice.existingPath);
+          if (file.kind !== "image" || !file.asset) throw new Error("Choose an image from this project.");
+          selected.push({ path: choice.existingPath, alt: choice.alt, ...(choice.caption ? { caption: choice.caption } : {}) });
+        }
+      }
+      if (!selected.length || !await imageRequest.commit(selected)) throw new Error("The document changed while choosing images. Insert them again at the new position.");
+      committed = true;
+      await client.persistDrafts([{ path: initial.path, content: store.snapshot().text, baseRevision: openFile.baseRevision }]);
+      await refreshList();
+    } catch (error) {
+      // A rejected insertion never leaves new image files in the explorer.
+      if (!committed) for (const path of staged) await client.discardLocalDraft(path);
+      throw error;
+    }
+  };
+
   // Text that is not an edit is never kept as a draft: an arriving note's
   // empty start, or a clean saved copy while a newer one waits to be taken
   // (below; in a chat's panel, while the note is not on screen). As a draft
@@ -511,10 +610,31 @@ export function WorkspaceSession({
       setOpenFile((f) => markSaving(f));
       setNotice(null);
       try {
-        const ok = await client.write(target, {
-          content: captured.text,
-          expectedRevision,
-        });
+        const imagePaths: string[] = [];
+        const pendingImages: string[] = [];
+        if (kindForPath(target) === "note" && client.saveImages) {
+          try {
+            const { parseImageReferences } = await import("../images/references");
+            const refs = await parseImageReferences(captured.text, store.snapshot().format, target);
+            pendingImages.push(...new Set(refs.map(ref => ref.path)));
+          } catch {
+            // Source can be saved while incomplete. Its own durable image
+            // drafts still travel with it, without treating broken syntax as authority.
+            const entries = await client.listEntries();
+            pendingImages.push(...entries.files.filter(file => file.draft && file.asset?.draft_note === target).map(file => file.path));
+          }
+        }
+        const visitedImages = new Set<string>();
+        for (let index = 0; index < pendingImages.length; index++) {
+          const path = pendingImages[index];
+          if (visitedImages.has(path)) continue;
+          visitedImages.add(path);
+          const asset = await client.draftImageAsset?.(path);
+          if (asset) { imagePaths.push(path); if (asset.original_path) pendingImages.push(asset.original_path); }
+        }
+        const ok = client.saveImages && imagePaths.length
+          ? (await client.saveImages(imagePaths, [{ path: target, content: captured.text, expectedRevision }])).find(file => file.path === target)!
+          : await client.write(target, { content: captured.text, expectedRevision });
         await refreshList();
         const completion = resolveSaveCompletion(captured, store.snapshot());
         if (completion.outcome === "saved-other-file") {
@@ -941,6 +1061,10 @@ export function WorkspaceSession({
                 document={snapshot}
                 active={active && inRendered}
                 documentId={snapshot.docId}
+                documentPath={initial.path}
+                imageResources={imageResources}
+                onReadImage={readImageOriginal}
+                onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
                 componentEnvironment={shownComponents?.environment}
                 componentError={shownComponents?.error}
                 componentPending={shownComponents?.pending}
@@ -971,6 +1095,18 @@ export function WorkspaceSession({
             </div>
           )}
         />
+      {client.projectId && <LazyImagePicker open={Boolean(imageRequest)} onOpenChange={open => { if (!open) setImageRequest(null); }}
+        projectId={client.projectId} initialAlt={imageRequest?.initialAlt} images={imageEntries} files={requestedImageFiles}
+        readImage={client.readImage} onDescribe={import.meta.env.VITE_CHATGPT_PLAN ? async (choice, signal) => {
+          const preview = choice.prepared?.preview ?? (choice.existingPath && client.readImage ? await client.readImage(choice.existingPath, true) : null);
+          if (!preview) throw new Error("Choose an image first.");
+          const { describeImage } = await import("../images/describe");
+          return describeImage(preview, signal);
+        } : undefined} onChoose={choice => chooseImages([choice])} onChooseMany={chooseImages}
+        importFromURL={client.persistenceKey.startsWith('["local"') ? undefined : async (url, signal) => {
+          const { importProjectImageURL } = await import("../images/importURL");
+          return importProjectImageURL(client.projectId!, url, signal);
+        }} />}
     </div>
   );
 }

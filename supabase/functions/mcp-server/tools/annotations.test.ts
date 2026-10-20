@@ -51,7 +51,7 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
     for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) {
       assertEquals(typeof hints[hint], 'boolean', `${tool.name} has no ${hint}`)
     }
-    assertEquals(hints.openWorldHint, false, `${tool.name} reaches outside the account`)
+    assertEquals(hints.openWorldHint, tool.name === 'import_image', `${tool.name} reaches outside the account`)
     assertEquals(hints.destructiveHint, DESTRUCTIVE.includes(tool.name), `${tool.name}'s destructiveHint`)
     if (hints.readOnlyHint) assertEquals(hints.destructiveHint, false, `${tool.name} reads only, yet destroys`)
   }

@@ -191,3 +191,6 @@
 :root[data-display-mode="fullscreen"] [data-slot="chat-card"] > footer {
   margin-top: auto;
 }
+.card-image-slot { display: inline-block; max-width: 100%; vertical-align: middle; }
+.card-project-image { display: block; max-width: 100%; height: auto; filter: none; }
+.card-image-missing { display: inline-block; padding: .5rem .75rem; border: 1px dashed currentColor; font-size: .85em; opacity: .75; }

@@ -73,8 +73,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  if private.is_searchable_path(new.path)
-    or (tg_op = 'UPDATE' and private.is_searchable_path(old.path)) then
+  if (new.kind = 'text' and private.is_searchable_path(new.path))
+    or (tg_op = 'UPDATE' and old.kind = 'text' and private.is_searchable_path(old.path)) then
     perform pgmq.send('file_passages', jsonb_build_object('fileId', new.id));
   end if;
   return null;

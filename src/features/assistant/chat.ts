@@ -34,6 +34,8 @@ export type ChatState = {
 const EMPTY: ChatState = { entries: [], history: [], running: false, problem: null, writing: null, announcement: "" }
 
 const VERBS: Record<ToolName, { running: string; done: string; kept: string; error: string }> = {
+  get_image_preview: { running: "Viewing image", done: "Viewed image", kept: "Viewed image", error: "Could not view image" },
+  import_image: { running: "Importing image", done: "Imported image", kept: "Kept image", error: "Could not import image" },
   list_files: { running: "Listing files", done: "Listed files", kept: "Listed files", error: "Could not list files" },
   read_file: { running: "Reading", done: "Read", kept: "Read", error: "Could not read" },
   write_file: { running: "Writing", done: "Wrote", kept: "Kept your changes in", error: "Could not write" },

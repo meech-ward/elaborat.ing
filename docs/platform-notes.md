@@ -70,6 +70,31 @@ before relying on it for something new, and update this page when it moves.
   `false` to match new hosted projects. The CLI template notes the field is due
   to be removed on 2026-10-30; re-check then.
 
+## Supabase Storage for image assets
+
+Checked against the current docs on 2026-10-20 for the
+[image implementation](images.md).
+
+- **Private buckets check RLS on downloads as well as writes.** Download
+  through the authenticated Storage API or a temporary signed URL. Public
+  buckets bypass read access checks, so they do not fit project-private
+  images. [Bucket access](https://supabase.com/docs/guides/storage/buckets/fundamentals),
+  [Storage policies](https://supabase.com/docs/guides/storage/security/access-control)
+- **Storage SQL records are metadata.** Upload, move, copy and delete objects
+  through the Storage API. Deleting a metadata row in SQL does not delete
+  the underlying object. Treat object upload and the project's database save
+  as separate operations with explicit staging and retry handling.
+  [Storage schema](https://supabase.com/docs/guides/storage/schema/design)
+- **Standard uploads are recommended for files no larger than 6 MB.** The
+  5 MiB image limit fits that method; larger uploads would need a
+  separate reliability decision. Do not overwrite object paths that saved
+  history still uses.
+  [Standard uploads](https://supabase.com/docs/guides/storage/uploads/standard-uploads)
+- **A bucket declaration needs a deployment step.** The existing CLI notes
+  above apply: `config push` does not provision the bucket declared in
+  `config.toml`. The image-storage task includes bucket provisioning and a
+  self-host setup check.
+
 ## Supabase: environments and testing
 
 - **Branching** (preview and persistent branches) needs the Pro plan and bills

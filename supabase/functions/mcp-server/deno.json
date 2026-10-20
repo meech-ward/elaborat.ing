@@ -5,5 +5,14 @@
   },
   "tasks": {
     "check": "deno check index.ts"
+  },
+  "imports": {
+    "unified": "npm:unified@11.0.5",
+    "remark-parse": "npm:remark-parse@11.0.0",
+    "remark-mdx": "npm:remark-mdx@3.1.1",
+    "remark-gfm": "npm:remark-gfm@4.0.1",
+    "zod/mini": "npm:zod@4.5.4/mini",
+    "image-size": "npm:image-size@2.0.4",
+    "@xmldom/xmldom": "npm:@xmldom/xmldom@0.9.12"
   }
 }

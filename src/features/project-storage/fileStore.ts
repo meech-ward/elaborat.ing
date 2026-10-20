@@ -6,6 +6,11 @@ import {
   isValidProjectPath,
   MAX_ENTRIES,
   MAX_FILE_BYTES,
+  MAX_PROJECT_BYTES,
+  savedToken,
+  assetToken,
+  ImageAssetSchema,
+  type ImageAsset,
   type LocalFile,
   type LocalProject,
 } from "./model"
@@ -19,6 +24,8 @@ import {
 
 export type FileRef = {
   path: string
+  kind?: "text" | "image"
+  asset?: ImageAsset | null
   /** Token of the saved copy, or "" when the file has never been saved. */
   revision: string
   size: number
@@ -49,18 +56,22 @@ export type ConflictCopies = {
   mine: string | null
   /** The server's copy, or null when the server no longer has the file. */
   theirs: string | null
+  /** Immutable image versions. Bytes remain in the account's local asset cache. */
+  mineAsset?: ImageAsset | null
+  theirsAsset?: ImageAsset | null
 }
 
 /** One change in a local save. All changes in one save share a batch and sync together. */
 export type LocalChange =
   | { kind: "write"; path: string; content: string; expectedRevision: string | null }
-  | { kind: "move"; from: string; to: string; expectedRevision: string; content?: string }
+  | { kind: "asset"; path: string; asset: ImageAsset; expectedRevision: string | null }
+  | { kind: "move"; from: string; to: string; expectedRevision: string; content?: string; asset?: ImageAsset }
   | { kind: "delete"; path: string; expectedRevision: string }
   /** Explicit folders, made or removed in the same save as files (a folder move). */
   | { kind: "mkdir"; path: string }
   | { kind: "rmdir"; path: string }
 
-type FileChange = Extract<LocalChange, { kind: "write" | "move" | "delete" }>
+type FileChange = Extract<LocalChange, { kind: "write" | "asset" | "move" | "delete" }>
 const isFileChange = (change: LocalChange): change is FileChange => change.kind !== "mkdir" && change.kind !== "rmdir"
 
 export class LocalConflictError extends Error {
@@ -152,10 +163,11 @@ export class ProjectFileStore {
       path: file.path,
       content,
       savedContent: saved,
-      revision: saved === null ? "" : await contentToken(saved),
-      size: byteLength(content),
+      ...(file.kind === "image" ? { kind: "image" as const, asset: file.draft?.asset ?? file.asset ?? null } : {}),
+      revision: await savedToken(file),
+      size: file.kind === "image" ? (file.draft?.asset ?? file.asset)?.byte_length ?? 0 : byteLength(content),
       draft: file.draft !== null,
-      unsynced: file.base === null ? saved !== null : saved !== file.base.content || file.path !== file.base.path,
+      unsynced: file.base === null ? saved !== null : saved !== file.base.content || file.path !== file.base.path || (file.asset?.id ?? null) !== (file.base.asset?.id ?? null),
       conflict: file.conflict !== null,
       server: file.base === null ? null : { id: file.base.id, version: file.base.version },
     }
@@ -167,8 +179,8 @@ export class ProjectFileStore {
    */
   async listEntries(): Promise<{ files: FileRef[]; directories: string[]; folders: string[] }> {
     const { files, folders } = await this.db.transaction(this.partition, "readonly", async (tx) => {
-      await this.project(tx)
-      return { files: await tx.listFiles(this.projectId), folders: await tx.listFolders(this.projectId) }
+      const [, files, folders] = await Promise.all([this.project(tx), tx.listFiles(this.projectId), tx.listFolders(this.projectId)])
+      return { files, folders }
     })
     const refs: FileRef[] = []
     for (const file of files) {
@@ -190,14 +202,125 @@ export class ProjectFileStore {
    * download: each file's saved copy (null for a new file that is only a
    * draft) and its unsaved edits (null without any).
    */
-  async snapshot(): Promise<{ files: Array<{ path: string; saved: string | null; draft: string | null }>; folders: string[] }> {
+  async snapshot(): Promise<{ files: Array<{ path: string; saved: string | null; draft: string | null; kind?: "image"; asset?: ImageAsset | null; savedBytes?: Uint8Array; draftBytes?: Uint8Array }>; folders: string[] }> {
+    const snapshot = await this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      const files = (await tx.listFiles(this.projectId)).filter((file) => file.content !== null || file.draft !== null)
+      const assets = new Map((await tx.listAssets(this.projectId)).map((asset) => [asset.id, asset]))
+      const folders = (await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path)
+      return { files, assets, folders }
+    })
+    const files = await Promise.all(snapshot.files.map(async (file) => {
+      const text = { path: file.path, saved: file.content, draft: file.draft?.content ?? null }
+      if (file.kind !== "image") return text
+      const original = file.asset && snapshot.assets.get(file.asset.id)?.bytes
+      const draft = file.draft?.asset && snapshot.assets.get(file.draft.asset.id)?.bytes
+      if (file.content !== null && !original) throw new FileStoreError(`${file.path} has not downloaded completely. Connect and sync before downloading this project.`)
+      if (file.draft?.asset && !draft) throw new FileStoreError(`${file.path}'s image draft is missing from this device.`)
+      return { ...text, kind: "image" as const, asset: file.draft?.asset ?? file.asset, ...(original ? { savedBytes: new Uint8Array(await original.arrayBuffer()) } : {}), ...(draft ? { draftBytes: new Uint8Array(await draft.arrayBuffer()) } : {}) }
+    }))
+    return { files, folders: snapshot.folders }
+  }
+
+  /** Persist a validated original and its note drafts together before inserting a reference. */
+  async stageImage(path: string, bytes: Blob, metadata: ImageAsset, noteDrafts: Array<{ path: string; content: string; baseRevision: string | null }> = [], preview?: Blob): Promise<StoredFile> {
+    checkPath(path)
+    const asset = ImageAssetSchema.parse(metadata)
+    if (asset.object_key !== `${this.projectId}/${asset.id}/original` || asset.preview_key !== `${this.projectId}/${asset.id}/preview`) throw new FileStoreError("This image belongs to another project.")
+    if (bytes.size !== asset.byte_length) throw new FileStoreError("The image size does not match its metadata.")
+    if (preview && (preview.size !== asset.preview_byte_length || preview.type !== asset.preview_type)) throw new FileStoreError("The image preview does not match its metadata.")
+    const digest = await crypto.subtle.digest("SHA-256", await bytes.arrayBuffer())
+    const sha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+    if (sha256 !== asset.sha256) throw new FileStoreError("The image bytes do not match their digest.")
+    for (const draft of noteDrafts) { checkPath(draft.path); checkSize(draft.path, draft.content) }
+    await this.flushDrafts()
+    await this.db.transaction(this.partition, "readwrite", async (tx) => {
+      await this.editableProject(tx)
+      const existing = await tx.getFile(this.projectId, path)
+      if (existing && existing.kind !== "image") throw new FileStoreError(`${path} already exists as a text file.`)
+      const files = await tx.listFiles(this.projectId)
+      const total = files.filter((file) => file.path !== path && (file.content !== null || file.draft !== null)).reduce((sum, file) => sum + (file.kind === "image" ? (file.draft?.asset ?? file.asset)?.byte_length ?? 0 : byteLength(file.draft?.content ?? file.content ?? "")), asset.byte_length)
+      if (total > MAX_PROJECT_BYTES) throw new FileStoreError("The files add up to more than 64 MiB.")
+      const folders = new Set((await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path))
+      const live = new Map(files.filter((file) => file.content !== null || file.draft !== null).map((file) => [file.path, file.localId]))
+      checkFree(folders, live, path, existing)
+      const cached = await tx.getAsset(this.projectId, asset.id)
+      if (cached && cached.asset.sha256 !== asset.sha256) throw new FileStoreError("An immutable image cannot be overwritten with different bytes.")
+      await tx.putAsset({ partition: this.partition, projectId: this.projectId, id: asset.id, asset, bytes, ...(preview ? { preview } : cached?.preview ? { preview: cached.preview } : {}), uploaded: cached?.uploaded ?? false, ...(cached?.uploadAttempted ? { uploadAttempted: true } : {}) })
+      const file: LocalFile = existing ?? { partition: this.partition, projectId: this.projectId, localId: crypto.randomUUID(), path, base: null, content: null, batch: null, draft: null, conflict: null }
+      const token = file.content === null ? null : file.kind === "image" && file.asset ? assetToken(file.asset) : null
+      await tx.putFile({ ...file, kind: "image", draft: { content: "", token, asset } })
+      for (const draft of noteDrafts) {
+        const note = await tx.getFile(this.projectId, draft.path)
+        if (note?.kind === "image") throw new FileStoreError(`${draft.path} is an image, not a note.`)
+        await tx.putFile({ ...(note ?? { partition: this.partition, projectId: this.projectId, localId: crypto.randomUUID(), path: draft.path, base: null, content: null, batch: null, conflict: null }), draft: { content: draft.content, token: draft.baseRevision } })
+      }
+    })
+    this.emit()
+    return this.read(path)
+  }
+
+  /** Save image drafts with the note changes that reference them as one sync batch. */
+  async saveImages(paths: string[], writes: Array<{ path: string; content: string; expectedRevision: string | null }> = []) {
+    await this.flushDrafts()
+    const assets = await this.db.transaction(this.partition, "readonly", async (tx) => {
+      const changes: LocalChange[] = []
+      for (const path of new Set(paths)) {
+        const file = await tx.getFile(this.projectId, path)
+        if (!file || file.kind !== "image") throw new FileStoreError(`${path} is not an image in this project.`)
+        if (file.draft?.asset) changes.push({ kind: "asset", path, asset: file.draft.asset, expectedRevision: file.draft.token })
+      }
+      return changes
+    })
+    return this.save([...assets, ...writes.map((write) => ({ kind: "write" as const, ...write }))])
+  }
+
+  /** Original bytes, or a bounded preview when one is available. Never a storage URL. */
+  async readImage(path: string, preview = false): Promise<Blob> {
+    checkPath(path)
     return this.db.transaction(this.partition, "readonly", async (tx) => {
       await this.project(tx)
-      const files = (await tx.listFiles(this.projectId))
-        .filter((file) => file.content !== null || file.draft !== null)
-        .map((file) => ({ path: file.path, saved: file.content, draft: file.draft?.content ?? null }))
-      const folders = (await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path)
-      return { files, folders }
+      const file = await tx.getFile(this.projectId, path)
+      const asset = file?.draft?.asset ?? file?.asset
+      if (file?.kind !== "image" || !asset || (file.content === null && file.draft === null)) throw new FileStoreError(`${path} is not an image in this project.`)
+      const local = await tx.getAsset(this.projectId, asset.id)
+      if (!local) throw new FileStoreError(`${path} has not downloaded completely. Connect and sync to download it.`)
+      return preview && local.preview ? local.preview : local.bytes
+    })
+  }
+
+  /** A cached immutable version, including either side of an image conflict. */
+  async readImageAsset(assetId: string, preview = false): Promise<Blob> {
+    return this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      const local = await tx.getAsset(this.projectId, assetId)
+      if (!local) throw new FileStoreError("This image version has not downloaded completely. Connect and sync to download it.")
+      return preview && local.preview ? local.preview : local.bytes
+    })
+  }
+
+  async draftImageAsset(path: string): Promise<ImageAsset | null> {
+    checkPath(path)
+    return this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      return (await tx.getFile(this.projectId, path))?.draft?.asset ?? null
+    })
+  }
+
+  /** Keep a verified committed historical asset without creating or changing a logical file. */
+  async cacheImage(bytes: Blob, metadata: ImageAsset, preview?: Blob): Promise<void> {
+    const asset = ImageAssetSchema.parse(metadata)
+    if (asset.object_key !== `${this.projectId}/${asset.id}/original` || asset.preview_key !== `${this.projectId}/${asset.id}/preview`) throw new FileStoreError("This image belongs to another project.")
+    if (bytes.size !== asset.byte_length) throw new FileStoreError("The image size does not match its metadata.")
+    if (preview && (preview.size !== asset.preview_byte_length || preview.type !== asset.preview_type)) throw new FileStoreError("The image preview does not match its metadata.")
+    const digest = await crypto.subtle.digest("SHA-256", await bytes.arrayBuffer())
+    const sha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+    if (sha256 !== asset.sha256) throw new FileStoreError("The image bytes do not match their digest.")
+    await this.db.transaction(this.partition, "readwrite", async (tx) => {
+      await this.project(tx)
+      const existing = await tx.getAsset(this.projectId, asset.id)
+      if (existing && existing.asset.sha256 !== asset.sha256) throw new FileStoreError("An immutable image cannot be overwritten with different bytes.")
+      await tx.putAsset({ partition: this.partition, projectId: this.projectId, id: asset.id, asset, bytes, ...(preview ? { preview } : existing?.preview ? { preview: existing.preview } : {}), uploaded: true })
     })
   }
 
@@ -220,7 +343,14 @@ export class ProjectFileStore {
       return tx.getFile(this.projectId, path)
     })
     if (!file?.conflict) return null
-    return { mine: file.content, theirs: file.conflict.current?.content ?? null }
+    return {
+      mine: file.content,
+      theirs: file.conflict.current?.content ?? null,
+      ...(file.kind === "image" || file.conflict.current?.kind === "image" ? {
+        mineAsset: file.content !== null ? file.asset ?? null : null,
+        theirsAsset: file.conflict.current?.asset ?? null,
+      } : {}),
+    }
   }
 
   /** Save one file on this device. */
@@ -273,7 +403,7 @@ export class ProjectFileStore {
     for (const [index, change] of fileChanges.entries()) {
       const file = before[index]
       const saved = file?.content ?? null
-      const current = saved === null ? "" : await contentToken(saved)
+      const current = file ? await savedToken(file) : ""
       const expected = change.expectedRevision ?? ""
       if (current !== expected) throw new LocalConflictError(sourcePaths[index], current, saved)
     }
@@ -309,10 +439,13 @@ export class ProjectFileStore {
         }
         const index = fileIndex++
         const source = await tx.getFile(this.projectId, sourcePaths[index])
-        if ((source?.content ?? null) !== (before[index]?.content ?? null)) {
+        if ((source?.content ?? null) !== (before[index]?.content ?? null) || (source?.asset?.id ?? null) !== (before[index]?.asset?.id ?? null)) {
           throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
         }
-        if (change.kind === "write") {
+        if (change.kind === "write" || change.kind === "asset") {
+          if (change.kind === "write" && source?.kind === "image") throw new FileStoreError(`${change.path} is an image and cannot be overwritten with text.`)
+          if (change.kind === "asset" && source && source.kind !== "image") throw new FileStoreError(`${change.path} is a text file and cannot be overwritten with an image.`)
+          if (change.kind === "asset" && !(await tx.getAsset(this.projectId, change.asset.id))) throw new FileStoreError("The image bytes must be kept on this device before saving.")
           checkFree(folders, live, change.path, source)
           const file: LocalFile = source ?? {
             partition: this.partition,
@@ -327,16 +460,20 @@ export class ProjectFileStore {
           }
           await tx.putFile({
             ...file,
-            content: change.content,
+            ...(change.kind === "asset" ? { kind: "image" as const, asset: change.asset, asset_id: change.asset.id } : {}),
+            content: change.kind === "asset" ? "" : change.content,
             batch: batch ?? file.batch,
             // This save supersedes a draft made on the same saved copy (or one it matches).
             draft:
-              file.draft && (file.draft.content === change.content || file.draft.token === change.expectedRevision) ? null : file.draft,
+              file.draft && (change.kind === "asset" ? file.draft.asset?.id === change.asset.id : file.draft.content === change.content || file.draft.token === change.expectedRevision) ? null : file.draft,
           })
           live.set(change.path, file.localId)
         } else if (change.kind === "move") {
           if (!source || source.content === null) throw new FileStoreError(`${change.from} is not in this project.`)
           if (source.draft) throw new FileStoreError(`Save or discard the unsaved edits in ${change.from} before moving it.`)
+          if (source.kind === "image" && change.content !== undefined) throw new FileStoreError("An image cannot be moved with a text replacement.")
+          if (change.asset && change.content !== undefined) throw new FileStoreError("An image replacement cannot include text content.")
+          if (change.asset && !(await tx.getAsset(this.projectId, change.asset.id))) throw new FileStoreError("Download this image before moving it.")
           const occupant = await tx.getFile(this.projectId, change.to)
           if (occupant?.draft) throw new FileStoreError(`${change.to} has unsaved edits. Save or discard them first.`)
           if (occupant && (occupant.content !== null || occupant.base !== null)) {
@@ -351,7 +488,8 @@ export class ProjectFileStore {
           await tx.putFile({
             ...source,
             path: change.to,
-            content: change.content ?? source.content,
+            ...(change.asset ? { kind: "image" as const, asset: change.asset, asset_id: change.asset.id } : {}),
+            content: change.asset ? "" : change.content ?? source.content,
             batch: batch ?? source.batch,
             draft: null,
             // Moving is how a file whose path was taken on the server gets a free one.
@@ -378,8 +516,9 @@ export class ProjectFileStore {
     for (const [index, change] of fileChanges.entries()) {
       if (change.kind === "delete") continue
       const path = change.kind === "move" ? change.to : change.path
-      const content = change.kind === "move" ? (change.content ?? before[index]?.content ?? "") : change.content
-      results.push({ path, revision: await contentToken(content), size: byteLength(content) })
+      const content = change.kind === "move" ? (change.content ?? before[index]?.content ?? "") : change.kind === "asset" ? "" : change.content
+      const image = change.kind === "asset" ? change.asset : change.kind === "move" ? change.asset ?? (before[index]?.kind === "image" ? before[index]?.asset : null) : null
+      results.push({ path, revision: image ? assetToken(image) : await contentToken(content), size: image?.byte_length ?? byteLength(content) })
     }
     return results
   }
@@ -484,16 +623,43 @@ export class ProjectFileStore {
   }
 
   async discardDraft(path: string): Promise<void> {
-    await this.draftQueue.catch(() => {})
     checkPath(path)
-    await this.db.transaction(this.partition, "readwrite", async (tx) => {
-      await this.project(tx)
-      const file = await tx.getFile(this.projectId, path)
-      if (!file?.draft) return
-      if (file.content === null && file.base === null) await tx.deleteFile(this.projectId, path)
-      else await tx.putFile({ ...file, draft: null })
-    })
-    this.emit()
+    await this.flushDrafts()
+    // Parsing is deliberately outside IndexedDB: awaiting a parser or module
+    // import inside a transaction would let the browser commit it early.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const snapshot = await this.db.transaction(this.partition, "readonly", async (tx) => ({ project: await this.project(tx), files: await tx.listFiles(this.projectId) }))
+      const file = snapshot.files.find(file => file.path === path)
+      if (!file || !file.draft && !snapshot.files.some(candidate => candidate.draft?.asset?.draft_note === path)) return
+      const planned = await discardedImageDependencies(snapshot.files, snapshot.project, file)
+      if (planned.preserveTarget) return
+      const applied = await this.db.transaction(this.partition, "readwrite", async (tx) => {
+        const project = await this.project(tx)
+        const current = await tx.listFiles(this.projectId)
+        if (JSON.stringify(project) !== JSON.stringify(snapshot.project) || JSON.stringify(current) !== JSON.stringify(snapshot.files)) return false
+        if (file.draft) {
+          if (file.content === null && file.base === null && !project.pending?.files.some(pending => pending.localId === file.localId)) await tx.deleteFile(this.projectId, path)
+          else await tx.putFile({ ...file, draft: null })
+        }
+        for (const removed of planned.remove) await tx.deleteFile(this.projectId, removed)
+        for (const cleared of planned.clear) {
+          const current = await tx.getFile(this.projectId, cleared)
+          if (current) await tx.putFile({ ...current, draft: null })
+        }
+        const remaining = await tx.listFiles(this.projectId)
+        const used = new Set(remaining.flatMap(file => [file.asset?.id, file.draft?.asset?.id, file.base?.asset?.id, file.conflict?.current?.asset?.id]).filter(Boolean))
+        for (const pending of project.pending?.files ?? []) if (pending.asset?.id) used.add(pending.asset.id)
+        for (const change of project.pending?.changes ?? []) if ("asset_id" in change && change.asset_id) used.add(change.asset_id)
+        for (const id of planned.assets) {
+          if (used.has(id)) continue
+          const asset = await tx.getAsset(this.projectId, id)
+          if (asset && !asset.uploaded && !asset.uploadAttempted) await tx.deleteAsset(this.projectId, id)
+        }
+        return true
+      })
+      if (applied) { this.emit(); return }
+    }
+    throw new FileStoreError("This project changed while discarding its draft. Try again.")
   }
 
   private async writeDrafts(entries: Array<{ path: string; content: string; baseRevision: string | null }>) {
@@ -505,6 +671,7 @@ export class ProjectFileStore {
       await this.project(tx)
       for (const entry of entries) {
         const file = await tx.getFile(this.projectId, entry.path)
+        if (file?.kind === "image") throw new FileStoreError(`${entry.path} is an image and cannot be edited as text.`)
         if (file && file.content === entry.content) {
           if (file.draft) await tx.putFile({ ...file, draft: null })
           continue
@@ -528,4 +695,67 @@ export class ProjectFileStore {
     })
     this.emit()
   }
+}
+
+/** Plan removal of new image dependencies while keeping every other source's references. */
+async function discardedImageDependencies(files: LocalFile[], project: LocalProject, discarded: LocalFile): Promise<{ remove: string[]; clear: string[]; assets: string[]; preserveTarget: boolean }> {
+  const candidates = new Set<string>()
+  const protectedPaths = new Set<string>()
+  const assets = new Set<string>(discarded.draft?.asset ? [discarded.draft.asset.id] : [])
+  const pendingIds = new Set(project.pending?.files.map(file => file.localId))
+  for (const file of files) if (file.draft?.asset?.draft_note === discarded.path) candidates.add(file.path)
+  const remaining = files.filter(file => file.path !== discarded.path || file.content !== null || file.base !== null || pendingIds.has(file.localId)).map(file => file.path === discarded.path ? { ...file, draft: null } : file)
+  const { parseImageReferences } = await import("../images/referenceParser")
+  const references = async (path: string, source: string | null | undefined) => {
+    if (source == null || !/\.mdx?$/i.test(path)) return []
+    return (await parseImageReferences(source, /\.mdx$/i.test(path) ? "mdx" : "md", path)).map(reference => reference.path)
+  }
+  try {
+    if (discarded.kind === "image") {
+      candidates.add(discarded.path)
+      if (discarded.draft?.asset?.original_path) candidates.add(discarded.draft.asset.original_path)
+    }
+    else for (const path of await references(discarded.path, discarded.draft?.content)) candidates.add(path)
+    for (const file of remaining) {
+      if (file.kind === "image") continue
+      for (const [sourcePath, source] of [[file.path, file.content], [file.path, file.draft?.content], [file.base?.path ?? file.path, file.base?.content], [file.base?.path ?? file.path, file.conflict?.current?.content]] as const)
+        for (const path of await references(sourcePath, source)) protectedPaths.add(path)
+    }
+    for (const pending of project.pending?.files ?? []) {
+      if (pending.asset?.original_path) protectedPaths.add(pending.asset.original_path)
+      if (pending.sentPath && pending.kind !== "image")
+        for (const path of await references(pending.sentPath, pending.sentContent)) protectedPaths.add(path)
+    }
+    for (const change of project.pending?.changes ?? []) {
+      if (change.op === "put" || change.op === "move" && change.content !== undefined)
+        for (const path of await references(change.op === "move" ? change.to : change.path, change.content)) protectedPaths.add(path)
+    }
+  } catch {
+    // A document being typed may not parse yet. Keep its possible dependencies.
+    return { remove: [], clear: [], assets: [], preserveTarget: discarded.kind === "image" && discarded.content === null && discarded.base === null && !pendingIds.has(discarded.localId) }
+  }
+  const byPath = new Map(remaining.map(file => [file.path, file]))
+  // An edited copy retains its original as a local dependency until saved.
+  for (const path of candidates) {
+    const original = byPath.get(path)?.draft?.asset?.original_path
+    if (original) candidates.add(original)
+  }
+  for (const file of remaining) {
+    if (file.kind !== "image") continue
+    if (!candidates.has(file.path) || protectedPaths.has(file.path) || file.content !== null || file.base !== null) protectedPaths.add(file.path)
+  }
+  for (const path of protectedPaths) {
+    const file = byPath.get(path)
+    for (const asset of [file?.asset, file?.draft?.asset, file?.base?.asset, file?.conflict?.current?.asset]) if (asset?.original_path) protectedPaths.add(asset.original_path)
+  }
+  const remove: string[] = []
+  const clear: string[] = []
+  for (const path of candidates) {
+    const file = byPath.get(path)
+    if (!file || file.kind !== "image" || file.content !== null || file.base !== null || !file.draft || protectedPaths.has(path)) continue
+    if (pendingIds.has(file.localId)) clear.push(path)
+    else remove.push(path)
+    if (file.draft.asset) assets.add(file.draft.asset.id)
+  }
+  return { remove, clear, assets: [...assets], preserveTarget: discarded.kind === "image" && discarded.content === null && discarded.base === null && !pendingIds.has(discarded.localId) && protectedPaths.has(discarded.path) }
 }

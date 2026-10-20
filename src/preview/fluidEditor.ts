@@ -28,6 +28,7 @@ import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
   codeFenceOpener,
   emptyListBackspace,
+  listItemBackspace,
   keepingEmptyParagraphs,
   quoteStartEnter,
 } from "../features/rendered/fluidCommands";
@@ -390,7 +391,7 @@ export class FluidEditor {
             ...Object.fromEntries(
               Object.entries(baseKeymap).filter(([key]) => key !== "Enter"),
             ),
-            Backspace: chainCommands(emptyListBackspace, baseKeymap.Backspace),
+            Backspace: chainCommands(emptyListBackspace, listItemBackspace, baseKeymap.Backspace),
           }),
         ],
       }),
@@ -815,6 +816,11 @@ export class FluidEditor {
   /** The note revision the document on screen was rendered from. */
   get shownRevision(): number {
     return this.revision;
+  }
+
+  /** Source boundary metadata describes only edits the parent has confirmed. */
+  get hasPendingEdits(): boolean {
+    return this.inFlight || this.queue.length > 0 || this.fence !== null;
   }
 
   /** Mark commented text: every mark is replaced. */

@@ -99,7 +99,7 @@ export function readPrototypeExport(text: string): { ok: true; value: PrototypeE
   return { ok: false, error: `${issues.slice(0, 3).join(" ")}${more}` }
 }
 
-export type ImportedFile = { path: string; content: string }
+export type ImportedFile = { path: string; content: string; image?: Uint8Array }
 
 export type ImportPlan = {
   title: string
@@ -114,7 +114,7 @@ export const SAVE_FILES = 500
 export const SAVE_BYTES = 8 * 1024 * 1024
 
 /** Decide what to import, and in which saves. File contents stay exactly as exported. */
-export function planImport(exported: Pick<PrototypeExport, "title" | "files" | "directories">): ImportPlan {
+export function planImport(exported: { title: string; files: ImportedFile[]; directories: string[] }): ImportPlan {
   const skipped: ImportPlan["skipped"] = []
   const usable = (path: string) => {
     const reason = projectPathProblem(path)
@@ -131,7 +131,7 @@ export function planImport(exported: Pick<PrototypeExport, "title" | "files" | "
   for (const file of files) {
     if (placed.has(file.path)) continue
     const group = [file, ...companionPaths(file.path).flatMap((path) => byPath.get(path) ?? [])].filter((member) => !placed.has(member.path))
-    const size = group.reduce((sum, member) => sum + byteLength(member.content), 0)
+    const size = group.reduce((sum, member) => sum + (member.image?.byteLength ?? byteLength(member.content)), 0)
     const current = saves.at(-1)
     if (!current || current.length + group.length > SAVE_FILES || bytes + size > SAVE_BYTES) {
       saves.push([...group])
@@ -157,7 +157,15 @@ export async function importPrototype(
   const projectId = await library.create(plan.title)
   const store = filesOf(projectId)
   for (const save of plan.saves) {
-    await store.save(save.map(({ path, content }) => ({ kind: "write" as const, path, content, expectedRevision: null })))
+    const images = save.filter((file) => file.image)
+    for (const image of images) {
+      const { prepareImage } = await import("@/features/images/prepare")
+      const prepared = await prepareImage(new File([new Uint8Array(image.image!).buffer], image.path), projectId)
+      await store.stageImage(image.path, prepared.bytes, prepared.asset, [], prepared.preview)
+    }
+    const writes = save.filter((file) => !file.image).map(({ path, content }) => ({ path, content, expectedRevision: null }))
+    if (images.length) await store.saveImages(images.map((file) => file.path), writes)
+    else await store.save(writes.map((write) => ({ kind: "write" as const, ...write })))
   }
   await store.createDirectories(plan.directories)
   await library.load()

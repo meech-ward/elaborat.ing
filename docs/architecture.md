@@ -129,6 +129,20 @@ run in this order, each once the one before it has passed:
    of its build in `public/chat-card`, which the app's Worker serves, so the
    function goes live only once the site serves them.
 
+Bucket provisioning uses the official Storage API through
+`scripts/provision-image-bucket.ts`, reading only the `project-images`
+declaration in `config.toml`. It creates or updates that one bucket with the
+existing database secret API key. It never lists or deletes other buckets.
+The pinned CLI's `seed buckets` has no bucket selection flag: its
+[2.118.0 seeding implementation](https://github.com/supabase/cli/blob/v2.118.0/apps/cli/src/command-internal/seed-buckets.ts)
+also processes analytics buckets when enabled and `--yes` confirms pruning
+undeclared buckets. Its linked credential resolver also reads all API keys
+unless a service key override is supplied. The direct
+[create](https://supabase.com/docs/reference/javascript/storage-createbucket)
+and [update](https://supabase.com/docs/reference/javascript/storage-updatebucket)
+operations keep deployment limited to this declared private bucket and retain
+the deploy token's existing permissions.
+
 The `config` job (`supabase config diff` and `supabase config push`) runs
 after the `supabase` job, beside the app. The CLI works on every plan, and
 self-hosters can run the same workflow from their own fork. The workflow runs
@@ -357,6 +371,45 @@ longer lists the project for them, the sync stops and the page leaves the
 channel (`src/features/projects/ProjectPage.tsx`). A client that stays joined
 anyway receives only revision numbers, and only until its session's token is
 refreshed or expires, within `jwt_expiry` (one hour).
+
+## Image assets
+
+**Decision:** images are binary project files backed by immutable private
+Storage objects. Current files, history and local copies carry a verified
+asset snapshot; text files retain their existing representation. Notes use
+ordinary relative Markdown image paths in both formats. The trusted parent
+supplies bounded bytes without changing `img-src data:` or exposing tokens.
+
+The `project-images` bucket stores originals and separate raster thumbnails.
+Reservations precede upload and the existing revision-checked `save_files`
+batch commits ready references atomically with note changes. Historical
+lookup resolves image paths at a saved project revision. Cleanup uses a
+durable queue and Storage API deletion, preserving committed history until
+a person permanently deletes its project or owning account.
+
+Originals are at most 5 MiB and 8 million pixels. A 25 MP Photon decode exceeded
+the Edge memory budget in the runtime proof. Photon WASM decodes raster
+formats; resvg WASM generates bounded SVG thumbnails. Previews are at most
+480 pixels and 32 KiB. GIF/APNG/WebP animation is capped at 120 frames and
+24 million total frame pixels. SVG has structural and complexity validation;
+it never becomes document HTML. Retained and reserved bytes charge the
+project owner, capped at 256 MiB across projects, with atomic transfer checks.
+
+The image release refreshes the bundle baselines after measuring first paint.
+The project page grows from 321.9 to about 339 kB gzip for binary asset
+metadata, durable drafts, upload recovery and sync. Image viewers, comparisons,
+pickers and decoders load on demand; no heavy library enters first paint.
+The recorded budgets retain the standard five percent margin.
+
+Crop and resize create new PNG copies and retain originals. Captions use
+portable figure syntax with inline Markdown. Description suggestions use the
+person's existing ChatGPT plan connection, only after an explicit request.
+URL import is explicit, pins a public HTTPS connection at each redirect and
+stores a project copy. Document rendering never starts a remote import.
+
+[Image support](images.md) records contracts, limits and runtime evidence.
+[T43 through T50](tasks.md#t43-prove-the-image-asset-contract-and-validation)
+track implementation and verification.
 
 ## Search
 
@@ -1496,6 +1549,17 @@ page serves every note: its origin is opaque, so notes share no storage, but
 where a browser groups frames by site they can share a process.
 
 ## Rendered editing
+
+**Decision: right-clicking an editable rendered note offers its block picker
+at the pointer.** Ordinary blocks and components insert after the clicked
+top-level block; drawings and diagrams first ask for an existing file. The
+parent supplies the parsed insertion boundary for each rendered root, so
+hidden imports and exports and nested list items cannot shift the target.
+The frame uses a manual native popover with menu keyboard navigation and
+outside-click dismissal, alongside the existing Insert block dialog. Auto
+popovers close on the right-button release that opens the menu in Chromium
+and Firefox. The menu waits for typed edits to reach the source before using
+its boundary map. Read-only notes offer neither control.
 
 **Decision: the rendered view's editor takes the browser's caret before it acts
 on a key.** The frame edits prose with ProseMirror. In Chromium, a caret moved

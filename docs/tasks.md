@@ -132,11 +132,213 @@ whose layouts start less than 10 s apart run two engines at once (about 920 MB
 at the peak), as when an agent writes two diagrams back to back. That can be
 too much for a phone. Share one engine between cards, or queue their layouts.
 
+## T43: prove the image asset contract and validation
+
+**Status:** Taken (implementation and verification in progress)
+
+Start [image support](images.md) by settling the contracts its implementation
+depends on. Files, history, sync and archive import are text-only today;
+preview CSP permits only `data:` images. The scope proposes binary project
+files backed by immutable private Storage objects and normal relative
+Markdown references in both `.md` and `.mdx`.
+
+Prove a bounded image validator and thumbnail decoder in the intended
+browser/server runtimes, including corrupt input, format spoofing, dimensions,
+orientation, transparency and bounded animation. Confirm the proposed 5 MiB
+original and 8 million pixel limits against runtime memory. Choose and
+record the per-account quota for retained/staged bytes and preview budgets.
+Define owner charging and atomic quota checks on ownership transfer, and
+historical path/version lookup so old notes keep their original images.
+Specify file payloads, upload reservation and commit contracts, source path
+resolution, and compatibility for older clients before binary writes exist.
+
+Done when a focused executable proof and its tests pass, these open choices
+are recorded in the architecture and image scope, and T44 can implement
+the contracts without another data-model decision. Use official Storage
+APIs; do not introduce a public bucket or relax document isolation.
+
+## T44: private image storage and revision checked asset saves
+
+**Status:** Taken (implementation and verification in progress)
+
+Implement T43's asset contracts from [the image scope](images.md#asset-storage-and-saves).
+Extend current project files and file history to distinguish text from
+immutable image references. Add upload reservations, authoritative validation,
+quota accounting for staging and retained bytes, and asset-reference changes
+to the existing atomic `save_files` batch with idempotent retries.
+
+Declare the private bucket in `supabase/config.toml`, add its explicit
+provisioning step to deployment and self-host setup, and declare policies,
+tables and functions in `supabase/schemas/`. Generate migrations with the
+pinned declarative sync command, never by editing generated migrations.
+Storage reads follow accepted project membership; writes require edit access
+and an active project. Refuse client overwrite and physical deletion,
+including from OAuth sessions.
+
+Keep committed historical bytes. Add safe expired-staging cleanup and durable
+Storage API cleanup after person-authorized permanent project/account
+deletion, capturing object keys before database cascades remove metadata.
+Cleanup retries must not race an active upload or a committed save. Charge
+the project owner, reassign that charge atomically on ownership transfer,
+and preserve other people's project assets when an uploader deletes their
+account. Resolve historical references against their saved versions.
+
+Done when pgTAP proves role isolation, pending/revoked membership, archive and
+OAuth physical object delete/overwrite refusal; function tests prove
+validation, foreign or missing asset refusal, quota races, retries and
+cleanup; and a private hosted
+upload/download/save is verified with a disposable test project.
+
+## T45: durable image drafts and offline asset sync
+
+**Status:** Taken (implementation and verification in progress)
+
+Add image bytes to the partitioned device model in
+`src/features/project-storage/`, following [the image save flow](images.md#asset-storage-and-saves).
+Migrate IndexedDB without losing existing text projects. Persist image bytes,
+their draft references and dependencies together; prepare hashes and decoding
+before the transaction. Reuse the existing Save/Discard, batching, conflict
+recovery, pending mutation and sign-out/departure guards.
+
+Upload first, then commit references and text in one server save. Retry lost
+answers with the same identities. Cache current project images before showing
+the project ready offline; show progress and storage failures. Include the
+signed-out local project, sign-in migration and cross-tab updates.
+
+Done when tests cover offline insertion and reload, incomplete downloads,
+upload-success/save-failure, save conflicts, lost replies, discard and shared
+asset retention, account isolation and access loss. Text-only databases must
+upgrade without changing their saved content or drafts.
+
+## T46: portable image files and safe reference changes
+
+**Status:** Taken (implementation and verification in progress)
+
+Extend ZIP/folder import and export in `src/features/projects/projectArchive.ts`
+and its callers to carry image bytes alongside unchanged UTF-8 text. Export
+real files at their logical paths with no storage URLs or backend ids. Include
+bytes required by drafts when the person includes unsaved changes. Validate
+binary imports with the same limits as uploads and report skipped entries.
+
+Add parser-backed image references and document-relative path resolution to
+the workbench. Test Markdown reference images, static literal image tags,
+encoded legal filenames, component-module paths and path traversal refusal.
+Extend move/delete planning so moving an image, folder or referring note
+rewrites supported references atomically and deletion lists its dependants.
+Computed or ambiguous affected references must still stop a move.
+
+Done when ZIP and folder round trips preserve image bytes and note/drawing
+text, saved/draft downloads are complete, names cannot escape the project,
+and move/delete tests prove source precision and conflict handling.
+
+## T47: insert and view images in notes and drawings
+
+**Status:** Taken (implementation and verification in progress)
+
+Implement [image authoring](images.md#authoring):
+Image in both rendered insertion controls, upload, clipboard image paste,
+file drop and choosing an existing image. Write standard Markdown image
+syntax in `.md` and `.mdx`, with alt text or Decorative, responsive layout,
+original colours, enlarged view, reference replacement/removal and shared
+source/rendered Undo. T50 adds rich captions and persistent resize/crop copies.
+
+Revalidate the target after asynchronous work and keep pending image bytes
+with the draft. The trusted app resolves references and supplies validated,
+bounded image payloads for the current session/revision; keep both CSPs
+data-only and reject invented paths. Viewers, commenters and archived
+projects cannot mutate images through controls, paste, drop or messages.
+
+Verify native Excalidraw upload/paste/drop and add choosing a project image
+as a native scene copy. Check the final 2 MiB drawing limit including base64
+overhead; offer an explicit smaller copy or leave the drawing unchanged.
+Preserve existing scenes and image export fidelity.
+
+Done when Chromium/Firefox journeys cover every ingestion path, placement,
+cancel/failure, tab switches, alt editing, Undo/Redo, Save/Discard, reload and
+offline use. Include phone, keyboard, axe, transparent/portrait images,
+unchanged surrounding source and no remote requests from malicious MDX.
+Recheck shell and rendered bundle loading rules.
+
+## T48: image previews and existing image use in chats and agents
+
+**Status:** Taken (implementation and verification in progress)
+
+Make `show_file` and the card display image files and local image references
+in plain Markdown and nested MDX, without weakening the preview sandbox.
+Replace the server drawing renderer's image placeholders with bounded,
+validated native image previews, preserving transforms, crop and opacity.
+Add thumbnails and bounded deferred loading within the card's existing size
+limits, with alt text and an Open in elaborat.ing fallback.
+
+Add image metadata listing and insertion of existing project-image paths to
+MCP and the in-app assistant. Return metadata instead of original bytes for
+standalone image file reads. Preserve existing native drawing text reads,
+which can contain embedded image payloads. Preserve project permissions,
+version checks, change attribution and the assistant's Save/Discard flow. Deploy
+readers before enabling binary writes, using T43's old-client compatibility
+contract. Update file-format guidance and bump the plugin version if its
+skills change. Rebuild the card and bump its view URI when its output changes.
+
+Done when function/card tests cover Markdown, MDX, standalone files, native
+drawing images, size caps, deferred failures and hosts without app tool calls.
+Test malicious scene entries with remote URLs, spoofed formats, SVG,
+animation and oversized/corrupt bytes. Unsupported legacy entries keep
+their saved bytes with a display fallback. Browser tests cover the assistant
+and panel; logs/results/source contain no credentials or signed asset URLs.
+Historical note previews must not pick up a replacement image at the same
+path. T43 through T48 complete release one.
+
+## T49: import an image from a URL without remote document requests
+
+**Status:** Taken (implementation and verification in progress)
+
+Add explicit Import from URL to the shared image picker, following
+[the URL import contract](images.md#network-isolation-and-url-import). Fetch an image once,
+validate and save a private project copy, and insert its local reference.
+An external Markdown image can offer Import this image; opening a note or
+executing document code never starts an import. Require edit access and an
+online connection, and preserve the original source on cancellation/failure.
+
+Prove HTTPS/public-destination enforcement at connection time in the chosen
+runtime, reusing the outbound callback checks where applicable. Bound three
+redirects, total time, streamed bytes and decoded pixels. Recheck every hop,
+block private/metadata/loopback/reserved IPv4 and IPv6, prevent DNS rebinding,
+and forward no cookies, authorization or referrer. Add rate/reservation limits
+and duplicate-safe retries. Authenticated sources and page scraping are out
+of scope. Any agent import tool has `openWorldHint: true` and requires
+authorization for the external fetch; document text is not authorization.
+
+Done when adversarial network tests cover redirects to private hosts, mixed
+DNS answers, rebinding, alternative IP forms, slow/chunked/oversized or
+mislabelled responses, cancellation and retries. Browser tests prove the
+saved image works after its source URL disappears and while offline, with
+no third-party request when viewing it.
+
+## T50: image transforms, rich captions, SVG, animation and description suggestions
+
+**Status:** Taken (implementation and verification in progress)
+
+The expanded [image feature set](images.md) includes explicit crop and resize
+controls that produce new copies and retain originals; portable figure captions
+with inline Markdown; validated, bounded SVG and animated GIF/APNG/WebP; and
+editable description suggestions through the existing ChatGPT connection.
+Exercise these in notes and drawing insertion, with exact source Undo/Redo,
+offline recovery, malicious SVG and animation budgets, and no document network
+access. Description generation must start only after an explicit button press,
+send only a small preview, and keep the suggested text editable before insertion.
+
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
+  fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
+  Monaco binds Source shortcuts to Ctrl, while the app and Playwright's
+  `ControlOrMeta` use Cmd, so shortcut checks can miss their intended action.
+- Rendered Enter inside an ordered list using `)` as its marker can fail
+  precise source projection because the split item is generated with `.`.
+  Preserve the original marker when generating the new item.
 - In `update_and_show`, an old label written before its short-form shape
   (against the taught order) shows in the live view until the saved card
   replaces it.

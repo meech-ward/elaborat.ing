@@ -12,6 +12,7 @@ import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
 import { isReadOnly } from './readOnly';
 import { postToParent as post } from './parentPort';
+import { imageFilePayloads } from '../features/images/transport';
 
 let context: {
   session: string;
@@ -341,10 +342,16 @@ function EditableText(props: {
   );
 }
 
-const ordinary = ["Paragraph", "Heading", "Bullet list", "Quote", "Divider"];
-export function BlockPicker(): ReactNode {
+const ordinary = ["Paragraph", "Heading", "Bullet list", "Quote", "Divider", "Image"];
+export function BlockPicker({ blockPositionAt }: {
+  /** The clicked top-level editor block, or -1 for space before the note. */
+  blockPositionAt?: (event: MouseEvent | ClipboardEvent | DragEvent) => number | null;
+}): ReactNode {
   const dialog = useRef<HTMLDialogElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const menuBoundary = useRef("start");
   const [element, setElement] = useState("Paragraph");
   const [path, setPath] = useState("");
   const [boundary, setBoundary] = useState(
@@ -352,31 +359,168 @@ export function BlockPicker(): ReactNode {
   );
   const paths = useSyncExternalStore(subscribe, getPaths);
   const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
+  const readOnly = isReadOnly();
+  useEffect(() => {
+    const ingest = (event: ClipboardEvent | DragEvent) => {
+      const files = [...(event instanceof ClipboardEvent ? event.clipboardData?.files ?? [] : event.dataTransfer?.files ?? [])];
+      if (!files.length || !files.some(file => file.type.startsWith('image/'))) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (readOnly || !blockPositionAt || !metadata) return;
+      const position = blockPositionAt(event);
+      const at = position === null ? null : position < 0 ? 'start' : metadata.blockBoundaries?.find(entry => entry.position === position)?.boundary;
+      if (!at) return;
+      void imageFilePayloads(files).then(payloads => {
+        post({kind:'insert-image',session,revision,boundary:at,files:payloads});
+      }).catch(error => post({kind:'edit-rejected',session,revision,message:error instanceof Error ? error.message : String(error)}));
+    };
+    const drag = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+    };
+    document.addEventListener('paste',ingest,true);
+    document.addEventListener('drop',ingest,true);
+    document.addEventListener('dragover',drag,true);
+    return () => {
+      document.removeEventListener('paste',ingest,true);
+      document.removeEventListener('drop',ingest,true);
+      document.removeEventListener('dragover',drag,true);
+    };
+  }, [blockPositionAt,metadata,readOnly,revision,session]);
+  useEffect(() => {
+    const popup = menu.current;
+    if (readOnly || !popup || !blockPositionAt || !metadata?.blockBoundaries) return;
+    const open = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest("input,textarea,select,dialog,[role=menu]")) return;
+      const position = blockPositionAt(event);
+      if (position === null) return;
+      const boundary = position < 0 ? "start" : metadata.blockBoundaries?.find(entry => entry.position === position)?.boundary;
+      if (!boundary) return;
+      event.preventDefault();
+      menuBoundary.current = boundary;
+      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      popup.showPopover();
+      const box = popup.getBoundingClientRect();
+      const selection = window.getSelection();
+      const caret = event.button !== 2 && selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
+      popup.style.left = `${Math.max(10, Math.min(caret?.left ?? event.clientX, innerWidth - box.width - 10))}px`;
+      popup.style.top = `${Math.max(10, Math.min(caret?.bottom ?? event.clientY, innerHeight - box.height - 10))}px`;
+      popup.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus({ preventScroll: true });
+    };
+    const dismiss = () => {
+      if (popup.matches(":popover-open")) popup.hidePopover();
+    };
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !popup.contains(event.target)) dismiss();
+    };
+    document.addEventListener("contextmenu", open);
+    document.addEventListener("pointerdown", outside);
+    window.addEventListener("blur", dismiss);
+    return () => {
+      document.removeEventListener("contextmenu", open);
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("blur", dismiss);
+      // A newer render invalidates the menu's captured source boundary.
+      dismiss();
+    };
+  }, [blockPositionAt, metadata, readOnly, revision, session]);
   const selectedBoundary = metadata?.boundaries.some(
     (entry) => entry.id === boundary,
   )
     ? boundary
     : (metadata?.boundaries.at(-1)?.id ?? "start");
-  if (isReadOnly()) return null;
+  if (readOnly) return null;
+  const components = metadata?.components ?? COMPONENT_CATALOG;
+  const names = [...ordinary, ...(metadata?.format === "mdx" ? components.map(entry => entry.name) : [])];
   const resource = element === "Drawing" || element === "Diagram";
   const choices = paths.filter((entry) =>
     element === "Drawing"
       ? /\.excalidraw(?:\.md)?$/.test(entry)
       : /\.d2$/.test(entry),
   );
+  const insert = (name: string, at: string, resourcePath?: string) => name === 'Image' ? post({kind:'insert-image',session,revision,boundary:at}) : post({
+    kind: "insert-block",
+    session,
+    revision,
+    boundary: at,
+    element: name,
+    ...(resourcePath !== undefined ? { path: resourcePath } : {}),
+  });
   return (
     <div className="authoring-insert">
+      <div
+        ref={menu}
+        // Auto popovers light-dismiss on the right-button release that opened
+        // this menu. Manual mode keeps it open; the listeners above dismiss it.
+        popover="manual"
+        role="menu"
+        aria-label="Insert block"
+        className="authoring-block-menu"
+        onFocusCapture={event => {
+          const focused: HTMLElement = event.target;
+          for (const item of event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=menuitem]"))
+            item.tabIndex = item === focused ? 0 : -1;
+        }}
+        onKeyDown={event => {
+          const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+          const current = items.indexOf(document.activeElement as HTMLButtonElement);
+          let next: number;
+          if (event.key === "ArrowDown") next = (current + 1) % items.length;
+          else if (event.key === "ArrowUp") next = (current + items.length - 1) % items.length;
+          else if (event.key === "Home") next = 0;
+          else if (event.key === "End") next = items.length - 1;
+          else if (event.key === "Escape" || event.key === "Tab") {
+            event.preventDefault();
+            menu.current?.hidePopover();
+            returnFocus.current?.focus({ preventScroll: true });
+            return;
+          } else if (event.key.length === 1 && event.key !== " " && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            // Native buttons supply Enter/Space; menu items also support typeahead.
+            next = items.findIndex((_, index) => index > current && names[index].toLowerCase().startsWith(event.key.toLowerCase()));
+            if (next < 0) next = names.findIndex(name => name.toLowerCase().startsWith(event.key.toLowerCase()));
+            if (next < 0) return;
+          } else return;
+          event.preventDefault();
+          items[next]?.focus();
+        }}
+      >
+        <div className="authoring-menu-label" aria-hidden="true">Insert block</div>
+        {names.map((name, index) => (
+          <button
+            key={name}
+            type="button"
+            role="menuitem"
+            tabIndex={index === 0 ? 0 : -1}
+            className={index === ordinary.length ? "authoring-menu-components" : undefined}
+            title={components.find(entry => entry.name === name)?.description}
+            onPointerMove={event => event.currentTarget.focus({ preventScroll: true })}
+            onClick={() => {
+              menu.current?.hidePopover();
+              if (name === "Drawing" || name === "Diagram") {
+                setElement(name);
+                setPath("");
+                setBoundary(menuBoundary.current);
+                dialog.current?.showModal();
+              } else insert(name, menuBoundary.current);
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
       <button
         ref={trigger}
         type="button"
-        onClick={() => dialog.current?.showModal()}
+        onClick={() => {
+          returnFocus.current = trigger.current;
+          dialog.current?.showModal();
+        }}
       >
         + Insert block
       </button>
       <dialog
         ref={dialog}
         aria-label="Insert block"
-        onClose={() => trigger.current?.focus()}
+        onClose={() => returnFocus.current?.focus({ preventScroll: true })}
       >
         <div>
           <h2>Insert block</h2>
@@ -451,14 +595,7 @@ export function BlockPicker(): ReactNode {
                 // Forms are intentionally forbidden by the preview sandbox.
                 // A native button still supports Enter/Space activation without
                 // requiring a browser submission or expanding iframe authority.
-                post({
-                  kind: "insert-block",
-                  session,
-                  revision,
-                  boundary: selectedBoundary,
-                  element,
-                  ...(resource ? { path } : {}),
-                });
+                insert(element, selectedBoundary, resource ? path : undefined);
                 dialog.current?.close();
               }}
             >

@@ -9,7 +9,7 @@
  * revision, while an external agent edit changes the revision only.
  */
 
-export type FileKind = "note" | "drawing" | "diagram" | "text";
+export type FileKind = "note" | "drawing" | "diagram" | "image" | "text";
 
 export function kindForPath(path: string): FileKind {
   const lower = path.toLowerCase();
@@ -17,6 +17,7 @@ export function kindForPath(path: string): FileKind {
   if (lower.endsWith(".excalidraw") || lower.endsWith(".excalidraw.md")) return "drawing";
   if (lower.endsWith(".md") || lower.endsWith(".mdx")) return "note";
   if (lower.endsWith(".d2")) return "diagram";
+  if (/\.(?:png|jpe?g|webp|gif|svg)$/.test(lower)) return "image";
   return "text";
 }
 

@@ -3,8 +3,8 @@ name: Deploy
 # Deploys supabase/ to the hosted project and the app to Cloudflare Workers.
 # The jobs run in this order, each once the one before it has passed:
 #
-# 1. supabase: every Edge Function but mcp-server, then migrations and Vault
-#    secrets.
+# 1. supabase: every Edge Function but mcp-server, then migrations, Vault
+#    secrets and the private image bucket.
 # 2. app: the sandbox domain, then the app's Worker (wrangler.jsonc). After the
 #    migrations, so new app code never runs before the schema it needs.
 # 3. mcp-server: last, because the chat card it sends names files in
@@ -90,6 +90,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ steps.commit.outputs.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun test scripts/provision-image-bucket.test.ts
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
@@ -106,6 +110,9 @@ jobs:
       # The --project-ref flag makes db push use the IPv4 pooler, since runners
       # have no IPv6. It also writes [db.vault] when it applies a migration.
       - run: supabase db push --yes --project-ref "$SUPABASE_PROJECT_ID"
+      # Provision only project-images; the generic seed command can prune
+      # undeclared analytics buckets. The script uses the existing API secret.
+      - run: bun scripts/provision-image-bucket.ts
 
   app:
     needs: supabase

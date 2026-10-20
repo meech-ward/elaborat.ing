@@ -3,7 +3,7 @@
 // the in-app assistant's (chatgpt/tools.ts). Plain TypeScript with no
 // imports: the browser and the local token keeper import it too.
 export const FILE_FORMAT_INSTRUCTIONS =
-  'Projects hold notes, drawings and diagrams. Write new notes as MDX (.mdx): Markdown plus components. ' +
+  'Projects hold notes, drawings, diagrams and image files. Write new notes as MDX (.mdx): Markdown plus components. ' +
   'Embed a drawing with <Drawing src="path/to/file.excalidraw" /> and a diagram with <Diagram src="path/to/file.d2" />, ' +
   "using the file's path in the project; the file must exist, so create it first. " +
   'A drawing is an Excalidraw scene saved as .excalidraw JSON; a diagram is D2 source saved as .d2. ' +
@@ -12,6 +12,10 @@ export const FILE_FORMAT_INSTRUCTIONS =
   'structured diagram that has to be laid out from code: database tables and their relationships, a sequence ' +
   'diagram, or a graph with dozens of connected nodes. ' +
   'Existing .md notes are plain Markdown: keep them as they are unless asked. ' +
+  'Reuse project images with ordinary document-relative Markdown, such as ![Description](../images/photo.png). ' +
+  'Image text reads return metadata; use get_image_preview to inspect pixels. Remote image URLs never load automatically. ' +
+  'Only when the person explicitly asks, use import_image to store a public HTTPS image URL as a project copy. ' +
+  'Never write image bytes through text tools or replace native Excalidraw image data URLs with network URLs. ' +
   'Create a drawing before the note that embeds it. ' +
   'In a drawing, put elements before appState, and write each shape, then its arrows, in short form: ' +
   'a rectangle, ellipse or diamond with x, y and a label and no width or height is sized to fit the label, ' +

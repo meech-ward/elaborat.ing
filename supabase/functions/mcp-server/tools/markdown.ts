@@ -5,6 +5,8 @@ import remarkGfm from 'npm:remark-gfm@4.0.1'
 import remarkParse from 'npm:remark-parse@11.0.0'
 import remarkRehype from 'npm:remark-rehype@11.1.2'
 import { unified } from 'npm:unified@11.0.5'
+import { literalHtmlImage } from '../../../../src/features/images/referenceParser.ts'
+import { normalizeImageFigures } from '../../../../src/features/images/figureNodes.ts'
 
 // Renders a note to HTML for the read-only file view. Markdown and GFM only:
 // raw HTML and MDX tags in the source are shown as text, never as markup,
@@ -31,13 +33,16 @@ import { unified } from 'npm:unified@11.0.5'
 export type EmbedRef = { kind: 'drawing' | 'diagram'; path: string }
 
 /** What rendering found: the embeds in order, and whether any MDX showed as text or was left out. */
-type Found = { embeds: EmbedRef[]; mdx: boolean }
+type Found = { embeds: EmbedRef[]; mdx: boolean; imageDefinitions: Map<string,string> }
 
 /** The parts of an mdast node this module reads. */
 type Node = {
   type: string
+  name?: string
   value?: unknown
   alt?: unknown
+  url?: string
+  identifier?: string
   children?: Node[]
   data?: Record<string, unknown>
   position?: { start: { offset?: number }; end: { offset?: number } }
@@ -142,7 +147,14 @@ function spannedCallout(children: Node[], at: number, found: Found, source: stri
   return callout ? [callout, end - at + 1] : null
 }
 
+function imageNode(src:string,alt:string):Node {
+  return {type:'projectImage',data:{hName:'span',hProperties:{dataProjectImage:src}},children:[{type:'text',value:alt}]}
+}
 function transform(node: Node, found: Found, root: boolean, source: string): void {
+  if(root) {
+    const definitions=(part:Node)=>{ if(part.type==='definition' && part.identifier && part.url) found.imageDefinitions.set(part.identifier,part.url); for(const child of part.children??[]) definitions(child) };
+    definitions(node);
+  }
   const place = (refs: EmbedRef[]) =>
     refs.map((ref) => {
       found.embeds.push(ref)
@@ -163,7 +175,13 @@ function transform(node: Node, found: Found, root: boolean, source: string): voi
       skip = spanned[1] - 1
       return [spanned[0]]
     }
+    if(child.type==='mdxJsxFlowElement' && (child.name==='figure'||child.name==='figcaption')) {
+      transform(child,found,false,source)
+      return [{type:'imageFigure',data:{hName:child.name},children:child.children}]
+    }
     if (child.type === 'html') {
+      const literal=literalHtmlImage(String(child.value??''));
+      if(literal) return [imageNode(literal.src,literal.alt)];
       const refs = embedsIn(String(child.value ?? ''))
       if (refs) return place(refs)
       const callout = calloutNode(String(child.value ?? ''), found)
@@ -182,7 +200,8 @@ function transform(node: Node, found: Found, root: boolean, source: string): voi
     // A tag with a JavaScript prop is not HTML to the parser, and an expression is text: both MDX all the same.
     if (child.type === 'text' && /<[A-Za-z]|\{/.test(String(child.value ?? ''))) found.mdx = true
     if (child.type === 'image' || child.type === 'imageReference') {
-      return [{ type: 'text', value: typeof child.alt === 'string' ? child.alt : '' }]
+      const src=child.type==='image' ? child.url : found.imageDefinitions.get(child.identifier??'');
+      return src ? [imageNode(src,typeof child.alt==='string'?child.alt:'')] : [{type:'text',value:typeof child.alt==='string'?child.alt:''}]
     }
     transform(child, found, false, source)
     return [child]
@@ -192,12 +211,13 @@ function transform(node: Node, found: Found, root: boolean, source: string): voi
 /** GitHub's schema plus the empty embed figures and the callouts this module places. */
 const schema: Schema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'figure', 'aside'],
+  tagNames: [...(defaultSchema.tagNames ?? []), 'figure', 'aside', 'figcaption'],
   attributes: {
     ...defaultSchema.attributes,
     figure: [['className', 'embed'], 'dataEmbed'],
     aside: [['className', 'callout'], ['dataTone', 'info', 'warn', 'error']],
     p: [...(defaultSchema.attributes?.p ?? []), ['className', 'callout-title']],
+    span: [...(defaultSchema.attributes?.span ?? []), 'dataProjectImage'],
   },
 }
 
@@ -206,12 +226,12 @@ const schema: Schema = {
  * and whether it has MDX the HTML shows as text or leaves out.
  */
 export function renderNote(source: string): { html: string; embeds: EmbedRef[]; mdx: boolean } {
-  const found: Found = { embeds: [], mdx: false }
+  const found: Found = { embeds: [], mdx: false, imageDefinitions:new Map() }
   const processor = unified()
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .use(remarkGfm)
-    .use(() => (tree) => transform(tree as Node, found, true, source))
+    .use(() => (tree) => {normalizeImageFigures(tree);transform(tree as Node, found, true, source)})
     .use(remarkRehype)
     .use(rehypeSanitize, schema)
     .use(rehypeStringify)

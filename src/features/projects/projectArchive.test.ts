@@ -129,7 +129,7 @@ describe("importing a .zip or a folder", () => {
     expect(plan.skipped).toEqual([
       { path: ".git/config", reason: "A name in the path starts with a dot." },
       { path: "big.md", reason: "The file is larger than 2 MiB." },
-      { path: "image.png", reason: "The file is not UTF-8 text, and this app stores only text." },
+      { path: "image.png", reason: "Choose a PNG, JPEG, WebP, GIF or SVG image." },
       { path: "notes/", reason: "A file has this path, so it cannot also be a folder." },
       { path: "notes/inside.md", reason: "notes is a file, so it cannot contain this path." },
       { path: "ok.md", reason: "The path appears more than once." },
@@ -199,4 +199,26 @@ describe("importing a .zip or a folder", () => {
     expect(titleFrom(" .zip")).toBe("Untitled project")
     expect([...titleFrom("x".repeat(200))].length).toBe(160)
   })
+})
+
+
+test("PNG images remain real bytes in ZIP and folder plans, including drafts", async () => {
+  const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="), (character) => character.charCodeAt(0))
+  const note = { path: "notes/a.md", content: "![Photo](../assets/photo.png)\n" }
+  const zip = zipProject([note, { path: "assets/photo.png", content: "", bytes: png }], ["assets"])
+  const plan = await unzipPlan(zip)
+  if (!plan.ok) throw new Error(plan.error)
+  expect(plan.plan.skipped).toEqual([])
+  expect(plan.plan.saves.flat().find((file) => file.path === "assets/photo.png")).toEqual({ path: "assets/photo.png", content: "", image: png })
+  const chosen = folderEntries([Object.assign(new File([png], "photo.png"), { webkitRelativePath: "Project/assets/photo.png" })])
+  const folder = await planArchive("Folder", chosen.entries, async (paths) => new Map(await Promise.all(paths.map(async (path) => [path, new Uint8Array(await chosen.byPath.get(path)!.arrayBuffer())] as const))))
+  if (!folder.ok) throw new Error(folder.error)
+  expect(folder.plan.saves.flat()).toEqual([{ path: "assets/photo.png", content: "", image: png }])
+  const snapshots = [
+    { path: "assets/photo.png", saved: "", draft: null, kind: "image" as const, savedBytes: png },
+    { path: "assets/new.png", saved: null, draft: "", kind: "image" as const, draftBytes: png },
+  ]
+  expect(filesToDownload(snapshots, false).map((file) => file.path)).toEqual(["assets/photo.png"])
+  const draftZip = zipProject(filesToDownload(snapshots, true), [])
+  expect(unzipFiles(draftZip, new Set(["assets/photo.png", "assets/new.png"])).get("assets/new.png")).toEqual(png)
 })

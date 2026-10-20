@@ -353,6 +353,14 @@ begin
       using errcode = 'PT429', detail = 'projects';
   end if;
 
+  -- Charge all retained originals and previews to the new owner atomically.
+  -- Sorted account locks also serialize reservations in either account.
+  perform 1 from auth.users u where u.id in (uid, transfer_project.new_owner_id) order by u.id for update;
+  if (select coalesce(sum(a.byte_length + a.preview_byte_length), 0) from public.image_assets a join public.projects q on q.id = a.project_id
+    where q.owner_id = transfer_project.new_owner_id or q.id = p.id) > 268435456 then
+    raise exception 'They have reached the 256 MiB image limit, so cannot own this project' using errcode = '54000';
+  end if;
+
   insert into public.project_members (project_id, user_id, role, accepted_at)
   values (p.id, uid, 'editor', now());
   update public.projects
@@ -619,6 +627,9 @@ as $$
             'id', f.id,
             'path', f.path,
             'content', f.content,
+            'kind', f.kind,
+            'asset_id', f.asset_id,
+            'asset', f.asset,
             'version', f.version,
             'updated_at', f.updated_at
           )

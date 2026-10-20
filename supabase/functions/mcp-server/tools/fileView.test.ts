@@ -202,7 +202,7 @@ Deno.test('show_file reads the file as the user and returns the rendered note', 
   const { result, queries } = await showFile('notes/plan.md', [{ path: 'notes/plan.md', content, version: 3, updated_at: UPDATED }])
   assertEquals(queries, [[
     ['from', 'project_files'],
-    ['select', 'path, content, version, updated_at'],
+    ['select', 'path, content, kind, asset, version, updated_at'],
     ['eq', 'project_id', PROJECT],
     ['eq', 'path', 'notes/plan.md'],
   ]])

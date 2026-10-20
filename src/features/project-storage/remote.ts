@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod/mini"
-import { ProjectPath, Role, SaveChange } from "./model"
+import { ProjectPath, Role, SaveChange, ImageAssetSchema, type ImageAsset } from "./model"
 
 /**
  * The project service as sync sees it: the database functions and tables
@@ -10,6 +10,7 @@ import { ProjectPath, Role, SaveChange } from "./model"
 
 const Revision = z.int().check(z.nonnegative())
 const Version = z.int().check(z.positive())
+const imageFields = { kind: z.optional(z.enum(["text", "image"])), asset_id: z.optional(z.nullable(z.uuid())), asset: z.optional(z.nullable(ImageAssetSchema)) }
 
 export const RemoteProject = z.object({
   id: z.uuid(),
@@ -54,11 +55,12 @@ export const RemoteFile = z.object({
   path: ProjectPath,
   content: z.string(),
   version: Version,
-})
+  ...imageFields,
+}).check(z.refine((file) => file.kind !== "image" || Boolean(file.asset && file.asset_id === file.asset.id && file.content === ""), "The image file metadata is incomplete."))
 export type RemoteFile = z.infer<typeof RemoteFile>
 
 const SavedChange = z.object({
-  op: z.enum(["put", "delete", "move", "mkdir", "rmdir"]),
+  op: z.enum(["put", "asset", "delete", "move", "mkdir", "rmdir"]),
   path: ProjectPath,
   to: z.optional(ProjectPath),
   id: z.optional(z.uuid()),
@@ -77,7 +79,7 @@ export const SaveResult = z.discriminatedUnion("status", [
     conflicts: z.array(z.object({
       path: ProjectPath,
       base_version: z.nullable(Version),
-      current: z.nullable(z.object({ id: z.uuid(), version: Version, content: z.string() })),
+      current: z.nullable(z.object({ id: z.uuid(), version: Version, content: z.string(), ...imageFields })),
     })),
   }),
 ])
@@ -87,6 +89,7 @@ export type SaveResult = z.infer<typeof SaveResult>
 export type RemoteErrorKind =
   | "network" // no answer; retry later with the same request
   | "access" // not signed in, or no access to this project (42501)
+  | "image-expired" // PT410: uncommitted image staging expired; recover with a fresh identity
   | "archived" // 55000
   | "limit" // 54000: the project would exceed its size limits
   | "account-limit" // PT429: a per-account limit, such as saves a minute; the message says when to try again
@@ -110,6 +113,8 @@ export function classify(error: PostgrestLikeError): RemoteError {
     case "PGRST301":
     case "PGRST302":
       return new RemoteError("access", message)
+    case "PT410":
+      return new RemoteError("image-expired", message)
     case "55000":
       return new RemoteError("archived", message)
     case "54000":
@@ -137,12 +142,19 @@ async function classifyFunctionError(error: unknown): Promise<RemoteError> {
   const parsed = z.object({ error: z.string() }).safeParse(body)
   const message = parsed.success ? parsed.data.error : error.message
   if (response.status === 401 || response.status === 403) return new RemoteError("access", message)
+  if (response.status === 410) return new RemoteError("image-expired", message)
   if (response.status === 429) return new RemoteError("account-limit", message)
   return new RemoteError("invalid", message)
 }
 
 /** Rows per request; the API returns at most 1000 (`max_rows` in config.toml). */
 const PAGE = 500
+
+export const ImageUploadStatus = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), asset: ImageAssetSchema }),
+  z.object({ status: z.enum(["pending", "expired", "missing"]) }),
+])
+export type ImageUploadStatus = z.infer<typeof ImageUploadStatus>
 
 export type DeletedFile = { id: string; version: number }
 
@@ -155,6 +167,10 @@ export interface ProjectRemote {
   createProject(id: string, title: string): Promise<RemoteProject>
   renameProject(id: string, title: string): Promise<RemoteProject>
   saveFiles(projectId: string, mutationId: string, changes: SaveChange[]): Promise<SaveResult>
+  /** Serialized with file saves: distinguishes a committed lost answer from expired staging. */
+  imageUploadStatus(projectId: string, assetId: string): Promise<ImageUploadStatus>
+  uploadImage(projectId: string, asset: ImageAsset, bytes: Blob): Promise<ImageAsset>
+  downloadImage(projectId: string, asset: ImageAsset, preview?: boolean): Promise<Blob>
   /** Files whose version is in (since, until]: new, changed or moved in that range. */
   changedFiles(projectId: string, since: number, until: number): Promise<RemoteFile[]>
   /** Files deleted at a version in (since, until]. */
@@ -238,6 +254,38 @@ export class SupabaseProjectRemote implements ProjectRemote {
     return SaveResult.parse(await this.rpc("save_files", { project_id: projectId, mutation_id: mutationId, changes }))
   }
 
+  async imageUploadStatus(projectId: string, assetId: string): Promise<ImageUploadStatus> {
+    return ImageUploadStatus.parse(await this.rpc("read_image_upload", { project_id: projectId, asset_id: assetId, include_status: true }))
+  }
+
+  async uploadImage(projectId: string, asset: ImageAsset, bytes: Blob): Promise<ImageAsset> {
+    const query = new URLSearchParams({ project_id: projectId, asset_id: asset.id })
+    let response
+    try {
+      response = await this.supabase.functions.invoke(`images?${query}`, { body: bytes, headers: { "Content-Type": asset.media_type } })
+    } catch (error) {
+      throw new RemoteError("network", error instanceof Error ? error.message : String(error))
+    }
+    if (response.error) throw await classifyFunctionError(response.error)
+    const verified = z.object({ asset: ImageAssetSchema }).parse(response.data).asset
+    if (verified.id !== asset.id || verified.sha256 !== asset.sha256 || verified.byte_length !== bytes.size || verified.media_type !== asset.media_type || verified.width !== asset.width || verified.height !== asset.height) throw new RemoteError("invalid", "The uploaded image does not match the local image.")
+    return verified
+  }
+
+  async downloadImage(projectId: string, asset: ImageAsset, preview = false): Promise<Blob> {
+    const key = preview ? asset.preview_key : asset.object_key
+    if (key !== `${projectId}/${asset.id}/${preview ? "preview" : "original"}`) throw new RemoteError("invalid", "The image object does not belong to this project.")
+    let response
+    try { response = await this.supabase.storage.from("project-images").download(key) }
+    catch (error) { throw new RemoteError("network", error instanceof Error ? error.message : String(error)) }
+    if (response.error) {
+      const status = String(response.error.statusCode ?? "")
+      throw new RemoteError(status === "401" || status === "403" ? "access" : status === "404" ? "invalid" : "network", response.error.message)
+    }
+    if (!response.data) throw new RemoteError("network", "The image could not be downloaded.")
+    return response.data
+  }
+
   async listInvitations() {
     return z.array(RemoteInvitation).parse(await this.rpc("list_invitations", {}))
   }
@@ -314,7 +362,7 @@ export class SupabaseProjectRemote implements ProjectRemote {
       (after) => {
         let query = this.supabase
           .from("project_files")
-          .select("id, path, content, version")
+          .select("id, path, content, version, kind, asset_id, asset")
           .eq("project_id", projectId)
           .gt("version", since)
           .lte("version", until)

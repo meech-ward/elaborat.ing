@@ -7,7 +7,7 @@ import { FILE_FORMAT_INSTRUCTIONS } from '../fileFormats.ts'
 
 export const NAMESPACE = 'elaborating'
 
-export const TOOL_NAMES = ['list_files', 'read_file', 'write_file', 'list_comments'] as const
+export const TOOL_NAMES = ['list_files', 'read_file', 'write_file', 'list_comments', 'get_image_preview', 'import_image'] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 const pathParameter = {
@@ -15,7 +15,7 @@ const pathParameter = {
   description: 'The file\'s path in the project, such as "notes/plan.mdx" or "art/flow.excalidraw".',
 }
 
-/** The four tools, grouped in one namespace as the Responses API takes them. */
+/** The tools, grouped in one namespace as the Responses API takes them. */
 export const TOOL_NAMESPACE = {
   type: 'namespace',
   name: NAMESPACE,
@@ -35,6 +35,16 @@ export const TOOL_NAMESPACE = {
         "Reads a file as the person's editor holds it, including their unsaved changes, with its version. Read a file before you change it.",
       parameters: { type: 'object', properties: { path: pathParameter }, required: ['path'], additionalProperties: false },
       strict: true,
+    },
+    {
+      type: 'function', name: 'get_image_preview',
+      description: 'Inspect a small image preview from this project. read_file returns image metadata without binary data. Reuse an existing image in a note with ordinary relative Markdown syntax.',
+      parameters: { type: 'object', properties: { path: pathParameter }, required: ['path'], additionalProperties: false }, strict: true,
+    },
+    {
+      type: 'function', name: 'import_image',
+      description: 'Only when the person explicitly asks to import a URL: download a public HTTPS PNG, JPEG or WebP into a new project image draft. This makes a network request. The person saves the note referencing this image to save both together.',
+      parameters: { type: 'object', properties: { path: pathParameter, url: { type: 'string', description: 'Direct public HTTPS image URL supplied or authorized by the person.' } }, required: ['path', 'url'], additionalProperties: false }, strict: true,
     },
     {
       type: 'function',
@@ -65,6 +75,7 @@ export const ASSISTANT_INSTRUCTIONS =
   'You are the assistant inside elaborat.ing, working in the project the person has open, with their access. ' +
   FILE_FORMAT_INSTRUCTIONS +
   'Use list_files to see the project, and read_file before you change a file. ' +
+  'Images are binary: read_file returns metadata; use get_image_preview to inspect one. Reuse its document-relative path with ![description](../images/name.png). Remote URLs never render automatically. Only use import_image when the person explicitly asks to import that URL. ' +
   "write_file replaces a file's whole content, so always write the complete file. " +
   'It shows your version to the person as unsaved changes, and they save or discard it. ' +
   'If they keep their own changes instead, do not write that file again unless they ask. ' +
@@ -73,7 +84,7 @@ export const ASSISTANT_INSTRUCTIONS =
 
 /**
  * The tool a function call item names, or null for anything else: a name
- * outside the four, or another namespace. Calls name their tool with
+ * outside the declared tools, or another namespace. Calls name their tool with
  * `name`, and the namespace in `namespace` (or, defensively, as a prefix).
  */
 export function toolNameOf(item: { name?: unknown; namespace?: unknown }): ToolName | null {

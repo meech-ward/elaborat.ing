@@ -1,4 +1,13 @@
 import { z } from "zod/mini"
+import { ImageAssetSchema, type ImageAsset } from "../images/types"
+
+export { ImageAssetSchema, type ImageAsset } from "../images/types"
+
+const imageFields = {
+  kind: z.optional(z.enum(["text", "image"])),
+  asset_id: z.optional(z.nullable(z.uuid())),
+  asset: z.optional(z.nullable(ImageAssetSchema)),
+}
 
 /**
  * The on-device model for projects: what the browser keeps in IndexedDB so
@@ -63,8 +72,9 @@ const Version = z.int().check(z.positive())
 /** One change in a `save_files` batch, exactly as the database accepts it. */
 export const SaveChange = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("put"), path: ProjectPath, content: z.string(), base_version: z.optional(Version) }),
+  z.strictObject({ op: z.literal("asset"), path: ProjectPath, asset_id: z.uuid(), base_version: z.optional(Version) }),
   z.strictObject({ op: z.literal("delete"), path: ProjectPath, base_version: Version }),
-  z.strictObject({ op: z.literal("move"), path: ProjectPath, to: ProjectPath, base_version: Version, content: z.optional(z.string()) }),
+  z.strictObject({ op: z.literal("move"), path: ProjectPath, to: ProjectPath, base_version: Version, content: z.optional(z.string()), asset_id: z.optional(z.uuid()) }),
   z.strictObject({ op: z.literal("mkdir"), path: ProjectPath }),
   z.strictObject({ op: z.literal("rmdir"), path: ProjectPath }),
 ])
@@ -76,13 +86,14 @@ export const FileBase = z.strictObject({
   path: ProjectPath,
   version: Version,
   content: z.string(),
+  ...imageFields,
 })
 export type FileBase = z.infer<typeof FileBase>
 
 /** What the server had when a save of this file conflicted. */
 export const FileConflict = z.strictObject({
   /** The server's current copy, or null when the server no longer has the file. */
-  current: z.nullable(z.strictObject({ id: z.uuid(), version: Version, content: z.string() })),
+  current: z.nullable(z.strictObject({ id: z.uuid(), version: Version, content: z.string(), ...imageFields })),
   /** Set instead when the save failed because the path is used by another file or folder. */
   pathTaken: z.boolean(),
 })
@@ -100,10 +111,11 @@ export const LocalFile = z.strictObject({
   base: z.nullable(FileBase),
   /** The locally saved copy. null means deleted locally. */
   content: z.nullable(z.string()),
+  ...imageFields,
   /** Files saved together share a batch id and are synced as one atomic change. */
   batch: z.nullable(z.string()),
   /** Unsaved edits, kept for recovery. `token` is the saved copy's revision the draft was based on. */
-  draft: z.nullable(z.strictObject({ content: z.string(), token: z.nullable(z.string()) })),
+  draft: z.nullable(z.strictObject({ content: z.string(), token: z.nullable(z.string()), asset: z.optional(ImageAssetSchema) })),
   conflict: z.nullable(FileConflict),
 })
 export type LocalFile = z.infer<typeof LocalFile>
@@ -134,7 +146,7 @@ export const PendingSave = z.strictObject({
    * changes, with exactly what was sent for each: the server path the file
    * ends up at (null for a delete) and its content (null for a delete).
    */
-  files: z.array(z.strictObject({ localId: z.uuid(), sentPath: z.nullable(ProjectPath), sentContent: z.nullable(z.string()) })),
+  files: z.array(z.strictObject({ localId: z.uuid(), sentPath: z.nullable(ProjectPath), sentContent: z.nullable(z.string()), ...imageFields })),
   folders: z.array(z.strictObject({ path: ProjectPath, local: z.boolean() })),
 })
 export type PendingSave = z.infer<typeof PendingSave>
@@ -164,8 +176,25 @@ export function fileState(file: LocalFile): FileState {
   if (file.base === null) return file.content === null ? "clean" : "created"
   if (file.content === null) return "deleted"
   if (file.base.path !== file.path) return "moved"
-  return file.base.content === file.content ? "clean" : "changed"
+  return file.base.content === file.content && (file.base.kind ?? "text") === (file.kind ?? "text") && (file.base.asset?.id ?? null) === (file.asset?.id ?? null) ? "clean" : "changed"
 }
+
+/** Binary payloads are separate from files, so a note draft and its bytes commit atomically. */
+export type LocalImageAsset = {
+  partition: string
+  projectId: string
+  id: string
+  asset: ImageAsset
+  bytes: Blob
+  preview?: Blob
+  uploaded: boolean
+  /** Persisted before the first request, so an expired lost upload can rotate safely. */
+  uploadAttempted?: boolean
+}
+
+export const assetToken = (asset: ImageAsset): string => `image:${asset.id}:${asset.sha256}`
+export const savedToken = (file: Pick<LocalFile, "content" | "kind" | "asset">): Promise<string> =>
+  file.content === null ? Promise.resolve("") : file.kind === "image" && file.asset ? Promise.resolve(assetToken(file.asset)) : contentToken(file.content)
 
 export const isDirty = (file: LocalFile): boolean => fileState(file) !== "clean"
 

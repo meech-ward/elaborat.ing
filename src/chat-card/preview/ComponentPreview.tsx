@@ -83,7 +83,7 @@ async function prepare(file: CardFile): Promise<Prepared> {
   const plan: PreviewPlan =
     program.note !== null
       ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs, charts: program.charts ?? false }
-      : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [] }
+      : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [],images:file.images }
   const srcdoc = frameDocument({ ...frameModules(), program, run, scheme: currentAppearance().scheme })
   const draft = file.kind === "component" && file.preview?.draft === true
   const code = [...new Set((program.code ?? []).map((path) => path ?? file.path))].filter((path) => !(draft && path === file.path))
@@ -91,7 +91,7 @@ async function prepare(file: CardFile): Promise<Prepared> {
 }
 
 /** A note's drawings and diagrams, as the frame takes them. */
-const drawingsOf = (file: CardFile) => ({ embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs })
+const drawingsOf = (file: CardFile) => ({ embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs,images:file.images })
 
 export function ComponentPreview({
   file,
@@ -155,7 +155,7 @@ export function ComponentPreview({
         case "ready":
           return send({
             type: "setup",
-            plan: prepared.plan.kind === "note" ? { ...prepared.plan, ...drawings() } : prepared.plan,
+            plan: prepared.plan.kind === "note" ? { ...prepared.plan, ...drawings() } : {...prepared.plan,images:drawings().images},
             appearance: currentAppearance(),
             fonts: cardFonts(),
           })
@@ -189,7 +189,7 @@ export function ComponentPreview({
 
   // A diagram the card draws reaches a note's preview once drawn; a frame not set up yet gets it with setup.
   useEffect(() => {
-    if (prepared?.plan.kind !== "note") return
+    if (!prepared) return
     const message: CardToFrame = { type: "drawings", ...drawingsOf(drawn) }
     frame.current?.contentWindow?.postMessage(message, "*")
   }, [drawn, prepared])

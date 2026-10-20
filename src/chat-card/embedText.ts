@@ -4,7 +4,7 @@
  * toolResult.ts parses the results these describe.
  */
 
-export type FileKind = "note" | "drawing" | "diagram" | "file" | "component"
+export type FileKind = "note" | "drawing" | "diagram" | "image" | "file" | "component"
 
 /**
  * How a drawing or diagram came out (fileView.ts EmbedStatus); anything else
@@ -40,7 +40,7 @@ export function svgFor(embed: CardEmbed, svgs: Record<string, string>): string |
   return embed.status === "drawn" || embed.status === "stale" ? (svgs[embed.path] ?? null) : null
 }
 
-export const KIND_NAMES: Record<FileKind, string> = { note: "Note", drawing: "Drawing", diagram: "Diagram", file: "File", component: "Component" }
+export const KIND_NAMES: Record<FileKind, string> = { note: "Note", drawing: "Drawing", diagram: "Diagram", image:"Image", file: "File", component: "Component" }
 
 /** What the card says about an embed it cannot draw, or about one drawn from older source. */
 export const EMBED_NOTES: Record<EmbedStatus, string> = {
@@ -64,4 +64,5 @@ export const FILE_NOTES: Record<Exclude<FileKind, "note">, string> = {
   diagram: "Diagrams open in elaborat.ing.",
   file: "Open this file in elaborat.ing.",
   component: "Open this file in elaborat.ing.",
+  image: "Open this image in elaborat.ing.",
 }

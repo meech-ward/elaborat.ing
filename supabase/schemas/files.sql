@@ -7,6 +7,11 @@ create table public.project_files (
   project_id uuid not null references public.projects (id) on delete cascade,
   path text collate "C" not null,
   content text not null,
+  kind text not null default 'text' check (kind in ('text', 'image')),
+  asset_id uuid,
+  asset jsonb,
+  foreign key (project_id, asset_id) references public.image_assets(project_id, id),
+  constraint project_files_asset_payload check ((kind = 'text' and asset_id is null and asset is null) or (kind = 'image' and content = '' and asset_id is not null and asset is not null)),
   version bigint not null,
   updated_by uuid references auth.users (id) on delete set null,
   updated_at timestamptz not null default now(),
@@ -41,6 +46,11 @@ create table public.file_versions (
   project_id uuid not null references public.projects (id) on delete cascade,
   path text collate "C" not null,
   content text,
+  kind text not null default 'text' check (kind in ('text', 'image')),
+  asset_id uuid,
+  asset jsonb,
+  foreign key (project_id, asset_id) references public.image_assets(project_id, id),
+  constraint file_versions_asset_payload check ((kind = 'text' and asset_id is null and asset is null) or (kind = 'image' and asset_id is not null and asset is not null and (deleted or content = ''))),
   deleted boolean not null default false,
   author_id uuid references auth.users (id) on delete set null,
   mutation_id uuid not null,
@@ -60,7 +70,7 @@ create index file_versions_agent_changes_idx on public.file_versions (project_id
 alter table public.file_versions enable row level security;
 
 revoke all on table public.file_versions from anon, authenticated;
-grant select (file_id, version, project_id, path, content, deleted, author_id, mutation_id, created_at)
+grant select (file_id, version, project_id, path, content, kind, asset_id, asset, deleted, author_id, mutation_id, created_at)
   on table public.file_versions to authenticated;
 
 create policy "People can read file history in their projects"

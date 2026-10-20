@@ -166,7 +166,8 @@ begin
            'version', v.version,
            'path', v.path,
            'deleted', v.deleted,
-           'size', octet_length(v.content),
+           'kind', v.kind, 'asset_id', v.asset_id, 'asset', v.asset,
+           'size', case when v.kind = 'image' then (v.asset ->> 'byte_length')::bigint else octet_length(v.content) end,
            'created_at', v.created_at,
            'author', private.comment_person(v.author_id),
            'agent', private.agent_name(v.agent_client_id),
@@ -178,8 +179,9 @@ begin
                'version', pv.version,
                'path', pv.path,
                'deleted', pv.deleted,
-               'size', octet_length(pv.content),
-               'same_content', pv.content is not distinct from v.content
+               'kind', pv.kind, 'asset_id', pv.asset_id, 'asset', pv.asset,
+               'size', case when pv.kind = 'image' then (pv.asset ->> 'byte_length')::bigint else octet_length(pv.content) end,
+               'same_content', pv.content is not distinct from v.content and pv.asset_id is not distinct from v.asset_id
              )
              from public.file_versions pv
              where pv.file_id = v.file_id and pv.version < v.version
@@ -272,8 +274,9 @@ begin
   return jsonb_build_object(
     'file_id', v.file_id,
     'version', v.version,
+    'kind', v.kind, 'asset_id', v.asset_id, 'asset', v.asset,
     'content', case when coalesce(get_agent_change.previous_only, false) then null else v.content end,
-    'previous', case when pv.file_id is not null then jsonb_build_object('version', pv.version, 'content', pv.content) end
+    'previous', case when pv.file_id is not null then jsonb_build_object('version', pv.version, 'content', pv.content, 'kind', pv.kind, 'asset_id', pv.asset_id, 'asset', pv.asset) end
   );
 end;
 $$;

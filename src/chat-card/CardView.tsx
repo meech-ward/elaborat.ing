@@ -19,6 +19,7 @@ import { badgeKind, CardNote, EmbedArt, EmbedFigure, READING_CLASS } from "./car
 import { CARD_TEXT, type CardState } from "./cardState"
 import { codeToHighlight, highlightBlock, readingMarkup, type Highlighter } from "./readingMarkup"
 import { EMBED_NOTES, FILE_NOTES, svgFor, type CardEmbed, type CardFile } from "./toolResult"
+import { CardImage } from './cardImages';
 
 export { CardNote, EmbedFigure, READING_CLASS } from "./cardNote"
 
@@ -284,7 +285,7 @@ function CardBody({
     return (
       <>
         {preview?.status === "asking" && <AskingBanner file={file} preview={preview} column />}
-        {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} highlighter={highlighter} />}
+        {preview?.status !== "shown" && <NoteHtml html={file.html} embeds={file.embeds} svgs={file.svgs} images={file.images} imageRefs={file.imageRefs} highlighter={highlighter} />}
         {preview && preview.status !== "failed" && <PreviewSlot preview={preview} column />}
         {preview?.status === "failed" && (
           // In the note's column, under its text.
@@ -313,6 +314,7 @@ function CardBody({
       </>
     )
   }
+  if (file.kind === 'image') return <CardNote><CardImage pixels={file.images?.[file.path]} alt={file.path.split('/').at(-1) ?? 'Image'} url={file.url} loading={file.imageRefs?.some(reference => reference.status === 'loading')} /></CardNote>;
   const drawn = (file.kind === "drawing" || file.kind === "diagram") && file.embeds[0] ? file.embeds[0] : null
   if (drawn) return <DrawingBody embed={drawn} svgs={file.svgs} />
   return <p className="px-4 py-4 text-[13px] leading-snug text-muted-foreground">{file.kind === "note" ? FILE_NOTES.file : FILE_NOTES[file.kind]}</p>
@@ -336,10 +338,18 @@ type Slot = { host: HTMLElement; node: ReactNode }
  * (readingMarkup.ts). Only the server's own markup is read: a figure's
  * data-embed index and a callout's tone.
  */
-function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<string, string>) {
+function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<string, string>,images:CardFile['images'],imageRefs:CardFile['imageRefs']) {
   const holder = document.createElement("div")
   holder.innerHTML = html
   const slots: Slot[] = []
+  for (const placeholder of holder.querySelectorAll<HTMLElement>('[data-project-image],[data-project-imagekey]')) {
+    const key = placeholder.getAttribute('data-project-image') ?? placeholder.getAttribute('data-project-imagekey') ?? '';
+    const host = document.createElement('span');
+    host.className = 'not-prose card-image-slot';
+    const alt = placeholder.getAttribute('alt') ?? placeholder.textContent ?? '';
+    placeholder.replaceWith(host);
+    slots.push({host,node:<CardImage pixels={images?.[key]} alt={alt} loading={imageRefs?.some(reference => reference.key === key && reference.status === 'loading')} />});
+  }
   for (const figure of holder.querySelectorAll<HTMLElement>("figure[data-embed]")) {
     const embed = embeds[Number(figure.dataset.embed)]
     if (!embed) {
@@ -372,15 +382,19 @@ export function NoteHtml({
   html,
   embeds,
   svgs,
+  images,
+  imageRefs,
   highlighter,
 }: {
   html: string
   embeds: CardFile["embeds"]
   svgs: Record<string, string>
+  images?: CardFile['images']
+  imageRefs?: CardFile['imageRefs']
   highlighter?: () => Promise<Highlighter>
 }) {
   const container = useRef<HTMLDivElement>(null)
-  const prepared = useMemo(() => prepareNote(html, embeds, svgs), [html, embeds, svgs])
+  const prepared = useMemo(() => prepareNote(html, embeds, svgs,images,imageRefs), [html, embeds, svgs,images,imageRefs])
   useLayoutEffect(() => {
     container.current?.replaceChildren(...prepared.nodes)
   }, [prepared])

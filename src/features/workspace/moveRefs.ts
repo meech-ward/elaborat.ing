@@ -4,6 +4,8 @@ import remarkFrontmatter from "remark-frontmatter";
 import { decodeString } from "micromark-util-decode-string";
 import { validateWorkspacePath } from "./index.ts";
 import { parseDrawingFile } from "../drawings/parse.ts";
+import { resolveImagePath, relativeImagePath, safeImagePath } from '../images/paths';
+import { literalHtmlImage } from '../images/references';
 
 export interface MoveReferenceFile { path: string; content: string }
 export interface MoveReferenceTarget { from: string; to: string }
@@ -188,8 +190,8 @@ function suffixOffset(raw: string): number {
 }
 
 /** Attribute inspection is confined to parser-proven raw HTML nodes. It never produces patches. */
-function htmlDestinations(html: string): string[] {
-  const values: string[] = [];
+function htmlAttributes(html: string): {tag:string;name:string;value:string;from:number;to:number;quote:string|null}[] {
+  const values: ReturnType<typeof htmlAttributes> = [];
   let cursor = 0;
   while (cursor < html.length) {
     const start = html.indexOf("<", cursor);
@@ -214,14 +216,15 @@ function htmlDestinations(html: string): string[] {
       const quote = html[cursor] === '"' || html[cursor] === "'" ? html[cursor++] : null;
       const from = cursor;
       while (cursor < html.length && (quote ? html[cursor] !== quote : !whitespace(html[cursor]) && html[cursor] !== ">")) cursor++;
-      if (tag !== "Drawing" && tag !== "Diagram" && ["src", "href"].includes(name.toLowerCase())) {
-        values.push(decodeString(html.slice(from, cursor)));
-      }
+      values.push({tag,name:name.toLowerCase(),value:decodeString(html.slice(from,cursor)),from,to:cursor,quote});
       if (quote && html[cursor] === quote) cursor++;
     }
     cursor++;
   }
   return values;
+}
+function htmlDestinations(html: string): string[] {
+  return htmlAttributes(html).filter(attribute => attribute.tag !== 'Drawing' && attribute.tag !== 'Diagram' && ['src','href'].includes(attribute.name)).map(attribute => attribute.value);
 }
 
 /** Narrow D2 scalar inspection: comments/quoted labels are skipped, only link/icon keys count.
@@ -372,6 +375,21 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
       patches.push({ ...slice, expected: source.slice(slice.from, slice.to), insert });
       references.push({ from, to, line: line ?? node.position?.start.line ?? 1 });
     };
+    const movingImages = moves.some(move => safeImagePath(move.from));
+    const imageTarget = (src: string): {from:string;to:string;url:string} | null => {
+      const from = resolveImagePath(file.path,src);
+      if (!from) {
+        if (!external(src) && targets.has(file.path)) block('An unsafe or unsupported image reference would be affected by this move');
+        return null;
+      }
+      if (!targets.has(from) && !targets.has(file.path)) return null;
+      const to = targets.get(from) ?? from;
+      return {from,to,url:relativeImagePath(targets.get(file.path) ?? file.path,to)};
+    };
+    const unknownImage = (known:string|null) => {
+      if (targets.has(file.path) || movingImages && (known === null || targets.has(resolveImagePath(file.path,known) ?? '')))
+        block('A computed or spread image reference has an unresolved target');
+    };
     const markdownTarget = (url: string, kind = "link or image"): { from: string; to: string } | null => {
       if (external(url)) return null;
       if (url.startsWith("./") || url.startsWith("../")) {
@@ -465,7 +483,22 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
       } else if (record.type === "JSXOpeningElement") {
         const name = object(record.name)?.name;
         const attrs = Array.isArray(record.attributes) ? record.attributes : [];
-        if (name === "Drawing" || name === "Diagram") {
+        if (name === 'img') {
+          const sources = attrs.map(object).filter(entry => object(entry?.name)?.name === 'src');
+          const src = object(sources[0]?.value);
+          const known = literalExpression(src?.type === 'JSXExpressionContainer' ? src.expression : src);
+          if (sources.length !== 1 || attrs.some(entry => object(entry)?.type === 'JSXSpreadAttribute')) unknownImage(null);
+          else if (src?.type !== 'Literal' || typeof src.value !== 'string') unknownImage(known);
+          else {
+            const target = imageTarget(String(src.value));
+            if (target) {
+              const slice = estreeRange(src), raw = typeof src.raw === 'string' ? src.raw : '';
+              const quote = raw[0];
+              if (!slice || !['"',"'"].includes(quote) || source.slice(slice.from,slice.to) !== raw) block('Cannot safely position this executable image source');
+              else add(slice,target.from,target.to,quote + jsxEncode(target.url,quote) + quote,owner,estreeLine(record) ?? undefined);
+            }
+          }
+        } else if (name === "Drawing" || name === "Diagram") {
           let known: string | null = null;
           let uncertain = false;
           for (const attr of attrs) {
@@ -503,7 +536,14 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
     };
     const visit = (node: Node) => {
       if ((node.type === "link" || node.type === "definition" || node.type === "image") && typeof node.url === "string") {
-        const target = markdownTarget(node.url);
+        const isImage = node.type === 'image' || node.type === 'definition' && node.identifier && imageDefinitions.has(node.identifier);
+        const image = isImage ? imageTarget(node.url) : null;
+        if (image) {
+          const slice = destinationRange(source,node);
+          if (!slice || decodeString(source.slice(slice.from,slice.to)) !== node.url) block('Cannot safely position this Markdown image destination');
+          else add(slice,image.from,image.to,image.url,node);
+        }
+        const target = image || isImage && resolveImagePath(file.path,node.url) ? null : markdownTarget(node.url);
         if (target) {
           if (node.type === "image" || (node.type === "definition" && node.identifier && imageDefinitions.has(node.identifier))) {
             block("Unsupported image destination refers to a moved file");
@@ -523,7 +563,21 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
         }
       }
       if (node.type === "mdxJsxFlowElement" || node.type === "mdxJsxTextElement") {
-        if (node.name === "Drawing" || node.name === "Diagram") {
+        if (node.name === 'img') {
+          const attrs = node.attributes ?? [], sources = attrs.filter(attr => attr.name === 'src');
+          const src = sources[0];
+          const known = typeof src?.value === 'string' ? src.value : literalExpression(src?.value);
+          if (sources.length !== 1 || attrs.some(attr => attr.type === 'mdxJsxExpressionAttribute')) unknownImage(null);
+          else if (typeof src?.value !== 'string') unknownImage(known);
+          else {
+            const target = imageTarget(src.value);
+            if (target) {
+              const slice = quotedRange(source,src);
+              if (!slice) block('Cannot safely position this literal image source');
+              else add(slice,target.from,target.to,jsxEncode(target.url,slice.quote),node);
+            } else if (!resolveImagePath(file.path,src.value)) unsupportedDestination(src.value,'HTML/JSX image destination');
+          }
+        } else if (node.name === "Drawing" || node.name === "Diagram") {
           const attrs = node.attributes ?? [];
           resourceUnknown(node.name, attrs);
           const src = attrs.find((attr) => attr.name === "src");
@@ -544,7 +598,13 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
         }
       }
       if (node.type === "html" && typeof node.value === "string") {
-        htmlDestinations(node.value).forEach((value) => unsupportedDestination(value, "HTML destination"));
+        const literal = literalHtmlImage(node.value), bounds = range(node);
+        const image = literal && imageTarget(literal.src);
+        if (image && bounds) {
+          const attribute = htmlAttributes(node.value).find(attribute => attribute.tag.toLowerCase() === 'img' && attribute.name === 'src');
+          if (!attribute?.quote) block('Cannot safely position this HTML image source');
+          else add({from:bounds.from + attribute.from,to:bounds.from + attribute.to},image.from,image.to,jsxEncode(image.url,attribute.quote),node);
+        } else if (!literal || !resolveImagePath(file.path,literal.src)) htmlDestinations(node.value).forEach((value) => unsupportedDestination(value, "HTML destination"));
       }
       if (["mdxjsEsm", "mdxFlowExpression", "mdxTextExpression"].includes(node.type)) inspectExecutable(node.data?.estree, node);
       for (const child of node.children ?? []) visit(child);

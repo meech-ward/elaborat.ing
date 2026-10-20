@@ -5,6 +5,8 @@ import { FakeProjectServer } from "../../src/features/project-storage/fakeServer
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
 import { FakeAgentChanges } from "./fake-agent-changes.ts"
 import { FakeComments } from "./fake-comments.ts"
+import { inspectImage } from "../../src/features/images/format.ts"
+import { imageDigest, imageObjectKeys } from "../../src/features/images/types.ts"
 
 /**
  * A stand-in for the Supabase project the browser-test build points at
@@ -94,8 +96,8 @@ export type FakeSupabase = {
   mintPanelPass(): string
 }
 
-const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "account-limit": 429, "path-taken": 409, invalid: 400, unavailable: 403 }
-const errorCode: Record<RemoteError["kind"], string> = { network: "", access: "42501", archived: "55000", limit: "54000", "account-limit": "PT429", "path-taken": "23505", invalid: "22023", unavailable: "42501" }
+const errorStatus: Record<RemoteError["kind"], number> = { network: 503, access: 403, archived: 409, limit: 409, "account-limit": 429, "path-taken": 409, invalid: 400, unavailable: 403, "image-expired": 410 }
+const errorCode: Record<RemoteError["kind"], string> = { network: "", access: "42501", archived: "55000", limit: "54000", "account-limit": "PT429", "path-taken": "23505", invalid: "22023", unavailable: "42501", "image-expired": "PT410" }
 
 /** Answer Supabase for `page`, as `person`. */
 export async function fakeSupabase(page: Page, options: Options = {}): Promise<FakeSupabase> {
@@ -297,6 +299,10 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "create_project") return answer(route, () => remote.createProject(body.project_id, body.title))
       if (rpc === "rename_project") return answer(route, () => remote.renameProject(body.project_id, body.title))
       if (rpc === "save_files") return answer(route, () => remote.saveFiles(body.project_id, body.mutation_id, body.changes))
+      if (rpc === "read_image_upload") return answer(route, async () => {
+        const status = await remote.imageUploadStatus!(body.project_id, body.asset_id)
+        return body.include_status ? status : status.status === "available" ? status.asset : null
+      })
       if (rpc === "list_invitations") return answer(route, () => remote.listInvitations())
       if (rpc === "accept_invitation") return answer(route, () => remote.acceptInvitation(body.project_id))
       if (rpc === "leave_project") return answer(route, async () => (await remote.leaveProject(body.project_id), { project_id: body.project_id, left: true }))
@@ -326,6 +332,37 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
           await remote.shareProject(body.project_id, body.member_id, body.member_role),
           { project_id: body.project_id, member_id: body.member_id, role: body.member_role }
         ))
+      }
+    }
+
+    // Raw authenticated image uploads and private storage downloads use the
+    // same immutable identities as the local sync test server.
+    if (path === "/functions/v1/images" && request.method() === "POST") {
+      return answer(route, async () => {
+        const projectId = url.searchParams.get("project_id")!
+        const id = url.searchParams.get("asset_id")!
+        const bytes = new Uint8Array(request.postDataBuffer() ?? [])
+        const header = inspectImage(bytes, request.headers()["content-type"])
+        const original = new Blob([bytes], { type: header.mediaType })
+        // Tiny PNG uploads can be their own bounded, static preview. Other
+        // formats get a static fixture, as a server decoder would provide.
+        const preview = header.mediaType === "image/png" && !header.animated && bytes.length <= 32768 ? original : new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64")], { type: "image/png" })
+        const asset = await remote.uploadImage!(projectId, { id, ...imageObjectKeys(projectId, id), media_type: header.mediaType, byte_length: bytes.length, width: header.width, height: header.height, sha256: await imageDigest(bytes), preview_type: "image/png", preview_byte_length: preview.size, preview_width: header.mediaType === "image/png" ? header.width : 1, preview_height: header.mediaType === "image/png" ? header.height : 1 }, original)
+        server.assets.get(`${projectId}/${id}`)!.preview = preview
+        return { asset }
+      })
+    }
+    const imageStorage = /^\/storage\/v1\/object\/(?:authenticated\/)?project-images\/(.+)$/.exec(path)
+    if (imageStorage) {
+      try {
+        const [projectId, assetId, version] = imageStorage[1].split("/")
+        const found = server.assets.get(`${projectId}/${assetId}`)
+        if (!found) return json(route, { message: "Image not found" }, 404)
+        const bytes = await remote.downloadImage!(projectId, found.asset, version === "preview")
+        return route.fulfill({ status: 200, headers: CORS, contentType: bytes.type, body: Buffer.from(await bytes.arrayBuffer()) })
+      } catch (error) {
+        if (!(error instanceof RemoteError)) throw error
+        return json(route, { message: error.message }, errorStatus[error.kind])
       }
     }
 

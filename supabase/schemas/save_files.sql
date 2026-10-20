@@ -44,6 +44,8 @@ declare
   current_file public.project_files;
   saved_file public.project_files;
   old_bytes bigint;
+  image public.image_assets;
+  image_snapshot jsonb;
   byte_delta bigint := 0;
   touched text[] := '{}';
   added_file_paths text[] := '{}';
@@ -91,7 +93,7 @@ begin
     op := change ->> 'op';
     change_path := change ->> 'path';
     base_version := null;
-    if op is null or op not in ('put', 'delete', 'move', 'mkdir', 'rmdir') then
+    if op is null or op not in ('put', 'asset', 'delete', 'move', 'mkdir', 'rmdir') then
       raise exception 'Unknown change op: %', left(coalesce(op, '(missing)'), 50) using errcode = '22023';
     end if;
     if not private.is_valid_path(change_path) then
@@ -102,7 +104,7 @@ begin
     end if;
     touched := touched || change_path;
 
-    if op in ('put', 'delete', 'move') and coalesce(jsonb_typeof(change -> 'base_version'), 'null') <> 'null' then
+    if op in ('put', 'asset', 'delete', 'move') and coalesce(jsonb_typeof(change -> 'base_version'), 'null') <> 'null' then
       if jsonb_typeof(change -> 'base_version') <> 'number'
         or (change ->> 'base_version') !~ '^[1-9][0-9]{0,17}$' then
         raise exception 'base_version must be a positive whole number' using errcode = '22023';
@@ -119,7 +121,7 @@ begin
       raise exception 'move content must be a string: %', change_path using errcode = '22023';
     end if;
 
-    if op in ('put', 'delete', 'move') then
+    if op in ('put', 'asset', 'delete', 'move') then
       select * into current_file
       from public.project_files f
       where f.project_id = p.id and f.path = change_path;
@@ -129,8 +131,28 @@ begin
           'path', change_path,
           'base_version', base_version,
           'current', case when current_file.id is null then null else jsonb_build_object(
-            'id', current_file.id, 'version', current_file.version, 'content', current_file.content) end
+            'id', current_file.id, 'version', current_file.version, 'content', current_file.content, 'kind', current_file.kind, 'asset_id', current_file.asset_id, 'asset', current_file.asset) end
         );
+      end if;
+    end if;
+
+    if (op = 'put' or (op = 'move' and change ? 'content')) and current_file.kind = 'image' then
+      raise exception 'Image files need an explicit image operation: %', change_path using errcode = '22023';
+    end if;
+    if op = 'asset' or (op = 'move' and change ? 'asset_id') then
+      if op = 'move' and change ? 'content' then
+        raise exception 'A move can carry text or an image reference, not both' using errcode = '22023';
+      end if;
+      if jsonb_typeof(change -> 'asset_id') is distinct from 'string' or (change ->> 'asset_id') !~ '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$' then
+        raise exception 'asset needs an image id' using errcode = '22023';
+      end if;
+      select * into image from public.image_assets a where a.id = (change ->> 'asset_id')::uuid for update;
+      if image.project_id = p.id and image.created_by = uid and image.state <> 'committed' and image.expires_at <= now() then
+        raise exception 'This image upload expired. Try again with a new image id.' using errcode = 'PT410';
+      end if;
+      if image.id is null or image.project_id <> p.id
+        or (image.state <> 'committed' and (image.state <> 'ready' or image.created_by is distinct from uid or image.expires_at <= now())) then
+        raise exception 'Image is not ready in this project' using errcode = '42501';
       end if;
     end if;
 
@@ -151,7 +173,7 @@ begin
           'path', target_path,
           'base_version', null,
           'current', jsonb_build_object(
-            'id', current_file.id, 'version', current_file.version, 'content', current_file.content)
+            'id', current_file.id, 'version', current_file.version, 'content', current_file.content, 'kind', current_file.kind, 'asset_id', current_file.asset_id, 'asset', current_file.asset)
         );
       end if;
     end if;
@@ -170,25 +192,35 @@ begin
     op := change ->> 'op';
     change_path := change ->> 'path';
 
-    if op = 'put' then
-      select octet_length(f.content) into old_bytes
+    if op in ('put', 'asset') then
+      image_snapshot := null;
+      if op = 'asset' then
+        select * into image from public.image_assets a where a.id = (change ->> 'asset_id')::uuid;
+        image_snapshot := jsonb_build_object('id', image.id, 'media_type', image.media_type,
+          'byte_length', image.byte_length, 'width', image.width, 'height', image.height, 'sha256', image.sha256,
+          'object_key', image.object_key, 'preview_key', image.preview_key, 'preview_type', image.preview_type, 'preview_byte_length', image.preview_byte_length);
+        update public.image_assets a set state = 'committed', committed_at = coalesce(a.committed_at, now()) where a.id = image.id;
+      end if;
+      select case when f.kind = 'image' then (f.asset ->> 'byte_length')::bigint else octet_length(f.content) end into old_bytes
       from public.project_files f
       where f.project_id = p.id and f.path = change_path;
-      insert into public.project_files as f (project_id, path, content, version, updated_by)
-      values (p.id, change_path, change ->> 'content', new_revision, uid)
+      insert into public.project_files as f (project_id, path, content, kind, asset_id, asset, version, updated_by)
+      values (p.id, change_path, case when op = 'asset' then '' else change ->> 'content' end,
+        case when op = 'asset' then 'image' else 'text' end, case when op = 'asset' then image.id else null end, image_snapshot, new_revision, uid)
       on conflict on constraint project_files_project_path_key do update
         set content = excluded.content,
+            kind = excluded.kind, asset_id = excluded.asset_id, asset = excluded.asset,
             version = excluded.version,
             updated_by = excluded.updated_by,
             updated_at = now()
       returning * into saved_file;
-      byte_delta := byte_delta + octet_length(saved_file.content) - coalesce(old_bytes, 0);
+      byte_delta := byte_delta + case when saved_file.kind = 'image' then (saved_file.asset ->> 'byte_length')::bigint else octet_length(saved_file.content) end - coalesce(old_bytes, 0);
       if old_bytes is null then
         added_file_paths := added_file_paths || change_path;
         added_paths := added_paths || change_path;
       end if;
-      insert into public.file_versions (file_id, version, project_id, path, content, author_id, agent_client_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, agent_client, save_files.mutation_id);
+      insert into public.file_versions (file_id, version, project_id, path, content, kind, asset_id, asset, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, saved_file.kind, saved_file.asset_id, saved_file.asset, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'id', saved_file.id, 'version', new_revision);
 
@@ -196,32 +228,43 @@ begin
       delete from public.project_files f
       where f.project_id = p.id and f.path = change_path
       returning * into saved_file;
-      byte_delta := byte_delta - octet_length(saved_file.content);
-      insert into public.file_versions (file_id, version, project_id, path, content, deleted, author_id, agent_client_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, null, true, uid, agent_client, save_files.mutation_id);
+      byte_delta := byte_delta - case when saved_file.kind = 'image' then (saved_file.asset ->> 'byte_length')::bigint else octet_length(saved_file.content) end;
+      insert into public.file_versions (file_id, version, project_id, path, content, kind, asset_id, asset, deleted, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, null, saved_file.kind, saved_file.asset_id, saved_file.asset, true, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'id', saved_file.id, 'version', new_revision);
 
     elsif op = 'move' then
+      image_snapshot := null;
+      if change ? 'asset_id' then
+        select * into image from public.image_assets a where a.id = (change ->> 'asset_id')::uuid;
+        image_snapshot := jsonb_build_object('id', image.id, 'media_type', image.media_type,
+          'byte_length', image.byte_length, 'width', image.width, 'height', image.height, 'sha256', image.sha256,
+          'object_key', image.object_key, 'preview_key', image.preview_key, 'preview_type', image.preview_type, 'preview_byte_length', image.preview_byte_length);
+        update public.image_assets a set state = 'committed', committed_at = coalesce(a.committed_at, now()) where a.id = image.id;
+      end if;
       target_path := change ->> 'to';
-      select octet_length(f.content) into old_bytes
+      select case when f.kind = 'image' then (f.asset ->> 'byte_length')::bigint else octet_length(f.content) end into old_bytes
       from public.project_files f
       where f.project_id = p.id and f.path = change_path;
       -- A move may also carry new content, so moving a file and rewriting
       -- its own content (for example a self-reference) is one change.
       update public.project_files f
       set path = target_path,
-          content = coalesce(change ->> 'content', f.content),
+          content = case when image_snapshot is not null then '' else coalesce(change ->> 'content', f.content) end,
+          kind = case when image_snapshot is not null then 'image' else f.kind end,
+          asset_id = case when image_snapshot is not null then image.id else f.asset_id end,
+          asset = coalesce(image_snapshot, f.asset),
           version = new_revision,
           updated_by = uid,
           updated_at = now()
       where f.project_id = p.id and f.path = change_path
       returning * into saved_file;
-      byte_delta := byte_delta + octet_length(saved_file.content) - old_bytes;
+      byte_delta := byte_delta + case when saved_file.kind = 'image' then (saved_file.asset ->> 'byte_length')::bigint else octet_length(saved_file.content) end - old_bytes;
       added_file_paths := added_file_paths || target_path;
       added_paths := added_paths || target_path;
-      insert into public.file_versions (file_id, version, project_id, path, content, author_id, agent_client_id, mutation_id)
-      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, uid, agent_client, save_files.mutation_id);
+      insert into public.file_versions (file_id, version, project_id, path, content, kind, asset_id, asset, author_id, agent_client_id, mutation_id)
+      values (saved_file.id, new_revision, p.id, saved_file.path, saved_file.content, saved_file.kind, saved_file.asset_id, saved_file.asset, uid, agent_client, save_files.mutation_id);
       applied := applied || jsonb_build_object(
         'op', op, 'path', change_path, 'to', target_path, 'id', saved_file.id, 'version', new_revision);
 

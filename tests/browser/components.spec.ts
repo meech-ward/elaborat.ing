@@ -214,6 +214,54 @@ test("Insert block lists the local and imported components, and inserts one", as
   )
 })
 
+test("right-click offers local and imported components and inserts their defaults at that paragraph", async ({ page }) => {
+  const intro = "Intro."
+  const note = `${importCard}export const Greeting = ({ name }) => <p className="greeting">Hello, {name}!</p>\n\n${intro}\n\nUntouched tail.\n`
+  const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/context-insert.mdx": note }, "notes/context-insert.mdx")
+  await rendered(page)
+  const frame = frameOf(page)
+  await frame.getByText(intro, { exact: true }).click({ button: "right" })
+  const menu = frame.getByRole("menu", { name: "Insert block" })
+  await expect(menu.getByRole("menuitem", { name: "Greeting", exact: true })).toBeVisible()
+  await menu.getByRole("menuitem", { name: "ReleaseCard", exact: true }).click()
+  await expect(menu).toBeHidden()
+  await expect(frame.locator("section.release-card h3")).toHaveText("Review")
+  await expect(frame.locator("section.release-card p")).toHaveText("3 items, ready")
+
+  await save(page)
+  await expect.poll(() => fake.server.content(id, "notes/context-insert.mdx")).toBe(
+    note.replace(intro, `${intro}\n\n<ReleaseCard title="Review" count={3} ready={true} />\n\n`),
+  )
+})
+
+test("right-click Drawing chooses an existing file and keeps the clicked insertion position", async ({ page }) => {
+  const scene = JSON.stringify({ type: "excalidraw", version: 2, elements: [
+    { id: "box", type: "rectangle", x: 0, y: 0, width: 120, height: 60, angle: 0, strokeColor: "#1e1e1e", backgroundColor: "transparent",
+      fillStyle: "solid", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100, groupIds: [], frameId: null, index: "a0",
+      roundness: null, seed: 1, version: 1, versionNonce: 1, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false },
+  ], appState: {}, files: {} })
+  const note = "# Drawings\n\nClick here.\n\nUntouched tail.\n"
+  const { fake, id } = await openProject(page, { "art/sketch.excalidraw": scene, "notes/drawing-insert.mdx": note }, "notes/drawing-insert.mdx")
+  await rendered(page)
+  const frame = frameOf(page)
+  await frame.getByText("Click here.", { exact: true }).click({ button: "right" })
+  await frame.getByRole("menu", { name: "Insert block" }).getByRole("menuitem", { name: "Drawing", exact: true }).click()
+  const dialog = frame.getByRole("dialog", { name: "Insert block" })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByLabel("Block type")).toHaveValue("Drawing")
+  await expect(dialog.getByLabel("Insert position").locator("option:checked")).toHaveText("After block 2")
+  await expect(dialog.getByRole("button", { name: "Insert", exact: true })).toBeDisabled()
+  await dialog.getByLabel("Resource file").selectOption("art/sketch.excalidraw")
+  await dialog.getByRole("button", { name: "Insert", exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(frame.locator('[data-resource-pixels="art/sketch.excalidraw"] svg')).toBeVisible({ timeout: 30_000 })
+
+  await save(page)
+  await expect.poll(() => fake.server.content(id, "notes/drawing-insert.mdx")).toBe(
+    note.replace("Click here.", 'Click here.\n\n<Drawing src="art/sketch.excalidraw" />\n\n'),
+  )
+})
+
 const probe = `import { useEffect, useState } from "react"
 
 export const Probe = () => {

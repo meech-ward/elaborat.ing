@@ -5,7 +5,9 @@ import { z } from 'npm:zod@4.4.3'
 import { COMPONENTS_META_KEY, componentEditors, componentSources, sharedWithUser } from './componentSources.ts'
 import { completeFile, DrawError } from './drawingCompletion.ts'
 import { drawingSvg, MAX_SVG_CHARS, parseDrawing } from './drawingSvg.ts'
+import { drawingRasters } from './drawingRaster.ts'
 import { FILE_VIEW_HTML } from './fileViewHtml.ts'
+import { IMAGES_META_KEY, imageReferences, imageViews } from './imageAssets.ts'
 import { type EmbedRef, renderNote } from './markdown.ts'
 import { baseVersion, mutationId, path, projectId, VIEW_CALLABLE } from './projects.ts'
 import { errorResult, runtimeErrorResult } from './result.ts'
@@ -34,7 +36,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v53.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v54.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -89,6 +91,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v50.html',
   'ui://elaborating/file-view-v51.html',
   'ui://elaborating/file-view-v52.html',
+  'ui://elaborating/file-view-v53.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 
@@ -178,10 +181,11 @@ const roomBeside = (meta: Record<string, unknown>) => MAX_META_CHARS - JSON.stri
 /** The room a drawing or diagram has in a result of its own, as when the view loads one that was deferred. */
 const ALONE = roomBeside({})
 
-export type FileKind = 'note' | 'drawing' | 'diagram' | 'file' | 'component'
+export type FileKind = 'note' | 'drawing' | 'diagram' | 'file' | 'component' | 'image'
 
 export function fileKind(path: string): FileKind {
   const lower = path.toLowerCase()
+  if (/\.(?:png|jpe?g|webp|svg|gif)$/.test(lower)) return 'image'
   if (lower.endsWith('.excalidraw') || lower.endsWith('.excalidraw.md')) return 'drawing'
   if (lower.endsWith('.d2')) return 'diagram'
   if (lower.endsWith('.md') || lower.endsWith('.mdx')) return 'note'
@@ -234,7 +238,7 @@ function drawnFromOtherSource(path: string, files: Map<string, string>): boolean
 export type EmbedStatus = 'drawn' | 'stale' | 'not_drawn' | 'missing' | 'unreadable' | 'empty' | 'too_big' | 'deferred' | 'not_shown' | 'unsupported'
 export type EmbedView = EmbedRef & { url: string; status: EmbedStatus }
 
-function drawOne(path: string, files: Map<string, string>): { status: EmbedStatus; svg?: string } {
+async function drawOne(path: string, files: Map<string, string>): Promise<{ status: EmbedStatus; svg?: string }> {
   const kind = fileKind(path)
   if (kind !== 'drawing' && kind !== 'diagram') return { status: 'unsupported' }
   if (!files.has(path)) return { status: 'missing' }
@@ -247,7 +251,8 @@ function drawOne(path: string, files: Map<string, string>): { status: EmbedStatu
   } catch {
     return { status: 'unreadable' }
   }
-  const drawn = drawingSvg(elements, MAX_SVG_CHARS, { diagram: kind === 'diagram' })
+  const images=await drawingRasters(content)
+  const drawn = drawingSvg(elements, MAX_SVG_CHARS, { diagram: kind === 'diagram',images })
   if (!('svg' in drawn)) return { status: drawn.problem }
   return { status: kind === 'diagram' && drawnFromOtherSource(path, files) ? 'stale' : 'drawn', svg: drawn.svg }
 }
@@ -293,7 +298,7 @@ async function drawEmbeds(
   const statuses = new Map<string, EmbedStatus>()
   let left = room
   for (const path of drawn) {
-    const { status, svg } = drawOne(path, files)
+    const { status, svg } = await drawOne(path, files)
     const size = svg === undefined ? 0 : metaSize(path, svg)
     if (svg === undefined) statuses.set(path, status)
     else if (size > ALONE) statuses.set(path, 'too_big')
@@ -346,13 +351,13 @@ export async function showFilePayload(
   try {
     const { data, error } = await supabase
       .from('project_files')
-      .select('path, content, version, updated_at')
+      .select('path, content, kind, asset, version, updated_at')
       .eq('project_id', project_id)
       .eq('path', path)
       .maybeSingle()
     if (error) throw error
     if (!data) return noFile(path)
-    const kind = fileKind(data.path)
+    const kind = data.kind === 'image' ? 'image' : fileKind(data.path)
     const url = fileUrl(project_id, data.path)
     const content = String(data.content ?? '')
     const note = kind === 'note' ? preview(content) : null
@@ -380,6 +385,9 @@ export async function showFilePayload(
       refs.length > 0 ? await drawEmbeds(supabase, project_id, refs, roomBeside(meta), { [data.path]: content }) : { embeds: [], svgs: {}, diagrams: {} }
     if (Object.keys(svgs).length > 0) meta[SVG_META_KEY] = svgs
     if (Object.keys(diagrams).length > 0) meta[D2_META_KEY] = diagrams
+    const imageRefs=kind==='image'?[{key:data.path,path:data.path}]:note?await imageReferences(note.source,data.path,componentsSent?modules??{}:{}):[]
+    const imageResult=imageRefs.length?await imageViews(supabase,project_id,imageRefs,Math.max(0,MAX_META_CHARS-JSON.stringify(meta).length-100),kind==='image'?data.version:undefined):null
+    if(imageResult&&Object.keys(imageResult.previews).length) meta[IMAGES_META_KEY]=imageResult.previews
     return {
       content: [
         {
@@ -401,6 +409,8 @@ export async function showFilePayload(
         url,
         truncated: note?.truncated ?? false,
         embeds,
+        ...(imageResult?{images:imageResult.images}:{}),
+        ...(kind==='image'?{asset:data.asset}:{}),
         ...(componentsSent ? { shared } : {}),
       },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),

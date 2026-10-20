@@ -1,6 +1,8 @@
 import { unzipSync, Zip, ZipDeflate, ZipPassThrough } from "fflate"
 import { MAX_ENTRIES, MAX_FILE_BYTES, MAX_PROJECT_BYTES, projectPathProblem } from "@/features/project-storage/model"
-import { planImport, type ImportPlan } from "./prototypeImport"
+import { MAX_IMAGE_BYTES, isImagePath } from "@/features/images/types"
+import { inspectImage } from "@/features/images/format"
+import { planImport, type ImportPlan, type ImportedFile } from "./prototypeImport"
 
 /**
  * A project as a .zip and back: the files in their folders, each exactly as
@@ -14,7 +16,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 
 /** A .zip of these files and folders, paths as they are in the project. */
-export function zipProject(files: ReadonlyArray<{ path: string; content: string }>, folders: readonly string[]): Uint8Array<ArrayBuffer> {
+export function zipProject(files: ReadonlyArray<{ path: string; content: string; bytes?: Uint8Array }>, folders: readonly string[]): Uint8Array<ArrayBuffer> {
   // fflate's streaming writer, which takes any name (its one-call zipSync keeps names as object keys, and loses __proto__).
   const chunks: Uint8Array[] = []
   let failure: Error | null = null
@@ -30,7 +32,7 @@ export function zipProject(files: ReadonlyArray<{ path: string; content: string 
   for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
     const entry = new ZipDeflate(file.path, { level: 6 })
     zip.add(entry)
-    entry.push(encoder.encode(file.content), true)
+    entry.push(file.bytes ?? encoder.encode(file.content), true)
   }
   zip.end()
   if (failure) throw failure
@@ -44,10 +46,16 @@ export function zipProject(files: ReadonlyArray<{ path: string; content: string 
 }
 
 /** The files to download: the saved copies, or with `drafts` the unsaved edits where a file has some. */
-export function filesToDownload(files: ReadonlyArray<{ path: string; saved: string | null; draft: string | null }>, drafts: boolean) {
-  return files.flatMap(({ path, saved, draft }) => {
+export function filesToDownload(files: ReadonlyArray<{ path: string; saved: string | null; draft: string | null; kind?: "image"; savedBytes?: Uint8Array; draftBytes?: Uint8Array }>, drafts: boolean) {
+  return files.flatMap(({ path, saved, draft, kind, savedBytes, draftBytes }) => {
     const content = drafts ? (draft ?? saved) : saved
-    return content === null ? [] : [{ path, content }]
+    if (content === null) return []
+    if (kind === "image") {
+      const bytes = drafts ? (draftBytes ?? savedBytes) : savedBytes
+      if (!bytes) throw new Error(`${path} has not downloaded completely. Connect and sync before downloading this project.`)
+      return [{ path, content: "", bytes }]
+    }
+    return [{ path, content }]
   })
 }
 
@@ -167,7 +175,7 @@ export async function planArchive(
     }
     if (seen.has(entry.path)) skip(entry.path, "The path appears more than once.")
     else if (entry.problem) skip(entry.path, entry.problem)
-    else if (entry.size > MAX_FILE_BYTES) skip(entry.path, "The file is larger than 2 MiB.")
+    else if (entry.size > (isImagePath(entry.path) ? MAX_IMAGE_BYTES : MAX_FILE_BYTES)) skip(entry.path, isImagePath(entry.path) ? "The image is larger than 5 MiB." : "The file is larger than 2 MiB.")
     else files.push(entry)
     seen.add(entry.path)
   }
@@ -175,7 +183,7 @@ export async function planArchive(
   // Path order puts a file before every path inside it. A file cannot sit
   // inside another file, so the shorter path wins.
   files.sort((a, b) => (a.path < b.path ? -1 : 1))
-  const kept: Array<{ path: string; content: string }> = []
+  const kept: ImportedFile[] = []
   const keptPaths = new Set<string>()
   let total = 0
   for (let start = 0; start < files.length; ) {
@@ -191,15 +199,17 @@ export async function planArchive(
         skip(path, "The file could not be read.")
         continue
       }
-      if (data.length > MAX_FILE_BYTES) {
-        skip(path, "The file is larger than 2 MiB.")
+      const image = isImagePath(path)
+      if (data.length > (image ? MAX_IMAGE_BYTES : MAX_FILE_BYTES)) {
+        skip(path, image ? "The image is larger than 5 MiB." : "The file is larger than 2 MiB.")
         continue
       }
       let content: string
       try {
-        content = decoder.decode(data)
-      } catch {
-        skip(path, "The file is not UTF-8 text, and this app stores only text.")
+        if (image) { inspectImage(data); content = "" }
+        else content = decoder.decode(data)
+      } catch (error) {
+        skip(path, image && error instanceof Error ? error.message : "The file is not UTF-8 text or a supported image.")
         continue
       }
       const file = ancestors(path).find((ancestor) => keptPaths.has(ancestor))
@@ -207,7 +217,7 @@ export async function planArchive(
         skip(path, `${file} is a file, so it cannot contain this path.`)
         continue
       }
-      kept.push({ path, content })
+      kept.push({ path, content, ...(image ? { image: data } : {}) })
       keptPaths.add(path)
       total += data.length
       if (kept.length > MAX_ENTRIES) return { ok: false, error: `A project can hold at most ${MAX_ENTRIES} files, and this has more than that.` }

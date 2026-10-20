@@ -35,6 +35,9 @@ Developer first, friendly for everyone.
 - **Custom MDX components** that anyone, or any agent, can write inside a
   project, with docs and an agent skill for building them. They run isolated
   (see [architecture](architecture.md#component-isolation)).
+- **Images** as private project files, reusable in notes and copied into
+  drawings, with offline access and portable exports. Import URLs explicitly;
+  documents retain their network isolation. See [image support](images.md).
 - **Drawings** as native Excalidraw canvases, embeddable in notes, exportable
   to PNG and SVG.
 - **Diagrams** written in D2 code, laid out automatically into an editable

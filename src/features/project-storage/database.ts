@@ -1,4 +1,4 @@
-import { LocalFile, LocalFolder, LocalProject } from "./model"
+import { LocalFile, LocalFolder, LocalProject, type LocalImageAsset } from "./model"
 
 /**
  * Durable on-device storage for projects, their files and folders.
@@ -23,6 +23,11 @@ export interface StorageTransaction {
   listFolders(projectId: string): Promise<LocalFolder[]>
   putFolder(folder: LocalFolder): Promise<void>
   deleteFolder(projectId: string, path: string): Promise<void>
+  getAsset(projectId: string, id: string): Promise<LocalImageAsset | null>
+  listAssets(projectId: string): Promise<LocalImageAsset[]>
+  putAsset(asset: LocalImageAsset): Promise<void>
+  /** Evict only unreferenced, never-uploaded local staging bytes. */
+  deleteAsset(projectId: string, id: string): Promise<void>
 }
 
 export interface ProjectDatabase {
@@ -38,6 +43,7 @@ type MemoryState = {
   projects: Map<string, LocalProject>
   files: Map<string, LocalFile>
   folders: Map<string, LocalFolder>
+  assets: Map<string, LocalImageAsset>
 }
 
 const projectKey = (partition: string, id: string) => JSON.stringify([partition, id])
@@ -49,7 +55,7 @@ const entryKey = (partition: string, projectId: string, path: string) => JSON.st
  * that throws leaves no trace.
  */
 export class MemoryProjectDatabase implements ProjectDatabase {
-  private state: MemoryState = { projects: new Map(), files: new Map(), folders: new Map() }
+  private state: MemoryState = { projects: new Map(), files: new Map(), folders: new Map(), assets: new Map() }
   private queue: Promise<unknown> = Promise.resolve()
 
   async listProjects(partition: string): Promise<LocalProject[]> {
@@ -76,6 +82,19 @@ function memoryTransaction(partition: string, state: MemoryState): StorageTransa
   const foldersOf = (projectId: string) =>
     [...state.folders.values()].filter((folder) => folder.partition === partition && folder.projectId === projectId)
   return {
+    async getAsset(projectId, id) {
+      return structuredClone(state.assets.get(entryKey(partition, projectId, id)) ?? null)
+    },
+    async listAssets(projectId) {
+      return [...state.assets.values()].filter((asset) => asset.partition === partition && asset.projectId === projectId).map((asset) => structuredClone(asset))
+    },
+    async putAsset(asset) {
+      checkPartition(partition, asset)
+      state.assets.set(entryKey(partition, asset.projectId, asset.id), structuredClone(asset))
+    },
+    async deleteAsset(projectId, id) {
+      state.assets.delete(entryKey(partition, projectId, id))
+    },
     async getProject(id) {
       const project = state.projects.get(projectKey(partition, id))
       return project ? structuredClone(project) : null
@@ -88,6 +107,7 @@ function memoryTransaction(partition: string, state: MemoryState): StorageTransa
       state.projects.delete(projectKey(partition, id))
       for (const file of filesOf(id)) state.files.delete(entryKey(partition, id, file.path))
       for (const folder of foldersOf(id)) state.folders.delete(entryKey(partition, id, folder.path))
+      for (const asset of state.assets.values()) if (asset.partition === partition && asset.projectId === id) state.assets.delete(entryKey(partition, id, asset.id))
     },
     async getFile(projectId, path) {
       const file = state.files.get(entryKey(partition, projectId, path))
@@ -121,9 +141,9 @@ function memoryTransaction(partition: string, state: MemoryState): StorageTransa
 }
 
 const DATABASE_NAME = "elaborating"
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
-/** IndexedDB storage. One transaction spans all three stores. */
+/** IndexedDB storage. One transaction spans metadata and binary assets. */
 export class IndexedProjectDatabase implements ProjectDatabase {
   private connection: Promise<IDBDatabase> | null = null
 
@@ -135,13 +155,19 @@ export class IndexedProjectDatabase implements ProjectDatabase {
         const request = this.factory.open(this.name, DATABASE_VERSION)
         request.onupgradeneeded = () => {
           const db = request.result
-          const projects = db.createObjectStore("projects", { keyPath: ["partition", "id"] })
-          projects.createIndex("partition", "partition")
-          const files = db.createObjectStore("files", { keyPath: ["partition", "projectId", "path"] })
-          files.createIndex("project", ["partition", "projectId"])
-          files.createIndex("baseId", ["partition", "projectId", "base.id"])
-          const folders = db.createObjectStore("folders", { keyPath: ["partition", "projectId", "path"] })
-          folders.createIndex("project", ["partition", "projectId"])
+          if (!db.objectStoreNames.contains("projects")) {
+            const projects = db.createObjectStore("projects", { keyPath: ["partition", "id"] })
+            projects.createIndex("partition", "partition")
+            const files = db.createObjectStore("files", { keyPath: ["partition", "projectId", "path"] })
+            files.createIndex("project", ["partition", "projectId"])
+            files.createIndex("baseId", ["partition", "projectId", "base.id"])
+            const folders = db.createObjectStore("folders", { keyPath: ["partition", "projectId", "path"] })
+            folders.createIndex("project", ["partition", "projectId"])
+          }
+          if (!db.objectStoreNames.contains("assets")) {
+            const assets = db.createObjectStore("assets", { keyPath: ["partition", "projectId", "id"] })
+            assets.createIndex("project", ["partition", "projectId"])
+          }
         }
         request.onblocked = () => {
           this.connection = null
@@ -170,7 +196,7 @@ export class IndexedProjectDatabase implements ProjectDatabase {
 
   async transaction<T>(partition: string, mode: "readonly" | "readwrite", work: (tx: StorageTransaction) => Promise<T>): Promise<T> {
     const db = await this.open()
-    const idb = db.transaction(["projects", "files", "folders"], mode, { durability: "strict" })
+    const idb = db.transaction(["projects", "files", "folders", "assets"], mode, { durability: "strict" })
     const done = new Promise<void>((resolve, reject) => {
       idb.oncomplete = () => resolve()
       idb.onabort = () => reject(idb.error ?? new Error("Local save did not complete; nothing was changed."))
@@ -204,8 +230,25 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 class IndexedTransaction implements StorageTransaction {
   constructor(private readonly partition: string, private readonly idb: IDBTransaction) {}
 
-  private store(name: "projects" | "files" | "folders") {
+  private store(name: "projects" | "files" | "folders" | "assets") {
     return this.idb.objectStore(name)
+  }
+
+  async getAsset(projectId: string, id: string): Promise<LocalImageAsset | null> {
+    return (await request(this.store("assets").get([this.partition, projectId, id]))) ?? null
+  }
+
+  async listAssets(projectId: string): Promise<LocalImageAsset[]> {
+    return request(this.store("assets").index("project").getAll([this.partition, projectId]))
+  }
+
+  async putAsset(asset: LocalImageAsset) {
+    checkPartition(this.partition, asset)
+    await request(this.store("assets").put(asset))
+  }
+
+  async deleteAsset(projectId: string, id: string) {
+    await request(this.store("assets").delete([this.partition, projectId, id]))
   }
 
   async allProjects(): Promise<LocalProject[]> {
@@ -225,7 +268,7 @@ class IndexedTransaction implements StorageTransaction {
 
   async deleteProject(id: string) {
     await request(this.store("projects").delete([this.partition, id]))
-    for (const name of ["files", "folders"] as const) {
+    for (const name of ["files", "folders", "assets"] as const) {
       const keys = await request(this.store(name).index("project").getAllKeys([this.partition, id]))
       for (const key of keys) await request(this.store(name).delete(key))
     }

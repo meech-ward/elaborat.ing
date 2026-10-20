@@ -1,3 +1,5 @@
+import { ImageVersions } from "../images/ImageVersions"
+import { downloadImageAsset } from "../images/assetDownload"
 import { Bot, ChevronDown, CircleAlert, X } from "lucide-react"
 import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -116,6 +118,7 @@ export function AgentChangesView({
     async (change: AgentChange) => {
       const key = keyOf(change)
       const set = (diff: Diff) => setDiffs((current) => new Map(current).set(key, diff))
+      if (change.kind === "image") return;
       if (diffSize(change) > DIFF_LIMIT_BYTES) return set({ status: "too-large" })
       set({ status: "loading" })
       try {
@@ -249,7 +252,7 @@ export function AgentChangesView({
     try {
       // The text Revert saves: the version before, from its diff when that loaded (none: Revert deletes the file, or only moves it back).
       let content: string | null = null
-      if (action === "restore" && restoresText(change)) {
+      if (action === "restore" && restoresText(change) && change.previous?.kind !== "image") {
         const diff = diffs.get(key)
         content =
           diff?.status === "ready" ? diff.before : ((await store.remote.contents(store.projectId, change.file_id, change.version, true)).previous?.content ?? null)
@@ -262,7 +265,17 @@ export function AgentChangesView({
       const before = change.previous?.version
       // Where the file was before the agent's change.
       const path = change.previous?.path ?? change.path
-      if (action === "delete") {
+      if (action === "restore" && change.previous?.kind === "image" && change.previous.asset) {
+        if (!workspace.cacheImage) throw new Error("Image history is unavailable on this device.");
+        if (local?.path !== path && listed.some(file => file.path === path)) return say(`Not reverted: another file is at ${path} now.`, false);
+        const asset = change.previous.asset;
+        const [bytes, preview] = await Promise.all([downloadImageAsset(store.projectId, asset), downloadImageAsset(store.projectId, asset, true)]);
+        await workspace.cacheImage(bytes, asset, preview);
+        await workspace.save(local?.revision && local.path !== path
+          ? [{ kind: "move", from: local.path, to: path, expectedRevision: local.revision, asset }]
+          : [{ kind: "asset", path, asset, expectedRevision: local?.revision ?? null }]);
+        say(`Reverted: image version ${before} is saved as a new version.`, true);
+      } else if (action === "delete") {
         // The agent created the file: reverting deletes it.
         if (!local?.revision) return say(`Not reverted: ${change.path} is not on this device.`, false)
         await workspace.save([{ kind: "delete", path: local.path, expectedRevision: local.revision }])
@@ -315,7 +328,9 @@ export function AgentChangesView({
     const diff = diffs.get(key)
     const thread = change.thread
     let body
-    if (kind === "drawing") {
+    if (kind === "image") {
+      body = isExpanded ? <ImageVersions projectId={store.projectId} before={change.previous?.asset ?? null} after={change.deleted ? null : change.asset ?? null} /> : null;
+    } else if (kind === "drawing") {
       body = <p className="m-0 text-muted-foreground">Canvas changed. Open the drawing to see it.</p>
     } else if (action === "deleted") {
       body = <p className="m-0 text-muted-foreground">The file was deleted{change.previous ? `. Revert brings back version ${change.previous.version}.` : "."}</p>

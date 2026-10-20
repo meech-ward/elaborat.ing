@@ -10,6 +10,8 @@
  */
 import { z } from "zod/mini"
 import type { CardEmbed, DiagramSource, EmbedStatus, FileKind } from "./embedText"
+import type { CardImagePixels, CardImageRef } from './cardImages';
+import { cardImageBytes } from './cardImages';
 
 /** The app's origin: the only place the card links to. */
 export const APP_ORIGIN = "https://elaborat.ing/"
@@ -24,6 +26,7 @@ const SOURCE_KEY = "elaborat.ing/source"
 const SVG_KEY = "elaborat.ing/svg"
 const D2_KEY = "elaborat.ing/d2"
 const COMPONENTS_KEY = "elaborat.ing/components"
+const IMAGES_KEY = 'elaborat.ing/images';
 
 export type { CardEmbed, DiagramSource, EmbedStatus, FileKind } from "./embedText"
 export { EMBED_NOTES, FILE_NOTES, KIND_NAMES, svgFor } from "./embedText"
@@ -64,6 +67,8 @@ export type CardFile = {
   shared: boolean
   /** Who last changed each file whose code the preview runs, by path ("you" for the person), where the server says. */
   editors: Record<string, string>
+  images?: Record<string,CardImagePixels>
+  imageRefs?: CardImageRef[]
 }
 
 export type ComponentPreviewRequest = {
@@ -77,7 +82,7 @@ export type ShowOutcome = { ok: true; file: CardFile } | { ok: false; message: s
 export type WriteOutcome = { kind: "saved"; version: number | null } | { kind: "conflict" } | { kind: "failed"; message: string }
 
 const STATUSES = ["drawn", "stale", "not_drawn", "missing", "unreadable", "empty", "too_big", "deferred", "not_shown", "unsupported"] as const
-const kindSchema = z.catch(z.enum(["note", "drawing", "diagram", "file", "component"]), "file")
+const kindSchema = z.catch(z.enum(["note", "drawing", "diagram", "image", "file", "component"]), "file")
 const appUrl = z.catch(z.nullable(z.string().check(z.startsWith(APP_ORIGIN))), null)
 
 const embedSchema = z.catch(
@@ -97,6 +102,11 @@ const viewSchema = z.object({
   props: z.optional(z.catch(z.nullable(z.record(z.string(), z.unknown())), null)),
   draft: z.optional(z.catch(z.boolean(), false)),
   shared: z.optional(z.catch(z.boolean(), true)),
+  images:z.optional(z.catch(z.array(z.object({
+    key:z.string().check(z.minLength(1),z.maxLength(2048)),path:z.string().check(z.minLength(1),z.maxLength(512)),
+    status:z.catch(z.enum(['ready','deferred','missing']),'missing'),asset:z.optional(z.unknown()),
+    revision:z.optional(z.int().check(z.positive())),
+  })).check(z.maxLength(4096)),[])),
 })
 
 const componentsSchema = z.catch(
@@ -107,6 +117,25 @@ const componentsSchema = z.catch(
 const metaSchema = z.catch(z.record(z.string(), z.unknown()), {})
 
 const diagramSourceSchema = z.object({ source: z.string(), canvas: z.optional(z.string()), layout: z.optional(z.string()) })
+const imagePixelsSchema = z.strictObject({
+  dataURL:z.string().check(z.maxLength(Math.ceil(32 * 1024 / 3) * 4 + 64),z.regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z\d+/]+={0,2}$/)),
+  width:z.int().check(z.positive(),z.maximum(480)),height:z.int().check(z.positive(),z.maximum(480)),
+});
+/** Drop invented keys, malformed pixels and anything beyond one bounded initial payload. */
+function imagePixels(raw: unknown,keys:ReadonlySet<string>,budget=256 * 1024): Record<string,CardImagePixels> {
+  const out:Record<string,CardImagePixels> = Object.create(null);
+  let bytes = 0;
+  for (const [key,value] of Object.entries(metaSchema.parse(raw ?? {}))) {
+    if (!keys.has(key)) continue;
+    const pixels = imagePixelsSchema.safeParse(value);
+    if (!pixels.success) continue;
+    const cost = cardImageBytes(pixels.data);
+    if (bytes + cost > budget) continue;
+    out[key] = pixels.data;
+    bytes += cost;
+  }
+  return out;
+}
 
 const showSchema = z.object({ structuredContent: viewSchema, _meta: z.optional(z.unknown()) })
 
@@ -145,6 +174,10 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
   const source = meta[SOURCE_KEY]
   const noteSource = note && !view.truncated && typeof source === "string" ? source : null
   const components = componentsSchema.parse(meta[COMPONENTS_KEY] ?? null)
+  const imageRefs = view.images ?? [];
+  const imageKeys = new Set(imageRefs.map(reference => reference.key));
+  if (view.kind === 'image') imageKeys.add(view.path);
+  const images = imagePixels(meta[IMAGES_KEY],imageKeys);
   return {
     ok: true,
     file: {
@@ -164,6 +197,8 @@ export function parseShowResult(raw: unknown, fallbackMeta?: unknown): ShowOutco
       preview: component ? { component: view.component ?? null, props: view.props ?? null, draft: view.draft ?? false } : null,
       shared: view.shared ?? false,
       editors: components?.editors ?? {},
+      images,
+      imageRefs,
     },
   }
 }
@@ -191,6 +226,15 @@ export function parseEmbedResult(raw: unknown, path: string): LoadedEmbed | null
   if (!parsed?.success || parsed.data.structuredContent.path !== path) return null
   const { status, svg, diagram } = parsed.data.structuredContent
   return { status, svg: svg ?? null, diagram: diagram ?? null }
+}
+
+/** The view's own image call can carry its bounded pixels in structuredContent where hosts drop _meta. */
+export function parseImagePreviewResult(raw:unknown,path:string): CardImagePixels | null {
+  if (isError(raw)) return null;
+  const result = z.object({structuredContent:z.object({path:z.string(),imagePreviews:z.optional(z.unknown())}),_meta:z.optional(z.unknown())}).safeParse(raw);
+  if (!result.success || result.data.structuredContent.path !== path) return null;
+  const meta = metaSchema.parse(result.data._meta ?? {});
+  return imagePixels(result.data.structuredContent.imagePreviews ?? meta[IMAGES_KEY],new Set([path]),32 * 1024)[path] ?? null;
 }
 
 /** Whether a raw result carried its own `_meta` (ChatGPT dropped it from the notification until May 2026). */

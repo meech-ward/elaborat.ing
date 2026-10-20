@@ -6,6 +6,7 @@ import { en } from 'zod/locales';
 import { COMPONENT_CATALOG, type ComponentDefinition } from './componentCatalog';
 import { isTrustedReactExport } from './trustedReactImports';
 import type { ComponentSourceLoader } from './componentSource';
+import { projectImagesPlugin } from '../images/compileImages';
 
 // Kept apart so the workbench reads component files without loading the MDX compiler.
 export { savedComponentSource, type ComponentSourceLoader } from './componentSource';
@@ -201,7 +202,7 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
         if (bytes > 2 * 1024 * 1024) throw new Error('Component source graph exceeds 2 MiB');
         const info = await inspectComponentModule(file.text);
         await resolve(info.imports,depth+1);
-        const compiled = String(await compile(file.text,{format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,workspaceImportPlugin]}));
+        const compiled = String(await compile(file.text,{format:'mdx',outputFormat:'function-body',remarkPlugins:[remarkFrontmatter,remarkGfm,workspaceImportPlugin],recmaPlugins:[[projectImagesPlugin,{modulePath:binding.path}]]}));
         exports = info.definitions;
         loaded.set(binding.path,exports);
         modules.push({path:binding.path,code:compiled});

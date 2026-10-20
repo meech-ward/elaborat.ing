@@ -78,13 +78,13 @@ export async function runTurn(options: {
           done.set(typeof event.output_index === "number" ? event.output_index : done.size, item)
           if (item.type !== "function_call") break
           calls++
-          let output: string
+          let output: string | Array<{ type: "input_text"; text: string } | { type: "input_image"; image_url: string; detail: "low" }>
           if (calls > max) {
             capped = true
             output = JSON.stringify({ error: `Stopped: at most ${max} tool calls in one turn.` })
           } else {
             const outcome = await hooks.runCall(key(item.id), { name: item.name, namespace: item.namespace, arguments: typeof item.arguments === "string" ? item.arguments : "" })
-            output = outcome.output
+            output = outcome.image ? [{ type: "input_text", text: outcome.output }, { type: "input_image", image_url: outcome.image.dataURL, detail: "low" }] : outcome.output
           }
           outputs.push({ type: "function_call_output", call_id: item.call_id, output })
           break

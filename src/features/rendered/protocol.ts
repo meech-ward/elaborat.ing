@@ -20,6 +20,8 @@ import { z } from "zod/mini";
 import { PALETTE_IDS } from "../appearance/palettes";
 import { readingPreferencesSchema } from "../appearance/reading";
 import { FRAME_MODULES } from "../../preview/frameModuleList";
+import { MAX_IMAGE_DATA_URL_LENGTH, MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYTES } from '../images/transport';
+import { MAX_IMAGE_PIXELS, ImageMediaTypeSchema } from '../images/types';
 
 /** Sandbox attribute for the preview iframe. allow-scripts ONLY. */
 export const PREVIEW_SANDBOX = "allow-scripts";
@@ -267,6 +269,24 @@ export const fluidRenderSchema = z.object({
   writeIn: z.optional(whole),
 });
 
+/**
+ * Display positions for the parser-owned insertion boundaries after rendered
+ * roots. Some source roots (imports, definitions, frontmatter) stay hidden,
+ * while blank paragraphs can have no parsed end of their own.
+ */
+export function blockBoundariesFor(
+  roots: readonly { pos: number; to: number }[],
+  boundaries: readonly { id: string; offset: number }[],
+): { position: number; boundary: string }[] {
+  if (!boundaries.length) return [];
+  let index = 0;
+  return roots.map((root) => {
+    while (index + 1 < boundaries.length && boundaries[index + 1].offset <= root.to)
+      index++;
+    return { position: root.pos, boundary: boundaries[index].id };
+  });
+}
+
 /** Parent -> child: render this compiled document. */
 export const renderMessageSchema = z.object({
   kind: z.literal("render"),
@@ -285,6 +305,11 @@ export const renderMessageSchema = z.object({
       boundaries: z.array(
         z.object({ id: z.string(), offset: whole }),
       ),
+      /** Each rendered top-level root's start and its next safe insertion boundary. */
+      blockBoundaries: z.optional(z.array(z.object({
+        position: whole,
+        boundary: z.string().check(z.maxLength(128)),
+      }))),
       availableResourcePaths: z.array(z.string().check(z.maxLength(512))),
       components: z.optional(z.array(z.object({ name: z.string().check(z.maxLength(128), z.regex(/^[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)?$/)), description: z.string().check(z.maxLength(1024)) })).check(z.maxLength(128))),
       focus: z.optional(whole),
@@ -324,6 +349,32 @@ export const resourcesMessageSchema = z.object({
 });
 
 export type ResourcesMessage = z.infer<typeof resourcesMessageSchema>;
+
+const rasterDataURL = z.string().check(z.maxLength(MAX_IMAGE_DATA_URL_LENGTH), z.regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z\d+/]+={0,2}$/));
+const originalImageDataURL = z.string().check(z.maxLength(MAX_IMAGE_DATA_URL_LENGTH), z.regex(/^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z\d+/]+={0,2}$/));
+export const imageFilePayloadSchema = z.strictObject({
+  name: z.string().check(z.minLength(1), z.maxLength(255)),
+  mediaType: ImageMediaTypeSchema,
+  dataURL: originalImageDataURL,
+});
+/** Bounded batches replace/extend only the image table for this exact source revision. */
+export const imagesMessageSchema = z.strictObject({
+  kind: z.literal('images'), session: z.string().check(z.minLength(8)), revision: whole,
+  reset: z.boolean(),
+  images: z.array(z.strictObject({
+    key: z.string().check(z.minLength(1), z.maxLength(2048)),
+    dataURL: rasterDataURL,
+    width: z.int().check(z.positive(),z.maximum(MAX_IMAGE_PIXELS)),
+    height: z.int().check(z.positive(),z.maximum(MAX_IMAGE_PIXELS)),
+  }).check(z.refine(image => image.width * image.height <= MAX_IMAGE_PIXELS))).check(z.maxLength(32),z.refine(images => images.reduce((total,image) => total + image.dataURL.length,0) <= 8 * 1024 * 1024)),
+});
+export type ImagesMessage = z.infer<typeof imagesMessageSchema>;
+export const imageOriginalMessageSchema = z.strictObject({
+  kind:z.literal('image-original'),session:z.string().check(z.minLength(8)),revision:whole,
+  key:z.string().check(z.minLength(1),z.maxLength(2048)),
+  image:z.optional(z.strictObject({dataURL:originalImageDataURL,width:z.int().check(z.positive()),height:z.int().check(z.positive())}).check(z.refine(image => image.width * image.height <= MAX_IMAGE_PIXELS))),
+  error:z.optional(z.string().check(z.maxLength(2000))),
+}).check(z.refine(message => Boolean(message.image) !== Boolean(message.error)));
 
 /** Presentation-only message: no CSS, URLs, document bytes or executable input. */
 export const appearanceMessageSchema = z.object({
@@ -381,6 +432,8 @@ export const parentMessageSchema = z.union([
   }),
   renderMessageSchema,
   resourcesMessageSchema,
+  imagesMessageSchema,
+  imageOriginalMessageSchema,
   appearanceMessageSchema,
   commentMarksMessageSchema,
   // A part of the frame's own code that it asked for (src/preview/frameModules.ts): its code, or why it could not load.
@@ -525,6 +578,20 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     // The authoritative parent catalog, not this transport shape, grants insertion.
     element: z.string().check(z.minLength(1), z.maxLength(100)),
     path: z.optional(z.string().check(z.maxLength(512))),
+  }),
+  z.strictObject({
+    kind: z.literal('insert-image'), session: z.string().check(z.minLength(8)), revision: whole,
+    boundary: z.string().check(z.minLength(1), z.maxLength(100)),
+    files: z.optional(z.array(imageFilePayloadSchema).check(z.minLength(1),z.maxLength(MAX_IMAGE_INTENT_FILES),z.refine(files => files.reduce((total,file) => total + file.dataURL.length,0) <= Math.ceil(MAX_IMAGE_INTENT_BYTES / 3) * 4 + 64 * MAX_IMAGE_INTENT_FILES))),
+  }),
+  z.strictObject({
+    kind: z.literal('image-edit'),session:z.string().check(z.minLength(8)),revision:whole,
+    from:whole,key:z.string().check(z.minLength(1),z.maxLength(2048)),
+    action:z.enum(['describe','replace','remove','caption']),alt:z.optional(z.string().check(z.maxLength(2048))),caption:z.optional(z.string().check(z.maxLength(4096))),
+  }),
+  z.strictObject({
+    kind:z.literal('view-image'),session:z.string().check(z.minLength(8)),revision:whole,
+    key:z.string().check(z.minLength(1),z.maxLength(2048)),
   }),
   z.object({
     kind: z.literal("ready"),
@@ -713,6 +780,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "render-error":
     case "edit-resource":
     case "view-resource":
+    case "view-image":
     case "shortcut":
     case "comment-selection":
     case "comment-heading":

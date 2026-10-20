@@ -1,5 +1,6 @@
-import type { Command, Transaction } from "prosemirror-state";
+import { Selection, type Command, type Transaction } from "prosemirror-state";
 import type { Node as PMNode } from "prosemirror-model";
+import { joinTextblockBackward } from "prosemirror-commands";
 import { liftListItem } from "prosemirror-schema-list";
 import { fluidSchema } from "./fluidSchema";
 
@@ -20,9 +21,10 @@ export function codeFenceOpener(
   return match ? { ticks: match[1], info: match[2].trim() } : null;
 }
 
-/** Backspace out of an empty list item via lift (list(2)+paragraph).
- * Returns false for every other selection so the native Backspace chain
- * (deleteSelection/joinBackward) still handles it. */
+/** Backspace removes an empty middle item, returning to the previous textblock.
+ * Lifting it would split its list around an empty paragraph, which Markdown
+ * cannot hold. At the list's edges, keep the usual lift out of the list.
+ * Other selections stay on the native Backspace chain. */
 export const emptyListBackspace: Command = (state, dispatch, view) => {
   const { $from, empty } = state.selection;
   if (!empty) return false;
@@ -31,7 +33,50 @@ export const emptyListBackspace: Command = (state, dispatch, view) => {
   if ($from.depth < 1) return false;
   if ($from.node($from.depth - 1).type !== fluidSchema.nodes.list_item)
     return false;
+  const itemDepth = $from.depth - 1;
+  const listDepth = itemDepth - 1;
+  const item = $from.node(itemDepth);
+  const index = $from.index(listDepth);
+  if (
+    item.childCount === 1 &&
+    index > 0 &&
+    index < $from.node(listDepth).childCount - 1
+  ) {
+    if (joinTextblockBackward(state, dispatch, view)) return true;
+    // An isolated block at the end of the previous item stops the standard
+    // join. Delete only this proven empty item, preserving that block.
+    if (dispatch) {
+      const from = $from.before(itemDepth);
+      const tr = state.tr.delete(from, $from.after(itemDepth));
+      const before = tr.doc.resolve(from);
+      dispatch(
+        tr.setSelection(
+          Selection.findFrom(before, -1, true) ?? Selection.near(before, -1),
+        ).scrollIntoView(),
+      );
+    }
+    return true;
+  }
   return liftListItem(fluidSchema.nodes.list_item)(state, dispatch, view);
+};
+
+/** Backspace at an item's text joins it to the preceding item's text in one
+ * step, undoing an Enter split without leaving two paragraphs in that item.
+ * Empty items keep their separate exit behavior above. */
+export const listItemBackspace: Command = (state, dispatch, view) => {
+  const { $from, empty } = state.selection;
+  if (
+    !empty ||
+    $from.parent.type !== fluidSchema.nodes.paragraph ||
+    !$from.parent.content.size ||
+    $from.parentOffset !== 0 ||
+    $from.depth < 3 ||
+    $from.node(-1).type !== fluidSchema.nodes.list_item ||
+    $from.index(-1) !== 0 ||
+    $from.index(-2) === 0
+  )
+    return false;
+  return joinTextblockBackward(state, dispatch, view);
 };
 
 /**

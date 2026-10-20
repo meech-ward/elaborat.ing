@@ -34,11 +34,12 @@ export function post(path: string, body: unknown, signal?: AbortSignal): Promise
   return fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal })
 }
 
-async function call<T>(path: string, body: unknown = {}): Promise<T> {
+async function call<T>(path: string, body: unknown = {}, signal?:AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await post(path, body)
+    response = await post(path, body,signal)
   } catch {
+    signal?.throwIfAborted()
     throw new KeeperError({ error: "error", message: NOT_RUNNING })
   }
   if (!(response.headers.get("content-type") ?? "").includes("application/json")) throw new KeeperError({ error: "error", message: NOT_RUNNING })
@@ -47,7 +48,7 @@ async function call<T>(path: string, body: unknown = {}): Promise<T> {
   return json as T
 }
 
-export const fetchPlanStatus = () => call<PlanStatus>("/chatgpt/status")
+export const fetchPlanStatus = (signal?:AbortSignal) => call<PlanStatus>("/chatgpt/status",{},signal)
 
 /** Starts Sign in with ChatGPT; the page goes to OpenAI and comes back here. `consent` asks again for plan use. */
 export async function connectPlan(consent = false): Promise<void> {
