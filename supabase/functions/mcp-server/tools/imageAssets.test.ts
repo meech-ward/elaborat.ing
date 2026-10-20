@@ -79,7 +79,7 @@ function fake(preview: Uint8Array = pixels) {
       from: () => ({
         download: async (key: string) => {
           calls.push(['download', key])
-          return { data: new Blob([preview]), error: null }
+          return { data: new Blob([new Uint8Array(preview)]), error: null }
         },
       }),
     },
