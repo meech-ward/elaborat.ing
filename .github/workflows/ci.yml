@@ -102,9 +102,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - uses: supabase/setup-cli@v3
         with:
           version: 2.118.0
+      # Local serve can read files the API deploy collector omitted. Capture
+      # the real CLI artifact against a refusing loopback API before deployment.
+      - run: bun scripts/check-function-assets.ts
       # Builds shadow databases in Docker, which the runner provides.
       - run: supabase db schema declarative sync --no-apply --strict-coverage --agent no
       - name: Check that supabase/migrations/ is up to date

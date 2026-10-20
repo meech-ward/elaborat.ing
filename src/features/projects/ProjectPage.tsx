@@ -71,10 +71,10 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const download = useProjectDownload(library, onError, setNotice)
   const entry = state.entries.find((candidate) => candidate.id === projectId)
 
-  const syncNow = useCallback(async () => {
+  const syncNow = useCallback(async (retryStopped = false) => {
     setError(null)
     try {
-      const outcome = await library.syncProject(projectId)
+      const outcome = await library.syncProject(projectId, retryStopped)
       if (outcome.projectId !== projectId) {
         await navigate({ href: projectHref(outcome.projectId), replace: true, ignoreBlocker: true })
       } else if (outcome.status === "stopped" || outcome.status === "incomplete") {
@@ -347,7 +347,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           onShare={entry?.role === "owner" && account.online && !embedded ? () => setSharing(true) : undefined}
           projectNotices={notices}
           sync={sync}
-          onSyncNow={account.online && !account.local ? () => void syncNow() : undefined}
+          onSyncNow={account.online && !account.local ? () => void syncNow(true) : undefined}
           searchFiles={account.online && !account.local ? searchFiles : null}
           onLeaveGuard={registerLeaveGuard}
           onResolveConflict={resolveConflict}

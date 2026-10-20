@@ -1,15 +1,18 @@
 import { PhotonImage, resize, fliph, flipv, SamplingFilter } from 'npm:@cf-wasm/photon@0.4.0/node'
 import { inspectImage } from '../../../src/features/images/format.ts'
 import { IMAGE_PREVIEW_EDGE, MAX_IMAGE_PREVIEW_BYTES, imageDigest } from '../../../src/features/images/types.ts'
+import bundledSVGFont from './svgFont.ts'
 
 // WASM keeps its largest allocation. One decode at a time bounds an isolate's
 // high-water mark instead of multiplying it for simultaneous requests.
 let decoding = Promise.resolve()
-let svgFont:Promise<{family:string;bytes:Uint8Array}> | undefined
+let svgFont:{family:string;bytes:Uint8Array} | undefined
 function loadSVGFont() {
-  svgFont ??= import('./svgFont.json',{with:{type:'json'}}).then(({default:font})=>({
-    family:font.family,bytes:Uint8Array.from(atob(font.woff2Base64),character=>character.charCodeAt(0)),
-  }))
+  // Keep this a static module dependency: the deployment asset collector misses
+  // dynamic imports with attributes. Decode font bytes only for SVG images.
+  svgFont ??= {
+    family:bundledSVGFont.family,bytes:Uint8Array.from(atob(bundledSVGFont.woff2Base64),character=>character.charCodeAt(0)),
+  }
   return svgFont
 }
 export async function validateImage(bytes: Uint8Array, claimedType?: string) {
@@ -21,7 +24,7 @@ export async function validateImage(bytes: Uint8Array, claimedType?: string) {
     const header = inspectImage(bytes, claimedType)
     if (header.mediaType === 'image/svg+xml') {
       const { Resvg } = await import('npm:@cf-wasm/resvg@0.4.0/node')
-      const font=await loadSVGFont()
+      const font=loadSVGFont()
       let edge = IMAGE_PREVIEW_EDGE
       while (edge >= 24) {
         const renderer = await Resvg.async(bytes, {

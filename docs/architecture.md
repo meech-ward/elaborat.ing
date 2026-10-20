@@ -395,6 +395,12 @@ formats; resvg WASM generates bounded SVG thumbnails. Previews are at most
 it never becomes document HTML. Its server thumbnails embed the existing OFL
 Space Grotesk Latin font as a deterministic text fallback, without system
 fonts or network reads; the original SVG retains its own typography.
+The font is a statically imported, generated TypeScript module. The pinned
+CLI's API deploy collector skips dynamic imports with import attributes,
+which can make a JSON font work locally but disappear from a deployed bundle
+([CLI 2.118 source](https://github.com/supabase/cli/blob/v2.118.0/apps/cli/src/shared/functions/deploy.ts#L65-L66)).
+CI captures the real CLI's multipart source upload against a refusing
+loopback API and checks that images and MCP include the exact font module.
 Renderable text is capped at 4,000 UTF-16 characters per text node and 8,000
 overall, including expanded references, before font layout. Separate XML
 text limits remain 16,000 per node and 100,000 overall.

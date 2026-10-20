@@ -332,6 +332,9 @@ send only a small preview, and keep the suggested text editable before insertion
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Stopped sync persists only an error category, so a reload loses the original
+  upload or validation detail. Keep a safe diagnostic with the stopped state
+  so the person can see what to fix before choosing Sync now.
 - Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
   fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
   Monaco binds Source shortcuts to Ctrl, while the app and Playwright's

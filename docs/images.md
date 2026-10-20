@@ -106,7 +106,9 @@ older text-only clients from accidentally overwriting images.
 Reservations belong to the uploader and project, last one hour, and include
 original and preview bytes. Lost answers reuse immutable object identities
 and mutation receipts. A failed upload or conflict leaves local recovery
-copies intact. A ready uncommitted asset is readable only by its uploader
+copies intact. After a refused upload has been repaired, choose Sync now in
+the account menu to retry; automatic sync preserves the stopped state.
+A ready uncommitted asset is readable only by its uploader
 while their membership and reservation remain valid. Committed assets follow
 accepted project membership, including retained history. Recovery checks the
 server's upload status before retrying. A confirmed expired, never-committed
@@ -158,7 +160,7 @@ glyph coverage can differ from the original. Convert text to vector outlines
 when exact typography is required. The original SVG remains unchanged.
 The fallback comes from the already pinned
 `@fontsource-variable/space-grotesk@5.3.0` package, with its SIL Open Font License
-embedded beside the bytes in `supabase/functions/_shared/svgFont.json`.
+embedded beside the bytes in `supabase/functions/_shared/svgFont.ts`.
 Regenerate it with `bun scripts/build-svg-font.ts`; no font is downloaded or
 read from the host filesystem at runtime.
 Renderable SVG text is capped at 4,000 UTF-16 characters per text node and

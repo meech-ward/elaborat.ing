@@ -419,9 +419,9 @@ export class ProjectLibrary {
     await this.load()
   }
 
-  /** Send and receive one project's changes. */
-  async syncProject(projectId: string): Promise<SyncOutcome> {
-    const outcome = await this.sync.sync(projectId)
+  /** Send and receive changes; only an explicit user retry clears a stopped sync. */
+  async syncProject(projectId: string, retryStopped = false): Promise<SyncOutcome> {
+    const outcome = await (retryStopped ? this.sync.retry(projectId) : this.sync.sync(projectId))
     this.set({ offline: outcome.status === "offline" })
     if (outcome.status === "stopped" && outcome.reason === "deleted") await this.settleDeleted()
     await this.load()
