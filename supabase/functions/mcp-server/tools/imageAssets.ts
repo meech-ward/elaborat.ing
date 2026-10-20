@@ -185,12 +185,21 @@ export async function imagePreviewPayload(
     if (!asset) return errorResult(`No image at ${path} in this project.`)
     const preview = await downloadImagePreview(supabase, asset)
     return {
-      content: [{
-        type: 'text',
-        text: preview
-          ? `Preview of ${path}.`
-          : `Open ${path} in elaborat.ing: ${urlFor(project_id, path)}`,
-      }],
+      content: [
+        {
+          type: 'text',
+          text: preview
+            ? `Preview of ${path}.`
+            : `Open ${path} in elaborat.ing: ${urlFor(project_id, path)}`,
+        },
+        ...(preview
+          ? [{
+            type: 'image' as const,
+            data: preview.dataURL.slice(preview.dataURL.indexOf(',') + 1),
+            mimeType: asset.preview_type,
+          }]
+          : []),
+      ],
       structuredContent: {
         project_id,
         path,

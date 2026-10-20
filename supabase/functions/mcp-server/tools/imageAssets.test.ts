@@ -170,6 +170,40 @@ Deno.test('missing images answer without inventing a storage key or downloading'
   assertEquals(result.isError, true)
   assertEquals(f.calls.filter(([name]) => name === 'download').length, 0)
 })
+Deno.test('the model receives standard MCP image content with the verified bounded preview pixels', async () => {
+  const f = fake(), server = new McpServer({ name: 'image-test', version: '1' })
+  registerImageTools(server, f.context)
+  const client = new Client({ name: 'test', version: '1' })
+  const [ct, st] = InMemoryTransport.createLinkedPair()
+  await server.connect(st)
+  await client.connect(ct)
+  try {
+    const result = await client.callTool({
+      name: 'get_image_preview',
+      arguments: { project_id: project, path: 'assets/a.png', revision: 3 },
+    })
+    const content = result.content as Array<{
+      type: string
+      data?: string
+      mimeType?: string
+    }>
+    const images = content.filter(item => item.type === 'image')
+    assertEquals(images.length, 1)
+    assertEquals(images[0].mimeType, 'image/png')
+    assertEquals(
+      Uint8Array.from(atob(images[0].data!), character => character.charCodeAt(0)),
+      pixels,
+    )
+    assert(pixels.byteLength <= 32768)
+    assertEquals(
+      result._meta?.[IMAGES_META_KEY],
+      (result.structuredContent as Record<string, unknown>).imagePreviews,
+    )
+  } finally {
+    await client.close()
+    await server.close()
+  }
+})
 Deno.test('explicit imports declare external access and commit verified assets with the caller-scoped client', async () => {
   const f = fake(), server = new McpServer({ name: 'image-test', version: '1' })
   registerImageTools(server, f.context)
