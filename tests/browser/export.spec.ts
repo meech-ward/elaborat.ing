@@ -144,7 +144,7 @@ test("without an account, the local project downloads too", async ({ page }) => 
   await page.keyboard.type("Kept in this browser.")
   const unsaved = page.getByRole("tab", { name: "ideas.mdx, unsaved changes", exact: true })
   await expect(unsaved).toBeVisible()
-  await page.keyboard.press("ControlOrMeta+s")
+  await page.getByRole("button", { name: "Save", exact: true }).click()
   await expect(unsaved).toHaveCount(0)
 
   const download = await downloadFromProjectMenu(page, "Local project")
@@ -168,7 +168,7 @@ test("a folder imports as a new project named after it, and what cannot be store
   await page.getByLabel("Import a folder", { exact: true }).setInputFiles(folder)
   const status = page.getByRole("status").filter({ hasText: "Imported" })
   await expect(status).toContainText("Imported Field notes: 2 files and 0 folders.")
-  await expect(status.getByRole("listitem")).toHaveText(["photo.png The file is not UTF-8 text, and this app stores only text."])
+  await expect(status.getByRole("listitem")).toHaveText(["photo.png Choose a PNG, JPEG, WebP, GIF or SVG image."])
   const id = /\/projects\/([0-9a-f-]{36})$/.exec((await status.getByRole("link").getAttribute("href")) ?? "")![1]
   await expect.poll(() => fake.server.content(id, "a.md")).toBe("# A\r\n")
   await expect.poll(() => fake.server.content(id, "sub/b.mdx")).toBe("b 🙂\n")

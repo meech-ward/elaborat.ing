@@ -167,8 +167,8 @@ Also done in this phase: the comment anchoring library (see the task below).
   them. The local project downloads too. "Import a folder or .zip" on the
   projects home makes a new project from a .zip or a chosen folder, with the
   prototype import's limits and report: saves of at most 500 files and 8 MiB,
-  and each path it cannot store listed with the reason, such as a file that is
-  not UTF-8 text. A downloaded .zip imports back byte for byte.)
+  and each path it cannot store listed with the reason, such as unsupported
+  binary files or invalid images. A downloaded .zip imports back byte for byte.)
 - **Component isolation on a sandbox domain**, with a custom-code notice on
   shared projects (done: a note in a shared project that runs custom code asks
   before it runs it, in the app and in the chat card, and so does a shared
