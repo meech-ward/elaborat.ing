@@ -159,7 +159,7 @@ APIs; do not introduce a public bucket or relax document isolation.
 
 ## T44: private image storage and revision checked asset saves
 
-**Status:** Taken (implemented and tested locally; final private hosted upload/download/save awaits a signed-in browser)
+**Status:** Done
 
 Implement T43's asset contracts from [the image scope](images.md#asset-storage-and-saves).
 Extend current project files and file history to distinguish text from
@@ -188,6 +188,11 @@ OAuth physical object delete/overwrite refusal; function tests prove
 validation, foreign or missing asset refusal, quota races, retries and
 cleanup; and a private hosted
 upload/download/save is verified with a disposable test project.
+
+Hosted verification passed on 2026-10-20: PNG URL import and SVG upload,
+private asset saving, reload with rich captions and visible SVG text, and
+downloaded originals with matching SHA-256. The SVG check also verified
+explicit Sync now recovery from a refused upload.
 
 ## T45: durable image drafts and offline asset sync
 
@@ -335,6 +340,10 @@ matters.
 - Stopped sync persists only an error category, so a reload loses the original
   upload or validation detail. Keep a safe diagnostic with the stopped state
   so the person can see what to fix before choosing Sync now.
+- During hosted image recovery, explicit Sync now retained the old stopped
+  label until reload, which showed Synced. Show retry progress and verify the
+  completion updates Account status without reload, recording request and
+  lock timing before diagnosing a missed notification.
 - Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
   fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
   Monaco binds Source shortcuts to Ctrl, while the app and Playwright's

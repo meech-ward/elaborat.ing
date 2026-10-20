@@ -236,8 +236,8 @@ Also done in this phase: the comment anchoring library (see the task below).
 
 [Image support](images.md) is implemented and tested through T43 to T50 in the
 [task queue](tasks.md#t43-prove-the-image-asset-contract-and-validation).
-T44's final private hosted upload/download/save check awaits a signed-in
-browser. Hosted ChatGPT description suggestions require the assistant's
+Hosted private asset upload/download/save and recovery checks passed on
+2026-10-20. Hosted ChatGPT description suggestions require the assistant's
 existing OpenAI approval.
 
 This work adds upload, paste, drop, project reuse and explicit URL import,

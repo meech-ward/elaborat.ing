@@ -6,8 +6,9 @@ Opening a note never fetches a third-party image URL.
 
 **Status:** implemented and tested, tracked in
 [T43 through T50](tasks.md#t43-prove-the-image-asset-contract-and-validation).
-The final private hosted upload/download/save check awaits a signed-in
-browser. Hosted description suggestions require the assistant's existing
+Hosted PNG URL import and SVG upload/recovery passed save, reload and
+byte-exact original download checks on 2026-10-20.
+Hosted description suggestions require the assistant's existing
 OpenAI approval. The limits and storage contracts below are settled.
 
 ## Authoring
