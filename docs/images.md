@@ -4,9 +4,11 @@ Images are project files. Notes use ordinary relative Markdown references;
 the trusted app supplies their pixels to the isolated rendered document.
 Opening a note never fetches a third-party image URL.
 
-**Status:** implementation in verification, tracked in
+**Status:** implemented and tested, tracked in
 [T43 through T50](tasks.md#t43-prove-the-image-asset-contract-and-validation).
-The limits and storage contracts below are settled.
+The final private hosted upload/download/save check awaits a signed-in
+browser. Hosted description suggestions require the assistant's existing
+OpenAI approval. The limits and storage contracts below are settled.
 
 ## Authoring
 
@@ -80,7 +82,7 @@ component moves, preserving surrounding syntax. Ambiguous affected references
 stop the move with a reason. Deletion reports dependants before asking for
 confirmation. Missing images show a placeholder and alt text.
 
-ZIP and folder import/export carry original PNG, JPEG, WebP, GIF and SVG bytes
+ZIP import/export and folder import carry original PNG, JPEG, WebP, GIF and SVG bytes
 at their logical paths. Local project sign-in carries image blobs too. Offline
 insertion and reuse need no server; downloaded images and unsaved drafts
 survive reload. Sync does not advance its complete offline revision before
@@ -149,6 +151,22 @@ a 25 MP PNG reached about 381 MB RSS before app dependencies. The 8 MP proof
 used about 212 MB RSS. The raster validator serializes decodes per isolate.
 Photon WASM performs raster decoding; resvg WASM makes SVG thumbnails without
 system font or external resource loading.
+SVG text uses the bundled Space Grotesk Latin font as a deterministic fallback,
+including when an image requests a font that is unavailable. This preserves
+text instead of silently producing a blank preview; preview typography and
+glyph coverage can differ from the original. Convert text to vector outlines
+when exact typography is required. The original SVG remains unchanged.
+The fallback comes from the already pinned
+`@fontsource-variable/space-grotesk@5.3.0` package, with its SIL Open Font License
+embedded beside the bytes in `supabase/functions/_shared/svgFont.json`.
+Regenerate it with `bun scripts/build-svg-font.ts`; no font is downloaded or
+read from the host filesystem at runtime.
+Renderable SVG text is capped at 4,000 UTF-16 characters per text node and
+8,000 in total, including whitespace inside text elements and expanded local
+references. The separate XML text budget remains 16,000 characters per node
+and 100,000 overall. A same-request local Edge proof decoded an 8 MP PNG,
+16,000 glyphs and another 8 MP PNG successfully; the retained 8,000-glyph
+limit leaves headroom. A 100,000-glyph proof reached the runtime CPU limit.
 
 Local Supabase Edge tests exercised authenticated 8 MP PNG, SVG, another
 8 MP PNG, concurrent PNG/SVG uploads, private object reads, commit and trusted

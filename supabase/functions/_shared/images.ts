@@ -5,6 +5,13 @@ import { IMAGE_PREVIEW_EDGE, MAX_IMAGE_PREVIEW_BYTES, imageDigest } from '../../
 // WASM keeps its largest allocation. One decode at a time bounds an isolate's
 // high-water mark instead of multiplying it for simultaneous requests.
 let decoding = Promise.resolve()
+let svgFont:Promise<{family:string;bytes:Uint8Array}> | undefined
+function loadSVGFont() {
+  svgFont ??= import('./svgFont.json',{with:{type:'json'}}).then(({default:font})=>({
+    family:font.family,bytes:Uint8Array.from(atob(font.woff2Base64),character=>character.charCodeAt(0)),
+  }))
+  return svgFont
+}
 export async function validateImage(bytes: Uint8Array, claimedType?: string) {
   const previous = decoding
   let release!: () => void
@@ -14,10 +21,15 @@ export async function validateImage(bytes: Uint8Array, claimedType?: string) {
     const header = inspectImage(bytes, claimedType)
     if (header.mediaType === 'image/svg+xml') {
       const { Resvg } = await import('npm:@cf-wasm/resvg@0.4.0/node')
+      const font=await loadSVGFont()
       let edge = IMAGE_PREVIEW_EDGE
       while (edge >= 24) {
         const renderer = await Resvg.async(bytes, {
-          font: { loadSystemFonts: false },
+          font: {
+            loadSystemFonts:false,fontBuffers:[font.bytes],
+            defaultFontFamily:font.family,sansSerifFamily:font.family,serifFamily:font.family,
+            monospaceFamily:font.family,cursiveFamily:font.family,fantasyFamily:font.family,
+          },
           fitTo: { mode: 'zoom', value: Math.min(1, edge / Math.max(header.width, header.height)) },
         })
         let thumbnail: Uint8Array

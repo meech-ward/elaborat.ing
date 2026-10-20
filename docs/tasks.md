@@ -134,7 +134,7 @@ too much for a phone. Share one engine between cards, or queue their layouts.
 
 ## T43: prove the image asset contract and validation
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Start [image support](images.md) by settling the contracts its implementation
 depends on. Files, history, sync and archive import are text-only today;
@@ -159,7 +159,7 @@ APIs; do not introduce a public bucket or relax document isolation.
 
 ## T44: private image storage and revision checked asset saves
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Taken (implemented and tested locally; final private hosted upload/download/save awaits a signed-in browser)
 
 Implement T43's asset contracts from [the image scope](images.md#asset-storage-and-saves).
 Extend current project files and file history to distinguish text from
@@ -191,7 +191,7 @@ upload/download/save is verified with a disposable test project.
 
 ## T45: durable image drafts and offline asset sync
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Add image bytes to the partitioned device model in
 `src/features/project-storage/`, following [the image save flow](images.md#asset-storage-and-saves).
@@ -212,7 +212,7 @@ upgrade without changing their saved content or drafts.
 
 ## T46: portable image files and safe reference changes
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Extend ZIP/folder import and export in `src/features/projects/projectArchive.ts`
 and its callers to carry image bytes alongside unchanged UTF-8 text. Export
@@ -233,7 +233,7 @@ and move/delete tests prove source precision and conflict handling.
 
 ## T47: insert and view images in notes and drawings
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Implement [image authoring](images.md#authoring):
 Image in both rendered insertion controls, upload, clipboard image paste,
@@ -261,7 +261,7 @@ Recheck shell and rendered bundle loading rules.
 
 ## T48: image previews and existing image use in chats and agents
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Make `show_file` and the card display image files and local image references
 in plain Markdown and nested MDX, without weakening the preview sandbox.
@@ -290,7 +290,7 @@ path. T43 through T48 complete release one.
 
 ## T49: import an image from a URL without remote document requests
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done
 
 Add explicit Import from URL to the shared image picker, following
 [the URL import contract](images.md#network-isolation-and-url-import). Fetch an image once,
@@ -316,7 +316,7 @@ no third-party request when viewing it.
 
 ## T50: image transforms, rich captions, SVG, animation and description suggestions
 
-**Status:** Taken (implementation and verification in progress)
+**Status:** Done (hosted ChatGPT description activation requires the assistant's existing OpenAI approval)
 
 The expanded [image feature set](images.md) includes explicit crop and resize
 controls that produce new copies and retain originals; portable figure captions

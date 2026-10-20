@@ -73,3 +73,33 @@ Deno.test('SVG and GIF use bounded raster thumbnails, with no vector markup in t
   const animated = await validateImage(gif, 'image/gif')
   equal(animated.mediaType, 'image/gif'); equal(animated.thumbnailType, 'image/webp')
 })
+
+Deno.test('SVG text has visible pixels with the bundled fallback, including missing and generic families',async () => {
+  const pixels=async (body:string) => {
+    const source=new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">${body}</svg>`)
+    const image=await validateImage(source,'image/svg+xml')
+    const preview=PhotonImage.new_from_byteslice(image.thumbnail)
+    try {
+      const rgba=preview.get_raw_pixels()
+      return {image,visible:rgba.filter((alpha,index)=>index%4===3 && alpha>0).length}
+    } finally {preview.free()}
+  }
+  equal((await pixels('')).visible,0)
+  for (const family of ['', 'Arial', 'serif', 'sans-serif', 'monospace', 'Missing Font']) {
+    const text=await pixels(`<text x="4" y="30" font-size="26" font-family="${family}">Hello</text>`)
+    equal(text.visible>100,true,`SVG text is blank for ${family || 'the default font'}`)
+    equal(text.image.thumbnail.length<=32768,true)
+    equal(text.image.width,120); equal(text.image.height,40)
+  }
+  const shape=await pixels('<rect x="90" y="5" width="20" height="20"/>')
+  const mixed=await pixels('<rect x="90" y="5" width="20" height="20"/><text x="4" y="30" font-size="26">Hello</text>')
+  equal(shape.visible,400)
+  equal(mixed.visible>shape.visible+100,true)
+})
+
+Deno.test('SVG glyph budgets reject oversized and reused text before the font renderer',async () => {
+  const svg=(body:string)=>new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">${body}</svg>`)
+  await rejects(()=>validateImage(svg(`<text>${'@'.repeat(4001)}</text>`),'image/svg+xml'),/4,000/)
+  await rejects(()=>validateImage(svg(`<text>${'@'.repeat(4000)}</text><text>${'@'.repeat(4000)}</text><text>@</text>`),'image/svg+xml'),/8,000/)
+  await rejects(()=>validateImage(svg(`<defs><text id="word">${'@'.repeat(1000)}</text></defs>${'<use href="#word"/>'.repeat(8)}`),'image/svg+xml'),/repeated text/)
+})

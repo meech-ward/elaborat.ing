@@ -392,7 +392,13 @@ the Edge memory budget in the runtime proof. Photon WASM decodes raster
 formats; resvg WASM generates bounded SVG thumbnails. Previews are at most
 480 pixels and 32 KiB. GIF/APNG/WebP animation is capped at 120 frames and
 24 million total frame pixels. SVG has structural and complexity validation;
-it never becomes document HTML. Retained and reserved bytes charge the
+it never becomes document HTML. Its server thumbnails embed the existing OFL
+Space Grotesk Latin font as a deterministic text fallback, without system
+fonts or network reads; the original SVG retains its own typography.
+Renderable text is capped at 4,000 UTF-16 characters per text node and 8,000
+overall, including expanded references, before font layout. Separate XML
+text limits remain 16,000 per node and 100,000 overall.
+Retained and reserved bytes charge the
 project owner, capped at 256 MiB across projects, with atomic transfer checks.
 
 The image release refreshes the bundle baselines after measuring first paint.

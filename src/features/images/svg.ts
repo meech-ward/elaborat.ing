@@ -43,15 +43,17 @@ export function inspectSVG(bytes: Uint8Array) {
   const coordinateHeight = box.length === 4 && box.every(Number.isFinite) && box[3] > 0 ? box[3] : height;
   const references = new Map<typeof root,Set<string>>();
   const textCosts = new Map<typeof root,number>();
+  const glyphCosts = new Map<typeof root,number>();
   const filterCosts = new Map<typeof root,number>();
   const geometryCosts = new Map<typeof root,number>();
   const ids = new Map<string, typeof root>();
   let numericValues = 0;
-  let nodes = 0, attributeBytes = 0, filters = 0, textCharacters = 0
-  const visit = (element: typeof root, depth: number) => {
+  let nodes = 0, attributeBytes = 0, filters = 0, textCharacters = 0, glyphCharacters = 0
+  const visit = (element: typeof root, depth: number, inheritedText=false) => {
     if (++nodes > 10000 || depth > 64) throw new Error('This SVG is too complex.')
     if (element.namespaceURI !== SVG || !elements.has(element.localName ?? '')) throw new Error(`SVG element ${element.localName} is not supported. Use vector shapes without scripts or embedded content.`)
-    let ownFilters=element.localName?.startsWith('fe') ? 1 : 0,ownText=0,ownGeometry=0;
+    const renderedText=inheritedText || ['text','tspan','textPath'].includes(element.localName ?? '');
+    let ownFilters=element.localName?.startsWith('fe') ? 1 : 0,ownText=0,ownGlyphs=0,ownGeometry=0;
     if (ownFilters && ++filters > 32) throw new Error('This SVG has too many filter effects.')
     if (element.hasAttribute('id')) {
       const id = element.getAttribute('id')!;
@@ -127,24 +129,29 @@ export function inspectSVG(bytes: Uint8Array) {
       if (regionWidth*regionHeight > 8_000_000) throw new Error('The SVG filter region is too large.');
     }
     for (let child = element.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType === 1) visit(child as typeof root, depth + 1)
+      if (child.nodeType === 1) visit(child as typeof root, depth + 1,renderedText)
       else if (![3, 4, 8].includes(child.nodeType)) throw new Error('The SVG contains unsupported content.')
       else if (child.nodeType !== 8) {
         const length=child.nodeValue?.length ?? 0;
         textCharacters+=length; ownText+=length;
         if (length>16000 || textCharacters>100000) throw new Error('This SVG contains too much text.');
+        if (renderedText) {
+          glyphCharacters+=length; ownGlyphs+=length;
+          if (length>4000 || glyphCharacters>8000) throw new Error('SVG text is limited to 4,000 characters per text node and 8,000 in total.');
+        }
       }
     }
-    textCosts.set(element,ownText); filterCosts.set(element,ownFilters); geometryCosts.set(element,ownGeometry);
+    textCosts.set(element,ownText); glyphCosts.set(element,ownGlyphs); filterCosts.set(element,ownFilters); geometryCosts.set(element,ownGeometry);
   }
   visit(root, 0)
   // Reuse chains can otherwise expand a small XML document into a huge tree.
-  let expanded = 0,expandedText=0,expandedFilters=0,expandedGeometry=0
+  let expanded = 0,expandedText=0,expandedGlyphs=0,expandedFilters=0,expandedGeometry=0
   const expand = (element: typeof root, stack: Set<typeof root>) => {
     if (stack.size > 64) throw new Error('SVG reference chains are too long.');
     if (stack.has(element)) throw new Error('SVG references cannot form a cycle.');
     if (++expanded > 20000) throw new Error('This SVG has too many repeated shapes.')
     if ((expandedText+=textCosts.get(element) ?? 0)>100000) throw new Error('This SVG repeats too much text.');
+    if ((expandedGlyphs+=glyphCosts.get(element) ?? 0)>8000) throw new Error('SVG repeated text is limited to 8,000 characters.');
     if ((expandedFilters+=filterCosts.get(element) ?? 0)>64) throw new Error('This SVG repeats too many filter effects.');
     if ((expandedGeometry+=geometryCosts.get(element) ?? 0)>200000) throw new Error('This SVG repeats too much geometry.');
     const next = new Set([...stack,element]);

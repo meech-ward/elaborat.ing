@@ -39,10 +39,15 @@ test('SVG bounds filter work and follows gradient, pattern and clip references w
   expect(inspectImage(svg(expanded))).toMatchObject({width:20,height:10});
 })
 test('SVG text and CDATA have glyph budgets before either image renderer receives them', () => {
-  for (const body of [`<text>${'x'.repeat(16001)}</text>`,`<text><![CDATA[${'x'.repeat(16001)}]]></text>`,Array.from({length:7},()=>`<text>${'x'.repeat(15000)}</text>`).join('')])
+  for (const body of [`<title>${'x'.repeat(16001)}</title>`,Array.from({length:7},()=>`<desc>${'x'.repeat(15000)}</desc>`).join('')])
     expect(() => inspectImage(svg(body))).toThrow('too much text');
-  expect(inspectImage(svg(`<text>${'x'.repeat(16000)}</text>`))).toMatchObject({width:20,height:10});
-  expect(() => inspectImage(svg(`<defs><text id="words">${'x'.repeat(16000)}</text></defs>${'<use href="#words"/>'.repeat(7)}`))).toThrow('repeats too much text');
+  for (const body of [`<text>${'x'.repeat(4001)}</text>`,`<text><![CDATA[${'x'.repeat(4001)}]]></text>`,`<text><tspan>${' '.repeat(4001)}</tspan></text>`,`<text><textPath href="#line">${'x'.repeat(4001)}</textPath></text>`])
+    expect(() => inspectImage(svg(body))).toThrow('4,000 characters');
+  expect(inspectImage(svg(`<text>${'x'.repeat(4000)}</text><text>${'x'.repeat(4000)}</text>`))).toMatchObject({width:20,height:10});
+  expect(() => inspectImage(svg(`<text>${'x'.repeat(4000)}</text><text>${'x'.repeat(4000)}</text><text>x</text>`))).toThrow('8,000');
+  expect(inspectImage(svg(`${' '.repeat(10000)}<title>${'x'.repeat(16000)}</title>`))).toMatchObject({width:20,height:10});
+  expect(inspectImage(svg(`<defs><text id="words">${'x'.repeat(4000)}</text></defs><use href="#words"/>`))).toMatchObject({width:20,height:10});
+  expect(() => inspectImage(svg(`<defs><text id="words">${'x'.repeat(4000)}</text></defs><use href="#words"/><use href="#words"/>`))).toThrow('repeated text');
   expect(() => inspectImage(svg(`<defs><filter id="effect"><feGaussianBlur stdDeviation="2"/></filter></defs>${'<rect filter="url(#effect)"/>'.repeat(65)}`))).toThrow('repeats too many filter');
   expect(() => inspectImage(svg(`<defs><path id="line" d="M0 0 ${'L1 1 '.repeat(15000)}"/></defs>${'<use href="#line"/>'.repeat(7)}`))).toThrow('repeats too much geometry');
 });
