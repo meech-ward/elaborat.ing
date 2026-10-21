@@ -9,6 +9,11 @@ test.describe.configure({ timeout: 60_000 })
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64")
 
 test("the image picker creates an independent native drawing image with Undo, Redo, Save and export", async ({ page }) => {
+  const modelRequests: string[] = []
+  await page.route("**/chatgpt/responses", async route => {
+    modelRequests.push(route.request().url())
+    await route.abort()
+  })
   await fakeSupabase(page)
   await page.goto(APP_URL)
   await page.getByRole("banner").getByRole("link", { name: "Start writing" }).click()
@@ -47,6 +52,7 @@ test("the image picker creates an independent native drawing image with Undo, Re
   const originalPath = (await projectImages.locator("option").last().getAttribute("value"))!
   await projectImages.selectOption(originalPath)
   await expect(picker.getByRole("checkbox", { name: "Decorative image", exact: true })).toBeEnabled()
+  await expect(picker.getByRole("button", { name: "Suggest a description", exact: true })).toHaveCount(0)
   await picker.getByRole("checkbox", { name: "Decorative image", exact: true }).check()
   await picker.getByRole("button", { name: "Insert image", exact: true }).click()
   await expect(picker).toBeHidden()
@@ -75,4 +81,5 @@ test("the image picker creates an independent native drawing image with Undo, Re
   const image = drawing.elements.find((element) => element.type === "image" && !element.isDeleted)!
   expect(image.fileId).toBeTruthy()
   expect(drawing.files[image.fileId!].dataURL).toBe(`data:image/png;base64,${png.toString("base64")}`)
+  expect(modelRequests).toEqual([])
 })

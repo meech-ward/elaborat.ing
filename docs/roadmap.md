@@ -237,14 +237,14 @@ Also done in this phase: the comment anchoring library (see the task below).
 [Image support](images.md) is implemented and tested through T43 to T50 in the
 [task queue](tasks.md#t43-prove-the-image-asset-contract-and-validation).
 Hosted private asset upload/download/save and recovery checks passed on
-2026-10-20. Hosted ChatGPT description suggestions require the assistant's
-existing OpenAI approval.
+2026-10-20. Image descriptions are manual or requested from an MCP agent,
+using the client's own model with no separate OpenAI approval requirement.
 
 This work adds upload, paste, drop, project reuse and explicit URL import,
 with private immutable assets, offline recovery, portable references,
 Excalidraw copies and chat/agent previews. It also includes crop and resize
 copies, rich captions, validated SVG, bounded animation and reviewable
-ChatGPT description suggestions. The document keeps its network isolation.
+on-demand descriptions through MCP. The document keeps its network isolation.
 
 ## Task: comment anchoring library
 

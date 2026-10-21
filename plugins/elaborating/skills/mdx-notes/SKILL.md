@@ -45,6 +45,15 @@ The user's instructions win over this skill when they differ.
   For example, `notes/plan.mdx` uses `![A release screen](../images/release.png)`.
   Keep descriptions specific to the reference; use empty alt text only for a
   decorative image already explained nearby.
+- Generate an image description only when the user asks. Call
+  `get_image_preview` and describe its standard image content using your own
+  vision, with the note's context when available. The MCP server supplies
+  bounded pixels; it does not call a model or generate descriptions. If the
+  preview is missing or you cannot inspect images, say so rather than guess.
+  Save the description only when the user asks to change the note: read the
+  note and its version, edit that image reference's alt text or caption, and
+  use the ordinary revision-checked save flow. Opening, importing or displaying
+  an image does not request a generated description.
 - External image URLs never render automatically. Only when the user asks
   to import a URL, use `import_image` with a new project path and the public
   HTTPS image URL, then reference the returned path. Import creates a project

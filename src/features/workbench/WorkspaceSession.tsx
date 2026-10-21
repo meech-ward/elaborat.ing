@@ -1097,12 +1097,7 @@ export function WorkspaceSession({
         />
       {client.projectId && <LazyImagePicker open={Boolean(imageRequest)} onOpenChange={open => { if (!open) setImageRequest(null); }}
         projectId={client.projectId} initialAlt={imageRequest?.initialAlt} images={imageEntries} files={requestedImageFiles}
-        readImage={client.readImage} onDescribe={import.meta.env.VITE_CHATGPT_PLAN ? async (choice, signal) => {
-          const preview = choice.prepared?.preview ?? (choice.existingPath && client.readImage ? await client.readImage(choice.existingPath, true) : null);
-          if (!preview) throw new Error("Choose an image first.");
-          const { describeImage } = await import("../images/describe");
-          return describeImage(preview, signal);
-        } : undefined} onChoose={choice => chooseImages([choice])} onChooseMany={chooseImages}
+        readImage={client.readImage} onChoose={choice => chooseImages([choice])} onChooseMany={chooseImages}
         importFromURL={client.persistenceKey.startsWith('["local"') ? undefined : async (url, signal) => {
           const { importProjectImageURL } = await import("../images/importURL");
           return importProjectImageURL(client.projectId!, url, signal);

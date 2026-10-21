@@ -321,16 +321,18 @@ no third-party request when viewing it.
 
 ## T50: image transforms, rich captions, SVG, animation and description suggestions
 
-**Status:** Done (hosted ChatGPT description activation requires the assistant's existing OpenAI approval)
+**Status:** Done
 
 The expanded [image feature set](images.md) includes explicit crop and resize
 controls that produce new copies and retain originals; portable figure captions
 with inline Markdown; validated, bounded SVG and animated GIF/APNG/WebP; and
-editable description suggestions through the existing ChatGPT connection.
+description suggestions requested through MCP, using the client's own model.
 Exercise these in notes and drawing insertion, with exact source Undo/Redo,
 offline recovery, malicious SVG and animation budgets, and no document network
-access. Description generation must start only after an explicit button press,
-send only a small preview, and keep the suggested text editable before insertion.
+access. Description generation starts only when the person asks their MCP
+agent. Supply only a bounded preview through `get_image_preview`; save alt
+text only when asked, through the existing revision-checked note edits.
+The image picker keeps manual descriptions without a direct model connection.
 
 ## Small things
 

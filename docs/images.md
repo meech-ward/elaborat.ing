@@ -8,8 +8,9 @@ Opening a note never fetches a third-party image URL.
 [T43 through T50](tasks.md#t43-prove-the-image-asset-contract-and-validation).
 Hosted PNG URL import and SVG upload/recovery passed save, reload and
 byte-exact original download checks on 2026-10-20.
-Hosted description suggestions require the assistant's existing
-OpenAI approval. The limits and storage contracts below are settled.
+Descriptions can be written manually or requested from an MCP agent.
+This feature needs no separate model connection or OpenAI approval.
+The limits and storage contracts below are settled.
 
 ## Authoring
 
@@ -31,13 +32,12 @@ notes. Animated images become still copies when transformed. Existing
 project images in notes are reused without copying unless a transform is requested.
 Names receive readable suffixes instead of overwriting another file.
 
-Suggest description sends only a small raster preview through the existing
-ChatGPT plan connection. It runs only when clicked, uses the person's chosen
-available model, and returns editable alt text. It requires the same connected
-ChatGPT plan and local token keeper as the assistant. Builds without that
-connection hide the suggestion control. Hosted activation waits for the same
-OpenAI approval as the assistant. It does not infer or save a description while
-an image is merely opened.
+Description generation is on demand through MCP. When the person asks, their
+MCP agent can request `get_image_preview` and describe the bounded raster
+preview using its own model. The agent proposes alt text in the chat and uses
+the existing revision-checked note edit tools when asked to save it. The app
+keeps manual descriptions and the Decorative choice in its image picker.
+Opening, uploading or inserting an image never starts model inference.
 
 Images fit the reading column, keep their colours in either theme, and have
 an accessible enlarged view. Note and chat previews use static thumbnails;

@@ -527,14 +527,6 @@ export function DrawingView({
       {imagePicker && client.projectId && <LazyImagePicker
         open={imagePicker} onOpenChange={setImagePicker} projectId={client.projectId} target="drawing"
         images={projectImages} readImage={client.readImage} onChooseMany={insertImages}
-        onDescribe={import.meta.env.VITE_CHATGPT_PLAN ? async (choice,signal) => {
-          const { describeImage } = await import("@/features/images/describe");
-          if (choice.prepared) return describeImage(choice.prepared.preview,signal);
-          if (!choice.existingPath || !client.readImage) throw new Error("Choose an image first.");
-          const preview=await client.readImage(choice.existingPath, true);
-          signal?.throwIfAborted();
-          return describeImage(preview,signal);
-        } : undefined}
         importFromURL={client.projectId === LOCAL_PROJECT_ID ? undefined : async (url,signal) => {
           const { importProjectImageURL } = await import("@/features/images/importURL");
           return importProjectImageURL(client.projectId!, url,signal);

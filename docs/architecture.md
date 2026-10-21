@@ -414,8 +414,13 @@ pickers and decoders load on demand; no heavy library enters first paint.
 The recorded budgets retain the standard five percent margin.
 
 Crop and resize create new PNG copies and retain originals. Captions use
-portable figure syntax with inline Markdown. Description suggestions use the
-person's existing ChatGPT plan connection, only after an explicit request.
+portable figure syntax with inline Markdown. Description generation belongs
+to the person's MCP client, only on request: `get_image_preview` supplies a
+bounded raster as standard MCP image content, and the client's own model
+proposes alt text. Saving it uses the existing revision-checked note edits.
+This feature has no app-owned model connection, inference endpoint or
+separate OpenAI approval requirement. The image picker accepts manual alt
+text and an explicit Decorative choice.
 URL import is explicit, pins a public HTTPS connection at each redirect and
 stores a project copy. Document rendering never starts a remote import.
 

@@ -24,7 +24,6 @@ export type ImagePickerProps = {
   onChoose?: (choice: ImageChoice) => Promise<void>
   onChooseMany?: (choices: ImageChoice[]) => Promise<void>
   importFromURL?: (url: string, signal?: AbortSignal) => Promise<PreparedImage>
-  onDescribe?: (choice: { prepared?: PreparedImage; existingPath?: string }, signal?: AbortSignal) => Promise<string>
 }
 
 /** The trusted app owns selection and decoding. No upload starts before Insert. */
@@ -43,7 +42,7 @@ export function ImagePicker(props: ImagePickerProps) {
   </Dialog>
 }
 
-function PickerContent({ projectId, target = "note", images, files = [], initialAlt, readImage, onChoose, onChooseMany, onOpenChange, importFromURL, onDescribe, onInsertingChange, beginOperation, cancelOperation }: ImagePickerProps & { onInsertingChange: (busy: boolean) => void; beginOperation: () => AbortSignal; cancelOperation: () => void }) {
+function PickerContent({ projectId, target = "note", images, files = [], initialAlt, readImage, onChoose, onChooseMany, onOpenChange, importFromURL, onInsertingChange, beginOperation, cancelOperation }: ImagePickerProps & { onInsertingChange: (busy: boolean) => void; beginOperation: () => AbortSignal; cancelOperation: () => void }) {
   const id = useId()
   const field = useRef<HTMLInputElement>(null)
   const generation = useRef(0)
@@ -188,15 +187,6 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
       <div className="grid gap-2">
         <Label htmlFor={`${id}-alt`}>Image description</Label>
         <Input id={`${id}-alt`} value={alt} maxLength={2048} disabled={busy || decorative} onChange={(event) => { setAlt(event.target.value); setError(null) }} placeholder="Describe what the image shows" aria-describedby={`${id}-help`} />
-        {onDescribe && <Button variant="outline" disabled={busy} onClick={async () => {
-          const run = ++generation.current
-          const signal = beginOperation()
-          setPending(true); setError(null)
-          try { const description = await onDescribe(prepared ? { prepared } : { existingPath }, signal); if (run !== generation.current) return; setAlt(description); setDecorative(false) }
-          catch (cause) { if (run === generation.current) setError(message(cause)) }
-          finally { if (run === generation.current) setPending(false) }
-        }}>Suggest a description</Button>}
-        {onDescribe && <p className="text-xs text-muted-foreground">Uses your connected ChatGPT plan. Review and edit the suggestion before inserting.</p>}
         <p id={`${id}-help`} className="text-xs text-muted-foreground">Screen readers use this description. Mark an image decorative when nearby text already explains it.</p>
         <Label className="leading-5"><input type="checkbox" checked={decorative} disabled={busy} onChange={(event) => { setDecorative(event.target.checked); setError(null) }} />Decorative image</Label>
       </div>

@@ -1,6 +1,6 @@
 ---
 name: drawings
-description: Create or change hand-drawn style drawings (Excalidraw scenes) in elaborat.ing and embed them in notes. The default whenever the user asks to draw, sketch or diagram something in an elaborat.ing project: flows, architecture, ideas, whiteboards and any boxes and arrows.
+description: 'Create or change hand-drawn style drawings (Excalidraw scenes) in elaborat.ing and embed them in notes. The default whenever the user asks to draw, sketch or diagram something in an elaborat.ing project: flows, architecture, ideas, whiteboards and any boxes and arrows.'
 ---
 
 # Drawings
