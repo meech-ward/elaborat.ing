@@ -1,4 +1,5 @@
 import type { ProjectDatabase, StorageTransaction } from "./database"
+import { safeSyncErrorDetail, stoppedSyncMessage } from "./syncDiagnostics"
 import {
   canEdit,
   assetToken,
@@ -128,7 +129,8 @@ export class ProjectSync {
 
   /** Clear a stopped sync (after the person fixed the cause) and sync again. */
   async retry(projectId: string): Promise<SyncOutcome> {
-    await this.updateProject(projectId, (project) => ({ ...project, syncError: null }))
+    await this.updateProject(projectId, (project) => ({ ...project, syncError: null, syncErrorDetail: null }))
+    this.emit({ type: "changed", projectId })
     return this.sync(projectId)
   }
 
@@ -168,17 +170,16 @@ export class ProjectSync {
    */
   private async updateDetails(projectId: string, entry: RemoteProject | null, deleted = false): Promise<void> {
     const updated = await this.updateProject(projectId, (current) => {
-      if (!entry) return { ...current, syncError: deleted || current.syncError === "deleted" ? "deleted" : "access-lost" }
+      if (!entry) return { ...current, syncError: deleted || current.syncError === "deleted" ? "deleted" : "access-lost", syncErrorDetail: null }
+      const resumed = (current.syncError === "archived" && !entry.archived_at) || (current.syncError === "access-lost" && canEdit(entry.role))
       return {
         ...current,
         title: entry.title,
         pendingTitle: current.pendingTitle === entry.title ? null : current.pendingTitle,
         role: entry.role,
         archivedAt: entry.archived_at,
-        syncError:
-          (current.syncError === "archived" && !entry.archived_at) || (current.syncError === "access-lost" && canEdit(entry.role))
-            ? null
-            : current.syncError,
+        syncError: resumed ? null : current.syncError,
+        syncErrorDetail: resumed || current.syncError === null ? null : current.syncErrorDetail,
       }
     }, { ifPresent: true })
     if (updated) this.emit({ type: "changed", projectId })
@@ -229,7 +230,7 @@ export class ProjectSync {
           const deleted = await this.deletedOutcome(outcome.projectId)
           if (deleted) return deleted
           await this.updateDetails(outcome.projectId, null)
-          return { status: "stopped", projectId: outcome.projectId, reason: "access-lost", message: stopMessage("access-lost") }
+          return { status: "stopped", projectId: outcome.projectId, reason: "access-lost", message: stoppedSyncMessage("access-lost") }
         }
       } catch (error) {
         if (error instanceof RemoteError && error.kind === "network") return { status: "offline", projectId: outcome.projectId, message: error.message }
@@ -252,7 +253,7 @@ export class ProjectSync {
     }
     if (!deleted.includes(projectId)) return null
     await this.updateDetails(projectId, null, true)
-    return { status: "stopped", projectId, reason: "deleted", message: stopMessage("deleted") }
+    return { status: "stopped", projectId, reason: "deleted", message: stoppedSyncMessage("deleted") }
   }
 
   private async push(startId: string): Promise<SyncOutcome> {
@@ -261,7 +262,7 @@ export class ProjectSync {
       const step = await this.db.transaction(this.partition, "readwrite", async (tx) => {
         const project = await tx.getProject(projectId)
         if (!project) throw new Error("This project is not on this device.")
-        if (project.syncError) return { kind: "stopped" as const, reason: project.syncError }
+        if (project.syncError) return { kind: "stopped" as const, reason: project.syncError, detail: project.syncErrorDetail }
         if (!project.created) return { kind: "create" as const, title: project.pendingTitle ?? project.title }
         if (project.pending) return { kind: "send" as const, pending: project.pending }
         if (project.pendingTitle !== null) return { kind: "rename" as const, title: project.pendingTitle }
@@ -273,7 +274,7 @@ export class ProjectSync {
       })
 
       if (step.kind === "done") return { status: "synced", projectId }
-      if (step.kind === "stopped") return { status: "stopped", projectId, reason: step.reason, message: stopMessage(step.reason) }
+      if (step.kind === "stopped") return { status: "stopped", projectId, reason: step.reason, message: stoppedSyncMessage(step.reason, step.detail) }
       try {
         if (step.kind === "create") {
           let summary: RemoteProject
@@ -331,15 +332,17 @@ export class ProjectSync {
     if (error.kind === "path-taken" && pending && (await this.markPathTaken(projectId, pending, error.detail))) return null
     const reason: NonNullable<LocalProject["syncError"]> =
       error.kind === "access" ? "access-lost" : error.kind === "archived" ? "archived" : error.kind === "limit" ? "limit" : "invalid"
+    const detail = reason === "invalid" || reason === "limit" ? safeSyncErrorDetail(error.message) : null
     await this.updateProject(projectId, (project) => ({
       ...project,
       syncError: reason,
+      syncErrorDetail: detail,
       archivedAt: reason === "archived" ? (project.archivedAt ?? new Date().toISOString()) : project.archivedAt,
       // Access may come back; keep the batch so it is retried with the same mutation id.
       pending: reason === "access-lost" ? project.pending : null,
     }))
     this.emit({ type: "changed", projectId })
-    return { status: "stopped", projectId, reason, message: stopMessage(reason, error.message) }
+    return { status: "stopped", projectId, reason, message: stoppedSyncMessage(reason, detail) }
   }
 
   /** Change a project on this device; true when it did. Missing, it throws, or with `ifPresent` changes nothing. */
@@ -530,7 +533,7 @@ export class ProjectSync {
       }
       if (marks.size === 0) {
         // Every conflict names a file in the batch; if none does, retrying would repeat this forever.
-        await tx.putProject({ ...project, pending: null, syncError: "invalid" })
+        await tx.putProject({ ...project, pending: null, syncError: "invalid", syncErrorDetail: "The server returned an unrecognized save conflict." })
         return
       }
       for (const [localId, mark] of marks) {
@@ -635,21 +638,6 @@ export class ProjectSync {
       }),
     )
     this.emit({ type: "changed", projectId })
-  }
-}
-
-function stopMessage(reason: NonNullable<LocalProject["syncError"]>, detail?: string): string {
-  switch (reason) {
-    case "access-lost":
-      return "You can no longer change this project. Your work stays on this device."
-    case "deleted":
-      return "This project was deleted by its owner."
-    case "archived":
-      return "This project is archived. Unarchive it to sync your changes."
-    case "limit":
-      return detail ?? "This project is over its limits."
-    case "invalid":
-      return `The server refused these changes${detail ? `: ${detail}` : "."}`
   }
 }
 

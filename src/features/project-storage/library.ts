@@ -28,6 +28,7 @@ export type ProjectEntry = {
   role: LocalProject["role"]
   status: ProjectStatus
   stopped: LocalProject["syncError"]
+  stoppedDetail?: string | null
   archived: boolean
 }
 
@@ -61,6 +62,8 @@ export type LibraryState = {
   invitations: Invitation[]
   /** The server could not be reached on the last refresh. */
   offline: boolean
+  /** Projects with sync requests running or waiting for the project's lock, only in this page. */
+  syncing: string[]
   loaded: boolean
 }
 
@@ -76,7 +79,8 @@ export const offlineRemote: ProjectRemote = new Proxy({} as ProjectRemote, {
 
 export class ProjectLibrary {
   readonly sync: ProjectSync
-  private state: LibraryState = { entries: [], deleted: [], invitations: [], offline: false, loaded: false }
+  private state: LibraryState = { entries: [], deleted: [], invitations: [], offline: false, syncing: [], loaded: false }
+  private readonly syncing = new Set<{ projectId: string }>()
   private catalog: RemoteProject[] = []
   /** Deleted projects removed from this device since this page opened, still to tell the person about. */
   private removed = new Map<string, DeletedProject>()
@@ -90,7 +94,13 @@ export class ProjectLibrary {
     readonly partition: string,
   ) {
     this.sync = new ProjectSync(db, remote, partition)
-    this.sync.subscribe(() => void this.load())
+    this.sync.subscribe(event => {
+      if (event.type === "rekeyed") {
+        for (const request of this.syncing) if (request.projectId === event.projectId) request.projectId = event.newId
+        this.publishSyncing()
+      }
+      void this.load()
+    })
   }
 
   getState(): LibraryState {
@@ -107,6 +117,10 @@ export class ProjectLibrary {
   private set(next: Partial<LibraryState>) {
     this.state = { ...this.state, ...next }
     for (const listener of [...this.listeners]) listener()
+  }
+
+  private publishSyncing() {
+    this.set({ syncing: [...new Set([...this.syncing].map(request => request.projectId))] })
   }
 
   /**
@@ -139,6 +153,7 @@ export class ProjectLibrary {
         role: project.role,
         status: project.syncError ? "stopped" : conflict ? "conflict" : unsynced ? "unsynced" : "synced",
         stopped: project.syncError,
+        stoppedDetail: project.syncError ? project.syncErrorDetail ?? null : null,
         archived: project.archivedAt !== null,
       })
     }
@@ -421,10 +436,18 @@ export class ProjectLibrary {
 
   /** Send and receive changes; only an explicit user retry clears a stopped sync. */
   async syncProject(projectId: string, retryStopped = false): Promise<SyncOutcome> {
-    const outcome = await (retryStopped ? this.sync.retry(projectId) : this.sync.sync(projectId))
-    this.set({ offline: outcome.status === "offline" })
-    if (outcome.status === "stopped" && outcome.reason === "deleted") await this.settleDeleted()
-    await this.load()
-    return outcome
+    const request = { projectId }
+    this.syncing.add(request)
+    this.publishSyncing()
+    try {
+      const outcome = await (retryStopped ? this.sync.retry(projectId) : this.sync.sync(projectId))
+      this.set({ offline: outcome.status === "offline" })
+      if (outcome.status === "stopped" && outcome.reason === "deleted") await this.settleDeleted()
+      await this.load()
+      return outcome
+    } finally {
+      this.syncing.delete(request)
+      this.publishSyncing()
+    }
   }
 }

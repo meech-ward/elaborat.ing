@@ -274,6 +274,16 @@ cannot sync (the server takes each path once per save), and a pulled file can
 briefly sit under a local file of the same name until the push marks the path
 as taken.
 
+Stopped sync keeps a bounded, known-safe validation explanation alongside
+its category in the account's local project record. Older records keep the
+category's fallback message. Retry clears both before waiting for the
+project lock; saved files and newer unsaved drafts stay intact. Running and
+queued sync requests have an in-memory progress state, cleared after the
+final state reload or a thrown error. The account panel shows Syncing and
+disables another manual retry while work is pending. Stopped explanations
+come from the refreshed project, and older requests cannot restore stale
+transient errors after a newer retry succeeds.
+
 **Decision: a rename or move is one save on the device.** The workbench plans
 it from the files on the device: the file moves (a D2 source takes its
 generated canvas and sidecar along), and every note, drawing and diagram that
@@ -1613,6 +1623,10 @@ space typed at the start of a paragraph, changes nothing. Enter right before
 a space writes the new paragraph without it (`One.\n\nTwo.`), and a delete
 or a format change that leaves italics or bold ending in a space before a
 letter writes the space just outside them (`*a* b`).
+
+Rendered Enter preserves the `.` or `)` delimiter of an ordered list when it
+generates an item. Neighbouring items keep their original source numbering
+and spacing, including in nested and loose lists.
 
 The editor then takes the document the source makes in place of its own. The
 app's acknowledgement of that edit carries the document and `nearest`; the

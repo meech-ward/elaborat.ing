@@ -92,6 +92,7 @@ export function moveLocalProject(db: ProjectDatabase, partition: string, lock: L
         created: false,
         archivedAt: null,
         syncError: null,
+        syncErrorDetail: null,
         pending: null,
       }
       id = moved.id

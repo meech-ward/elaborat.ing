@@ -267,7 +267,7 @@ test("inline mark updates and heading changes preserve unrelated encoded text an
 });
 
 test("native list split and empty-item exit stay source/projection equivalent", async () => {
-  for (const text of ["- First", "* First", "+ First", "1. First"]) {
+  for (const text of ["- First", "* First", "+ First", "1. First", "3) First"]) {
     const projection = await projectFluidSource(text, "mdx");
     const position = fluidPositionForSourceOffset(projection, text.length)!;
     const state = EditorState.create({
@@ -306,6 +306,42 @@ test("native list split and empty-item exit stay source/projection equivalent", 
     expect(lifted.projection.doc.eq(exit!.doc)).toBe(true);
   }
 });
+
+for (const delimiter of [".", ")"]) {
+  for (const nested of [false, true]) {
+    for (const loose of [false, true]) {
+      test(`ordered ${delimiter} splits keep numbering, indentation and ${loose ? "loose" : "tight"} spacing ${nested ? "inside a bullet list" : "at the root"}`, async () => {
+        const indent = nested ? "  " : "";
+        const gap = (loose ? "\n\n" : "\n") + indent;
+        const head = guard + (nested ? "- Parent\n\n  " : "");
+        const list = (...items: string[]) => head + items.join(gap) + tail;
+        const text = list(`12${delimiter} First`, `13${delimiter} Second`, `14${delimiter} Third`);
+        const projection = await projectFluidSource(text, "mdx");
+        for (const offset of [3, 6]) {
+          const state = EditorState.create({
+            doc: projection.doc,
+            selection: TextSelection.create(projection.doc, fluidPositionForSourceOffset(projection, text.indexOf("Second") + offset)!),
+          });
+          let transaction: Transaction | undefined;
+          expect(splitListItem(fluidSchema.nodes.list_item)(state, (tr) => { transaction = tr; })).toBe(true);
+          const next = await prepareFluidTransaction(
+            { text, revision: 0, format: "mdx" }, projection,
+            transaction!.steps.map((step) => step.toJSON()),
+          );
+          // Existing siblings keep their exact numbers. The generated item
+          // follows the list's start number and uses its original delimiter.
+          expect(next.text).toBe(list(
+            `12${delimiter} First`, `13${delimiter} ${"Second".slice(0, offset)}`,
+            `14${delimiter} ${"Second".slice(offset)}`, `14${delimiter} Third`,
+          ));
+          expect(next.projection.doc.eq(transaction!.doc)).toBe(true);
+          expect(next.nearest).toBeNull();
+          expect(next.projection.islands.map((island) => island.id)).toEqual(projection.islands.map((island) => island.id));
+        }
+      });
+    }
+  }
+}
 
 test("wrap paragraph in a list and edit a decoded multiline quote without touching the next block", async () => {
   const text = "> A &amp; B\n> next\n\nTail";

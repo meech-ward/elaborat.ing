@@ -167,7 +167,7 @@ export function ProjectList({ account }: { account: ProjectAccount }) {
       title={entry.title}
       link={<Link to={projectHref(entry.id)} />}
       meta={
-        <StatusDot status={syncDot(entry, offline).status}>{statusLabel(entry)}</StatusDot>
+        <StatusDot status={syncDot(entry, offline, state.syncing.includes(entry.id)).status}>{statusLabel(entry, state.syncing.includes(entry.id))}</StatusDot>
       }
       actions={
         entry.role !== null && !embedded ? (

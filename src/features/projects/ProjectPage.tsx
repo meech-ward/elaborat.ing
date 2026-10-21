@@ -10,6 +10,7 @@ import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
 import { parseProjectLocation, projectHref, useProjectHref } from "@/features/navigation"
 import { ProjectChanges } from "@/features/project-storage/changes"
 import type { ConflictChoice } from "@/features/project-storage/sync"
+import { stoppedSyncMessage } from "@/features/project-storage/syncDiagnostics"
 import { canEdit } from "@/features/project-storage/model"
 import { embedded, openOnSite } from "@/features/embed/mode"
 import { projectWorkspace, workspacePersistenceKey } from "@/features/workbench/workspaceStore"
@@ -70,20 +71,25 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const { registerLeaveGuard, departureError } = useDepartureGuard(projectId, opened === "open" && !deleted)
   const download = useProjectDownload(library, onError, setNotice)
   const entry = state.entries.find((candidate) => candidate.id === projectId)
+  const syncing = state.syncing.includes(projectId)
+  const [syncRequests] = useState(() => new SyncRequests())
 
   const syncNow = useCallback(async (retryStopped = false) => {
+    const isCurrent = syncRequests.start()
     setError(null)
     try {
       const outcome = await library.syncProject(projectId, retryStopped)
       if (outcome.projectId !== projectId) {
         await navigate({ href: projectHref(outcome.projectId), replace: true, ignoreBlocker: true })
-      } else if (outcome.status === "stopped" || outcome.status === "incomplete") {
-        setError(outcome.message)
+      } else if (isCurrent()) {
+        // Stopped errors come from the refreshed project, so a late older
+        // request cannot restore its refusal after a successful retry.
+        setError(outcome.status === "incomplete" ? outcome.message : null)
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      if (isCurrent()) setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [library, navigate, projectId])
+  }, [library, navigate, projectId, syncRequests])
 
   // Download on first open, then sync. A new local project's welcome note
   // first opens in its Rendered view, on a desktop too.
@@ -302,7 +308,8 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       ? [{ label: "Open in elaborat.ing", group: "actions", onSelect: openOnSite }]
       : [{ label: "Download project", group: "actions", onSelect: () => void download.start(projectId, projectName) }]),
   ]
-  const problem = departureError ?? error
+  const stoppedMessage = entry?.stopped && !entry.archived ? stoppedSyncMessage(entry.stopped, entry.stoppedDetail) : null
+  const problem = departureError ?? error ?? (syncing ? null : stoppedMessage)
   const notices = (
     <>
       {readOnly ? (
@@ -324,7 +331,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
 
   // The sync state sits with the person in the account panel.
   const offline = !account.online || state.offline
-  const sync = entry && !account.local ? syncDot(entry, offline) : null
+  const sync = entry && !account.local ? syncDot(entry, offline, syncing) : null
 
   return (
     <ProjectCommentsProvider value={commentsValue}>
@@ -348,6 +355,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           projectNotices={notices}
           sync={sync}
           onSyncNow={account.online && !account.local ? () => void syncNow(true) : undefined}
+          syncNowDisabled={syncing}
           searchFiles={account.online && !account.local ? searchFiles : null}
           onLeaveGuard={registerLeaveGuard}
           onResolveConflict={resolveConflict}
@@ -364,6 +372,15 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       </AgentChangesProvider>
     </ProjectCommentsProvider>
   )
+}
+
+/** Only the newest sync request may replace a transient error. */
+class SyncRequests {
+  private current = 0
+  start(): () => boolean {
+    const request = ++this.current
+    return () => request === this.current
+  }
 }
 
 /** Passes revisions this device made itself (comment writes) to the change listener open now, so they are not pulled. */

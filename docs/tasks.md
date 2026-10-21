@@ -339,20 +339,13 @@ The image picker keeps manual descriptions without a direct model connection.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
-- Stopped sync persists only an error category, so a reload loses the original
-  upload or validation detail. Keep a safe diagnostic with the stopped state
-  so the person can see what to fix before choosing Sync now.
-- During hosted image recovery, explicit Sync now retained the old stopped
-  label until reload, which showed Synced. Show retry progress and verify the
-  completion updates Account status without reload, recording request and
-  lock timing before diagnosing a missed notification.
+- A late sync completion that recovered a conflicting project id can navigate
+  back to that project after the person has left its page. Guard rekey-driven
+  navigation against an unmounted page without losing the recovered project.
 - Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
   fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
   Monaco binds Source shortcuts to Ctrl, while the app and Playwright's
   `ControlOrMeta` use Cmd, so shortcut checks can miss their intended action.
-- Rendered Enter inside an ordered list using `)` as its marker can fail
-  precise source projection because the split item is generated with `.`.
-  Preserve the original marker when generating the new item.
 - In `update_and_show`, an old label written before its short-form shape
   (against the taught order) shows in the live view until the saved card
   replaces it.
@@ -412,6 +405,14 @@ matters.
 
 ## Done
 
+- Rendered Enter preserves ordered-list `.` and `)` delimiters, including
+  non-1 starts, nested and loose lists. Enter, Backspace and Undo/Redo keep
+  precise Markdown/MDX source; unit and Chromium/Firefox regressions pass.
+- Stopped sync retains bounded known-safe validation explanations across
+  IndexedDB reloads, with legacy record and account isolation coverage.
+  Retry progress covers queued work, disables duplicate manual retries and
+  returns to Synced without refresh. Older request results cannot restore a
+  stale error after recovery; saved files and newer drafts remain intact.
 - T1: find out whether MCP Apps hosts allow runtime-compiled components (#2)
 - T2: ship license notices for bundled third-party code (#3)
 - T3: extract searchable passages from notes and diagrams (#4)

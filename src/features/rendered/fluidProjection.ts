@@ -1039,11 +1039,12 @@ function flanked(
 }
 
 /**
- * How a written list marks its items and spaces them: `loose` puts a blank
- * line between items, `nested` one between an item's text and its nested list.
+ * How a written list marks its items and spaces them: `delimiter` keeps an
+ * ordered marker's dot or closing parenthesis, `loose` puts a blank line
+ * between items, `nested` one between an item's text and its nested list.
  */
-type ListStyle = { marker: string; loose: boolean; nested: boolean };
-const TIGHT: ListStyle = { marker: "-", loose: false, nested: false };
+type ListStyle = { marker: string; delimiter: string; loose: boolean; nested: boolean };
+const TIGHT: ListStyle = { marker: "-", delimiter: ".", loose: false, nested: false };
 const isList = (node: PMNode) =>
   node.type === fluidSchema.nodes.bullet_list ||
   node.type === fluidSchema.nodes.ordered_list;
@@ -1079,6 +1080,7 @@ function listStyle(
     }
   return {
     marker: (first && /^[-+*]/.exec(text.slice(first.from))?.[0]) || fallback.marker,
+    delimiter: (first && /^\d+([.)])/.exec(text.slice(first.from))?.[1]) || fallback.delimiter,
     loose,
     nested: nested ?? loose,
   };
@@ -1099,7 +1101,7 @@ function itemSource(
   if (unchanged) return projection.text.slice(unchanged.from, unchanged.to);
   const marker =
     list.type.name === "ordered_list"
-      ? `${list.attrs.order + index}. `
+      ? `${list.attrs.order + index}${style.delimiter} `
       : `${hint && "marker" in hint ? hint.marker : style.marker} `;
   const box =
     item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
@@ -1337,6 +1339,12 @@ function structuralPatch(
       entry.from >= affected[0].from &&
       entry.to <= affected.at(-1)!.to,
   );
+  const originalOrderedList = projection.mapping.nodes.find(
+    (entry) =>
+      entry.node.type.name === "ordered_list" &&
+      entry.from >= affected[0].from &&
+      entry.to <= affected.at(-1)!.to,
+  );
   const style: ListStyle = {
     ...TIGHT,
     marker: originalList
@@ -1344,6 +1352,9 @@ function structuralPatch(
           projection.text.slice(originalList.from, originalList.to),
         )?.[0] ?? "-")
       : "-",
+    delimiter: originalOrderedList
+      ? (/^\d+([.)])/.exec(projection.text.slice(originalOrderedList.from, originalOrderedList.to))?.[1] ?? ".")
+      : ".",
   };
   const content = Fragment.fromArray(next.content.content.slice(prefix, newEnd));
   const previous = affected[0].node,

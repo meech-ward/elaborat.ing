@@ -1,5 +1,6 @@
 import { z } from "zod/mini"
 import { ImageAssetSchema, type ImageAsset } from "../images/types"
+import { MAX_SYNC_ERROR_DETAIL, safeSyncErrorDetail } from "./syncDiagnostics"
 
 export { ImageAssetSchema, type ImageAsset } from "../images/types"
 
@@ -165,6 +166,11 @@ export const LocalProject = z.strictObject({
   archivedAt: z.nullable(z.string()),
   /** Why sync stopped for this project, if it did; local work is always kept. `deleted`: its owner deleted it. */
   syncError: z.nullable(z.enum(["access-lost", "deleted", "archived", "limit", "invalid"])),
+  /** Known actionable explanation, absent in older records; never raw service output. */
+  syncErrorDetail: z.optional(z.nullable(z.string().check(
+    z.maxLength(MAX_SYNC_ERROR_DETAIL),
+    z.refine(detail => safeSyncErrorDetail(detail) === detail, "Unsafe sync diagnostic"),
+  ))),
   pending: z.nullable(PendingSave),
 })
 export type LocalProject = z.infer<typeof LocalProject>

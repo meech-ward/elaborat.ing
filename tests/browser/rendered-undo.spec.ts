@@ -135,6 +135,33 @@ test("Ctrl+Z in the rendered prose undoes the same way, newest first, and Ctrl+S
   expect(await saved(page, fake, id)).toBe(NOTE.replace(FIRST, `${FIRST} ONE`))
 })
 
+for (const delimiter of [".", ")"]) {
+  test(`ordered ${delimiter} list Enter keeps exact source through rendered Undo and Redo`, async ({ page }) => {
+    const note = `# Numbered steps\n\n12${delimiter} first\n13${delimiter} second\n14${delimiter} third\n\nUntouched **tail**.\n`
+    const item = (text: string) => frameOf(page).locator("p").filter({ hasText: new RegExp(`^${text}$`) })
+    const items = frameOf(page).locator("li")
+    const { fake, id } = await openNote(page, note, () => expect(item("second")).toBeVisible())
+    await item("second").click()
+    await page.keyboard.press("End")
+    await page.keyboard.press("Enter")
+    await expect(items).toHaveCount(4)
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+    const added = note.replace(`13${delimiter} second`, `13${delimiter} second\n14${delimiter} `)
+    expect(await saved(page, fake, id)).toBe(added)
+
+    await item("second").click()
+    await page.keyboard.press("ControlOrMeta+z")
+    await expect(items).toHaveCount(3)
+    expect(await saved(page, fake, id)).toBe(note)
+
+    await item("second").click()
+    await page.keyboard.press("ControlOrMeta+Shift+z")
+    await expect(items).toHaveCount(4)
+    expect(await saved(page, fake, id)).toBe(added)
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+}
+
 test("with the code editor loaded and hidden, Ctrl+Z in the rendered prose puts the caret where each undone edit was", async ({ page }) => {
   await openNote(page)
   // Source loads once, then hides.

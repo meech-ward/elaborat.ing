@@ -24,6 +24,7 @@ const suffix = "\n\n<Counter initial={untouched} />\n\nAfter paragraph.\n"
 const fixtures = [
   { name: "bullet", items: "* first\n* second\n* third", second: "second", split: 3 },
   { name: "numbered", items: "3. first\n4. second\n5. third", second: "second", split: 3 },
+  { name: "parenthesized numbered", items: "3) first\n4) second\n5) third", second: "second", split: 3 },
   { name: "task", items: "- [ ] first\n- [x] second\n- [ ] third", second: "second", split: 3 },
   { name: "formatted bullet", items: "* first\n* **second** *item*\n* third", second: "second item", split: 3 },
 ] as const

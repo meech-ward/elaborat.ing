@@ -134,6 +134,7 @@ export function WorkspaceWorkbench({
   projectNotices,
   sync = null,
   onSyncNow,
+  syncNowDisabled = false,
   searchFiles = null,
   onResolveConflict,
   readOnly = null,
@@ -155,6 +156,7 @@ export function WorkspaceWorkbench({
   sync?: PanelSync | null;
   /** Sync now, in the person's menu. */
   onSyncNow?: () => void;
+  syncNowDisabled?: boolean;
   /** Finds this project's files by their text (the files panel's search); null when offline or signed out. */
   searchFiles?: ((query: string) => Promise<FileSearchHit[]>) | null;
   onResolveConflict?: (path: string, choice: ConflictChoice) => Promise<void>;
@@ -1085,7 +1087,7 @@ export function WorkspaceWorkbench({
     ...(embedded ? [] : [{ label: "Settings", onSelect: () => afterMenu(openSettings) }]),
     // On a phone the account panel has no Connected agents row.
     ...(narrow && !embedded ? [{ label: agentCount ? `Connected agents (${agentCount})` : "Connected agents", onSelect: () => void routerNavigate({ to: "/agents" }) }] : []),
-    ...(onSyncNow ? [{ label: "Sync now", onSelect: onSyncNow }] : []),
+    ...(onSyncNow ? [{ label: "Sync now", disabled: syncNowDisabled, onSelect: onSyncNow }] : []),
     {
       label: "Sign out",
       onSelect: () => void signOut().catch((reason: unknown) => setNotice(`Not signed out: ${reason instanceof Error ? reason.message : String(reason)}`)),

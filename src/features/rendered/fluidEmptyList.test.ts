@@ -39,6 +39,7 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     "* First\n* **Second**\n* Third",
     "+ First\n+ Second\n+ Third",
     "3. First\n4. Second\n5. Third",
+    "3) First\n4) Second\n5) Third",
     "- [ ] First\n- [x] **Second**\n- [ ] Third",
     "- First\n\n- Second\n\n- Third",
     "- Parent\n  - First\n  - **Second**\n  - Third\n- Tail",

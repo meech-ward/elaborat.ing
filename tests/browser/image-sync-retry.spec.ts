@@ -16,10 +16,14 @@ test("Sync now retries a stopped image upload while automatic reopen preserves t
   await remote.createProject(id, "Retry images")
   await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "note.mdx", content: "Anchor paragraph.\n" }])
   let broken = true, uploads = 0
+  const retryRelease = Promise.withResolvers<void>()
   await page.route("**/functions/v1/images?*", async route => {
     if (route.request().method() !== "POST") return route.fallback()
     uploads++
-    if (!broken) return route.fallback()
+    if (!broken) {
+      await retryRelease.promise
+      return route.fallback()
+    }
     return route.fulfill({ status: 500, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }, contentType: "application/json", body: JSON.stringify({ error: "The image thumbnail service is temporarily unavailable." }) })
   })
   await signedIn(page)
@@ -37,18 +41,32 @@ test("Sync now retries a stopped image upload while automatic reopen preserves t
   await expect(image).toBeVisible()
   await page.getByRole("button", { name: "Save", exact: true }).click()
   await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toBeVisible()
+  await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toContainText("The image thumbnail service is temporarily unavailable.")
   expect(uploads).toBe(1)
   expect(fake.server.content(id, "note.mdx")).toBe("Anchor paragraph.\n")
   broken = false
   await page.reload()
   await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toBeVisible()
+  await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toContainText("The image thumbnail service is temporarily unavailable.")
   await expect(image).toBeVisible()
   expect(uploads).toBe(1)
   await page.getByRole("button", { name: "Account and settings", exact: true }).click()
-  await page.getByRole("menuitem", { name: "Sync now", exact: true }).click()
+  try {
+    await page.getByRole("menuitem", { name: "Sync now", exact: true }).click()
+    await expect(page.getByRole("status", { name: "Syncing changes with the server", exact: true })).toBeVisible()
+    await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toHaveCount(0)
+    await expect(image).toBeVisible()
+    await page.getByRole("button", { name: "Account and settings", exact: true }).click()
+    await expect(page.getByRole("menuitem", { name: "Sync now", exact: true })).toBeDisabled()
+    await page.keyboard.press("Escape")
+  } finally {
+    retryRelease.resolve()
+  }
   await expect.poll(() => fake.server.content(id, "note.mdx")).toContain("![A recoverable red pixel](images/retry.png)")
   expect(uploads).toBe(2)
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
   await expect(page.getByRole("alert").filter({ hasText: "The server refused these changes" })).toHaveCount(0)
   await expect(image).toBeVisible()
+  await page.getByRole("button", { name: "Account and settings", exact: true }).click()
+  await expect(page.getByRole("menuitem", { name: "Sync now", exact: true })).toBeEnabled()
 })

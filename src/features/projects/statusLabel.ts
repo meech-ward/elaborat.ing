@@ -1,8 +1,10 @@
 import type { ProjectEntry } from "@/features/project-storage/library"
 import type { SaveStatus } from "@/features/design-system"
+import { stoppedSyncMessage } from "@/features/project-storage/syncDiagnostics"
 
 /** Plain words for a project's sync state. */
-export function statusLabel(entry: Pick<ProjectEntry, "status" | "stopped">): string {
+export function statusLabel(entry: Pick<ProjectEntry, "status" | "stopped" | "stoppedDetail">, syncing = false): string {
+  if (syncing) return "Syncing changes with the server"
   switch (entry.status) {
     case "not-downloaded":
       return "On the server"
@@ -13,6 +15,7 @@ export function statusLabel(entry: Pick<ProjectEntry, "status" | "stopped">): st
     case "conflict":
       return "Changed in two places: choose which version to keep"
     case "stopped":
+      if (entry.stoppedDetail && entry.stopped) return stoppedSyncMessage(entry.stopped, entry.stoppedDetail)
       switch (entry.stopped) {
         case "access-lost":
           return "You no longer have access; your copy stays on this device"
@@ -38,7 +41,8 @@ export interface SyncState {
  * word or two to show, and the whole sentence (statusLabel) for screen
  * readers and the tooltip.
  */
-export function syncDot(entry: Pick<ProjectEntry, "status" | "stopped">, offline: boolean): SyncState {
+export function syncDot(entry: Pick<ProjectEntry, "status" | "stopped" | "stoppedDetail">, offline: boolean, syncing = false): SyncState {
+  if (syncing) return { status: "unsaved", text: "Syncing", label: statusLabel(entry, true) }
   const label = statusLabel(entry)
   if (offline) return { status: "offline", text: "Offline", label: `${label} (offline)` }
   switch (entry.status) {
