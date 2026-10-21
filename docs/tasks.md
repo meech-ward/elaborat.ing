@@ -342,6 +342,10 @@ matters.
 - A late sync completion that recovered a conflicting project id can navigate
   back to that project after the person has left its page. Guard rekey-driven
   navigation against an unmounted page without losing the recovered project.
+- During mixed-version use, an old tab can clear and repeat an identical
+  stopped state before a new tab observes it, leaving the optional prior
+  explanation until the next new-version retry. A future storage revision
+  can add a stop generation; diagnostics must stay separate from sync control.
 - Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
   fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
   Monaco binds Source shortcuts to Ctrl, while the app and Playwright's
@@ -409,7 +413,7 @@ matters.
   non-1 starts, nested and loose lists. Enter, Backspace and Undo/Redo keep
   precise Markdown/MDX source; unit and Chromium/Firefox regressions pass.
 - Stopped sync retains bounded known-safe validation explanations across
-  IndexedDB reloads, with legacy record and account isolation coverage.
+  browser reloads, with legacy record and account isolation coverage.
   Retry progress covers queued work, disables duplicate manual retries and
   returns to Synced without refresh. Older request results cannot restore a
   stale error after recovery; saved files and newer drafts remain intact.

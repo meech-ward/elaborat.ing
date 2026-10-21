@@ -1,4 +1,5 @@
 import { LocalFile, LocalFolder, LocalProject, type LocalImageAsset } from "./model"
+import { matchesDiagnostic, projectDiagnostic, ProjectDiagnosticStorage, type SyncDiagnostic, type SyncDiagnosticStorage } from "./syncDiagnosticStorage"
 
 /**
  * Durable on-device storage for projects, their files and folders.
@@ -146,8 +147,11 @@ const DATABASE_VERSION = 2
 /** IndexedDB storage. One transaction spans metadata and binary assets. */
 export class IndexedProjectDatabase implements ProjectDatabase {
   private connection: Promise<IDBDatabase> | null = null
+  private readonly diagnostics: ProjectDiagnosticStorage
 
-  constructor(private readonly factory: IDBFactory = indexedDB, private readonly name = DATABASE_NAME) {}
+  constructor(private readonly factory: IDBFactory = indexedDB, private readonly name = DATABASE_NAME, diagnosticStorage?: SyncDiagnosticStorage | null) {
+    this.diagnostics = new ProjectDiagnosticStorage(diagnosticStorage)
+  }
 
   private open(): Promise<IDBDatabase> {
     if (!this.connection) {
@@ -203,9 +207,10 @@ export class IndexedProjectDatabase implements ProjectDatabase {
       idb.onerror = () => reject(idb.error ?? new Error("Local storage failed."))
     })
     done.catch(() => {})
+    const transaction = new IndexedTransaction(partition, idb, this.diagnostics)
     let result: T
     try {
-      result = await work(new IndexedTransaction(partition, idb))
+      result = await work(transaction)
     } catch (error) {
       try {
         idb.abort()
@@ -216,6 +221,7 @@ export class IndexedProjectDatabase implements ProjectDatabase {
       throw error
     }
     await done
+    transaction.commitDiagnostics()
     return result
   }
 }
@@ -228,7 +234,24 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 }
 
 class IndexedTransaction implements StorageTransaction {
-  constructor(private readonly partition: string, private readonly idb: IDBTransaction) {}
+  private readonly diagnosticChanges = new Map<string, SyncDiagnostic | null>()
+
+  constructor(private readonly partition: string, private readonly idb: IDBTransaction, private readonly diagnostics: ProjectDiagnosticStorage) {}
+
+  /** Sidecar writes happen only once the durable transaction succeeded. */
+  commitDiagnostics(): void {
+    for (const [projectId, diagnostic] of this.diagnosticChanges) this.diagnostics.write(this.partition, projectId, diagnostic)
+  }
+
+  private project(row: unknown): LocalProject {
+    const project = LocalProject.parse(row)
+    const diagnostic = this.diagnosticChanges.has(project.id) ? this.diagnosticChanges.get(project.id) : this.diagnostics.read(this.partition, project.id)
+    if (diagnostic && matchesDiagnostic(project, diagnostic)) return { ...project, syncErrorDetail: diagnostic.detail }
+    // An old tab may have cleared the stopped state, advanced its revision or
+    // removed access. Observing that invalidates the extra explanation too.
+    this.diagnosticChanges.set(project.id, null)
+    return { ...project, syncErrorDetail: null }
+  }
 
   private store(name: "projects" | "files" | "folders" | "assets") {
     return this.idb.objectStore(name)
@@ -253,21 +276,29 @@ class IndexedTransaction implements StorageTransaction {
 
   async allProjects(): Promise<LocalProject[]> {
     const rows = await request(this.store("projects").index("partition").getAll(this.partition))
-    return rows.map((row) => LocalProject.parse(row))
+    return rows.map((row) => this.project(row))
   }
 
   async getProject(id: string) {
     const row = await request(this.store("projects").get([this.partition, id]))
-    return row ? LocalProject.parse(row) : null
+    if (row) return this.project(row)
+    this.diagnosticChanges.set(id, null)
+    return null
   }
 
   async putProject(project: LocalProject) {
     checkPartition(this.partition, project)
-    await request(this.store("projects").put(LocalProject.parse(project)))
+    const parsed = LocalProject.parse(project)
+    // Keep the stored v2 contract readable by already-open older app tabs.
+    const legacy = { ...parsed }
+    delete legacy.syncErrorDetail
+    await request(this.store("projects").put(legacy))
+    this.diagnosticChanges.set(project.id, projectDiagnostic(parsed))
   }
 
   async deleteProject(id: string) {
     await request(this.store("projects").delete([this.partition, id]))
+    this.diagnosticChanges.set(id, null)
     for (const name of ["files", "folders", "assets"] as const) {
       const keys = await request(this.store(name).index("project").getAllKeys([this.partition, id]))
       for (const key of keys) await request(this.store(name).delete(key))

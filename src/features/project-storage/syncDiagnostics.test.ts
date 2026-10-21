@@ -8,6 +8,15 @@ import { ProjectSync } from "./sync"
 import { MAX_SYNC_ERROR_DETAIL, safeSyncErrorDetail, stoppedSyncMessage } from "./syncDiagnostics"
 import { FakeProjectServer, OTHER, OWNER, put } from "./testing"
 
+function diagnosticStorage() {
+  const entries = new Map<string, string>()
+  return {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => { entries.set(key, value) },
+    removeItem: (key: string) => { entries.delete(key) },
+  }
+}
+
 test("only bounded actionable sync details survive, without remote credentials, paths or traces", () => {
   for (const detail of [
     "The image thumbnail service is temporarily unavailable.",
@@ -43,8 +52,9 @@ test("only bounded actionable sync details survive, without remote credentials, 
 
 test("a stopped diagnostic survives an IndexedDB reload and retry clears it before waiting for the project lock", async () => {
   const factory = new IDBFactory()
+  const sidecar = diagnosticStorage()
   const partition = partitionKey("https://example.supabase.co", OWNER)
-  const db = new IndexedProjectDatabase(factory)
+  const db = new IndexedProjectDatabase(factory, undefined, sidecar)
   const server = new FakeProjectServer()
   const remote = server.remote(OWNER)
   const detail = "SVG text is limited to 4,000 characters per text node and 8,000 in total."
@@ -63,7 +73,7 @@ test("a stopped diagnostic survives an IndexedDB reload and retry clears it befo
   await store.persistDrafts([{ path: "note.md", content: "a newer unsaved draft", baseRevision: note.revision }])
   const expected = { status: "stopped", reason: "invalid", message: `The server refused these changes: ${detail}` }
   expect(await sync.sync(id)).toMatchObject(expected)
-  const reloaded = new IndexedProjectDatabase(factory)
+  const reloaded = new IndexedProjectDatabase(factory, undefined, sidecar)
   expect(await reloaded.transaction(partition, "readonly", tx => tx.getProject(id))).toMatchObject({ syncError: "invalid", syncErrorDetail: detail })
   const restarted = new ProjectSync(reloaded, failingRemote, partition)
   expect(await restarted.sync(id)).toMatchObject(expected)
@@ -89,18 +99,19 @@ test("a stopped diagnostic survives an IndexedDB reload and retry clears it befo
 
 test("legacy stopped rows have a category fallback and unknown remote output never reaches stored diagnostics", async () => {
   const factory = new IDBFactory()
+  const sidecar = diagnosticStorage()
   const partition = partitionKey("https://example.supabase.co", OWNER)
-  const db = new IndexedProjectDatabase(factory)
+  const db = new IndexedProjectDatabase(factory, undefined, sidecar)
   const server = new FakeProjectServer()
   const remote = server.remote(OWNER)
   const sync = new ProjectSync(db, remote, partition)
   const { id } = await sync.createProject("Legacy record")
   await db.transaction(partition, "readwrite", async tx => {
     const project = (await tx.getProject(id))!
-    expect(Object.hasOwn(project, "syncErrorDetail")).toBe(false)
+    expect(project.syncErrorDetail).toBeNull()
     await tx.putProject({ ...project, syncError: "invalid" })
   })
-  const reloaded = new IndexedProjectDatabase(factory)
+  const reloaded = new IndexedProjectDatabase(factory, undefined, sidecar)
   const restarted = new ProjectSync(reloaded, remote, partition)
   expect(await restarted.sync(id)).toMatchObject({ status: "stopped", message: "The server refused these changes." })
   const raw = "Module not found: https://example.test/?token=secret\n    at private/function.ts:20:4"
@@ -113,7 +124,7 @@ test("legacy stopped rows have a category fallback and unknown remote output nev
 })
 
 test("access changes replace old validation details and restoring access clears the stopped state", async () => {
-  const db = new IndexedProjectDatabase(new IDBFactory())
+  const db = new IndexedProjectDatabase(new IDBFactory(), undefined, diagnosticStorage())
   const partition = partitionKey("https://example.supabase.co", OWNER)
   const server = new FakeProjectServer()
   const remote = server.remote(OWNER)

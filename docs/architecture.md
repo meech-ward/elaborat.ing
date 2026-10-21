@@ -275,8 +275,15 @@ briefly sit under a local file of the same name until the push marks the path
 as taken.
 
 Stopped sync keeps a bounded, known-safe validation explanation alongside
-its category in the account's local project record. Older records keep the
-category's fallback message. Retry clears both before waiting for the
+its category in the application's project state. The explanation is
+best-effort UI metadata in versioned localStorage scoped to the account and
+project. It stays outside IndexedDB's legacy flat project row: already-open
+older tabs validate that row strictly and must keep saving after another tab
+updates. A database version bump would close those tabs' connections without
+giving their old code a compatible reopen path. Sidecar updates follow a
+successful database commit; unavailable browser storage leaves the category's
+fallback message and does not block saved work. Older records keep that
+fallback too. Retry clears both before waiting for the
 project lock; saved files and newer unsaved drafts stay intact. Running and
 queued sync requests have an in-memory progress state, cleared after the
 final state reload or a thrown error. The account panel shows Syncing and
