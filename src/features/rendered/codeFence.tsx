@@ -1,6 +1,7 @@
-import { isValidElement, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { isValidElement, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { useModule } from '../../lib/moduleLoader';
 import { frameModules } from '../../preview/frameModules';
+import { CodeCopyButton } from './CodeCopyButton';
 
 /**
  * A code block's highlighted HTML (codeHighlight.ts), or null: plain text, or
@@ -43,7 +44,10 @@ export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'
   if (!fence) return <pre {...props}>{children}</pre>;
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
-      <div className="document-code-label">{language || 'text'} <span>Code · edit in Source</span></div>
+      <div className="document-code-label">
+        <span>{language || 'text'}</span>
+        <span className="document-code-actions"><CodeCopyButton code={code} /></span>
+      </div>
       {highlighted === null
         ? <pre {...props} tabIndex={0} aria-label={`${language || 'Plain text'} code`}><code>{code}</code></pre>
         // Only escaped HTML from the fixed Shiki pipeline (codeHighlight.ts), never raw MDX.
@@ -67,12 +71,16 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
   onEditorMount?: (element: HTMLTextAreaElement) => void;
 }): ReactNode {
   const [editing, setEditing] = useState(!!draft);
+  const editor = useRef<HTMLTextAreaElement>(null);
   const highlighted = useHighlightedCode(value, language);
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
       <div className="document-code-label">
-        {language || 'text'}
-        {readOnly ? null : editing ? <span>Editing code</span> : <button type="button" onClick={() => setEditing(true)}>Edit code</button>}
+        <span>{language || 'text'}</span>
+        <span className="document-code-actions">
+          {readOnly ? null : editing ? <span>Editing code</span> : <button type="button" onClick={() => setEditing(true)}>Edit code</button>}
+          <CodeCopyButton code={() => editor.current?.value ?? value} />
+        </span>
       </div>
       {editing && !readOnly ? (
         <textarea
@@ -84,7 +92,7 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
           data-authoring-expected={sourceRegion?.expected}
           data-authoring-value={value}
           defaultValue={draft?.value ?? value}
-          ref={element => { if (element) onEditorMount?.(element); }}
+          ref={element => { editor.current = element; if (element) onEditorMount?.(element); }}
           onInput={event => onEditorInput?.(event.currentTarget)}
           spellCheck={false}
           rows={Math.max(3, Math.min(24, value.split('\n').length + 1))}

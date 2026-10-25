@@ -20,6 +20,8 @@ import {
   checkViewResource,
   encodePropLiteral,
   literalMatchesKind,
+  MAX_CODE_COPY_TEXT_LENGTH,
+  MAX_CODE_COPY_REQUEST,
   parseExpressionLiteral,
   PREVIEW_CHILD_CSP,
   PREVIEW_SANDBOX,
@@ -196,6 +198,43 @@ describe('frame modules', () => {
   });
 });
 
+describe('code copy protocol', () => {
+  const request = { kind: 'copy-code', session: 'session-1234', revision: 7, request: 4, text: 'int main() {\n  return 0;\n}\n' };
+  const valid = { data: request, source: FRAME, expectedSource: FRAME, session: request.session, revision: 7 };
+
+  test('bounded plain text needs the current sender, session and revision', () => {
+    expect(checkChildMessage(valid).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, data: { ...request, text: '', request: MAX_CODE_COPY_REQUEST } }).ok).toBe(true);
+    expect(checkChildMessage({ ...valid, data: { ...request, text: 'x'.repeat(MAX_CODE_COPY_TEXT_LENGTH) } }).ok).toBe(true);
+    for (const invalid of [
+      { ...valid, source: OTHER },
+      { ...valid, expectedSource: null },
+      { ...valid, session: 'session-other' },
+      { ...valid, revision: 8 },
+      ...[
+        { ...request, text: 'x'.repeat(MAX_CODE_COPY_TEXT_LENGTH + 1) },
+        { ...request, text: 1 },
+        { ...request, request: -1 },
+        { ...request, request: 1.5 },
+        { ...request, request: MAX_CODE_COPY_REQUEST + 1 },
+        { ...request, html: '<b>unexpected</b>' },
+      ].map(data => ({ ...valid, data })),
+    ]) expect(checkChildMessage(invalid).ok).toBe(false);
+  });
+
+  test('the bounded boolean result cannot initialize or change the session', () => {
+    const answer = { kind: 'code-copy-result', session: request.session, request: 4, ok: true };
+    const valid = { data: answer, source: {}, activeSession: request.session };
+    expect(checkParentMessage(valid).ok).toBe(true);
+    expect(checkParentMessage({ ...valid, activeSession: null }).ok).toBe(false);
+    expect(checkParentMessage({ ...valid, activeSession: 'session-other' }).ok).toBe(false);
+    for (const data of [
+      { ...answer, request: -1 }, { ...answer, request: MAX_CODE_COPY_REQUEST + 1 },
+      { ...answer, ok: 'yes' }, { ...answer, error: 'Raw platform error' },
+    ]) expect(checkParentMessage({ ...valid, data }).ok).toBe(false);
+  });
+});
+
 describe('staleChildMessage', () => {
   test('a message about an older revision is status, dropped, a refusal or a lost edit, never a render error', () => {
     const outcomes: Record<ChildMessage['kind'], ReturnType<typeof staleChildMessage>> = {
@@ -215,6 +254,7 @@ describe('staleChildMessage', () => {
       'comment-open': 'drop',
       'comment-markers': 'drop',
       'open-link': 'drop',
+      'copy-code': 'drop',
       'comment-shortcut': 'drop',
       place: 'drop',
       'edit-rejected': 'refusal',

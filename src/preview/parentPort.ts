@@ -3,7 +3,8 @@
  * The frame says `ready` with a window post, and the app answers, once, with
  * a MessagePort. From then on every message both ways goes over that port,
  * which stays with this document: a page the frame navigates to can never
- * receive or send on it. A clicked link is the one exception (postLinkToParent).
+ * receive or send on it. Clicked links and Copy code use window posts to
+ * preserve WebKit's user activation.
  */
 import { checkConnectMessage } from "../features/rendered/protocol";
 
@@ -23,6 +24,13 @@ export function postToParent(message: unknown): void {
  */
 export function postLinkToParent(message: unknown): void {
   if (port) window.parent.postMessage(message, "*");
+}
+
+/** Copy uses the same activation-preserving path; the result uses the port. */
+export function postCodeCopyToParent(message: unknown): boolean {
+  if (!port) return false;
+  window.parent.postMessage(message, '*');
+  return true;
 }
 
 /** Say ready, take the app's port when it answers, and hear the app on it with `onMessage`. */

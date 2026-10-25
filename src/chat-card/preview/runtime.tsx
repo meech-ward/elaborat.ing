@@ -27,13 +27,14 @@ import * as jsxRuntime from "react/jsx-runtime"
 import { Banner } from "@/features/design-system/ui/Banner"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { trustedReact } from "@/preview/trustedReact"
+import { setCodeCopyHandler } from "@/features/rendered/codeCopy"
 import { CardNote, EmbedFigure, READING_CLASS } from "../cardNote"
 import { CardImage, type CardImagePixels } from '../cardImages';
 import type { CardEmbed } from "../embedText"
 import { addFonts } from "../fontFaces"
 import { componentCaption } from "./caption"
 import { PREVIEW_COMPONENTS } from "./catalog"
-import { GUARD_NAME, type CardToFrame, type ComponentError, type FrameToCard, type PreviewAppearance, type PreviewPlan } from "./protocol"
+import { GUARD_NAME, MAX_COPY_CODE, type CardToFrame, type ComponentError, type FrameToCard, type PreviewAppearance, type PreviewPlan } from "./protocol"
 
 type ModuleScope = Record<string, unknown>
 /** A compiled file's function body, wrapped by frameDocument.ts: it takes the runtime and returns the file's exports. */
@@ -290,10 +291,30 @@ function MissingExport({ name }: { name: string }): ReactNode {
  */
 export function open(registry: Registry) {
   run = registry.run
+  let request = 0
+  const copies = new Map<number, { resolve: () => void; reject: () => void; timer: number }>()
+  setCodeCopyHandler((text) => new Promise<void>((resolve, reject) => {
+    if (text.length > MAX_COPY_CODE || copies.size >= 8) return reject(new Error("Could not copy code."))
+    const id = ++request
+    const timer = window.setTimeout(() => {
+      copies.delete(id)
+      reject(new Error("Could not copy code."))
+    }, 10_000)
+    copies.set(id, { resolve, reject: () => reject(new Error("Could not copy code.")), timer })
+    post({ type: "copy-code", run, request: id, text })
+  }))
   let started = false
   window.addEventListener("message", (event: MessageEvent<CardToFrame>) => {
     if (event.source !== window.parent || typeof event.data !== "object" || event.data === null) return
     const message = event.data
+    if (message.type === "copy-result") {
+      if (message.run !== run || !Number.isSafeInteger(message.request) || typeof message.ok !== "boolean") return
+      const pending = copies.get(message.request)
+      if (!pending) return
+      copies.delete(message.request)
+      window.clearTimeout(pending.timer)
+      return message.ok ? pending.resolve() : pending.reject()
+    }
     if (message.type === "appearance") return applyAppearance(message.appearance)
     if (message.type === "drawings") {
       if (started) {setDrawings({ embeds: message.embeds, svgs: message.svgs });setImages(message.images ?? {});}

@@ -3,8 +3,8 @@
  * over postMessage. The card builds the frame's document with the compiled
  * code in it (frameDocument.ts) and then sends it only data: what to show,
  * the drawings the server drew, sample props, the colours and fonts. The
- * frame sends back only its height, that it has drawn, what failed, and a
- * link someone clicked. The card checks every message the frame sends
+ * frame sends back its height, that it has drawn, what failed, and a link
+ * or code-copy action. The card checks every message the frame sends
  * (frameMessages.ts); the frame's code is the note's, so nothing it says is
  * trusted. No schema library here: the frame's bundle imports these types.
  */
@@ -14,6 +14,9 @@ import type { CardImagePixels } from '../cardImages';
 
 /** The component the compiler wraps around each outermost element of a note, so one that throws shows an error in its place. */
 export const GUARD_NAME = "PreviewGuard"
+
+/** No code-copy message is larger than the app's maximum text file. */
+export const MAX_COPY_CODE = 2 * 1024 * 1024
 
 /** The colours and fonts the card has now: the host's scheme (none: the device's) and its font variables. */
 export type PreviewAppearance = {
@@ -50,6 +53,8 @@ export type CardToFrame =
   | { type: "appearance"; appearance: PreviewAppearance }
   /** A note's drawings and diagrams as the card has them now: a diagram it draws itself (cardDiagrams.ts) comes later. */
   | { type: "drawings"; embeds: CardEmbed[]; svgs: Record<string, string>;images?:Record<string,CardImagePixels> }
+  /** Answers the current preview's one clipboard request. */
+  | { type: "copy-result"; run: number; request: number; ok: boolean }
 
 /** A component that threw while it rendered, shown as an error in its place. */
 export type ComponentError = { name: string; message: string }
@@ -64,3 +69,5 @@ export type FrameToCard =
   | { type: "failed"; run: number; message: string }
   /** A link clicked, and where it is: its top and bottom, in pixels from the frame's top. */
   | { type: "link"; run: number; href: string; top?: number; bottom?: number }
+  /** A person's Copy code click. The card requires active user activation. */
+  | { type: "copy-code"; run: number; request: number; text: string }

@@ -10,8 +10,8 @@
  * its bridge to the host, and cannot call tools. The card then sends it data
  * only (what to show, the drawings, props, colours and fonts; a diagram the
  * card draws itself as it is drawn: `drawn`), and
- * reads back only its height, whether it drew, and a clicked link, which the
- * card offers to open and opens through the host only when the person says so.
+ * reads back its height, whether it drew, a clicked link, which the card
+ * offers to open, and code copying, which requires browser user activation.
  *
  * `onOutcome` hears when the preview has drawn (with the components that
  * threw doing so) or failed; the card shows what it had until then, and
@@ -27,7 +27,7 @@ import { frameModules, loadModule, ModuleNotLoaded } from "../modules"
 import type { CardFile } from "../toolResult"
 import type { PreviewProgram } from "./compile"
 import { FRAME_NOT_LOADED, frameDocument } from "./frameDocument"
-import { linkSpot, readFrameMessage } from "./frameMessages"
+import { copyFrameCode, linkSpot, readFrameMessage } from "./frameMessages"
 import type { CardToFrame, ComponentError, PreviewAppearance, PreviewPlan } from "./protocol"
 
 /** How long the frame has to draw before the card stops waiting for it. */
@@ -138,6 +138,7 @@ export function ComponentPreview({
   useEffect(() => {
     if (!prepared) return
     if (waiting) return outcome({ status: "asking", files: prepared.code })
+    let active = true
     let settled = false
     const settle = (value: PreviewOutcome) => {
       window.clearTimeout(timer)
@@ -168,6 +169,13 @@ export function ComponentPreview({
           return settle({ status: "failed", message: message.message })
         case "link":
           return link(message.href, linkSpot(message, shownHeight.current))
+        case "copy-code":
+          // The preview runs untrusted code. Its current window and run were
+          // checked above; only an active person gesture can reach the writer.
+          void copyFrameCode(message.text, navigator.userActivation?.isActive === true, (text) => navigator.clipboard.writeText(text)).then((ok) => {
+            if (active) send({ type: "copy-result", run: prepared.run, request: message.request, ok })
+          })
+          return
       }
     }
     // A chat whose policy does not allow the frame at all.
@@ -180,6 +188,7 @@ export function ComponentPreview({
     window.addEventListener("message", onMessage)
     document.addEventListener("securitypolicyviolation", onViolation)
     return () => {
+      active = false
       window.clearTimeout(timer)
       appearance.disconnect()
       window.removeEventListener("message", onMessage)

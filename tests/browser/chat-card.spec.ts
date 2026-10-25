@@ -346,6 +346,99 @@ test("where the host cannot call tools, the card stays read-only, keeps the app'
   expect((await sizes()).at(-1)!.height).toBeGreaterThan(200)
 })
 
+const COPY_SAMPLES = [
+  ["cpp", '#include <iostream>\n// [!code highlight:2]\nint main() {\n\tstd::cout << "<button>& code</button>"; // [!code focus]\n  return 0; // [!code ++]\n}\n\n'],
+  ["unlisted-copy-language", "  Keep these spaces.  \n\n\tliteral <tag> & {expression}"],
+  ["", "first\n\n  second\n\tthird"],
+] as const
+const COPY_NOTE = `# Copy code\n\n${COPY_SAMPLES.map(([language, code]) => `\`\`\`${language}\n${code}\n\`\`\``).join("\n\n")}\n`
+
+function copyNote() {
+  const result = shown(4, COPY_NOTE)
+  const escape = (code: string) => code.replace(/[&<>]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[character]!)
+  return {
+    ...result,
+    structuredContent: { ...result.structuredContent, embeds: [] },
+    _meta: {
+      ...result._meta,
+      "elaborat.ing/html": `<h1>Copy code</h1>${COPY_SAMPLES.map(([language, code]) => `<pre><code${language ? ` class="language-${language}"` : ""}>${escape(code)}\n</code></pre>`).join("")}`,
+    },
+  }
+}
+
+/** Observe what the card asks to copy, independently of a host's clipboard policy. */
+async function cardClipboard(page: Page, reject = false) {
+  await page.frames()[1].evaluate((refused) => {
+    const state = window as unknown as { copiedCode: string[]; refuseCopy: boolean }
+    state.copiedCode = []
+    state.refuseCopy = refused
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          state.copiedCode.push(text)
+          if (state.refuseCopy) throw new DOMException("Clipboard permission refused", "NotAllowedError")
+        },
+      },
+    })
+  }, reject)
+}
+const cardCopied = (page: Page) => page.frames()[1].evaluate(() => (window as unknown as { copiedCode: string[] }).copiedCode)
+
+for (const policy of ["default", "declared"] as const) {
+  test(`a read-only card copies exact ${policy === "default" ? "plain" : "highlighted"} code, including annotations and whitespace`, async ({ page }) => {
+    const card = await openHost(page, { tools: false, theme: "light", policy, result: copyNote() })
+    await expect(card.locator(".document-code")).toHaveCount(COPY_SAMPLES.length)
+    await cardClipboard(page)
+    if (policy === "declared") {
+      await expect(card.locator('[data-code-language="cpp"] .shiki')).toBeVisible()
+      await expect(card.locator('[data-code-language="cpp"] .shiki')).not.toContainText("[!code")
+    } else await expect(card.locator(".shiki")).toHaveCount(0)
+    for (let index = 0; index < COPY_SAMPLES.length; index++) {
+      const block = card.locator(".document-code").nth(index)
+      await block.getByRole("button", { name: "Copy code", exact: true }).focus()
+      await page.keyboard.press("Enter")
+      await expect(block.getByRole("status")).toHaveText("Copied")
+      await expect.poll(() => cardCopied(page)).toEqual(COPY_SAMPLES.slice(0, index + 1).map(([, code]) => code))
+    }
+    await expect(card.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0)
+    expect(await calls(page)).toEqual([])
+    if (policy === "default") {
+      // This host never advertised resource policy, so the card attempts its
+      // usual fonts and highlighter and their existing CSP failures stay plain.
+      expect(await violations(page)).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/space-grotesk-latin-[\w-]{8}\.woff2$/),
+        expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/jetbrains-mono-latin-[\w-]{8}\.woff2$/),
+        expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/excalifont-latin-[\w-]{8}\.woff2$/),
+        expect.stringMatching(/^script-src-elem https:\/\/elaborat\.ing\/chat-card\/highlight-[\w-]{8}\.js$/),
+      ]))
+      expect(await violations(page)).toHaveLength(4)
+    } else expect(await violations(page)).toEqual([])
+  })
+}
+
+test("a refused chat-card copy reports failure and can retry without changing the note", async ({ page }) => {
+  const card = await openHost(page, { tools: true, theme: "light", result: copyNote() })
+  await expect(card.locator(".document-code")).toHaveCount(COPY_SAMPLES.length)
+  await cardClipboard(page, true)
+  const block = card.locator(".document-code").first()
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toContainText("Could not copy")
+  await expect(block.getByRole("button", { name: "Copy code", exact: true })).toBeEnabled()
+  await page.frames()[1].evaluate(() => { (window as unknown as { refuseCopy: boolean }).refuseCopy = false })
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toHaveText("Copied")
+  expect(await cardCopied(page)).toEqual([COPY_SAMPLES[0][1], COPY_SAMPLES[0][1]])
+  await card.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(card.locator(".ProseMirror .document-code")).toHaveCount(COPY_SAMPLES.length)
+  const editingBlock = card.locator(".ProseMirror .document-code").first()
+  await editingBlock.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(editingBlock.getByRole("status")).toHaveText("Copied")
+  expect(await cardCopied(page)).toEqual([COPY_SAMPLES[0][1], COPY_SAMPLES[0][1], COPY_SAMPLES[0][1]])
+  await expect(card.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
+  expect(await calls(page)).toEqual([])
+})
+
 test("in ChatGPT the card is in the host's fonts, and loads only the drawings' font", async ({ page }) => {
   const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE), chatgpt: true, styles: { variables: { "--font-sans": "Georgia, serif" } } })
   await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /^Georgia/)
@@ -775,6 +868,73 @@ const cardFrame = (page: Page) => page.frames()[1]
 const previewFrame = (page: Page) => page.frames().find((frame) => frame.parentFrame() === cardFrame(page))!
 const contexts = (page: Page) => page.evaluate(() => (window as unknown as { contexts: { content: { text: string }[] }[] }).contexts.map((context) => context.content[0].text))
 
+test("an isolated MDX chat-card preview copies exact code only after a person gesture", async ({ page }) => {
+  const result = copyNote()
+  const card = await openHost(page, {
+    tools: false,
+    theme: "light",
+    result: { ...result, _meta: { ...result._meta, "elaborat.ing/components": { modules: {} } } },
+  })
+  const note = preview(page, PATH)
+  await expect(note.locator(".document-code")).toHaveCount(COPY_SAMPLES.length)
+  await expect(note.locator(".document-code-highlight")).toHaveCount(0)
+  await cardClipboard(page)
+
+  // A component can invent messages, so the trusted card also checks its
+  // own browser activation. Rendering alone cannot replace the clipboard.
+  const unasked = await previewFrame(page).evaluate(() => new Promise<boolean>((resolve, reject) => {
+    const run = Number(/run:(\d+)/.exec(document.scripts[0].textContent ?? "")![1])
+    let timer = 0
+    const received = (event: MessageEvent) => {
+      if (event.source !== parent || event.data?.type !== "copy-result" || event.data.request !== 999) return
+      window.clearTimeout(timer)
+      window.removeEventListener("message", received)
+      resolve(event.data.ok)
+    }
+    window.addEventListener("message", received)
+    // Playwright's evaluate itself grants transient activation. Let that
+    // expire inside this task's callback before simulating an unasked message.
+    const deadline = performance.now() + 10_000
+    const unactivated = (): void => {
+      if (navigator.userActivation.isActive) {
+        if (performance.now() > deadline) {
+          window.removeEventListener("message", received)
+          return reject(new Error("Browser activation did not expire"))
+        }
+        window.setTimeout(unactivated, 50)
+        return
+      }
+      timer = window.setTimeout(() => {
+        window.removeEventListener("message", received)
+        reject(new Error("Copy result not received"))
+      }, 5_000)
+      parent.postMessage({ type: "copy-code", run, request: 999, text: "unasked clipboard change" }, "*")
+    }
+    unactivated()
+  }))
+  expect(unasked).toBe(false)
+  expect(await cardCopied(page)).toEqual([])
+
+  for (let index = 0; index < COPY_SAMPLES.length; index++) {
+    const block = note.locator(".document-code").nth(index)
+    await block.getByRole("button", { name: "Copy code", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(block.getByRole("status")).toHaveText("Copied")
+    await expect.poll(() => cardCopied(page)).toEqual(COPY_SAMPLES.slice(0, index + 1).map(([, code]) => code))
+  }
+  await cardFrame(page).evaluate(() => { (window as unknown as { refuseCopy: boolean }).refuseCopy = true })
+  const block = note.locator(".document-code").first()
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toContainText("Could not copy")
+  await expect(block.getByRole("button", { name: "Copy code", exact: true })).toBeEnabled()
+  await cardFrame(page).evaluate(() => { (window as unknown as { refuseCopy: boolean }).refuseCopy = false })
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toHaveText("Copied")
+  await expect(card.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0)
+  expect(await calls(page)).toEqual([])
+  expect(await violations(page)).toEqual([])
+})
+
 for (const theme of ["light", "dark"] as const) {
   test(`a note's built-in and workspace components show in a sandboxed frame, and one that throws shows its error (${theme})`, async ({ page, appErrors }) => {
     appErrors.expect("Broken could not be shown: Broken on purpose")
@@ -1147,6 +1307,29 @@ test("a new note writes in, its heading before it is saved, then the saved card 
   await send(page, "ui/notifications/tool-result", created("notes/launch.mdx", "note", { "elaborat.ing/html": "<h1>Launch plan</h1><p>As saved.</p>", "elaborat.ing/source": PLAN }))
   await expect(card.getByText("As saved.")).toBeVisible()
   await expect(card.locator("[data-live-content]")).toHaveCount(0)
+})
+
+test("a live note's copy button follows its current code without copying the writing caret", async ({ page }) => {
+  const card = await openHost(page, { tools: false, theme: "light", result: null, manual: true })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { ready?: boolean }).ready)).toBe(true)
+  await cardClipboard(page)
+  const source = (code: string) => `# Live code\n\n\`\`\`cpp\n${code}\n\`\`\``
+  const code = COPY_SAMPLES[0][1]
+  await send(page, "ui/notifications/tool-input-partial", input("notes/live-code.md", source(code)))
+  const block = card.locator("[data-live-content] .document-code")
+  await expect(block.locator("code .live-caret")).toHaveCount(1)
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toHaveText("Copied")
+  await expect.poll(() => cardCopied(page)).toEqual([code])
+
+  const next = code.replace("return 0", "return 1")
+  await send(page, "ui/notifications/tool-input-partial", input("notes/live-code.md", source(next)))
+  await expect(block.locator("pre")).toContainText("return 1")
+  await block.getByRole("button", { name: "Copy code", exact: true }).click()
+  await expect(block.getByRole("status")).toHaveText("Copied")
+  await expect.poll(() => cardCopied(page)).toEqual([code, next])
+  expect(await calls(page)).toEqual([])
+  expect(await violations(page)).toEqual([])
 })
 
 test("a new D2 diagram writes in as source while its engine starts, and its drawing takes the source's place when the result comes", async ({ page }) => {

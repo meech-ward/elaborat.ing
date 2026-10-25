@@ -9,7 +9,8 @@
  * says charts show in elaborat.ing. Drawing and Diagram come from the frame,
  * which draws them from the server's pictures (runtime.tsx).
  */
-import type { ReactNode } from "react"
+import { isValidElement, type ComponentProps, type ReactNode } from "react"
+import { CodeCopyButton } from "@/features/rendered/CodeCopyButton"
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { CHART_COMPONENT_CATALOG } from "@/features/document/chartCatalog"
 import {
@@ -58,8 +59,28 @@ const CHARTS = Object.fromEntries(
   ]),
 )
 
+/** Plain code keeps the highlighter out of this nested frame. Copy uses its source. */
+function CodeBlock({ children, ...props }: ComponentProps<"pre">) {
+  if (!isValidElement<{ children?: unknown; className?: string }>(children) || typeof children.props.children !== "string") {
+    return <pre {...props}>{children}</pre>
+  }
+  const language = /(?:^|\s)language-(\S+)/.exec(children.props.className ?? "")?.[1] ?? "text"
+  // The Markdown HTML compiler adds one terminal newline, as the server does.
+  const code = children.props.children.replace(/\n$/, "")
+  return (
+    <div className="not-prose document-code" data-code-language={language}>
+      <div className="document-code-label">
+        <span>{language}</span>
+        <span className="document-code-actions"><CodeCopyButton code={code} /></span>
+      </div>
+      <pre {...props} tabIndex={0} aria-label={`${language === "text" ? "Plain text" : language} code`}><code>{code}</code></pre>
+    </div>
+  )
+}
+
 export const PREVIEW_COMPONENTS: Record<string, unknown> = {
   ...CHARTS,
+  pre: CodeBlock,
   Note,
   Warning,
   Important,

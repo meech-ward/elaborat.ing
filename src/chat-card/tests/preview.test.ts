@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { createElement, type ComponentType, type ReactNode } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { COMPONENT_CATALOG } from "@/features/document/componentCatalog"
 import { PREVIEW_COMPONENTS } from "../preview/catalog"
 import { componentCaption, MAX_CAPTION } from "../preview/caption"
 import { compileComponents, compileErrorMessage, compileNote } from "../preview/compile"
 import { FRAME_NOT_LOADED, frameDocument, inlineScript } from "../preview/frameDocument"
-import { linkSpot, MAX_MESSAGE, readFrameMessage } from "../preview/frameMessages"
+import { copyFrameCode, linkSpot, MAX_MESSAGE, readFrameMessage } from "../preview/frameMessages"
+import { MAX_COPY_CODE } from "../preview/protocol"
 import { parseShowResult } from "../toolResult"
 
 const CHART = [
@@ -119,6 +122,45 @@ describe("what the frame says to the card", () => {
       expect(readFrameMessage(junk)).toBeNull()
     }
   })
+
+  test("code copy requests are bounded and carry a positive request id", () => {
+    const request = { type: "copy-code", run: 7, request: 1, text: "\tconst x = '<literal>'; // [!code focus]\n\n" } as const
+    expect(readFrameMessage(request)).toEqual(request)
+    expect(readFrameMessage({ ...request, text: "x".repeat(MAX_COPY_CODE) })).toEqual({ ...request, text: "x".repeat(MAX_COPY_CODE) })
+    for (const invalid of [
+      { ...request, text: "x".repeat(MAX_COPY_CODE + 1) },
+      { ...request, text: 3 },
+      { ...request, request: 0 },
+      { ...request, request: 1.5 },
+      { ...request, request: Number.MAX_SAFE_INTEGER + 1 },
+      { ...request, run: undefined },
+    ]) expect(readFrameMessage(invalid)).toBeNull()
+  })
+
+  test("code copy calls the writer in the active gesture's turn and catches refusals", async () => {
+    const writes: string[] = []
+    const copy = (text: string) => { writes.push(text); return Promise.resolve() }
+    expect(await copyFrameCode("unasked", false, copy)).toBe(false)
+    expect(writes).toEqual([])
+    const answer = copyFrameCode("\tkeep <code> & its spacing\n\n", true, copy)
+    // Invoking the clipboard on a later task would lose the user's gesture.
+    expect(writes).toEqual(["\tkeep <code> & its spacing\n\n"])
+    expect(await answer).toBe(true)
+    expect(await copyFrameCode("refused", true, () => Promise.reject(new Error("refused")))).toBe(false)
+    expect(await copyFrameCode("missing", true, () => { throw new Error("missing clipboard") })).toBe(false)
+  })
+})
+
+test("nested preview code stays plain, escaped and copyable from its original source", () => {
+  const Pre = PREVIEW_COMPONENTS.pre as ComponentType<{ children: ReactNode }>
+  const code = "\tconst tag = '<button>& code</button>'; // [!code focus]\n\n"
+  const html = renderToStaticMarkup(createElement(Pre, { children: createElement("code", { className: "language-CPP" }, `${code}\n`) }))
+  expect(html).toContain('data-code-language="CPP"')
+  expect(html).toContain("Copy code</button>")
+  expect(html).toContain('role="status" aria-live="polite"')
+  expect(html).toContain("\tconst tag = &#x27;&lt;button&gt;&amp; code&lt;/button&gt;&#x27;; // [!code focus]\n\n</code>")
+  expect(html).not.toContain("document-code-highlight")
+  expect(html).not.toContain("<button>& code</button>")
 })
 
 test("the frame gives a note every component of the app's catalog", () => {

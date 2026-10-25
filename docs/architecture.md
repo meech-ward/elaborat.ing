@@ -1546,6 +1546,20 @@ plain-text fallback and the existing bounded highlight cache. The per-line
 tokenization budget is two seconds: Shiki's 500 ms default can cut a normal
 cold C++ or embedded-language line short in Firefox before caching it.
 
+Code blocks also offer **Copy code**, including plain/unknown languages,
+read-only notes, live chat cards and nested component previews. Copy takes
+the original code, including indentation and highlighting annotations, or
+the current textarea draft while code is being edited. It never serializes
+Shiki's HTML or adds a streaming caret. Success is announced as "Copied";
+a refused clipboard write keeps the button available to retry and offers
+manual selection instead. Copy does not change document source or save it.
+The app and chat card perform clipboard writes on a person's activated
+click, checking the current frame/session/revision or preview run. Opaque
+document frames send a bounded request and receive only success/failure;
+their sandbox and network policy stay unchanged. The outer MCP card declares
+the standard write-only [`clipboardWrite` permission](https://apps.extensions.modelcontextprotocol.io/api/interfaces/app.McpUiResourcePermissions.html),
+which hosts may grant; no clipboard reads are requested.
+
 **What the domain adds.** Browsers with site isolation put a cross-site frame
 in a process of its own, which protects against Spectre-style and renderer
 attacks and keeps a runaway component from freezing the app: with the sandbox

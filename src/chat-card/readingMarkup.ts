@@ -4,20 +4,62 @@
 // block in a block of its own, as the rendered view's editor holds them, a
 // task item's box in the bullet's place (the library's task list), a code
 // block under its language (codeFence.tsx), and a table in its scrolling
-// box (ReadingTable in preview-entry.tsx). DOM only, with no imports, so the
-// card, its live view and its editor share it.
+// box (ReadingTable in preview-entry.tsx). DOM only, with the shared
+// clipboard writer, so the card, its live view and its editor share it.
+import { copyCode, type CodeCopier } from "../features/rendered/codeCopy"
 
 /** A code block's highlighted HTML, or null to keep it plain (features/rendered/codeHighlight.ts). */
 export type Highlighter = (code: string, language: string) => string | null
 
 /** A code block as the app shows one that cannot be edited there: its language over the code. */
-export function codeBlock(code: string, language: string): HTMLElement {
+export function codeBlock(code: string, language: string, copy: CodeCopier = copyCode): HTMLElement {
   const block = document.createElement("div")
   block.className = "not-prose document-code"
   block.dataset.codeLanguage = language || "text"
   const label = document.createElement("div")
   label.className = "document-code-label"
-  label.textContent = language || "text"
+  const name = document.createElement("span")
+  name.textContent = language || "text"
+  const actions = document.createElement("span")
+  actions.className = "document-code-actions"
+  const status = document.createElement("span")
+  status.className = "document-code-copy-status"
+  status.setAttribute("role", "status")
+  status.setAttribute("aria-live", "polite")
+  const button = document.createElement("button")
+  button.type = "button"
+  button.textContent = "Copy code"
+  let reset = 0
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") event.stopPropagation()
+  })
+  button.addEventListener("click", (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!event.isTrusted) return
+    window.clearTimeout(reset)
+    button.disabled = true
+    status.textContent = ""
+    // Keep the original code in this closure: highlighting can hide source
+    // annotations and replace the pre entirely, and streaming adds a caret.
+    void (async () => {
+      try {
+        await copy(code)
+        status.textContent = "Copied"
+        reset = window.setTimeout(() => { status.textContent = "" }, 2_000)
+      } catch {
+        status.textContent = "Could not copy. Select the code and copy it."
+      } finally {
+        button.disabled = false
+      }
+    })()
+  })
+  actions.append(status, button)
+  label.append(name, actions)
   const pre = document.createElement("pre")
   pre.tabIndex = 0
   pre.setAttribute("aria-label", `${language || "Plain text"} code`)
@@ -99,7 +141,7 @@ function taskItem(item: HTMLLIElement) {
 }
 
 /** Turns the server's HTML for a note, in `root`, into the app's markup for task items, code blocks and tables. */
-export function readingMarkup(root: ParentNode) {
+export function readingMarkup(root: ParentNode, copy: CodeCopier = copyCode) {
   for (const item of root.querySelectorAll<HTMLLIElement>("li")) itemParagraph(item)
   for (const item of root.querySelectorAll<HTMLLIElement>("li.task-list-item")) taskItem(item)
   for (const pre of root.querySelectorAll("pre")) {
@@ -108,7 +150,7 @@ export function readingMarkup(root: ParentNode) {
     const language = /(?:^|\s)language-(\S+)/.exec(code.className)?.[1] ?? ""
     // In a block of its own, so it keeps the space the app gives a code block above and below.
     const holder = document.createElement("div")
-    holder.append(codeBlock((code.textContent ?? "").replace(/\n$/, ""), language))
+    holder.append(codeBlock((code.textContent ?? "").replace(/\n$/, ""), language, copy))
     pre.replaceWith(holder)
   }
   for (const table of root.querySelectorAll("table")) {

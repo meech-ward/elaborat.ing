@@ -19,10 +19,11 @@
  *   (`sandbox="allow-scripts"`): the frame's page on the sandbox domain when
  *   the build has one, else (and when that page cannot load) a
  *   self-contained `srcdoc` document. The parent never calls `eval`/`run`
- *   on document code. After the frame says ready, every message both ways
- *   goes over a MessagePort given to the frame's first document, so a page
+ *   on document code. After the frame says ready, document messages go over
+ *   a MessagePort given to the frame's first document, so a page
  *   the frame navigates to hears and says nothing; a frame that navigates
- *   itself away is replaced.
+ *   itself away is replaced. Clicked links and code copies use validated
+ *   window posts to preserve the initiating click's activation.
  * - Ordinary prose uses one persistent source-derived ProseMirror view.
  *   Vendor transactions are proposals, validated against parent-owned source
  *   mappings in full before one exact source/Monaco commit. Monaco owns undo.
@@ -51,6 +52,7 @@ import { FRAME_PAGE_PATH } from "virtual:preview-frame/page";
 import { moduleLoader, useModule } from "@/lib/moduleLoader";
 import { useSettledError } from "@/lib/settledError";
 import { SANDBOX_ORIGIN, sandboxFrameUrl } from "./sandboxFrame";
+import { handleCodeCopyRequest } from '../../preview/codeClipboard';
 import {
   codeFenceFromParagraph,
   projectFluidSource,
@@ -414,6 +416,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const sentModules = useRef(new Set<string>());
   // What the frame was last told (Exposed above).
   const authority = useRef<Exposed | null>(null);
+  const latestDocument = useRef(document);
   // A link in the note was clicked, said in a window post from the frame
   // (the handshake effect below). Only a person's click opens anything: the
   // frame's own code cannot, since a click in the frame is what activates this
@@ -425,6 +428,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (activation && !activation.isActive) return;
     onOpenLink?.(checked.message.href);
   });
+  const copyCode = useEffectEvent((event: MessageEvent, frame: Window) => {
+    const current = authority.current;
+    const snapshot = latestDocument.current;
+    const port = portRef.current;
+    if (!port || !current || current.text !== snapshot.text || current.revision !== snapshot.revision) return;
+    handleCodeCopyRequest({
+      data: event.data,
+      source: event.source,
+      expectedSource: frame,
+      session,
+      revision: current.revision,
+      port,
+      currentPort: () => portRef.current,
+      activation: (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation,
+      writeText: text => navigator.clipboard.writeText(text),
+    });
+  });
   // The handshake (docs/architecture.md, Component isolation): the frame's
   // first `ready`, a window post, is answered with one port of a new channel,
   // and every message after it, both ways, goes on that channel. A port stays
@@ -432,15 +452,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // which has the same window, can neither hear the editor nor speak to it.
   // A frame gets one port: a later `ready` from its window is not answered.
   // The frame gets the current render on its port as soon as it has one.
-  // After that only a clicked link comes as a window post (postLinkToParent in
-  // src/preview/parentPort.ts), with this editor's session, which only the
+  // After that clicked links and code copies come as window posts, with this
+  // editor's session, which only the
   // frame's first document was sent.
   useEffect(() => {
     const onWindowMessage = (event: MessageEvent) => {
       const frame = frameRef.current?.contentWindow;
       if (event.source !== frame || frame == null) return;
       if (portRef.current) {
-        openLink(event.data, frame);
+        if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') copyCode(event, frame);
+        else openLink(event.data, frame);
         return;
       }
       const checked = checkChildMessage({ data: event.data, source: event.source, expectedSource: frame, session, revision: -1 });
@@ -456,7 +477,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       setReadyTick((tick) => tick + 1);
     };
     window.addEventListener("message", onWindowMessage);
-    return () => window.removeEventListener("message", onWindowMessage);
+    return () => {
+      window.removeEventListener("message", onWindowMessage);
+      portRef.current?.close();
+      portRef.current = null;
+    };
   }, [session]);
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
@@ -497,7 +522,6 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   );
   const hasExposed = exposed !== null;
   const epoch = useRef(0);
-  const latestDocument = useRef(document);
   const imageTarget = useRef({documentId,documentPath,readOnly,active,onPatch});
   const imageReadInFlight = useRef(false);
   useLayoutEffect(() => {
@@ -857,6 +881,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       // still fail the checks below and are rejected visibly.
       const port = portRef.current;
       if (event.currentTarget !== port || port == null) return;
+      // Copy needs a trusted window post's activation, never a port message.
+      // Malformed/stale copy requests stay out of document error feedback.
+      if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') return;
       const settle = (draftId: number | undefined, outcome: 'noop' | 'rejected', reason?: string) => {
         if (draftId === undefined) return;
         port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason });
@@ -1223,7 +1250,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       // A clicked link comes as a window post (openLink above), never on the port.
-      if (message.kind === "open-link") return;
+      if (message.kind === "open-link" || message.kind === 'copy-code') return;
       if (message.kind === "edit-resource") {
         // The path was parsed from evaluated document output: allow only a
         // reference the parent itself parsed from the authoritative source.

@@ -115,7 +115,7 @@ Deno.test('the file view is listed and read as an MCP App resource', async () =>
     assert('text' in content && content.text === FILE_VIEW_HTML)
     // The view may load its editor and previews from the app's site, and from nowhere else.
     assertEquals(content._meta, {
-      ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: ['https://elaborat.ing'] } },
+      ui: { prefersBorder: false, permissions: { clipboardWrite: {} }, csp: { connectDomains: [], resourceDomains: ['https://elaborat.ing'] } },
       'openai/widgetCSP': { connect_domains: [], resource_domains: ['https://elaborat.ing'] },
       'openai/widgetDomain': 'https://elaborat.ing',
     })

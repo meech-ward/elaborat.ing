@@ -4,7 +4,8 @@
  * only when it has exactly this shape, and its text is cut short.
  */
 import { z } from "zod/mini"
-import type { FrameToCard } from "./protocol"
+import type { CodeCopier } from "@/features/rendered/codeCopy"
+import { MAX_COPY_CODE, type FrameToCard } from "./protocol"
 
 /** The most characters of a message the card keeps. */
 export const MAX_MESSAGE = 300
@@ -22,12 +23,27 @@ const schema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("rendered"), run, errors: z.array(z.object({ name: z.string().check(z.maxLength(200)), message: text })).check(z.maxLength(20)) }),
   z.object({ type: z.literal("failed"), run, message: text }),
   z.object({ type: z.literal("link"), run, href: z.string().check(z.maxLength(4096)), top: place, bottom: place }),
+  z.object({ type: z.literal("copy-code"), run, request: z.int().check(z.gte(1)), text: z.string().check(z.maxLength(MAX_COPY_CODE)) }),
 ])
 
 /** The frame's message, or null when it is anything else. */
 export function readFrameMessage(data: unknown): FrameToCard | null {
   const parsed = schema.safeParse(data)
   return parsed.success ? parsed.data : null
+}
+
+/**
+ * A frame cannot copy merely by sending a message. The card checks its own
+ * browser activation first, and calls the clipboard in the same task.
+ */
+export async function copyFrameCode(text: string, activated: boolean, copy: CodeCopier): Promise<boolean> {
+  if (!activated) return false
+  try {
+    await copy(text)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** The most room the card's "Open this link?" prompt takes, beside the link. */

@@ -44,7 +44,9 @@ import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
-import { connectToParent, postLinkToParent, postToParent } from './parentPort';
+import { connectToParent, postCodeCopyToParent, postLinkToParent, postToParent } from './parentPort';
+import { CodeClipboard } from './codeClipboard';
+import { setCodeCopyHandler } from '../features/rendered/codeCopy';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
 import { scopeSvgIds } from '../features/drawings/svgMask.ts';
 import { rasterImageUses } from '../features/drawings/presentation.ts';
@@ -101,6 +103,8 @@ type PendingRender = {
 
 let activeSession: string | null = null;
 let activeRevision = -1;
+const codeClipboard = new CodeClipboard(() => ({ session: activeSession, revision: activeRevision }), postCodeCopyToParent);
+setCodeCopyHandler(text => codeClipboard.copy(text));
 let slotTable: SlotInfo[] = [];
 /** Monotonic render generation: completions from a superseded generation are dropped. */
 let renderSeq = 0;
@@ -941,6 +945,10 @@ function onParentMessage(event: MessageEvent): void {
   });
   if (!checked.ok) return;
   const message = checked.message;
+  if (message.kind === 'code-copy-result') {
+    codeClipboard.receive(message);
+    return;
+  }
   if (message.kind === 'source-draft-settled') {
     settleSourceDraft(message.draftId, message.outcome, message.reason);
     return;

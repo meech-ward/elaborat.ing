@@ -6,9 +6,10 @@
  * policy, with its own folder's scripts), or a self-contained `srcdoc`
  * document (inline bootstrap, no network).
  * The frame says `ready` with a window post and the parent answers with one
- * MessagePort (`connect`); every other message, both ways, goes over that
- * port. Every message is checked for sender (the port, or event.source for
- * the handshake), session, revision and Zod shape. Stale revisions are
+ * MessagePort (`connect`); later messages go over that port except clicked
+ * links and code-copy requests, which preserve WebKit's user activation as
+ * window posts. Every message is checked for sender, session, revision and
+ * Zod shape. Stale revisions are
  * rejected visibly, never applied.
  *
  * This module also owns the small context-aware prop-literal codec shared by
@@ -208,6 +209,19 @@ export function literalMatchesKind(
 /** A whole number from 0: an index, a position, a revision or an epoch. */
 const whole = z.int().check(z.nonnegative());
 
+/** Copy only bounded code text, never arbitrary clipboard data or reads. */
+export const MAX_CODE_COPY_TEXT_LENGTH = 2_097_152;
+export const MAX_CODE_COPY_REQUEST = 2_147_483_647;
+const codeCopyRequest = z.int().check(z.nonnegative(), z.maximum(MAX_CODE_COPY_REQUEST));
+
+export const codeCopyResultSchema = z.strictObject({
+  kind: z.literal('code-copy-result'),
+  session: z.string().check(z.minLength(8)),
+  request: codeCopyRequest,
+  ok: z.boolean(),
+});
+export type CodeCopyResult = z.infer<typeof codeCopyResultSchema>;
+
 /** A component slot lookup entry sent alongside compiled code. */
 export const slotSchema = z.object({
   index: whole,
@@ -406,6 +420,7 @@ export const commentMarksMessageSchema = z.strictObject({
 export type CommentMarksMessage = z.infer<typeof commentMarksMessageSchema>;
 
 export const parentMessageSchema = z.union([
+  codeCopyResultSchema,
   z.strictObject({
     kind: z.literal('source-draft-settled'),
     session: z.string().check(z.minLength(8)),
@@ -474,8 +489,9 @@ export type ParentMessage = z.infer<typeof parentMessageSchema>;
 
 /**
  * Parent -> child, once, as a window post: the answer to the frame's first
- * `ready`, carrying one MessagePort and nothing else. Every other message,
- * both ways, goes over that port. A port stays with the document it was
+ * `ready`, carrying one MessagePort and nothing else. Document messages,
+ * both ways, go over that port; clicked links and code copies use window
+ * posts for user activation. A port stays with the document it was
  * transferred to, so a page the frame navigates to (which the parent's
  * reference to the frame's window cannot tell apart from the frame) can
  * never receive or send on it, even one that never finishes loading.
@@ -754,6 +770,15 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     revision: whole,
     href: z.string().check(z.minLength(1), z.maxLength(2048)),
   }),
+  // A trusted Copy code click uses the window-post activation path, just
+  // like a clicked link. The result returns on the existing private port.
+  z.strictObject({
+    kind: z.literal('copy-code'),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+    request: codeCopyRequest,
+    text: z.string().check(z.maxLength(MAX_CODE_COPY_TEXT_LENGTH)),
+  }),
 ]);
 
 export type ChildMessage = z.infer<typeof childMessageSchema>;
@@ -788,6 +813,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "comment-shortcut":
     case "comment-markers":
     case "open-link":
+    case "copy-code":
     case "place":
       return "drop";
     case "edit-rejected":

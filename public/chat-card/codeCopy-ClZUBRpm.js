@@ -1,0 +1,1 @@
+var e=e=>navigator.clipboard.writeText(e);function t(t){e=t}function n(t){return e(t)}export{t as n,n as t};

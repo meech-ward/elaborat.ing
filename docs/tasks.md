@@ -415,6 +415,11 @@ matters.
 
 ## Done
 
+- Code blocks offer Copy code in rendered Markdown/MDX notes, read-only
+  views, chat cards and isolated component previews. Copy preserves original
+  whitespace and highlighting annotations, or the current code-editor draft,
+  without changing or saving the note. Clipboard refusal offers a retry and
+  manual selection; frame requests retain activation and isolation checks.
 - Code fences share highlighting for 72 common programming, shell, markup
   and configuration languages in notes and chat cards, with case-insensitive
   aliases such as `cpp`/`c++`, `c#`, `rs`, `py` and `yml`. Embedded languages
