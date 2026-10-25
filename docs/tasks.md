@@ -415,6 +415,10 @@ matters.
 
 ## Done
 
+- Selecting rendered code preserves the native selection and reading
+  position, including drag, double-click and keyboard copying after a prose
+  selection. Code stays selectable in editable chat cards, and only
+  **Edit code** opens the code editor, without accidental edits or saves.
 - Code blocks offer Copy code in rendered Markdown/MDX notes, read-only
   views, chat cards and isolated component previews. Copy preserves original
   whitespace and highlighting annotations, or the current code-editor draft,

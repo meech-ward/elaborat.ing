@@ -127,9 +127,9 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
           }}
         />
       ) : (
-        <div onClick={() => setEditing(true)}>
+        <div>
           {highlighted === null
-            ? <pre aria-label={`${language || 'Plain text'} code`}><code>{value}</code></pre>
+            ? <pre tabIndex={0} aria-label={`${language || 'Plain text'} code`}><code>{value}</code></pre>
             : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={{ __html: highlighted }} />}
         </div>
       )}

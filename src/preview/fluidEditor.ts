@@ -440,12 +440,13 @@ export class FluidEditor {
           // Firefox's first click in an opaque frame can set a DOM caret
           // while leaving BODY active. Focus the one host for non-touch
           // pointers, then let the trusted pointer default place/extend
-          // the actual selection.
+          // the actual selection. Code has its own native selection inside
+          // an object island; focusing prose would restore its old caret.
           if (event.pointerType === "touch") return false;
           if (
             !(event.target instanceof Element) ||
             !event.target.closest(
-              "button,input,select,textarea,[data-authoring-from],.task-list-box",
+              "button,input,select,textarea,[data-authoring-from],.task-list-box,.document-code",
             )
           )
             view.focus();
@@ -460,7 +461,7 @@ export class FluidEditor {
             !view.hasFocus() &&
             (!(event.target instanceof Element) ||
               !event.target.closest(
-                "button,input,select,textarea,[data-authoring-from],.task-list-box",
+                "button,input,select,textarea,[data-authoring-from],.task-list-box,.document-code",
               ))
           )
             view.dom.focus({ preventScroll: true });
@@ -611,7 +612,9 @@ export class FluidEditor {
       stopEvent: (event) =>
         event.target instanceof Element &&
         !!event.target.closest(
-          "button,input,select,textarea,[data-authoring-from]",
+          // Code is displayed inside an opaque object, not ProseMirror text.
+          // Keep its native mouse/keyboard selection out of atom selection.
+          "button,input,select,textarea,[data-authoring-from],.document-code",
         ),
       ignoreMutation: () => true,
       destroy: () => {

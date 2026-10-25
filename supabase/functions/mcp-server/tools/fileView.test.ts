@@ -123,6 +123,8 @@ Deno.test('the file view is listed and read as an MCP App resource', async () =>
     // Hosts that have not refreshed the tool list still get the view at the old URI.
     const old = await client.readResource({ uri: 'ui://elaborating/file-view-v1.html' })
     assert('text' in old.contents[0] && old.contents[0].text === FILE_VIEW_HTML)
+    const previous = await client.readResource({ uri: 'ui://elaborating/file-view-v57.html' })
+    assert('text' in previous.contents[0] && previous.contents[0].text === FILE_VIEW_HTML)
   })
 })
 

@@ -36,7 +36,7 @@ import type { ToolContext } from './types.ts'
 // https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const FILE_VIEW_URI = 'ui://elaborating/file-view-v57.html'
+export const FILE_VIEW_URI = 'ui://elaborating/file-view-v58.html'
 /** Earlier URIs still served, with the current HTML, until hosts refresh the tool list. */
 const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v1.html',
@@ -95,6 +95,7 @@ const OLD_FILE_VIEW_URIS = [
   'ui://elaborating/file-view-v54.html',
   'ui://elaborating/file-view-v55.html',
   'ui://elaborating/file-view-v56.html',
+  'ui://elaborating/file-view-v57.html',
 ]
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 

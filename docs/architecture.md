@@ -1615,6 +1615,13 @@ where a browser groups frames by site they can share a process.
 
 ## Rendered editing
 
+**Decision: displayed code keeps the browser's text selection.** Code blocks
+are object islands outside the prose editor, so code pointer and keyboard
+events do not focus prose or select its containing atom. Dragging or
+double-clicking code preserves the selected text and reading position in
+editable and read-only notes. Editing starts with **Edit code**; selecting
+the displayed code never replaces it with an autofocus textarea or saves it.
+
 **Decision: right-clicking an editable rendered note offers its block picker
 at the pointer.** Ordinary blocks and components insert after the clicked
 top-level block; drawings and diagrams first ask for an existing file. The

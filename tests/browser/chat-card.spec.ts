@@ -439,6 +439,56 @@ test("a refused chat-card copy reports failure and can retry without changing th
   expect(await calls(page)).toEqual([])
 })
 
+test("selecting part of code in the editable card keeps its scroll position and leaves the note unchanged", async ({ page }) => {
+  const prefix = Array.from({ length: 35 }, (_, index) => `Paragraph ${index + 1} before the code.`).join("\n\n")
+  const suffix = Array.from({ length: 20 }, (_, index) => `Paragraph ${index + 1} after the code.`).join("\n\n")
+  const source = `# Code selection\n\n${prefix}\n\n\`\`\`cpp\nint selectionTarget = 42;\nreturn selectionTarget;\n\`\`\`\n\n\`\`\`unknown-selection-language\nKeep partialSelection exactly as written.\n\`\`\`\n\n${suffix}\n`
+  const card = await openHost(page, { tools: true, theme: "light", result: shown(4, source) })
+  await card.getByRole("button", { name: "Edit", exact: true }).click()
+  const editor = card.locator(".ProseMirror")
+  await expect(editor).toBeVisible()
+  await expect(editor.locator('[data-code-language="cpp"] .shiki code')).toContainText("selectionTarget")
+
+  for (const [language, word] of [["cpp", "selectionTarget"], ["unknown-selection-language", "partialSelection"]]) {
+    const block = editor.locator(`[data-code-language="${language}"]`)
+    const code = block.locator("pre code")
+    await code.evaluate((element) => element.scrollIntoView({ block: "center" }))
+    const before = await page.frames()[1].evaluate(() => scrollY)
+    expect(before).toBeGreaterThan(400)
+    const points = await code.evaluate((element, selected) => {
+      const offset = element.textContent!.indexOf(selected)
+      if (offset < 0) throw new Error("Selection text was not rendered")
+      const point = (index: number) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+        let remaining = index
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (remaining <= node.textContent!.length) {
+            const range = document.createRange()
+            range.setStart(node, remaining)
+            range.collapse(true)
+            const rect = range.getBoundingClientRect()
+            return { x: rect.x, y: rect.y + rect.height / 2 }
+          }
+          remaining -= node.textContent!.length
+        }
+        throw new Error("Selection position was not rendered")
+      }
+      return { from: point(offset), to: point(offset + selected.length) }
+    }, word)
+    const frame = (await page.locator("iframe").boundingBox())!
+    await page.mouse.move(frame.x + points.from.x, frame.y + points.from.y)
+    await page.mouse.down()
+    await page.mouse.move(frame.x + points.to.x, frame.y + points.to.y, { steps: 12 })
+    await page.mouse.up()
+    await expect.poll(() => page.frames()[1].evaluate(() => getSelection()?.toString())).toBe(word)
+    expect(Math.abs((await page.frames()[1].evaluate(() => scrollY)) - before)).toBeLessThan(2)
+    await expect(block.locator("textarea")).toHaveCount(0)
+  }
+  await expect(card.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
+  expect(await calls(page)).toEqual([])
+  expect(await violations(page)).toEqual([])
+})
+
 test("in ChatGPT the card is in the host's fonts, and loads only the drawings' font", async ({ page }) => {
   const card = await openHost(page, { tools: true, theme: "light", result: shown(4, SOURCE), chatgpt: true, styles: { variables: { "--font-sans": "Georgia, serif" } } })
   await expect(card.getByText("Launch plan")).toHaveCSS("font-family", /^Georgia/)
