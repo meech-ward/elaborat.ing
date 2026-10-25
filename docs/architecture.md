@@ -1529,6 +1529,23 @@ file, a chunk precached like any other, and posts its code back. Either way the
 frame runs it with its own React (`src/preview/frameModules.ts`). Until then a
 chart keeps its place with an empty box and code shows as plain text.
 
+Code fences in notes and chat cards share `codeHighlight.ts`. Its fine-grained
+Shiki imports cover 72 common programming, shell, markup and configuration
+languages, including C, C++, C#, Java, Go, Rust, Ruby, PHP, Swift, Kotlin,
+scientific and functional languages, web templates, SQL, YAML, TOML, Docker,
+Make and Terraform. Lookup is case-insensitive and accepts Shiki's aliases,
+such as `cpp`/`c++`, `csharp`/`c#`/`cs`, `rs`, `py`, `sh` and `yml`, plus
+common spellings such as `cxx`, `python3`, `golang` and `svg`. The language
+label and source remain unchanged. Grammar data ships inside the lazy
+highlighter and is registered together on first use, so optional embedded
+languages inside Markdown/MDX are available before output is cached. This
+follows Shiki's [fine-grained bundle guidance](https://shiki.style/guide/best-performance),
+without document-time imports, network access or WebAssembly. Unknown and
+unlabelled languages, and code over 32,000 characters, keep the escaped
+plain-text fallback and the existing bounded highlight cache. The per-line
+tokenization budget is two seconds: Shiki's 500 ms default can cut a normal
+cold C++ or embedded-language line short in Firefox before caching it.
+
 **What the domain adds.** Browsers with site isolation put a cross-site frame
 in a process of its own, which protects against Spectre-style and renderer
 attacks and keeps a runaway component from freezing the app: with the sandbox

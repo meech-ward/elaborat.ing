@@ -47,6 +47,7 @@ import { visualizer } from "rollup-plugin-visualizer"
 import { build, normalizePath, type PluginOption } from "vite"
 import { keepCardBuilds, listedCardBuilds } from "../vite-plugins/chat-card-builds"
 import { npmSpecifiers as npmSpecifierPlugin } from "../vite-plugins/npm-specifiers"
+import { assertCardModulePolicy } from "../vite-plugins/card-module-policy"
 import { COLOR_TOKEN_KEYS } from "../src/features/appearance/paletteCss"
 import { DEFAULT_THEME, getAppearanceTokens, tokenProperty, type ColorScheme } from "../src/features/appearance/tokens"
 import { beforeDarkFilter } from "../src/features/drawings/presentation"
@@ -245,9 +246,8 @@ const modules = await run(MODULE_ENTRIES, "modules", "es", {
   CARD_D2_ENGINE: JSON.stringify([MODULES_URL + engineFile, MODULES_URL + workerFile]),
 })
 const chunks = modules.filter((item): item is OutputChunk => item.type === "chunk")
-const STRINGS_OR_REQUESTS = /\beval\(|new Function\b|\bfetch\(|XMLHttpRequest/
 for (const [fileName, code] of [...chunks.map((chunk) => [chunk.fileName, chunk.code]), [engineFile, engineScript], [workerFile, workerScript]]) {
-  if (STRINGS_OR_REQUESTS.test(code)) throw new Error(`The chat card module ${fileName} evaluates strings or makes requests.`)
+  assertCardModulePolicy(fileName, code)
 }
 // One stylesheet, the frame's (preview/runtime.css), with the palette first. Named by its content, like the scripts.
 const sheets = modules.filter((item): item is OutputAsset => item.type === "asset" && item.fileName.endsWith(".css"))

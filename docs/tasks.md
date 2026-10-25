@@ -339,6 +339,12 @@ The image picker keeps manual descriptions without a direct model connection.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- The chat-card build audit retains its original direct `eval`, `new Function`
+  and request checks, now ignoring JavaScript literals and comments. A broader
+  audit should first handle the bundled UMD global-detection fallbacks: bare
+  `Function('return this')` in `decimal.js-light` and indirect `eval` in
+  `format`. Keep host CSP as the runtime boundary and avoid third-party source
+  rewrites in an unrelated feature change.
 - A late sync completion that recovered a conflicting project id can navigate
   back to that project after the person has left its page. Guard rekey-driven
   navigation against an unmounted page without losing the recovered project.
@@ -409,6 +415,13 @@ matters.
 
 ## Done
 
+- Code fences share highlighting for 72 common programming, shell, markup
+  and configuration languages in notes and chat cards, with case-insensitive
+  aliases such as `cpp`/`c++`, `c#`, `rs`, `py` and `yml`. Embedded languages
+  are registered together before caching; a bounded two-second per-line
+  tokenization budget allows cold C++ and MDX grammars to finish. Language
+  labels and exact source stay unchanged, and highlighting remains lazy and
+  self-contained for isolated frames and offline use.
 - Rendered Enter preserves ordered-list `.` and `)` delimiters, including
   non-1 starts, nested and loose lists. Enter, Backspace and Undo/Redo keep
   precise Markdown/MDX source; unit and Chromium/Firefox regressions pass.
