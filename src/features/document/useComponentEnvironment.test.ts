@@ -89,3 +89,24 @@ describe('watchSavedModules', () => {
     expect(changes).toBe(1);
   });
 });
+
+describe('component preparation document identity', () => {
+  test('ordinary typing keeps its last good environment without making the frame pending', async () => {
+    const { componentPreparationForIdentity } = await import('./useComponentEnvironment');
+    const { prepareComponentEnvironment } = await import('./componentModules');
+    const environment = await prepareComponentEnvironment('# Before the next keystroke\n');
+    const shown = componentPreparationForIdentity({ environment, settled: true, identity: 1 }, 1);
+    expect(shown.environment).toBe(environment);
+    expect(shown.pending).toBe(false);
+  });
+
+  test('a replacement never exposes the old document environment or error', async () => {
+    const { componentPreparationForIdentity } = await import('./useComponentEnvironment');
+    const { prepareComponentEnvironment } = await import('./componentModules');
+    const environment = await prepareComponentEnvironment('export const Old = () => <p>Previous document</p>\n');
+    expect(componentPreparationForIdentity({ environment, settled: true, error: 'Previous error', identity: 1 }, 2)).toEqual({ pending: true });
+    const shown = componentPreparationForIdentity({ environment, settled: true, identity: 2 }, 2);
+    expect(shown.environment).toBe(environment);
+    expect(shown.pending).toBe(false);
+  });
+});

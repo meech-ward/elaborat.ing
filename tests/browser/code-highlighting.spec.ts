@@ -67,6 +67,7 @@ for (const format of ["md", "mdx"] as const) {
     await paragraph.click()
     await page.keyboard.press("End")
     await page.keyboard.type(" Saved.")
+    await expect(paragraph).toHaveText(`${intro} Saved.`)
     await page.getByRole("button", { name: "Save", exact: true }).click()
     await expect.poll(() => fake.server.content(id, path)).toBe(note.replace(intro, `${intro} Saved.`))
 

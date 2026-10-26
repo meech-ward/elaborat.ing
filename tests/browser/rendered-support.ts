@@ -65,6 +65,11 @@ export async function recordFrameMessages(page: Page) {
     // In the frame: keep the port the page gives it.
     window.addEventListener("message", (event) => {
       if (event.data?.kind === "connect" && event.ports[0]) window.pagePort = event.ports[0]
+      // Native Save travels directly so the app can check user activation.
+      // Observe that channel too, without holding or replacing its event.
+      if (event.source !== window && event.data?.kind === "shortcut") {
+        window.frameMessages.push({ kind: event.data.kind, session: event.data.session })
+      }
     })
   })
 }

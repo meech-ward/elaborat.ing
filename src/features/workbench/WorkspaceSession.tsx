@@ -165,10 +165,10 @@ export function WorkspaceSession({
   }, [client]);
   // A module saved in another tab, or brought in by sync, rebuilds the components.
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore);
+  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
-  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId, snapshot.text);
+  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId);
   const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
   const [imageRequest, setImageRequest] = useState<{ files?: readonly File[]; initialAlt?: string; commit: (images: readonly { path: string; alt: string }[]) => Promise<boolean> } | null>(null);
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);

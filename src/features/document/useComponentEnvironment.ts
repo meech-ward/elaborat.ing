@@ -48,32 +48,40 @@ export function watchSavedModules(subscribe: (listener: () => void) => () => voi
   return () => {stopped = true;unsubscribe();};
 }
 
+type ComponentPreparation = { environment?: ComponentEnvironment; error?: string; loader?: ComponentSourceLoader; settled?: boolean; identity?: number };
+
+/** Ordinary typing keeps the last good environment; another document cannot. */
+export function componentPreparationForIdentity(state: ComponentPreparation, identity: number, loader?: ComponentSourceLoader): { environment?: ComponentEnvironment; error?: string; pending?: boolean } {
+  if (state.identity !== identity) return { pending: true };
+  return { environment: state.environment, error: state.error, pending: !state.settled || state.loader !== loader };
+}
+
 /**
  * Saved dependencies are cached until the explicit note Reload generation, or
  * until one of the modules they came from is saved again, here or by sync.
  */
-export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void): {environment?: ComponentEnvironment; error?: string; pending?: boolean} {
+export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void, identity = 0): {environment?: ComponentEnvironment; error?: string; pending?: boolean} {
   const [moduleEpoch,setModuleEpoch] = useState(0);
   // The epoch is part of the cache's semantics, not a dependency-only hint:
   // the React Compiler may otherwise reuse cachedSourceLoader(load) across
   // Reloads even when a surrounding memo lists a discarded `void generation`.
-  const cached = useMemo(() => cachedSourceLoader(load,`${generation}:${moduleEpoch}`), [load,generation,moduleEpoch]);
+  const cached = useMemo(() => cachedSourceLoader(load,`${identity}:${generation}:${moduleEpoch}`), [load,identity,generation,moduleEpoch]);
   const cachedLoader = cached?.loader;
-  const [state,setState] = useState<{environment?:ComponentEnvironment;error?:string;loader?:typeof cachedLoader;settled?:boolean}>({});
+  const [state,setState] = useState<ComponentPreparation>({});
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     // The MDX compiler loads with the first note that needs it.
     import('./componentModules').then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
-      if (!cancelled) setState({environment,loader:cachedLoader,settled:true});
+      if (!cancelled) setState({environment,loader:cachedLoader,settled:true,identity});
     },error => {
-      if (!cancelled) setState(previous => ({environment:previous.environment,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true}));
+      if (!cancelled) setState(previous => ({environment:previous.identity === identity ? previous.environment : undefined,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true,identity}));
     });
     return () => {cancelled = true;};
-  },[source,enabled,cachedLoader]);
+  },[source,enabled,cachedLoader,identity]);
   useEffect(() => {
     if (!enabled || !load || !subscribe || !cached) return;
     return watchSavedModules(subscribe,cached.revisions,load,() => setModuleEpoch(epoch => epoch + 1));
   },[enabled,load,subscribe,cached]);
-  return enabled ? {...state,pending:!state.settled || state.loader !== cachedLoader} : {};
+  return enabled ? componentPreparationForIdentity(state,identity,cachedLoader) : {};
 }

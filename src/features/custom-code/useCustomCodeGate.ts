@@ -26,12 +26,8 @@ export type CustomCodeGate =
  * person's own unsaved edits to a running note's exports (`dirty`) keep it
  * running; a change from elsewhere asks again.
  */
-export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: string, components: ComponentState, dirty: boolean, identity = 0, source?: string): CustomCodeGate {
-  // Component preparation is asynchronous. A previous document's environment
-  // is never a candidate for this identity, even while the next is loading.
-  const current = source === undefined || !components.environment || components.environment.source === source
-    ? components : { ...components, environment: undefined, pending: !components.error }
-  const environment = current.environment
+export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: string, components: ComponentState, dirty: boolean, identity = 0): CustomCodeGate {
+  const environment = components.environment
   const key = policy?.key ?? null
   const custom = key !== null && environment !== undefined && environment.code.length > 0
   const [checked, setChecked] = useState<{ environment: ComponentEnvironment; files: CodeFile[]; identity: number; key: string } | null>(null)
@@ -57,13 +53,13 @@ export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: str
   }, [custom, environment, key, notePath, identity])
 
   let gate: CustomCodeGate
-  if (!custom || key === null) gate = { kind: "open", components: current }
+  if (!custom || key === null) gate = { kind: "open", components }
   else if (!checkedHere) gate = { kind: "open", components: { pending: true } }
   else {
     const waiting = waitingFiles(checkedHere.files, approved)
     gate =
       waiting.length === 0
-        ? { kind: "open", components: { ...current, environment: checkedHere.environment } }
+        ? { kind: "open", components: { ...components, environment: checkedHere.environment } }
         : { kind: "ask", files: checkedHere.files, run: () => approveCode(key, waiting.map((file) => file.token)) }
   }
   const shown = gate.kind === "open" && !gate.components.pending && !gate.components.error &&
