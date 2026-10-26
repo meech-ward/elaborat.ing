@@ -11,6 +11,7 @@
  */
 import { isValidElement, type ComponentProps, type ReactNode } from "react"
 import { CodeCopyButton } from "@/features/rendered/CodeCopyButton"
+import { isDocumentPath } from '@/features/document/documentPaths'
 import { EmbedBox } from "@/features/design-system/ui/EmbedBox"
 import { CHART_COMPONENT_CATALOG } from "@/features/document/chartCatalog"
 import {
@@ -33,6 +34,17 @@ import {
 import { ExampleCard, Important, Instruction, Note, SideBySide, SideBySideBlock, Tab, Tabs, Warning } from "@/features/rendered/documentBlocks"
 
 export const CHART_TEXT = "Charts show in elaborat.ing."
+
+/** Chat previews describe the reference without fetching another document. */
+export function DocumentBox({ src, title, url }: {src?:unknown;title?:unknown;url?:string|null}): ReactNode {
+  const path = typeof src === 'string' && isDocumentPath(src) ? src : null;
+  return <EmbedBox className="not-prose" data-document-reference={path ?? ''}
+    caption={<><span>Document</span>{path && <code>{path}</code>}</>}
+    message={<>
+      {typeof title === 'string' && title && <strong className="mb-1 block text-body">{title}</strong>}
+      {path ? <>Expand and edit this document in elaborat.ing.{url && <> <a href={url}>Open document</a></>}</> : 'Choose a project Markdown or MDX file in Source.'}
+    </>} />;
+}
 
 /** A chart in a note: its description, if it has one, and where to see it. Its parts inside are not shown. */
 function ChartBox({ name, description, label }: { name: string; description?: unknown; label?: unknown }): ReactNode {
@@ -105,4 +117,5 @@ export const PREVIEW_COMPONENTS: Record<string, unknown> = {
   Separator,
   Counter,
   Callout,
+  Document: DocumentBox,
 }

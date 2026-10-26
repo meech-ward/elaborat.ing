@@ -15,10 +15,12 @@ import { PREVIEW_CHILD_CSP } from "../features/rendered/protocol";
 import { bootstrap as bootstrapJs, fontCss } from "virtual:preview-frame";
 import type { FrameModuleName } from "./frameModuleList";
 import { frameHtml } from "./frameHtml";
+import type { DocumentFrameBootstrap } from '../features/rendered/documentEmbeds';
 
 /** Build the self-contained document embedded as the preview iframe's `srcdoc`. */
-export function buildPreviewSrcdoc(): string {
-  return frameHtml({ fontCss, csp: PREVIEW_CHILD_CSP, script: { inline: bootstrapJs } });
+export function buildPreviewSrcdoc(embed?: DocumentFrameBootstrap, scriptUrl?: string): string {
+  return frameHtml({ fontCss, embed, csp: scriptUrl ? undefined : PREVIEW_CHILD_CSP,
+    script: scriptUrl ? {src:scriptUrl} : {inline:bootstrapJs} });
 }
 
 /** Each frame module's code, as a file of its own that loads the first time a frame asks for it. */

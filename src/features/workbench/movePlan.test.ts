@@ -58,6 +58,15 @@ describe("moving a note into a folder", () => {
 })
 
 describe("renaming", () => {
+  test('renames a note and its Document references as one save, with dirty parent blockers', () => {
+    const tag = '<Document src="details.md" title="Details" defaultCollapsed />';
+    const files = [file('details.md', '# Details\n'), file('parent.mdx', tag)];
+    const plan = planMove(files, [], {path:'details.md',name:'appendix.md'});
+    expect(plan.blockers).toEqual([]);
+    expect(plan.changes[1]).toEqual({kind:'write',path:'parent.mdx',content:tag.replace('details.md','appendix.md'),expectedRevision:'rev:parent.mdx'});
+    const dirty = planMove([files[0], {...files[1],draft:`${tag}\n\nUnsaved.`}], [], {path:'details.md',name:'appendix.md'});
+    expect(dirty.blockers).toContainEqual({path:'parent.mdx',reason:expect.stringContaining('unsaved edits')});
+  });
   test("renames in place and rewrites embeds and imports", () => {
     const files = [
       file("art/sketch.excalidraw", '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}\n'),

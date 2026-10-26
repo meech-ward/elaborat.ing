@@ -78,6 +78,8 @@ describe("source completion context", () => {
     expect(labels('<Diagram src="¦" />', "mdx", paths)).toEqual([
       "diagrams/a.d2",
     ]);
+    expect(labels('<Document src="¦" />', 'mdx', [...paths,'notes/plain.md'])).toEqual(['notes/a.mdx','notes/plain.md']);
+    expect(labels('<Document ¦/>')).toEqual(['src','title','defaultCollapsed']);
     const special = suggest('<Drawing src="¦" />', "mdx", [
       'drawings/a&"$1.excalidraw',
     ])[0];

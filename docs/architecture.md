@@ -1485,12 +1485,14 @@ Every message after that handshake, both ways, goes over the channel, so it
 is bound to the frame's first document: a port stays with the document it
 was transferred to, and a page the frame navigates to has the frame's window
 but not its port, so it is sent nothing and the app hears nothing from it,
-even when it never finishes loading. A link the person clicks is the one
-message that comes as a window post instead: WebKit runs the app's handler
+even when it never finishes loading. Links, Copy code, Document actions and
+the native Save shortcut come as window posts instead: WebKit runs the app's handler
 for a window post as part of the click, but not its handler for a port
-message, so Safari blocked the new tab the app opened. The app takes that post
-only from the frame's window and with the editor's session, which only the
-frame's first document was sent. The frame is given nothing a component
+message, so Safari blocked the new tab the app opened. The app takes those
+posts only from the frame's window and with the editor's session, which only
+the frame's first document was sent. Document actions and Save additionally
+require the current source revision and active user activation; port messages
+cannot authorize them. The frame is given nothing a component
 in it could not already see. A frame that loads a second time has navigated
 itself (a note's code, or a link): the app closes its port and puts a new
 frame in its place, or stops the preview, with a notice, when it happens
@@ -1614,6 +1616,19 @@ page serves every note: its origin is opaque, so notes share no storage, but
 where a browser groups frames by site they can share a process.
 
 ## Rendered editing
+
+**Decision: an embedded document keeps a separate editing session and source.**
+The MDX built-in `<Document src="notes/details.mdx" />` references a same-project
+Markdown or MDX file. Each file has one session shared by standalone tabs and
+inline views; collapse retains its draft and undo history. The workbench owns
+the session and saves changed loaded descendants through ordinary per-file
+revision checks. Inline previews reuse the isolated editor in nested opaque
+`srcdoc` frames, bound directly to that session through a validated private
+channel. This avoids combining different source files inside one prose
+editor. The sandbox permits only local `about:` child frames; hosted children
+reuse the parent's permitted versioned bootstrap script and inherit its
+policy. No network or same-origin capability is added. The implementation
+plan and release status are in [embedded documents](embedded-documents.md).
 
 **Decision: displayed code keeps the browser's text selection.** Code blocks
 are object islands outside the prose editor, so code pointer and keyboard

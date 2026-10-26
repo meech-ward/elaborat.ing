@@ -52,6 +52,7 @@ describe("the sandbox domain", () => {
     expect(csp["script-src"]).toBe(`${HOST}${FOLDER} 'unsafe-eval'`);
     expect(csp["default-src"]).toBe("'none'");
     expect(csp["connect-src"]).toBe("'none'");
+    expect(csp["frame-src"]).toBe("about:");
     expect(csp["img-src"]).toBe("data:");
     expect(csp["frame-ancestors"]).toBe("https://app.test");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");

@@ -37,6 +37,8 @@ export type PreviewPlan =
       svgs: Record<string, string>
       /** The note draws a chart: the frame loads the charts' library before it shows the note. */
       charts: boolean
+      /** Only used to make same-project Document links. No embedded content is sent. */
+      url?: string | null
       images?:Record<string,CardImagePixels>
     }
   | {

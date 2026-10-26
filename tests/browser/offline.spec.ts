@@ -129,6 +129,39 @@ test("after a project has opened, loading it again with no network brings back t
   await expect(editorText(again)).toContainText("saveddraft")
 })
 
+test('an embedded document restores its draft and remains editable after a fresh offline load', async ({page,context}) => {
+  const parent = 'notes/parent.mdx', child = 'notes/details.md'
+  const {fake,id} = await openProject(page, {
+    [parent]:`# Parent\n\n<Document src="${child}" />\n`,
+    [child]:'# Details\n\nOffline child paragraph.\n',
+  },parent)
+  await offlineReady(page)
+  await page.getByRole('button', {name:'Rendered',exact:true}).click()
+  const outer = (target: Page) => target.frameLocator('iframe[title="Isolated document preview"]:visible')
+  const embed = (target: Page) => outer(target).locator(`[data-document-embed="${child}"]`)
+  const inner = (target: Page) => embed(target).frameLocator('iframe')
+  const text = (target: Page) => inner(target).locator('p').filter({hasText:/^Offline child paragraph\./})
+  await expect(text(page)).toHaveText('Offline child paragraph.')
+  await text(page).click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' RECOVERED')
+  await expect(text(page)).toHaveText('Offline child paragraph. RECOVERED')
+  await expect(embed(page).getByRole('button', {name:'Save document'})).toBeEnabled()
+  await page.waitForTimeout(300)
+  const address = page.url()
+  fake.offline = true
+  await context.setOffline(true)
+  await page.close()
+  const again = await context.newPage()
+  await again.goto(address)
+  await expect(text(again)).toHaveText('Offline child paragraph. RECOVERED', {timeout:20_000})
+  await text(again).click()
+  await again.keyboard.press('End')
+  await again.keyboard.type(' OFFLINE')
+  await expect(text(again)).toHaveText('Offline child paragraph. RECOVERED OFFLINE')
+  expect(fake.server.content(id,child)).toBe('# Details\n\nOffline child paragraph.\n')
+})
+
 test("offline, a new tab lists the project from the device and opens it", async ({ page, context }) => {
   const { fake } = await openProject(page, { "notes/a.md": "On this device.\n" }, "notes/a.md")
   await offlineReady(page)

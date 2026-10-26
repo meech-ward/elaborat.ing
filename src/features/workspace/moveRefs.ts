@@ -6,6 +6,7 @@ import { validateWorkspacePath } from "./index.ts";
 import { parseDrawingFile } from "../drawings/parse.ts";
 import { resolveImagePath, relativeImagePath, safeImagePath } from '../images/paths';
 import { literalHtmlImage } from '../images/references';
+import { parseDocumentReferences } from '../document/documentReferences';
 
 export interface MoveReferenceFile { path: string; content: string }
 export interface MoveReferenceTarget { from: string; to: string }
@@ -39,6 +40,16 @@ function range(node: Node): { from: number; to: number } | null {
   const from = node.position?.start.offset;
   const to = node.position?.end.offset;
   return from !== undefined && to !== undefined ? { from, to } : null;
+}
+
+/** MDX strips a first BOM; Document's parser allowlist uses original-source offsets. */
+function offsetNode(node: Node, delta: number): Node {
+  if (!delta || !node.position) return node;
+  const { start, end } = node.position;
+  return {...node,position:{
+    start:{...start,...(start.offset === undefined ? {} : {offset:start.offset + delta})},
+    end:{...end,...(end.offset === undefined ? {} : {offset:end.offset + delta})},
+  }};
 }
 
 function whitespace(char: string | undefined): boolean {
@@ -359,6 +370,7 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
   for (const file of files) {
     const source = file.content;
     const patches: Patch[] = [];
+    let documentReferences = new Map<number, ReturnType<typeof parseDocumentReferences>[number]>();
     const references: MoveReferencePlan["updates"][number]["references"] = [];
     const block = (reason: string) => {
       if (!result.blockers.some((entry) => entry.path === file.path && entry.reason === reason)) {
@@ -419,7 +431,8 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
       if (targets.has(url)) block(`Unsupported ${kind} refers to a moved file`);
       else if (markdownTarget(url, kind)) block(`Unsupported ${kind} refers to a moved file`);
     };
-    const relevantKind = (name: string) => moves.some(({ from }) => name === "Diagram"
+    const relevantKind = (name: string) => moves.some(({ from }) => name === 'Document'
+      ? /\.(md|mdx)$/i.test(from) && !/\.excalidraw\.md$/i.test(from) : name === "Diagram"
       ? /\.d2$/i.test(from)
       : /\.(excalidraw|excalidraw\.md|json)$/i.test(from));
     const resourceUnknown = (name: string, attrs: Node[]) => {
@@ -498,7 +511,7 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
               else add(slice,target.from,target.to,quote + jsxEncode(target.url,quote) + quote,owner,estreeLine(record) ?? undefined);
             }
           }
-        } else if (name === "Drawing" || name === "Diagram") {
+        } else if (name === "Drawing" || name === "Diagram" || name === 'Document') {
           let known: string | null = null;
           let uncertain = false;
           for (const attr of attrs) {
@@ -577,17 +590,22 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
               else add(slice,target.from,target.to,jsxEncode(target.url,slice.quote),node);
             } else if (!resolveImagePath(file.path,src.value)) unsupportedDestination(src.value,'HTML/JSX image destination');
           }
-        } else if (node.name === "Drawing" || node.name === "Diagram") {
-          const attrs = node.attributes ?? [];
+        } else if (node.name === "Drawing" || node.name === "Diagram" || node.name === 'Document') {
+          const delta = node.name === 'Document' && source.startsWith('\ufeff') ? 1 : 0;
+          const attrs = (node.attributes ?? []).map(attribute => offsetNode(attribute, delta));
           resourceUnknown(node.name, attrs);
           const src = attrs.find((attr) => attr.name === "src");
           const from = typeof src?.value === "string" ? src.value : null;
           const to = from === null ? undefined : targets.get(from);
           if (to && src) {
-            const bounds = range(node);
+            const bounds = range(offsetNode(node,delta));
             const slice = quotedRange(source, src);
-            if (attrs.length !== 1 || !bounds || !source.slice(bounds.from, bounds.to).endsWith("/>") || !slice) {
-              block("Unsupported resource tag: use a self-closing tag with exactly one quoted src");
+            if (!bounds || !slice || (node.name === 'Document'
+              ? !documentReferences.has(bounds.from)
+              : attrs.length !== 1 || !source.slice(bounds.from, bounds.to).endsWith("/>"))) {
+              block(node.name === 'Document'
+                ? 'Unsupported Document tag: use a self-closing tag with quoted src, optional quoted title and literal defaultCollapsed'
+                : "Unsupported resource tag: use a self-closing tag with exactly one quoted src");
             } else add(slice, from!, to, jsxEncode(to, slice.quote), node);
           }
         } else for (const attr of node.attributes ?? []) {
@@ -612,6 +630,7 @@ export function planMoveReferences(files: MoveReferenceFile[], moves: MoveRefere
     if (/\.(md|mdx)$/i.test(file.path) && !/\.excalidraw\.md$/i.test(file.path)) {
       try {
         const tree = processors[/\.mdx$/i.test(file.path) ? "mdx" : "md"].parse(source) as Node;
+        if (/\.mdx$/i.test(file.path)) documentReferences = new Map(parseDocumentReferences(source).map(reference => [reference.from, reference]));
         collectImageDefinitions(tree);
         visit(tree);
       } catch (error) {

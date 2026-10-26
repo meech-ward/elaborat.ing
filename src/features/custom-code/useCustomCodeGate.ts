@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ComponentEnvironment } from "@/features/document/componentModules"
 import { approveCode, approvedCode, codeFiles, NO_APPROVALS, subscribeApprovals, waitingFiles, type CodeFile } from "./approvals"
 import type { CustomCodePolicy } from "./context"
+import { mayApproveOwnEdits, nextCodeActivity } from "./codeActivity"
 
 type ComponentState = { environment?: ComponentEnvironment; error?: string; pending?: boolean }
 
@@ -25,15 +26,19 @@ export type CustomCodeGate =
  * person's own unsaved edits to a running note's exports (`dirty`) keep it
  * running; a change from elsewhere asks again.
  */
-export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: string, components: ComponentState, dirty: boolean): CustomCodeGate {
-  const environment = components.environment
+export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: string, components: ComponentState, dirty: boolean, identity = 0, source?: string): CustomCodeGate {
+  // Component preparation is asynchronous. A previous document's environment
+  // is never a candidate for this identity, even while the next is loading.
+  const current = source === undefined || !components.environment || components.environment.source === source
+    ? components : { ...components, environment: undefined, pending: !components.error }
+  const environment = current.environment
   const key = policy?.key ?? null
   const custom = key !== null && environment !== undefined && environment.code.length > 0
-  const [checked, setChecked] = useState<{ environment: ComponentEnvironment; files: CodeFile[] } | null>(null)
+  const [checked, setChecked] = useState<{ environment: ComponentEnvironment; files: CodeFile[]; identity: number; key: string } | null>(null)
+  const checkedHere = checked?.identity === identity && checked.key === key ? checked : null
   const approved = useSyncExternalStore(subscribeApprovals, () => (key !== null ? approvedCode(key) : NO_APPROVALS))
   // What the last render showed, and whether the note had unsaved edits, for the check below.
-  const running = useRef(false)
-  const editing = useRef(dirty)
+  const activity = useRef({ identity, key, running: false, editing: dirty })
 
   useEffect(() => {
     if (!custom || key === null || !environment) return
@@ -41,31 +46,31 @@ export function useCustomCodeGate(policy: CustomCodePolicy | null, notePath: str
     void codeFiles(environment.code, notePath).then((files) => {
       if (cancelled) return
       const waiting = waitingFiles(files, approvedCode(key))
-      if (running.current && editing.current && waiting.length > 0 && waiting.every((file) => file.own)) {
+      if (mayApproveOwnEdits(activity.current, identity, key, waiting)) {
         approveCode(key, waiting.map((file) => file.token))
       }
-      setChecked({ environment, files })
+      setChecked({ environment, files, identity, key })
     })
     return () => {
       cancelled = true
     }
-  }, [custom, environment, key, notePath])
+  }, [custom, environment, key, notePath, identity])
 
   let gate: CustomCodeGate
-  if (!custom || key === null) gate = { kind: "open", components }
-  else if (!checked) gate = { kind: "open", components: { pending: true } }
+  if (!custom || key === null) gate = { kind: "open", components: current }
+  else if (!checkedHere) gate = { kind: "open", components: { pending: true } }
   else {
-    const waiting = waitingFiles(checked.files, approved)
+    const waiting = waitingFiles(checkedHere.files, approved)
     gate =
       waiting.length === 0
-        ? { kind: "open", components: { ...components, environment: checked.environment } }
-        : { kind: "ask", files: checked.files, run: () => approveCode(key, waiting.map((file) => file.token)) }
+        ? { kind: "open", components: { ...current, environment: checkedHere.environment } }
+        : { kind: "ask", files: checkedHere.files, run: () => approveCode(key, waiting.map((file) => file.token)) }
   }
-  const shown = gate.kind === "open" && !(custom && !checked)
+  const shown = gate.kind === "open" && !gate.components.pending && !gate.components.error &&
+    (!custom || checkedHere?.environment === environment)
 
   useEffect(() => {
-    running.current = shown
-    editing.current = dirty
+    activity.current = nextCodeActivity(activity.current, identity, key, dirty, gate.kind === "ask" ? "asking" : shown ? "running" : "checking")
   })
   return gate
 }

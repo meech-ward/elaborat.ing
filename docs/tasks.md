@@ -334,10 +334,31 @@ agent. Supply only a bounded preview through `get_image_preview`; save alt
 text only when asked, through the existing revision-checked note edits.
 The image picker keeps manual descriptions without a direct model connection.
 
+## T51: editable, collapsible document embeds
+
+**Status:** Done
+
+The MDX `Document` built-in embeds a separate same-project Markdown or MDX
+file with lazy expansion, retained collapse, an Open separately action and
+inline editing. Tabs and all embeds share one canonical draft, source buffer
+and undo history. Parent Save includes changed loaded descendants through
+ordinary per-file revision checks and names failures without dropping drafts.
+
+References are parser-backed, participate in move/delete planning and refuse
+URLs, computed paths, cycles and excessive nesting. Nested opaque previews
+keep the existing network restrictions. Open, Save and Run require trusted
+user gestures, and custom-code consent stays bound to the document identity.
+Chat cards offer a safe same-project link. See
+[embedded documents](embedded-documents.md) for the design, checks and limits.
+
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
+
+- The explorer's resize separator sits outside the app's landmarks. A full
+  page axe scan reports `region`; checks scoped to the editor pass. Put the
+  separator inside an appropriate landmark without changing keyboard resizing.
 
 - The chat-card build audit retains its original direct `eval`, `new Function`
   and request checks, now ignoring JavaScript literals and comments. A broader

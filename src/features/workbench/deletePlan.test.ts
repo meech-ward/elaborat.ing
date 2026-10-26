@@ -24,6 +24,12 @@ const refusal = (run: () => unknown) => {
 const scene = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}\n'
 
 describe("deleting a file", () => {
+  test('lists embedded documents as dependencies without rewriting the parent', () => {
+    const tag = '<Document src="details.md" title="Details" defaultCollapsed />';
+    const plan = planDelete([file('details.md','# Details\n'),file('parent.mdx',tag)], [], [], {path:'details.md'});
+    expect(plan.references).toEqual([{path:'parent.mdx',references:[{to:'details.md',line:1}]}]);
+    expect(plan.changes).toEqual([{kind:'delete',path:'details.md',expectedRevision:'rev:details.md'}]);
+  });
   test("deletes it, and lists the files that still refer to it without changing them", () => {
     const files = [file("plan.md", "# Plan\n"), file("index.mdx", "Intro.\n\nSee [the plan](plan.md).\n"), file("other.md", "Unrelated.\n")]
     expect(planDelete(files, [], [], { path: "plan.md" })).toEqual({

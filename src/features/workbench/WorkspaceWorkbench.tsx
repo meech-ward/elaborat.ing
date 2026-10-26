@@ -41,6 +41,7 @@ import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { LazyWorkspaceImageSession } from "./LazyWorkspaceImageSession";
 import { WorkspaceSession } from "./WorkspaceSession";
+import { DocumentEmbedSessions } from "./documentEmbeds";
 import { TablineProvider } from "./tabline";
 import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, commentsShortcut, isApplePlatform } from "@/features/design-system";
 import { cn } from "@/lib/utils";
@@ -179,6 +180,10 @@ export function WorkspaceWorkbench({
   const [retryLocation, setRetryLocation] = useState(0);
   const leaveSessions = useRef(new Map<string, OperationSession>());
   const savedSessions = useRef(new Set<string>());
+  const documentEmbeds = useMemo(() => new DocumentEmbedSessions(
+    path => client.read(path),
+  ), [client]);
+  const embedSnapshot = useSyncExternalStore(documentEmbeds.subscribe, documentEmbeds.snapshot);
   const preferenceStorage = useMemo(() => ({
     getItem: (key: string) => window.localStorage.getItem(`${client.persistenceKey}:${key}`),
     setItem: (key: string, value: string) => window.localStorage.setItem(`${client.persistenceKey}:${key}`, value),
@@ -193,7 +198,12 @@ export function WorkspaceWorkbench({
   const tabsRef = useRef(state.tabs);
   const stateRef = useRef(state);
   useLayoutEffect(() => {
-    tabsRef.current = state.tabs;
+    tabsRef.current = documentEmbeds.operationTabs(state.tabs);
+    documentEmbeds.retainTabs(state.tabs);
+    for (const tab of state.tabs) {
+      const dirty = documentEmbeds.dirty(tab.path);
+      if (dirty !== undefined && dirty !== tab.dirty) dispatch({ type: "dirty", path: tab.path, dirty });
+    }
     stateRef.current = state;
   });
   const [files, setFiles] = useState<WorkspaceFileRef[]>([]);
@@ -305,6 +315,7 @@ export function WorkspaceWorkbench({
     try {
       const entries = await client.listEntries();
       setFiles(entries.files);
+      documentEmbeds.reconcilePaths(entries.files.map(file => file.path));
       setDirectories(entries.directories);
       setListed(true);
       setListError(null);
@@ -327,7 +338,7 @@ export function WorkspaceWorkbench({
       setNotice(`File list failed: ${message}`);
       return null;
     }
-  }, [client]);
+  }, [client, documentEmbeds]);
   // Saves on this device and changes sync brings in both refresh the list.
   useEffect(() => client.subscribe(() => void refreshList()), [client, refreshList]);
   useEffect(() => {
@@ -381,6 +392,7 @@ export function WorkspaceWorkbench({
   // Tabs of deleted files close, as a close does; their edits were settled before the delete.
   const closeDeleted = useCallback((paths: string[]) => {
     const gone = new Set(paths);
+    for (const path of paths) documentEmbeds.forget(path);
     for (const path of paths) closedDuringRestore.current.add(path);
     const open = stateRef.current.tabs.filter((tab) => gone.has(tab.path));
     if (open.length === 0) return;
@@ -388,7 +400,7 @@ export function WorkspaceWorkbench({
     if (stateRef.current.active !== null && gone.has(stateRef.current.active)) dispatch({ type: "request", sequence: ++sequence.current });
     for (const tab of open) dispatch({ type: "close", path: tab.path, discard: true });
     if (restoreDone.current) setPersistReady(true);
-  }, []);
+  }, [documentEmbeds]);
   const deletes = useFileDeletes({ client, tabs: tabsRef, sessions: leaveSessions, notify: setNotice, onDeleted: closeDeleted });
   const registerSession = useCallback((path: string, session: OperationSession | null) => {
     if (session) leaveSessions.current.set(path, session); else leaveSessions.current.delete(path);
@@ -460,6 +472,7 @@ export function WorkspaceWorkbench({
     },
     [client],
   );
+  useLayoutEffect(() => { documentEmbeds.setOpen(path => { void openPath(path); }); }, [documentEmbeds, openPath]);
   // Consume location changes once. Every new target invalidates outstanding reads,
   // including invalid links and a move back to a workspace with no file target.
   useLayoutEffect(() => {
@@ -760,8 +773,16 @@ export function WorkspaceWorkbench({
   };
   const closeTab = async (path: string) => {
     const tab = state.tabs.find((tab) => tab.path === path);
+    // Closing one view does not discard a draft still being edited inline.
+    if (documentEmbeds.isEmbedded(path)) {
+      interacted.current = true;
+      dispatch({ type: "close", path, discard: true });
+      if (restoreDone.current && tab) setPersistReady(true);
+      return;
+    }
+    const ownState = leaveSessions.current.get(path)?.state();
     if (
-      tab?.dirty &&
+      (ownState ? ownState.dirty || ownState.pending : tab?.dirty) &&
       !(await confirmAction(
         `Close ${path} and discard unsaved changes? Cancel to keep editing or save first.`,
         { confirmLabel: "Discard" },
@@ -769,6 +790,7 @@ export function WorkspaceWorkbench({
     )
       return;
     void client.discardLocalDraft(path).then(() => {
+      documentEmbeds.forget(path);
       interacted.current = true;
       if (stateRef.current.active === path) dispatch({ type: "request", sequence: ++sequence.current });
       closedDuringRestore.current.add(path);
@@ -1273,9 +1295,9 @@ export function WorkspaceWorkbench({
                   className="wb-sessions-panel"
                 >
                   <div className={import.meta.env.VITE_CHATGPT_PLAN ? "wb-sessions relative" : "wb-sessions"} ref={sessionsArea}>
-                    {state.tabs.map((tab) => (
+                    {[...state.tabs, ...embedSnapshot.files.filter(file => !state.tabs.some(tab => tab.path === file.path))].map((tab) => (
                       <TabsContent
-                        key={`${tab.path}:${tab.generation ?? 0}`}
+                        key={kindForPath(tab.path) === "note" ? tab.path : `${tab.path}:${tab.generation ?? 0}`}
                         value={tab.path}
                         keepMounted
                         aria-label={tab.path}
@@ -1318,7 +1340,8 @@ export function WorkspaceWorkbench({
                           <WorkspaceSession
                             navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
                             client={client}
-                            initial={tab}
+                            initial={embedSnapshot.files.find(file => file.path === tab.path) ?? tab}
+                            replacementEpoch={documentEmbeds.replacementEpoch(tab.path)}
                             workspacePaths={files.map((file) => file.path)}
                             active={!hideSessions && state.active === tab.path}
                             onOpen={openPath}
@@ -1332,6 +1355,8 @@ export function WorkspaceWorkbench({
                             onDuplicate={readOnly ? undefined : () => void duplicateFile(tab.path)}
                             readOnly={readOnly}
                             onActivity={follow ? markUsed : undefined}
+                            documentEmbeds={documentEmbeds}
+                            embeddedViews={embedSnapshot.views.filter(view => view.path === tab.path)}
                           />
                         )}
                       </TabsContent>

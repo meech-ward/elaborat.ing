@@ -147,6 +147,12 @@ this repository once the steps before them have landed.
 
 Also done in this phase: the comment anchoring library (see the task below).
 
+Editable embedded documents add an MDX `Document` built-in for separate
+same-project Markdown and MDX files. The workbench shares one session between
+inline views and tabs, retains collapsed drafts, saves loaded descendants,
+and refuses cycles. Nested previews preserve the sandbox and offline support.
+See [embedded documents](embedded-documents.md) for release status and limits.
+
 ## Phase 3: public v1
 
 - **All sign-in methods** that exist today: email and password, magic link and

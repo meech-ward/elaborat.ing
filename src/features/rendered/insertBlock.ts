@@ -6,6 +6,7 @@ import type { BlockBoundary } from "./blocks";
 import { encodePropLiteral } from "./protocol";
 import { imageMarkdown, relativeImagePath, safeImagePath } from '../images/paths';
 import { imageFigureMarkdown } from '../images/captions';
+import { isDocumentPath } from '../document/documentPaths';
 
 const ordinary: Record<string, string> = {
   Paragraph: "",
@@ -57,15 +58,15 @@ export function insertBlock(
     const definition = getComponentDefinition(request.element, catalog);
     if (!definition) throw new Error("Unknown component.");
     content = definition.template;
-    if (request.element === "Drawing" || request.element === "Diagram") {
+    if (request.element === "Drawing" || request.element === "Diagram" || request.element === 'Document') {
       const path = request.path ?? "";
       const correctKind =
         request.element === "Drawing"
           ? /\.excalidraw(?:\.md)?$/.test(path)
-          : /\.d2$/.test(path);
+          : request.element === 'Document' ? isDocumentPath(path) : /\.d2$/.test(path);
       if (
         !availablePaths.includes(path) ||
-        !isAllowedWorkspacePath(path) ||
+        !(request.element === 'Document' ? isDocumentPath(path) : isAllowedWorkspacePath(path)) ||
         !correctKind
       )
         throw new Error("Choose an existing allowed workspace resource.");

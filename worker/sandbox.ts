@@ -44,7 +44,7 @@ export function sandboxCsp(folder: string, ancestors: string): string {
     "media-src 'none'; " +
     "connect-src 'none'; " +
     "form-action 'none'; " +
-    "frame-src 'none'; " +
+    "frame-src about:; " +
     "object-src 'none'; " +
     "base-uri 'none'; " +
     `frame-ancestors ${ancestors};`

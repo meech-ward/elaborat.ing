@@ -136,7 +136,8 @@ test("an archived project says so, stays read-only, and after Unarchive can be e
   expect(server.projects.get(id)!.archivedAt).toBeNull()
   await typeInSource(page, " edited")
   await expect(page.getByRole("main").getByText("Unsaved changes", { exact: true })).toBeVisible()
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   await expect.poll(() => server.content(id, "plan.md")).toBe(`${NOTE} edited`)
   expect(saves(fake).length).toBeGreaterThan(0)
 })

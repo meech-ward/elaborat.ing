@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from "react";
 import type { OperationSession } from "./operationSession";
+import type { DocumentEmbedSessions, EmbeddedDocumentView } from "./documentEmbeds";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
 import { useCompactWorkbench } from "./compactWorkbench";
@@ -11,6 +12,7 @@ import { LazyImagePicker } from "../images/LazyImages";
 import type { ImagePreview } from "../images/transport";
 import type { RenderedEditorApi } from "@/features/rendered";
 import type { SourcePatch } from "@/features/document";
+import { isDocumentPath } from "../document/documentPaths";
 import type { WriteIn } from "@/features/document/writeIn";
 import { LazyRenderedEditor, preloadRenderedEditor } from "./LazyRenderedEditor";
 import type { NotePlace, RenderedPatchOptions } from "../source/renderedHistory";
@@ -78,6 +80,9 @@ export function WorkspaceSession({
   onDuplicate,
   readOnly = null,
   onActivity,
+  documentEmbeds,
+  embeddedViews = [],
+  replacementEpoch = 0,
 }: {
   client: WorkspaceStore;
   initial: TabFile;
@@ -102,10 +107,15 @@ export function WorkspaceSession({
   readOnly?: string | null;
   /** The person used the rendered note's frame (a key, a press, the wheel), which the page cannot see itself. */
   onActivity?: () => void;
+  documentEmbeds?: DocumentEmbedSessions;
+  embeddedViews?: readonly EmbeddedDocumentView[];
+  /** Intentional source replacement, independent of which views are open. */
+  replacementEpoch?: number;
 }) {
+  const documentActive = active || embeddedViews.length > 0;
   // A note opened to follow an agent starts empty (TabFile.arriving), and
   // takes its saved version once its views show that (below).
-  const [opening] = useState<TabFile>(() =>
+  const [opening, setOpening] = useState<TabFile>(() =>
     initial.arriving ? { path: initial.path, content: "", revision: ARRIVING_REVISION, savedContent: "" } : initial,
   );
   const [store] = useState(() => {
@@ -131,7 +141,11 @@ export function WorkspaceSession({
     return compact && kindForPath(initial.path) === "note" ? "rendered" : "source";
   });
   const view: Mode = mode === "split" && compact ? "rendered" : mode;
-  const [renderedEver, setRenderedEver] = useState(mode !== "source");
+  const [renderedEver, setRenderedEver] = useState(active && view !== "source");
+  // A pooled note has source/history state but no standalone preview until
+  // its own tab is actually shown. In particular, a phone's Rendered default
+  // must not invisibly expand a second tree of nested references.
+  if (active && view !== "source" && !renderedEver) setRenderedEver(true);
   useEffect(() => { writeProjectView(client.persistenceKey, initial.path, mode); }, [client.persistenceKey, initial.path, mode]);
   // Each error with the text it was found in, as the checks run after the text changes.
   const [renderError, setRenderError] = useState<{ text: string; message: string } | null>(null);
@@ -154,7 +168,7 @@ export function WorkspaceSession({
   const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
-  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty);
+  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId, snapshot.text);
   const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
   const [imageRequest, setImageRequest] = useState<{ files?: readonly File[]; initialAlt?: string; commit: (images: readonly { path: string; alt: string }[]) => Promise<boolean> } | null>(null);
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
@@ -170,7 +184,7 @@ export function WorkspaceSession({
   }, [client, imageRequest, imageGeneration]);
   const imageModuleSources = JSON.stringify(shownComponents?.environment?.code.filter(module => module.path !== null) ?? []);
   useEffect(() => {
-    if (!active || !client.readImage || kindForPath(initial.path) !== "note") return;
+    if (!documentActive || !client.readImage || kindForPath(initial.path) !== "note") return;
     let live = true;
     void (async () => {
       const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
@@ -191,7 +205,7 @@ export function WorkspaceSession({
       if (live) setImageResources(pixels);
     })().catch(() => { if (live) setImageResources({}); });
     return () => { live = false; };
-  }, [active, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
+  }, [documentActive, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
   const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
     if (!client.readImage) throw new Error("Image viewing is unavailable.");
     const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
@@ -272,6 +286,7 @@ export function WorkspaceSession({
   const renderedApi = useRef<RenderedEditorApi | null>(null);
   const [renderedPending, setRenderedPending] = useState(false);
   const renderedPendingRef = useRef(false);
+  const pendingViews = useRef(new Set<string>());
   // Whatever waits for a rendered edit to finish (a duplicate), let go once it has.
   const editWaiters = useRef<Array<() => void>>([]);
   const pendingMode = useRef<Mode | null>(null);
@@ -294,7 +309,6 @@ export function WorkspaceSession({
     const show = (place: NotePlace | null) => {
       sourcePlace.current = place;
       setMode(next);
-      if (next !== "source") setRenderedEver(true);
     };
     const rendered = renderedApi.current;
     if (from !== "rendered" || next !== "source" || !rendered) {
@@ -318,7 +332,9 @@ export function WorkspaceSession({
     sourcePlace.current = null;
     if (place && view === "source") editorApi.current?.showPlace(place);
   }, [view]);
-  const handleRenderedPending = useCallback((pending: boolean) => {
+  const handleViewPending = useCallback((id: string, value: boolean) => {
+    if (value) pendingViews.current.add(id); else pendingViews.current.delete(id);
+    const pending = pendingViews.current.size > 0;
     renderedPendingRef.current = pending;
     setRenderedPending(pending);
     if (!pending) for (const resolve of editWaiters.current.splice(0)) resolve();
@@ -329,6 +345,7 @@ export function WorkspaceSession({
       setNotice(current => current === 'Finishing edit…' ? null : current);
     }
   }, [showMode]);
+  const handleRenderedPending = useCallback((pending: boolean) => handleViewPending("standalone", pending), [handleViewPending]);
   const savingRef = useRef(false);
   const pendingOperation = useRef(0);
   const frozen = useRef(false);
@@ -359,7 +376,8 @@ export function WorkspaceSession({
     () => refs.filter((ref) => ref.path !== openFile.path),
     [refs, openFile.path],
   );
-  const overallDirty = snapshot.dirty || renderedPending;
+  const ownDirty = snapshot.dirty || renderedPending;
+  const overallDirty = ownDirty || Boolean(documentEmbeds?.descendantsDirty(initial.path));
 
   useEffect(() => {
     if (!active) return;
@@ -406,7 +424,7 @@ export function WorkspaceSession({
   // note frame's dark filter turns them into the dark ones).
   const presentDiagram = useCanvasPresentation("diagram");
   useEffect(() => {
-    if (!active || !isNote) return;
+    if (!documentActive || !isNote) return;
     const targets: Array<{ kind: string; path: string }> = JSON.parse(resourceTargetsKey);
     let alive = true;
     void (async () => {
@@ -430,7 +448,7 @@ export function WorkspaceSession({
     return () => {
       alive = false;
     };
-  }, [active, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId]);
+  }, [documentActive, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId]);
 
   const handleSourceChange = useCallback(
     (text: string) => {
@@ -536,7 +554,10 @@ export function WorkspaceSession({
   // view, so an edit it had under way is let go.
   const asking = componentGate.kind === "ask";
   useEffect(() => {
-    if (asking) handleRenderedPending(false);
+    if (asking) {
+      pendingViews.current.clear();
+      handleRenderedPending(false);
+    }
   }, [asking, handleRenderedPending]);
 
   const apple = useMemo(() => isApplePlatform(), []);
@@ -586,18 +607,17 @@ export function WorkspaceSession({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active, apple, isNote, switchMode, views]);
 
-  // A save asked for while a rendered edit finishes, run once it has (as a view switch is).
-  const pendingWrite = useRef<{ target: string; expectedRevision: string | null; verb: string } | null>(null);
   const doWrite = useCallback(
-    async (target: string, expectedRevision: string | null, verb: string) => {
+    async (target: string, expectedRevision: string | null, verb: string): Promise<boolean> => {
       settle();
-      if (frozen.current) return;
+      const identity = store.snapshot().docId;
+      if (frozen.current) return false;
       if (renderedPendingRef.current) {
-        pendingWrite.current = { target, expectedRevision, verb };
         setNotice("Finishing edit…");
-        return;
+        await new Promise<void>(resolve => editWaiters.current.push(resolve));
+        if (frozen.current || store.snapshot().docId !== identity) return false;
       }
-      if (savingRef.current) return;
+      if (savingRef.current) return false;
       savingRef.current = true;
       // Capture the document identity with the text: completion below must
       // settle against THIS document, not whatever is open when the write
@@ -643,7 +663,7 @@ export function WorkspaceSession({
           setNotice(
             `${verb} ${ok.path}, then you moved on: the current file is untouched.`,
           );
-          return;
+          return true;
         }
         if (completion.outcome === "saved-current") {
           setSnapshot(store.markSaved());
@@ -654,8 +674,9 @@ export function WorkspaceSession({
           setNotice(`${verb} ${ok.path}, but newer edits are still unsaved.`);
         }
         setOpenFile((f) => markSaved(f, ok.path, ok.revision));
+        return !store.snapshot().dirty;
       } catch (error) {
-        if (store.snapshot().docId !== captured.docId) return;
+        if (store.snapshot().docId !== captured.docId) return false;
         if (error instanceof LocalConflictError) {
           setOpenFile((f) =>
             markConflict(f, {
@@ -672,21 +693,51 @@ export function WorkspaceSession({
             `Save failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
+        return false;
       } finally {
         savingRef.current = false;
       }
     },
     [client, refreshList, settle, store],
   );
+  const saveDocument = useCallback(async (): Promise<boolean> => {
+    if (readOnly) return false;
+    const identity = store.snapshot().docId;
+    if (renderedPendingRef.current) {
+      setNotice("Finishing edit…");
+      await new Promise<void>(resolve => editWaiters.current.push(resolve));
+    }
+    if (store.snapshot().docId !== identity) return false;
+    const failures = await documentEmbeds?.saveTree(initial.path, false) ?? [];
+    if (store.snapshot().docId !== identity) return false;
+    const target = saveTarget(openFile);
+    const ownSaved = !store.snapshot().dirty && openFile.baseRevision !== null ? true
+      : target ? await doWrite(target, openFile.baseRevision, openFile.path ? "Saved" : "Created") : false;
+    if (failures.length) setNotice(failures.join(" "));
+    return ownSaved && failures.length === 0;
+  }, [documentEmbeds, initial.path, openFile, doWrite, readOnly, store]);
+  // A registry save calls this file's own writer. Descendants are traversed
+  // once by the registry, so repeated embeds never write the same file twice.
+  useLayoutEffect(() => documentEmbeds?.register(initial.path, {
+    save: async () => {
+      const target = saveTarget(openFile);
+      return !readOnly && target !== null && await doWrite(target, openFile.baseRevision, openFile.path ? "Saved" : "Created");
+    },
+    run: () => { if (componentGate.kind === "ask") componentGate.run(); },
+  }), [documentEmbeds, initial.path, openFile, readOnly, doWrite, componentGate]);
   useEffect(() => {
-    const write = pendingWrite.current;
-    if (renderedPending || !write) return;
-    pendingWrite.current = null;
-    void doWrite(write.target, write.expectedRevision, write.verb);
-  }, [doWrite, renderedPending]);
+    documentEmbeds?.publish(initial.path, {
+      dirty: ownDirty,
+      pending: renderedPending || openFile.save.stage === "saving",
+      readOnly: Boolean(readOnly) || blocked,
+      needsCodeConsent: asking,
+      error: shownRenderError ?? patchError ?? (conflictMessage(openFile, notice)),
+    });
+  }, [documentEmbeds, initial.path, ownDirty, renderedPending, openFile, readOnly, blocked, asking, shownRenderError, patchError, notice]);
 
   const doReload = useCallback(
     async (file: OpenFile) => {
+      const identity = store.snapshot().docId;
       if (frozen.current) return;
       if (renderedPendingRef.current) {
         setNotice("Finishing edit…");
@@ -701,11 +752,12 @@ export function WorkspaceSession({
         ))
       )
         return;
-      if (frozen.current) return;
+      if (frozen.current || store.snapshot().docId !== identity) return;
       setNotice(null);
       pendingOperation.current++;
       try {
         const read = await client.read(file.path);
+        if (store.snapshot().docId !== identity) return;
         if (read.revision === null || read.savedContent === null) throw new Error("This file has no saved version yet.");
         const saved = read.savedContent;
         const { file: next, adopt } = applyReload(
@@ -731,6 +783,7 @@ export function WorkspaceSession({
           );
         }
       } catch (error) {
+        if (store.snapshot().docId !== identity) return;
         setNotice(
           `Reload failed: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -743,13 +796,14 @@ export function WorkspaceSession({
 
   const adoptServerText = useCallback(
     async (content: string, revision: string, label: string) => {
+      const identity = store.snapshot().docId;
       if (frozen.current) return;
       if (
         store.snapshot().dirty &&
         !(await confirmAction("Load the saved version and discard your unsaved changes?", { confirmLabel: "Load it" }))
       )
         return;
-      if (frozen.current) return;
+      if (frozen.current || store.snapshot().docId !== identity) return;
       const target =
         openFile.path ?? openFile.pendingName ?? "notes/untitled.md";
       setSnapshot(store.replaceDocument(content, formatForFilename(target)));
@@ -784,16 +838,41 @@ export function WorkspaceSession({
   // The copy the note last took this way (an agent's section, say), with the
   // text it showed before: the views write in what it added.
   const [arrived, setArrived] = useState<WriteIn | null>(null);
+  const adoptedReplacement = useRef(replacementEpoch);
+  useLayoutEffect(() => {
+    if (adoptedReplacement.current === replacementEpoch) return;
+    adoptedReplacement.current = replacementEpoch;
+    // Keep the view engines and their one-time private ports alive. A new
+    // document identity resets Source's handoff/history and invalidates old
+    // rendered patches without replacing the shared editing session itself.
+    const nextOpening = initial.arriving ? { path: initial.path, content: "", revision: ARRIVING_REVISION, savedContent: "" } : initial;
+    setOpening(nextOpening);
+    const saved = nextOpening.savedContent !== undefined ? nextOpening.savedContent ?? "" : nextOpening.revision ? nextOpening.content : "";
+    setSnapshot(store.restoreUnsaved(nextOpening.content, formatForFilename(initial.path), saved));
+    setOpenFile(nextOpening.revision ? openWorkspaceFile(initial.path, nextOpening.revision)
+      : { ...newUntitledNote(initial.path), kind: kindForPath(initial.path) });
+    resetEditorMessages();
+    sourcePlace.current = null;
+    setRenderedPlace(null);
+    ++placeAsked.current;
+    pendingMode.current = null;
+    pendingViews.current.clear();
+    handleRenderedPending(false);
+    setArrived(null);
+    setComponentGeneration(value => value + 1);
+  }, [replacementEpoch, initial, store, resetEditorMessages, handleRenderedPending]);
   const checkingSaved = useRef(false);
   useEffect(() => {
     if (savedRevision === undefined || savedRevision === null || !openFile.path || holdBack) return;
     if (savedRevision === openFile.baseRevision || openFile.save.stage === "saving" || savingRef.current) return;
     if (openFile.serverChanged?.currentRevision === savedRevision || checkingSaved.current) return;
     const path = openFile.path;
+    const identity = store.snapshot().docId;
     checkingSaved.current = true;
     void client
       .read(path)
       .then((read) => {
+        if (store.snapshot().docId !== identity) return;
         if (read.revision === null || read.savedContent === null) return;
         const current = store.snapshot();
         const { file: next, adopt } = applyReload(openFile, { revision: read.revision, content: read.savedContent }, current.dirty || renderedPendingRef.current);
@@ -860,26 +939,17 @@ export function WorkspaceSession({
       const target = event.target as HTMLElement | null;
       if (target?.closest(".monaco-editor")) return;
       event.preventDefault();
-      const t = saveTarget(openFile);
-      if (t)
-        void doWrite(
-          t,
-          openFile.baseRevision,
-          openFile.path ? "Saved" : "Created",
-        );
+      void saveDocument();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, doWrite, openFile]);
+  }, [active, saveDocument]);
 
   const inSource = view !== "rendered" || !isNote;
   const inRendered = isNote && view !== "source";
   const conflict = openFile.save.stage === "conflict" ? openFile.save : null;
 
-  const save = () => {
-    const t = saveTarget(openFile);
-    if (t) void doWrite(t, openFile.baseRevision, openFile.path ? "Saved" : "Created");
-  };
+  const save = () => { void saveDocument(); };
   const saveDisabled = renderedPending || !hasFile || openFile.save.stage === "saving";
   // The header's Save stays on while a rendered edit finishes, so it doesn't
   // blink at each keystroke; a save pressed then waits for the edit (doWrite).
@@ -898,6 +968,7 @@ export function WorkspaceSession({
   ];
 
   return (
+    <>
     <div className="wb-session">
       <FileHeader
         path={initial.path}
@@ -1022,7 +1093,7 @@ export function WorkspaceSession({
               documentText={snapshot.text}
               format={snapshot.format}
               documentId={snapshot.docId}
-              workspacePaths={workspacePaths}
+              workspacePaths={workspacePaths.filter(path => path !== initial.path)}
               componentCatalog={componentState.environment?.catalog}
               editorLanguage={
                 isNote ? undefined : editorLanguageForPath(displayName)
@@ -1040,13 +1111,7 @@ export function WorkspaceSession({
                   setNotice(readOnly);
                   return;
                 }
-                const t = saveTarget(openFile);
-                if (t)
-                  void doWrite(
-                    t,
-                    openFile.baseRevision,
-                    openFile.path ? "Saved" : "Created",
-                  );
+                void saveDocument();
               }}
               apiRef={editorApi}
             />
@@ -1062,6 +1127,8 @@ export function WorkspaceSession({
                 active={active && inRendered}
                 documentId={snapshot.docId}
                 documentPath={initial.path}
+                documentEmbedHost={documentEmbeds?.host(initial.path)}
+                onSave={save}
                 imageResources={imageResources}
                 onReadImage={readImageOriginal}
                 onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
@@ -1078,7 +1145,7 @@ export function WorkspaceSession({
                 resources={resourcePixels}
                 allowedResourcePaths={refs.map((ref) => ref.path)}
                 availableResourcePaths={workspacePaths.filter((path) =>
-                  /\.(?:excalidraw(?:\.md)?|d2)$/.test(path),
+                  /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)),
                 )}
                 onEditResource={handleEditResource}
                 onOpenLink={handleOpenLink}
@@ -1103,5 +1170,57 @@ export function WorkspaceSession({
           return importProjectImageURL(client.projectId!, url, signal);
         }} />}
     </div>
+    {/* A nested engine accepts its private port once. Keep that connection
+        across the consent prompt; pending stops projection and clears edit
+        authority until the checked environment is allowed to run. */}
+    {embeddedViews.map(embed => <EmbeddedDocumentEditor
+      key={embed.id}
+      embed={embed}
+      onViewPending={handleViewPending}
+      document={snapshot}
+      active
+      externalFrame={embed.frame}
+      externalFrameScriptUrl={embed.frameScriptUrl}
+      embeddedAncestors={embed.ancestors}
+      documentEmbedHost={documentEmbeds?.host(initial.path)}
+      documentId={snapshot.docId}
+      documentPath={initial.path}
+      imageResources={imageResources}
+      onReadImage={readImageOriginal}
+      onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
+      componentEnvironment={shownComponents?.environment}
+      componentError={shownComponents?.error}
+      componentPending={asking || shownComponents?.pending}
+      onHistory={handleHistory}
+      onPatch={handlePatch}
+      onError={handleRenderError}
+      errorBanner={false}
+      typing={typing}
+      resources={resourcePixels}
+      allowedResourcePaths={refs.map(ref => ref.path)}
+      availableResourcePaths={workspacePaths.filter(path => /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)))}
+      onEditResource={handleEditResource}
+      onOpenLink={handleOpenLink}
+      readOnly={Boolean(readOnly) || blocked}
+      onSave={save}
+      onActivity={onActivity}
+    />)}
+    </>
   );
+}
+
+function conflictMessage(file: OpenFile, notice: string | null): string | null {
+  if (file.save.stage === "conflict" || file.serverChanged) return `${file.path ?? "This document"} changed elsewhere. Open it separately to review the conflict.`;
+  return notice && /^(?:Save failed:|Save conflict:|Could not save )/.test(notice) ? notice : null;
+}
+
+/** A mounted view shares its file's source buffer and undo history. */
+function EmbeddedDocumentEditor({ embed, onViewPending, ...props }: Omit<ComponentProps<typeof LazyRenderedEditor>, "onPendingChange" | "onContentHeight"> & {
+  embed: EmbeddedDocumentView;
+  onViewPending: (id: string, pending: boolean) => void;
+}) {
+  const pending = useCallback((value: boolean) => onViewPending(embed.id, value), [embed.id, onViewPending]);
+  const height = useCallback((value: number) => embed.onState({ height: value }), [embed]);
+  useEffect(() => () => onViewPending(embed.id, false), [embed.id, onViewPending]);
+  return <LazyRenderedEditor {...props} onPendingChange={pending} onContentHeight={height} />;
 }

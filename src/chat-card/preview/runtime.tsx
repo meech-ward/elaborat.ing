@@ -33,7 +33,8 @@ import { CardImage, type CardImagePixels } from '../cardImages';
 import type { CardEmbed } from "../embedText"
 import { addFonts } from "../fontFaces"
 import { componentCaption } from "./caption"
-import { PREVIEW_COMPONENTS } from "./catalog"
+import { DocumentBox, PREVIEW_COMPONENTS } from "./catalog"
+import { documentLink } from './documentLink'
 import { GUARD_NAME, MAX_COPY_CODE, type CardToFrame, type ComponentError, type FrameToCard, type PreviewAppearance, type PreviewPlan } from "./protocol"
 
 type ModuleScope = Record<string, unknown>
@@ -241,6 +242,7 @@ async function start(plan: PreviewPlan, registry: Registry) {
       img:ProjectImage,
       Drawing: (props: { src?: unknown }) => <Embed kind="drawing" src={props.src} />,
       Diagram: (props: { src?: unknown }) => <Embed kind="diagram" src={props.src} />,
+      Document: (props: {src?:unknown;title?:unknown}) => <DocumentBox {...props} url={documentLink(plan.kind === 'note' ? plan.url : null, props.src)} />,
     }
     root.render(
       <Root>

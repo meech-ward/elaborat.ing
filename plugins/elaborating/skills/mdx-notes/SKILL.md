@@ -83,6 +83,14 @@ No import needed. Leave a blank line before and after a block component.
 - `<Drawing src="drawings/idea.excalidraw" />` and
   `<Diagram src="diagrams/flow.d2" />` embed a drawing or a diagram by its
   path in the project. The file must exist.
+- `<Document src="notes/details.mdx" title="Details" defaultCollapsed />`
+  references a separate Markdown or MDX note in the same project. Its content
+  expands inline and edits update that referenced file. Use a project-root
+  path in a quoted `src`, with no leading slash or relative `..` segments.
+  `title` is optional, and omit `defaultCollapsed` to start expanded. Create
+  the referenced note first, and avoid references back to an ancestor note.
+  This component is available in `.mdx` parents; its child may be `.md` or
+  `.mdx`. Chat previews show the reference with a link to open it in the app.
 
 Charts are `ChartContainer` with Recharts parts: BarChart, LineChart,
 AreaChart, PieChart, RadarChart, RadialBarChart, ScatterChart, ComposedChart,

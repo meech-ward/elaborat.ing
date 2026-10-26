@@ -7,6 +7,7 @@ export interface SourceCompletion {
   snippet: boolean;
   kind: "component" | "property" | "value" | "file" | "node" | "template";
 }
+import { isDocumentPath } from '../document/documentPaths';
 
 export interface CompletionRequest {
   text: string;
@@ -140,7 +141,7 @@ function completeMdx(
           .filter((path) =>
             prop.resourceKind === "drawing"
               ? /\.excalidraw(?:\.md)?$/i.test(path)
-              : /\.d2$/i.test(path),
+              : prop.resourceKind === 'document' ? isDocumentPath(path) : /\.d2$/i.test(path),
           )
           .sort()
       : (prop.choices ?? []);

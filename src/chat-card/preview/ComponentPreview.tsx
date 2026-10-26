@@ -82,7 +82,7 @@ async function prepare(file: CardFile): Promise<Prepared> {
   const modules = program.modules.map((module) => module.path)
   const plan: PreviewPlan =
     program.note !== null
-      ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs, charts: program.charts ?? false }
+      ? { kind: "note", modules, embeds: file.embeds.filter((embed) => embed !== null), svgs: file.svgs, charts: program.charts ?? false, url: file.url }
       : { kind: "components", modules, target: program.target ?? file.path, items: program.items ?? [],images:file.images }
   const srcdoc = frameDocument({ ...frameModules(), program, run, scheme: currentAppearance().scheme })
   const draft = file.kind === "component" && file.preview?.draft === true

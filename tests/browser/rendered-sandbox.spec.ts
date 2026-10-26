@@ -32,6 +32,42 @@ const total = 40 + 35
 \`\`\`
 `
 
+for (const mode of ['sandbox domain', 'srcdoc'] as const) {
+  test(`nested documents in the ${mode} keep opaque origins and block document network access`, async ({page}) => {
+    const reached: string[] = []
+    await page.route('https://embed-probe.example/**', route => {
+      reached.push(route.request().url())
+      return route.fulfill({status:200, headers:{'access-control-allow-origin':'*'}, body:'open'})
+    })
+    await openHarness(page, mode === 'srcdoc' ? '' : `?sandbox=${encodeURIComponent(SANDBOX)}`)
+    const leaf = `export const Probe = () => {
+      let host = 'host readable'; try { void window.parent.parent.document.title } catch { host = 'host blocked' }
+      let storage = 'storage available'; try { localStorage.setItem('probe','1') } catch { storage = 'storage blocked' }
+      fetch('https://embed-probe.example/data').catch(() => {})
+      return <p>{host}, {storage}</p>
+    }
+
+<Probe />
+
+\`\`\`cpp
+int embedded = 1;
+\`\`\`
+`
+    await page.evaluate(({leaf}) => window.renderedHarness.setEmbeddedDocuments({
+      'child.mdx':'# Child\n\n<Document src="leaf.mdx" />\n', 'leaf.mdx':leaf,
+    }), {leaf})
+    await load(page, '# Parent\n\nOuter paragraph.\n\n<Document src="child.mdx" />\n', 'mdx', 'Outer paragraph.')
+    const child = frameOf(page).locator('[data-document-embed="child.mdx"]').frameLocator('iframe')
+    const nested = child.locator('[data-document-embed="leaf.mdx"]').frameLocator('iframe')
+    await expect(nested.getByText('host blocked, storage blocked', {exact:true})).toBeVisible({timeout:20_000})
+    await expect(nested.locator('.shiki')).toContainText('int embedded = 1;')
+    expect(reached).toEqual([])
+    expect(await nested.locator('html').evaluate(() => location.href)).toBe('about:srcdoc')
+    await expect(child.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(await page.evaluate(() => window.renderedHarness.state().error)).toBeNull()
+  })
+}
+
 test("a note renders in the sandbox domain's frame, which loads its own charts and highlighter", async ({ page }) => {
   const parts: string[] = []
   page.on("request", (request) => {

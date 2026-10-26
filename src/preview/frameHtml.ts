@@ -16,6 +16,9 @@ import noteTypeCss from "./noteType.css?raw";
 import readingCss from "./reading.css?raw";
 import fluidCss from "./fluid.css?raw";
 import prosemirrorCss from "prosemirror-view/style/prosemirror.css?raw";
+import documentEmbedCss from './documentEmbed.css?raw';
+import type { DocumentFrameBootstrap } from '../features/rendered/documentEmbeds';
+import { escapeHtmlAttribute, frameLabel } from './frameLabel';
 
 /**
  * The first paint, before the editor sends the chosen appearance: the
@@ -32,6 +35,7 @@ export function escapeInlineScript(js: string): string {
 }
 
 export type FrameHtmlOptions = {
+  embed?: DocumentFrameBootstrap;
   /** The frame's fonts, as `@font-face` rules with `data:` URLs. */
   fontCss: string;
   /** The frame's script: inline, or a file beside the page (loaded with CORS, so its errors are reported). */
@@ -41,10 +45,10 @@ export type FrameHtmlOptions = {
 };
 
 /** The frame's document. Stable template: same head, viewport and root every time; only the script changes. */
-export function frameHtml({ fontCss, script, csp }: FrameHtmlOptions): string {
+export function frameHtml({ fontCss, script, csp, embed }: FrameHtmlOptions): string {
   return (
     "<!doctype html>\n" +
-    '<html lang="en">\n' +
+    `<html lang="en"${embed ? ` data-document-frame-ancestor="${embed.ancestor}" data-document-frame-nonce="${embed.nonce}"` : ''}>\n` +
     "  <head>\n" +
     '    <meta charset="UTF-8" />\n' +
     '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n' +
@@ -55,10 +59,10 @@ export function frameHtml({ fontCss, script, csp }: FrameHtmlOptions): string {
     "<style>[data-placeholder]:empty::before{content:attr(data-placeholder);color:var(--muted);pointer-events:none}[data-authoring-block]:empty{min-width:8em}</style>\n" +
     `<style>${previewTailwindCss}</style>\n` +
     `<style>${noteTypeCss}\n${readingCss}</style>\n` +
-    `<style>${prosemirrorCss}\n${fluidCss}</style>\n` +
+    `<style>${prosemirrorCss}\n${fluidCss}\n${documentEmbedCss}</style>\n` +
     "  </head>\n" +
     "  <body>\n" +
-    '    <div id="root"></div>\n' +
+    `    <main id="document-preview" aria-label="${escapeHtmlAttribute(frameLabel(embed))}"><div id="root"></div></main>\n` +
     ("inline" in script
       ? `    <script>${escapeInlineScript(script.inline)}</script>\n`
       : `    <script src="${script.src}" crossorigin="anonymous"></script>\n`) +

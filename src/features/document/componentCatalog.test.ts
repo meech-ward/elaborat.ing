@@ -11,6 +11,7 @@ const EXPECTED_NAMES: readonly ComponentName[] = [
   'Callout',
   'Drawing',
   'Diagram',
+  'Document',
   'Button',
   'Badge',
   'Card',
@@ -86,6 +87,14 @@ describe('componentCatalog', () => {
     expect(diagram?.props[0]?.name).toBe('src');
     expect(diagram?.props[0]?.defaultValue).toBe('diagrams/flow.d2');
     expect(diagram?.props[0]?.resourceKind).toBe('diagram');
+  });
+
+  test('Document describes a project note reference and collapse options', () => {
+    const document = getComponentDefinition('Document');
+    expect(document?.props.map(prop => prop.name)).toEqual(['src', 'title', 'defaultCollapsed']);
+    expect(document?.props[0]?.resourceKind).toBe('document');
+    expect(document?.props[2]?.type).toBe('boolean');
+    expect(document?.props[2]?.defaultValue).toBe(false);
   });
 
   test('document primitives expose source-only variants and concrete nested templates', () => {

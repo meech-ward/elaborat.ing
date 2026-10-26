@@ -41,6 +41,38 @@ test("moves active references while preserving identical code, comments and fron
 const one = (content: string, path = "notes/ref.mdx", from = "old/a.excalidraw", to = "new/a.excalidraw") =>
   planMoveReferences([{ path, content }], [{ from, to }]);
 
+test('rewrites literal Document embeds with optional props and preserves examples', () => {
+  const tag = `<Document title="Keep &amp; read"\n src='old/details.mdx' defaultCollapsed={false} />`;
+  const source = `\`\`\`mdx\n${tag}\n\`\`\`\n\n${tag}\n\n{/* ${tag} */}\n`;
+  const result = one(source, 'page.mdx', 'old/details.mdx', "new/it's & details.mdx");
+  expect(result.blockers).toEqual([]);
+  expect(result.updates[0]?.content).toBe(source.replace(`src='old/details.mdx' defaultCollapsed={false} />\n\n{/*`, `src='new/it&#39;s &amp; details.mdx' defaultCollapsed={false} />\n\n{/*`));
+  expect(result.updates[0]?.references).toEqual([{from:'old/details.mdx',to:"new/it's & details.mdx",line:6}]);
+  expect(findReferences([{path:'page.mdx',content:'<Document src="old/details.mdx" defaultCollapsed />'}], ['old/details.mdx']))
+    .toEqual([{path:'page.mdx',references:[{to:'old/details.mdx',line:1}]}]);
+});
+
+test('refuses unresolved Document references and executable uses during note moves', () => {
+  for (const source of [
+    '<Document src={chosen} />', '<Document {...props} />', '<Document src={"old/details.mdx"} />',
+    '<Document src="old/details.mdx" {...props} />', '<Document src="old/details.mdx" title={chosen} />',
+    '<Document src="old/details.mdx" defaultCollapsed={chosen} />', '<Document src="old/details.mdx"></Document>',
+    '{true && <Document src="old/details.mdx" />}', 'export const Part = () => <Document src="old/details.mdx" />',
+  ]) {
+    const result = one(source, 'page.mdx', 'old/details.mdx', 'new/details.mdx');
+    expect(result.updates, source).toEqual([]);
+    expect(result.blockers.length, source).toBeGreaterThan(0);
+  }
+  expect(one('<Document src="other.md" title="Other" />', 'page.mdx', 'old/details.mdx', 'new/details.mdx').blockers).toEqual([]);
+});
+
+test('Document moves preserve a leading BOM and use original source attribute offsets', () => {
+  const source = '\ufeff<Document title="Details" src="old/details.md" defaultCollapsed />\r\n';
+  const result = one(source, 'page.mdx', 'old/details.md', 'new/details.md');
+  expect(result.blockers).toEqual([]);
+  expect(result.updates).toEqual([{path:'page.mdx',content:source.replace('old/details.md','new/details.md'),references:[{from:'old/details.md',to:'new/details.md',line:1}]}]);
+});
+
 test("patches repeated self links and definitions, preserving titles and URL suffixes", () => {
   const source = '[self](old/a.md?x=1#two) [again][self]\n\n[self]: <old/a.md> \'title\'\n';
   const result = one(source, "old/a.md", "old/a.md", "new/a.md");

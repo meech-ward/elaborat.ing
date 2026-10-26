@@ -776,6 +776,10 @@ export async function compileForPreview(
           const position = node.position as {start:{offset?:number}} | undefined;
           const from = position?.start.offset;
           if (from === undefined) return;
+          if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && node.name === 'Document') {
+            node.attributes = (node.attributes as Array<{name?:string}>).filter(attribute => attribute.name !== '__documentFrom');
+            (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__documentFrom',value:expressionLiteral(String(from))});
+          }
           if (node.type === 'image' || node.type === 'imageReference') {
             const data = (node.data ??= {}) as Record<string,unknown>;
             data.hProperties = {...data.hProperties as object,'data-image-from':from};

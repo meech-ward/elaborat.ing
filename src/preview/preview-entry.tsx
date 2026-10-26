@@ -44,7 +44,9 @@ import { isReadOnly, setReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
-import { connectToParent, postCodeCopyToParent, postLinkToParent, postToParent } from './parentPort';
+import { connectToParent, embeddedDocument, postCodeCopyToParent, postLinkToParent, postToParent } from './parentPort';
+import { DocumentEmbed, receiveDocumentEmbed, setDocumentEmbedContext } from './DocumentEmbed';
+import { MAX_DOCUMENT_EMBED_HEIGHT } from '../features/rendered/documentEmbeds';
 import { CodeClipboard } from './codeClipboard';
 import { setCodeCopyHandler } from '../features/rendered/codeCopy';
 import { pictureSize } from '../features/rendered/resourceViewer.ts';
@@ -222,9 +224,12 @@ window.addEventListener(
     const digit = /^Digit([123])$/.exec(event.code)?.[1];
     const key = event.altKey ? digit : ["s", "k", "p", "d", "."].find((candidate) => candidate === event.key.toLowerCase());
     if (!key) return;
+    if (key === 's' && !event.isTrusted) return;
     event.preventDefault();
     event.stopPropagation();
-    postToParent({ kind: "shortcut", session: activeSession, key, meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey });
+    const message = { kind: "shortcut", session: activeSession, key, meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey };
+    if (key === 's') postLinkToParent(message);
+    else postToParent(message);
   },
   true,
 );
@@ -695,6 +700,10 @@ function FluidSourceCode(props: Parameters<typeof SourceCode>[0]) {
   const delta = useContext(IslandOffset);
   return <SourceCode {...props} from={props.from + delta} to={props.to + delta} />;
 }
+function ProjectDocument({__documentFrom, ...props}: {src?:string;title?:string;defaultCollapsed?:boolean;__documentFrom?:number}) {
+  const delta = useContext(IslandOffset);
+  return <DocumentEmbed {...props} from={typeof __documentFrom === 'number' ? __documentFrom + delta : undefined} />;
+}
 
 function commitComponentValue(slot: number, prop: 'title' | 'ratio', value: string) {
   if (!activeSession) return;
@@ -750,6 +759,7 @@ function ReadingTable(props: ComponentPropsWithoutRef<"table">) {
 const appOwnedComponents = {
   ...LAZY_CHART_COMPONENTS,
   pre: CodeFence,
+  Document: ProjectDocument,
   Note: (props: ComponentProps<typeof Note> & { __slot?: number }) => <TitledWithControls {...props} Component={Note} name="Note" />,
   Warning: (props: ComponentProps<typeof Warning> & { __slot?: number }) => <TitledWithControls {...props} Component={Warning} name="Warning" />,
   Important: (props: ComponentProps<typeof Important> & { __slot?: number }) => <TitledWithControls {...props} Component={Important} name="Important" />,
@@ -786,6 +796,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   }
   activeSession = pending.session;
   activeRevision = pending.revision;
+  setDocumentEmbedContext(pending.session, pending.revision);
   slotTable = pending.slots;
   setReadOnly(pending.readOnly === true);
   try {
@@ -945,6 +956,10 @@ function onParentMessage(event: MessageEvent): void {
   });
   if (!checked.ok) return;
   const message = checked.message;
+  if (message.kind === 'document-embed-bootstrap' || message.kind === 'document-embed-state') {
+    receiveDocumentEmbed(message);
+    return;
+  }
   if (message.kind === 'code-copy-result') {
     codeClipboard.receive(message);
     return;
@@ -1083,6 +1098,26 @@ window.addEventListener("error", (event: ErrorEvent) => {
 });
 
 connectToParent(onParentMessage);
+if (embeddedDocument) {
+  document.documentElement.dataset.embeddedDocument = '';
+  let height = 0;
+  let requested = false;
+  const reportHeight = () => {
+    if (requested) return;
+    requested = true;
+    requestAnimationFrame(() => {
+      requested = false;
+      // Measure the body, not the viewport: otherwise shrinking content can
+      // never shrink an iframe whose previous height became its viewport.
+      const next = Math.max(1, Math.min(MAX_DOCUMENT_EMBED_HEIGHT, Math.ceil(document.body.getBoundingClientRect().height)));
+      if (next === height || !activeSession) return;
+      height = next;
+      postToParent({kind:'document-height',session:activeSession,revision:activeRevision,height:next});
+    });
+  };
+  new ResizeObserver(reportHeight).observe(document.body);
+  document.fonts.ready.then(reportHeight).catch(() => {});
+}
 window.addEventListener("pagehide", () => fluidEditor?.destroy());
 
 /**

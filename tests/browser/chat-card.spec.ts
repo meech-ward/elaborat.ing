@@ -918,6 +918,22 @@ const cardFrame = (page: Page) => page.frames()[1]
 const previewFrame = (page: Page) => page.frames().find((frame) => frame.parentFrame() === cardFrame(page))!
 const contexts = (page: Page) => page.evaluate(() => (window as unknown as { contexts: { content: { text: string }[] }[] }).contexts.map((context) => context.content[0].text))
 
+test('an isolated chat-card Document reference shows a same-project open link without reading another file', async ({page}) => {
+  const source = '# Parent\n\n<Document src="notes/details &amp; examples.md" title="More details" defaultCollapsed />\n';
+  const card = await openHost(page, {tools:true,theme:'light',result:withComponents(source,{})});
+  const reference = preview(page, PATH).locator('[data-document-reference]');
+  await expect(reference).toContainText('More details');
+  await expect(reference).toContainText('notes/details & examples.md');
+  await expect(reference).toContainText('Expand and edit this document in elaborat.ing.');
+  const link = reference.getByRole('link', {name:'Open document',exact:true});
+  const url = `https://elaborat.ing/projects/${PROJECT}/notes/details%20%26%20examples.md`;
+  await expect(link).toHaveAttribute('href',url);
+  await link.click();
+  await expect(card.getByRole('status').filter({hasText:`Open ${url}?`})).toBeVisible();
+  expect((await calls(page)).filter(call => ['read_file','show_file','card_embed'].includes(call.name))).toEqual([]);
+  expect(await violations(page)).toEqual([]);
+});
+
 test("an isolated MDX chat-card preview copies exact code only after a person gesture", async ({ page }) => {
   const result = copyNote()
   const card = await openHost(page, {

@@ -24,6 +24,17 @@ import {
 } from './instrumentation';
 import { encodePropLiteral } from './protocol';
 
+test('Document markers come from parser positions, including BOM, and source cannot replace them', async () => {
+  for (const prefix of ['', '\ufeff', 'Intro\n\n']) {
+    const source = `${prefix}<Document src="child.mdx" __documentFrom={999} />`;
+    const code = await compileForPreview(source, [], 'mdx');
+    const Content = (await run(code, runtime)).default;
+    let from: unknown;
+    renderToStaticMarkup(createElement(Content, {components:{SourceText:() => null,Document:(props: {__documentFrom?:number}) => {from = props.__documentFrom;return null;}}}));
+    expect(from).toBe(source.indexOf('<Document'));
+  }
+});
+
 const DEMO = `# Hello
 
 Some *rich* prose here.

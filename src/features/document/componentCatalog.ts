@@ -9,7 +9,7 @@ export interface ComponentPropDefinition {
   defaultValue: string | number | boolean;
   description: string;
   choices?: readonly string[];
-  resourceKind?: 'drawing' | 'diagram';
+  resourceKind?: 'drawing' | 'diagram' | 'document';
 }
 
 export interface ComponentDefinition {
@@ -192,6 +192,18 @@ export const COMPONENT_CATALOG: readonly ComponentDefinition[] = [
     props: [],
     snippet: '<Separator />$0',
     template: '<Separator />',
+    editableProps: false,
+  },
+  {
+    name: 'Document',
+    description: 'Embed an editable, collapsible project note',
+    props: [
+      { name: 'src', type: 'string', defaultValue: 'notes/details.mdx', description: 'Project-root path to a Markdown or MDX note', resourceKind: 'document' },
+      { name: 'title', type: 'string', defaultValue: 'Details', description: 'Optional heading for the embedded document' },
+      { name: 'defaultCollapsed', type: 'boolean', defaultValue: false, description: 'Start with the document collapsed' },
+    ],
+    snippet: '<Document src="${1:notes/details.mdx}" title="${2:Details}" defaultCollapsed />$0',
+    template: '<Document src="notes/details.mdx" title="Details" defaultCollapsed />',
     editableProps: false,
   },
   {

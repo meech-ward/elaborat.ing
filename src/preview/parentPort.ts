@@ -7,6 +7,17 @@
  * preserve WebKit's user activation.
  */
 import { checkConnectMessage } from "../features/rendered/protocol";
+import { MAX_DOCUMENT_EMBED_DEPTH } from '../features/rendered/documentEmbeds';
+
+const bootstrap = typeof document === 'undefined' ? undefined : document.documentElement.dataset;
+const config = {ancestor:Number(bootstrap?.documentFrameAncestor),nonce:bootstrap?.documentFrameNonce ?? ''};
+if (bootstrap) {
+  delete bootstrap.documentFrameAncestor;
+  delete bootstrap.documentFrameNonce;
+}
+export const embeddedDocument = Number.isInteger(config.ancestor) && config.ancestor >= 2 && config.ancestor <= MAX_DOCUMENT_EMBED_DEPTH && /^[a-f\d]{32}$/.test(config.nonce);
+let appParent = typeof window === 'undefined' ? null : window.parent;
+if (embeddedDocument && appParent) for (let depth = 1; depth < config.ancestor; depth++) appParent = appParent.parent;
 
 let port: MessagePort | null = null;
 
@@ -23,23 +34,24 @@ export function postToParent(message: unknown): void {
  * port. Nothing goes before the app has answered `ready`.
  */
 export function postLinkToParent(message: unknown): void {
-  if (port) window.parent.postMessage(message, "*");
+  if (port) appParent?.postMessage(message, "*");
 }
 
 /** Copy uses the same activation-preserving path; the result uses the port. */
 export function postCodeCopyToParent(message: unknown): boolean {
   if (!port) return false;
-  window.parent.postMessage(message, '*');
+  appParent?.postMessage(message, '*');
   return true;
 }
 
 /** Say ready, take the app's port when it answers, and hear the app on it with `onMessage`. */
 export function connectToParent(onMessage: (event: MessageEvent) => void): void {
+  if (!appParent || typeof window === 'undefined') return;
   const onConnect = (event: MessageEvent) => {
     const accepted = checkConnectMessage({
       data: event.data,
       source: event.source,
-      parent: window.parent,
+      parent: appParent,
       ports: event.ports,
       connected: port !== null,
     });
@@ -49,5 +61,5 @@ export function connectToParent(onMessage: (event: MessageEvent) => void): void 
     port.onmessage = onMessage;
   };
   window.addEventListener("message", onConnect);
-  window.parent.postMessage({ kind: "ready", session: "pending" }, "*");
+  appParent.postMessage(embeddedDocument ? { kind: 'document-embed-ready', nonce: config.nonce } : { kind: "ready", session: "pending" }, "*");
 }

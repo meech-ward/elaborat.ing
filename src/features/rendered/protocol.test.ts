@@ -22,6 +22,7 @@ import {
   literalMatchesKind,
   MAX_CODE_COPY_TEXT_LENGTH,
   MAX_CODE_COPY_REQUEST,
+  childMessageSchema,
   parseExpressionLiteral,
   PREVIEW_CHILD_CSP,
   PREVIEW_SANDBOX,
@@ -32,6 +33,19 @@ import {
 
 const FRAME = { id: 'frame' };
 const OTHER = { id: 'other' };
+
+test('embedded document requests and auto-height messages are bounded and revision-checked', () => {
+  const data = {kind:'document-embed-open',session:'session-1234',revision:7,id:'embed',path:'child.mdx',from:42};
+  expect(checkChildMessage({data,source:FRAME,expectedSource:FRAME,session:data.session,revision:7}).ok).toBe(true);
+  expect(checkChildMessage({data,source:FRAME,expectedSource:FRAME,session:data.session,revision:8}).ok).toBe(false);
+  for (const invalid of [{...data,id:'x'.repeat(129)},{...data,path:'x'.repeat(513)},{...data,from:-1},{...data,readFile:true}])
+    expect(childMessageSchema.safeParse(invalid).success).toBe(false);
+  for (const height of [-1,0,2_000_001,Infinity,1.5])
+    expect(childMessageSchema.safeParse({kind:'document-height',session:data.session,revision:7,height}).success).toBe(false);
+  expect(childMessageSchema.safeParse({kind:'document-height',session:data.session,revision:7,height:2_000_000}).success).toBe(true);
+  expect(PREVIEW_CHILD_CSP).toContain('frame-src about:;');
+  expect(PREVIEW_CHILD_CSP).toContain("connect-src 'none';");
+});
 
 function proseEdit() {
   return {
@@ -255,6 +269,10 @@ describe('staleChildMessage', () => {
       'comment-markers': 'drop',
       'open-link': 'drop',
       'copy-code': 'drop',
+      'document-embed-open': 'drop',
+      'document-embed-release': 'drop',
+      'document-embed-action': 'drop',
+      'document-height': 'drop',
       'comment-shortcut': 'drop',
       place: 'drop',
       'edit-rejected': 'refusal',

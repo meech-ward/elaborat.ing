@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { COMPONENT_CATALOG } from "../features/document/componentCatalog";
+import { isDocumentPath } from '../features/document/documentPaths';
 import type { RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
@@ -431,11 +432,11 @@ export function BlockPicker({ blockPositionAt }: {
   if (readOnly) return null;
   const components = metadata?.components ?? COMPONENT_CATALOG;
   const names = [...ordinary, ...(metadata?.format === "mdx" ? components.map(entry => entry.name) : [])];
-  const resource = element === "Drawing" || element === "Diagram";
+  const resource = element === "Drawing" || element === "Diagram" || element === 'Document';
   const choices = paths.filter((entry) =>
     element === "Drawing"
       ? /\.excalidraw(?:\.md)?$/.test(entry)
-      : /\.d2$/.test(entry),
+      : element === 'Document' ? isDocumentPath(entry) : /\.d2$/.test(entry),
   );
   const insert = (name: string, at: string, resourcePath?: string) => name === 'Image' ? post({kind:'insert-image',session,revision,boundary:at}) : post({
     kind: "insert-block",
@@ -495,7 +496,7 @@ export function BlockPicker({ blockPositionAt }: {
             onPointerMove={event => event.currentTarget.focus({ preventScroll: true })}
             onClick={() => {
               menu.current?.hidePopover();
-              if (name === "Drawing" || name === "Diagram") {
+              if (name === "Drawing" || name === "Diagram" || name === 'Document') {
                 setElement(name);
                 setPath("");
                 setBoundary(menuBoundary.current);

@@ -35,6 +35,9 @@ Developer first, friendly for everyone.
 - **Custom MDX components** that anyone, or any agent, can write inside a
   project, with docs and an agent skill for building them. They run isolated
   (see [architecture](architecture.md#component-isolation)).
+- **Embedded documents** in MDX notes, with collapsible Markdown or MDX child
+  files that stay editable inline and share their draft and undo history with
+  normal tabs. See [embedded documents](embedded-documents.md).
 - **Images** as private project files, reusable in notes and copied into
   drawings, with offline access and portable exports. Import URLs explicitly;
   documents retain their network isolation. See [image support](images.md).

@@ -105,9 +105,19 @@ import { componentValuePatch } from './componentValueEdit';
 import { applySourcePatches } from '../document';
 import { appendedFrom, type WriteIn } from '../document/writeIn';
 import { REFUSAL, refusalNotice } from './refusal';
+import { DocumentEmbedController } from './documentEmbedController';
+import type { DocumentEmbedHost } from './documentEmbeds';
 
 export type RenderedEditorProps = {
   document: DocumentSnapshot;
+  /** A nested preview created by a validated Document shell. No second iframe is mounted. */
+  externalFrame?: Window;
+  externalFrameScriptUrl?: string;
+  documentEmbedHost?: DocumentEmbedHost;
+  /** Root-to-current file chain, used to stop cycles before any file is read. */
+  embeddedAncestors?: readonly string[];
+  onContentHeight?: (height: number) => void;
+  onSave?: () => void;
   /** Mounted frames in hidden tabs/Source mode cannot own a viewer portal. */
   active?: boolean;
   documentId?: number;
@@ -308,6 +318,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const { appearance, reading } = useAppearance();
   const {
     document,
+    externalFrame,
+    externalFrameScriptUrl,
+    documentEmbedHost,
+    embeddedAncestors,
+    onContentHeight,
+    onSave,
     active = true,
     documentId,
     documentPath = 'note.mdx',
@@ -325,7 +341,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onReadImage,
     onInsertImage,
     allowedResourcePaths,
-    availableResourcePaths,
+    availableResourcePaths: availableResourcePathsProp,
     onEditResource,
     onOpenLink,
     sandboxOrigin = SANDBOX_ORIGIN,
@@ -338,6 +354,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPlaceShown,
     apiRef,
   } = props;
+  const availableResourcePaths = useMemo(() => availableResourcePathsProp?.filter(path => path !== documentPath), [availableResourcePathsProp,documentPath]);
   const pendingOwners = useRef({ fluid: false, draft: false });
   const onPendingChange = useCallback((pending: boolean) => {
     pendingOwners.current.fluid = pending;
@@ -353,8 +370,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // loads once and every render arrives on its port (sent again when the
   // frame says ready and gets one). A new key is a new iframe.
   const pageUrl = useMemo(() => sandboxFrameUrl(sandboxOrigin, FRAME_PAGE_PATH), [sandboxOrigin]);
-  const [frameDoc, setFrameDoc] = useState(() => ({ key: 0, hosted: pageUrl !== null && !sandboxFailed && navigator.onLine !== false, ready: false, stopped: false }));
-  const srcdocModule = useModule(srcdocFrame, !frameDoc.hosted);
+  const [frameDoc, setFrameDoc] = useState(() => ({ key: 0, hosted: !externalFrame && pageUrl !== null && !sandboxFailed && navigator.onLine !== false, ready: false, stopped: false }));
+  const srcdocModule = useModule(srcdocFrame, !externalFrame && !frameDoc.hosted);
   const srcdoc = useMemo(() => srcdocModule.module?.buildPreviewSrcdoc() ?? null, [srcdocModule.module]);
   const frameLoads = useRef(0);
   const frameReady = useRef(false);
@@ -417,6 +434,27 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // What the frame was last told (Exposed above).
   const authority = useRef<Exposed | null>(null);
   const latestDocument = useRef(document);
+  const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,
+    owner:externalFrame ?? null as Window | null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
+    host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl});
+  useLayoutEffect(() => {
+    embedContext.current = {session,revision:document.revision,text:document.text,format:document.format,
+      owner:externalFrame ?? frameRef.current?.contentWindow ?? null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
+      host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined};
+  });
+  const embedController = useRef<DocumentEmbedController | null>(null);
+  useEffect(() => {
+    const controller = new DocumentEmbedController({
+      context:() => embedContext.current,
+      send:message => portRef.current?.postMessage(message),
+      nonce:newSessionToken,
+      bootstrap:config => srcdocFrame.load().then(module => module.buildPreviewSrcdoc(config,embedContext.current.frameScriptUrl)),
+    });
+    embedController.current = controller;
+    return () => { controller.dispose(); embedController.current = null; };
+  }, []);
+  useEffect(() => { embedController.current?.reconcile(); }, [document.text,document.format,documentEmbedHost]);
+  useEffect(() => () => embedController.current?.dispose(), [frameDoc.key]);
   // A link in the note was clicked, said in a window post from the frame
   // (the handshake effect below). Only a person's click opens anything: the
   // frame's own code cannot, since a click in the frame is what activates this
@@ -445,6 +483,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       writeText: text => navigator.clipboard.writeText(text),
     });
   });
+  const activatedDocumentAction = useEffectEvent((event: MessageEvent, frame: Window) => {
+    const current = authority.current;
+    const snapshot = latestDocument.current;
+    if (!current || current.text !== snapshot.text || current.revision !== snapshot.revision) return;
+    const checked = checkChildMessage({data:event.data,source:event.source,expectedSource:frame,session,revision:current.revision});
+    if (!checked.ok) return;
+    const message = checked.message;
+    if (message.kind !== 'document-embed-action' && !(message.kind === 'shortcut' && message.key === 's' && (message.meta || message.ctrl) && !message.alt)) return;
+    const activation = (navigator as Navigator & {userActivation?:{isActive:boolean}}).userActivation;
+    if (activation?.isActive !== true) return;
+    if (message.kind === 'document-embed-action') embedController.current?.handle(message, true);
+    else if (externalFrame) onSave?.();
+    else frameRef.current?.dispatchEvent(new KeyboardEvent('keydown', {
+      key:'s',code:'KeyS',metaKey:message.meta,ctrlKey:message.ctrl,
+      bubbles:true,cancelable:true,
+    }));
+  });
   // The handshake (docs/architecture.md, Component isolation): the frame's
   // first `ready`, a window post, is answered with one port of a new channel,
   // and every message after it, both ways, goes on that channel. A port stays
@@ -456,16 +511,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // editor's session, which only the
   // frame's first document was sent.
   useEffect(() => {
-    const onWindowMessage = (event: MessageEvent) => {
-      const frame = frameRef.current?.contentWindow;
-      if (event.source !== frame || frame == null) return;
-      if (portRef.current) {
-        if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') copyCode(event, frame);
-        else openLink(event.data, frame);
-        return;
-      }
-      const checked = checkChildMessage({ data: event.data, source: event.source, expectedSource: frame, session, revision: -1 });
-      if (!checked.ok || checked.message.kind !== "ready") return;
+    let connected = true;
+    const connectFrame = (frame: Window) => {
+      if (portRef.current) return;
       const channel = new MessageChannel();
       channel.port1.onmessage = (portEvent) => onPortMessage.current?.(portEvent);
       portRef.current = channel.port1;
@@ -476,13 +524,32 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       sentModules.current.clear();
       setReadyTick((tick) => tick + 1);
     };
+    const onWindowMessage = (event: MessageEvent) => {
+      embedController.current?.ready(event);
+      const frame = externalFrame ?? frameRef.current?.contentWindow;
+      if (event.source !== frame || frame == null) return;
+      if (portRef.current) {
+        if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') copyCode(event, frame);
+        else if (['document-embed-action','shortcut'].includes(String((event.data as {kind?:unknown}|null)?.kind))) activatedDocumentAction(event,frame);
+        else openLink(event.data, frame);
+        return;
+      }
+      const checked = checkChildMessage({ data: event.data, source: event.source, expectedSource: frame, session, revision: -1 });
+      if (!checked.ok || checked.message.kind !== "ready") return;
+      connectFrame(frame);
+    };
     window.addEventListener("message", onWindowMessage);
+    // The app mounted this editor only after the known nested engine's ready.
+    // StrictMode replays effects in development. Wait until its throwaway
+    // setup has cleaned up before transferring the engine's one allowed port.
+    if (externalFrame) queueMicrotask(() => { if (connected) connectFrame(externalFrame); });
     return () => {
+      connected = false;
       window.removeEventListener("message", onWindowMessage);
       portRef.current?.close();
       portRef.current = null;
     };
-  }, [session]);
+  }, [session,externalFrame]);
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
   const [viewer, setViewer] = useState<{ path: string; svg: string } | null>(
@@ -881,9 +948,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       // still fail the checks below and are rejected visibly.
       const port = portRef.current;
       if (event.currentTarget !== port || port == null) return;
-      // Copy needs a trusted window post's activation, never a port message.
-      // Malformed/stale copy requests stay out of document error feedback.
+      // Clipboard writes, document actions and Save need an activated window
+      // post. The port cannot grant authority to persist or open a document.
       if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') return;
+      if ((event.data as {kind?:unknown}|null)?.kind === 'document-embed-action') return;
+      if ((event.data as {kind?:unknown;key?:unknown}|null)?.kind === 'shortcut' && (event.data as {key?:unknown}).key === 's') return;
       const settle = (draftId: number | undefined, outcome: 'noop' | 'rejected', reason?: string) => {
         if (draftId === undefined) return;
         port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason });
@@ -946,6 +1015,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       const message = checked.message;
+      if (message.kind === 'document-embed-open' || message.kind === 'document-embed-release' || message.kind === 'document-embed-action') {
+        const current = authority.current;
+        const snapshot = latestDocument.current;
+        if (current && current.text === snapshot.text && current.revision === snapshot.revision) embedController.current?.handle(message);
+        return;
+      }
+      if (message.kind === 'document-height') {
+        if (externalFrame) onContentHeight?.(message.height);
+        return;
+      }
       // Ready is the handshake, a window post answered with this port (above).
       if (message.kind === "ready") return;
       // Charts or code highlighting, the first time the note shows them.
@@ -979,7 +1058,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (message.kind === "shortcut") {
         // Replay it as a key press on the frame, where the app's own
         // listeners pick it up as if it had been pressed outside.
-        frameRef.current?.dispatchEvent(
+        (frameRef.current ?? rootRef.current)?.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: message.key,
             code: message.key === "Escape" ? "Escape" : /^[123]$/.test(message.key) ? `Digit${message.key}` : message.key === "." ? "Period" : `Key${message.key.toUpperCase()}`,
@@ -1543,6 +1622,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     resources,
     readOnly,
     session,
+    embedController,
+    externalFrame,
+    onContentHeight,
+    onSave,
   ]);
 
   // While the person types in the source, the frame keeps its last good render.
@@ -1556,7 +1639,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // The marker column shows while the note has commented text ("draft" is a new comment's, unmarked).
   const railShown = Boolean(comments?.marks.some((mark) => mark.id !== "draft"));
   return (
-    <div ref={rootRef} data-rendered-editor={document.format} style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
+    <div ref={rootRef} data-rendered-editor={document.format} style={externalFrame ? {display:'contents'} : { position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
       {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError && errorBanner ? (
@@ -1575,8 +1658,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       ) : (frameDoc.hosted ? !frameDoc.ready : !srcdoc) ? (
         <LoadingLine label="Loading preview" className="shrink-0" />
       ) : null}
-      <div style={{ display: componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
-        {!frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
+      <div style={{ display: externalFrame || componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
+        {!externalFrame && !frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
           key={frameDoc.key}
           ref={frameRef}
           title="Isolated document preview"

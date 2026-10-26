@@ -23,6 +23,7 @@ import { readingPreferencesSchema } from "../appearance/reading";
 import { FRAME_MODULES } from "../../preview/frameModuleList";
 import { MAX_IMAGE_DATA_URL_LENGTH, MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYTES } from '../images/transport';
 import { MAX_IMAGE_PIXELS, ImageMediaTypeSchema } from '../images/types';
+import { MAX_DOCUMENT_EMBED_HEIGHT } from './documentEmbeds';
 
 /** Sandbox attribute for the preview iframe. allow-scripts ONLY. */
 export const PREVIEW_SANDBOX = "allow-scripts";
@@ -46,7 +47,7 @@ export const PREVIEW_CHILD_CSP =
   "media-src 'none'; " +
   "connect-src 'none'; " +
   "form-action 'none'; " +
-  "frame-src 'none'; " +
+  "frame-src about:; " +
   "object-src 'none'; " +
   "base-uri 'none';";
 
@@ -208,6 +209,17 @@ export function literalMatchesKind(
 
 /** A whole number from 0: an index, a position, a revision or an epoch. */
 const whole = z.int().check(z.nonnegative());
+const embedId = z.string().check(z.minLength(1), z.maxLength(128));
+export const documentEmbedStateSchema = z.strictObject({
+  dirty: z.optional(z.boolean()), pending: z.optional(z.boolean()),
+  error: z.optional(z.nullable(z.string().check(z.maxLength(2000)))),
+  height: z.optional(z.int().check(z.positive(), z.maximum(MAX_DOCUMENT_EMBED_HEIGHT))),
+  needsCodeConsent: z.optional(z.boolean()), readOnly: z.optional(z.boolean()),
+});
+export const documentEmbedReadySchema = z.strictObject({
+  kind: z.literal('document-embed-ready'),
+  nonce: z.string().check(z.regex(/^[a-f\d]{32}$/)),
+});
 
 /** Copy only bounded code text, never arbitrary clipboard data or reads. */
 export const MAX_CODE_COPY_TEXT_LENGTH = 2_097_152;
@@ -420,6 +432,15 @@ export const commentMarksMessageSchema = z.strictObject({
 export type CommentMarksMessage = z.infer<typeof commentMarksMessageSchema>;
 
 export const parentMessageSchema = z.union([
+  z.strictObject({
+    kind: z.literal('document-embed-bootstrap'), session: z.string().check(z.minLength(8)),
+    revision: whole, id: embedId,
+    srcdoc: z.string().check(z.maxLength(10 * 1024 * 1024)),
+  }),
+  z.strictObject({
+    kind: z.literal('document-embed-state'), session: z.string().check(z.minLength(8)),
+    id: embedId, state: documentEmbedStateSchema,
+  }),
   codeCopyResultSchema,
   z.strictObject({
     kind: z.literal('source-draft-settled'),
@@ -527,6 +548,22 @@ export type FrameRect = z.infer<typeof frameRectSchema>;
 
 /** Child -> parent: result or edit messages. */
 export const childMessageSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal('document-embed-open'), session: z.string().check(z.minLength(8)),
+    revision: whole, id: embedId, path: z.string().check(z.minLength(1), z.maxLength(512)), from: whole,
+  }),
+  z.strictObject({
+    kind: z.literal('document-embed-release'), session: z.string().check(z.minLength(8)),
+    revision: whole, id: embedId,
+  }),
+  z.strictObject({
+    kind: z.literal('document-embed-action'), session: z.string().check(z.minLength(8)),
+    revision: whole, id: embedId, action: z.enum(['open', 'run', 'save']),
+  }),
+  z.strictObject({
+    kind: z.literal('document-height'), session: z.string().check(z.minLength(8)),
+    revision: whole, height: z.int().check(z.positive(), z.maximum(MAX_DOCUMENT_EMBED_HEIGHT)),
+  }),
   z.strictObject({
     kind: z.literal('source-draft-pending'),
     session: z.string().check(z.minLength(8)),
@@ -814,6 +851,10 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "comment-markers":
     case "open-link":
     case "copy-code":
+    case 'document-embed-open':
+    case 'document-embed-release':
+    case 'document-embed-action':
+    case 'document-height':
     case "place":
       return "drop";
     case "edit-rejected":
