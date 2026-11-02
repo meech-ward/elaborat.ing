@@ -3,8 +3,11 @@ import { DottedPage } from "@/components/panel"
 import { AccountHeader } from "@/features/auth"
 import { LegalLinks } from "@/features/legal"
 import { ProjectsHome } from "@/features/projects"
+import { z } from "zod/mini"
+import { categorySelectionSchema } from "@/features/projects/categorySelection"
 
 export const Route = createFileRoute("/")({
+  validateSearch: z.object({ category: categorySelectionSchema }),
   component: Home,
 })
 

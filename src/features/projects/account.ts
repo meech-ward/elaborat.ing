@@ -67,6 +67,8 @@ export async function forgetAccountOnDevice(userId: string): Promise<void> {
   for (const key of [...libraries.keys()]) if (key.startsWith(`${partition}\n`)) libraries.delete(key)
   database ??= new IndexedProjectDatabase()
   await deleteAccountProjects(database, partition)
+  const { forgetProjectCategories } = await import("@/features/project-categories")
+  forgetProjectCategories(userId)
   try {
     for (let index = localStorage.length - 1; index >= 0; index--) {
       const key = localStorage.key(index)

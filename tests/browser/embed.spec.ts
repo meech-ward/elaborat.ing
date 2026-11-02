@@ -300,7 +300,8 @@ test("in the panel a note an agent changes does not open over unsaved edits, or 
   await expect(risksTab).toHaveCount(0)
 
   // Saved, but still at the keyboard.
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   const plan = app.getByRole("tab", { name: "notes/plan.md", exact: true })
   await expect(plan).toBeVisible()
   looks = agentLooks(fake)

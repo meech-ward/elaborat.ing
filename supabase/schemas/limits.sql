@@ -19,6 +19,10 @@ as $$
   values
     ('projects_per_day', 100, interval '1 day', 'new projects a day'),
     ('projects', 1000, null, 'projects'),
+    ('project_categories', 1000, null, 'categories, including archived categories'),
+    ('projects_per_category', 10000, null, 'projects in a category'),
+    ('active_project_categories', 128, null, 'active categories'),
+    ('category_changes_per_minute', 300, interval '1 minute', 'category changes a minute'),
     ('saves_per_minute', 300, interval '1 minute', 'saves a minute'),
     ('image_uploads_per_minute', 30, interval '1 minute', 'image uploads a minute'),
     ('searches_per_minute', 120, interval '1 minute', 'searches a minute'),

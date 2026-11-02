@@ -8,6 +8,7 @@ import { registerFileView } from './fileView.ts'
 import { registerImageTools } from './imageAssets.ts'
 import { registerPanel } from './panel.ts'
 import { registerProjectTools } from './projects.ts'
+import { registerProjectCategoryTools } from './projectCategories.ts'
 import { registerSearchTool } from './search.ts'
 import type { ToolContext } from './types.ts'
 import { registerWhoamiTool } from './whoami.ts'
@@ -28,6 +29,7 @@ export type { ToolContext } from './types.ts'
 export function registerTools(server: McpServer, context: ToolContext, { embedView = true }: { embedView?: boolean } = {}): void {
   registerWhoamiTool(server, context)
   registerProjectTools(server, context)
+  registerProjectCategoryTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
   registerImageTools(server, context)

@@ -351,6 +351,20 @@ user gestures, and custom-code consent stays bound to the document identity.
 Chat cards offer a safe same-project link. See
 [embedded documents](embedded-documents.md) for the design, checks and limits.
 
+## T52: personal project categories
+
+**Status:** Done
+
+Build the [project category scope](project-categories.md): a flat category
+overview and project filters, multiple personal category assignments,
+create/rename/archive/restore, cached offline browsing and matching MCP tools.
+Keep project sharing and content revisions separate. Declare two tables with
+RLS, explicit grants and checked RPCs, generate the migration and prove account
+and project-access isolation with pgTAP. Preserve legacy project storage,
+invitations, existing role actions and the no-category home. Browser, bundle,
+function and database checks pass; hosted verification follows the automatic
+release gate. See the scope for behavior and verification details.
+
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it

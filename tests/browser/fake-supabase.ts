@@ -5,6 +5,7 @@ import { FakeProjectServer } from "../../src/features/project-storage/fakeServer
 import { RemoteError } from "../../src/features/project-storage/remote.ts"
 import { FakeAgentChanges } from "./fake-agent-changes.ts"
 import { FakeComments } from "./fake-comments.ts"
+import { FakeProjectCategories } from "./fake-project-categories.ts"
 import { inspectImage } from "../../src/features/images/format.ts"
 import { imageDigest, imageObjectKeys } from "../../src/features/images/types.ts"
 
@@ -75,6 +76,8 @@ export type FakeSupabase = {
   server: FakeProjectServer
   /** The comment functions, over the server's projects; `comments.call(user, rpc, args)` writes as someone else. */
   comments: FakeComments
+  /** Personal categories, seeded with the same RPC calls the app uses. */
+  categories: FakeProjectCategories
   /** The agent changes functions; `agentChanges.save(user, project, path, content)` saves as someone's agent. */
   agentChanges: FakeAgentChanges
   requests: Request[]
@@ -112,6 +115,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
   const fake: FakeSupabase = {
     server,
     comments: new FakeComments(server),
+    categories: new FakeProjectCategories(server),
     agentChanges: new FakeAgentChanges(server),
     requests: [],
     refused: [],
@@ -325,6 +329,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
           shared: [...server.projects.values()].filter((project) => project.members.get(person.id)?.acceptedAt).length,
         })
       }
+      if (FakeProjectCategories.handles(rpc)) return answer(route, async () => fake.categories.call(person.id, rpc, body))
       if (FakeComments.handles(rpc)) return answer(route, async () => fake.comments.call(person.id, rpc, body))
       if (FakeAgentChanges.handles(rpc)) return answer(route, async () => fake.agentChanges.call(person.id, rpc, body))
       if (rpc === "share_project") {

@@ -91,6 +91,12 @@ function errorText(result: CallToolResult): string {
 const CASES: [string, Record<string, unknown>, Call[], Record<string, Answer>?][] = [
   ['whoami', {}, []],
   ['list_projects', {}, [{ rpc: 'list_projects' }]],
+  ['list_project_categories', {}, [{ rpc: 'list_project_categories' }]],
+  ['create_project_category', { category_id: MUTATION, name: '  Video scripts  ' }, [{ rpc: 'create_project_category', args: { category_id: MUTATION, name: 'Video scripts' } }]],
+  ['rename_project_category', { category_id: MUTATION, name: 'Work' }, [{ rpc: 'rename_project_category', args: { category_id: MUTATION, name: 'Work' } }]],
+  ['set_project_category_archived', { category_id: MUTATION, archived: true }, [{ rpc: 'set_project_category_archived', args: { category_id: MUTATION, archived: true } }]],
+  ['set_project_category_membership', { category_id: MUTATION, project_id: PROJECT, included: true }, [{ rpc: 'set_project_category_membership', args: { category_id: MUTATION, project_id: PROJECT, included: true } }]],
+  ['set_project_categories', { project_id: PROJECT, category_ids: [MUTATION] }, [{ rpc: 'set_project_categories', args: { project_id: PROJECT, category_ids: [MUTATION] } }]],
   ['list_invitations', {}, [{ rpc: 'list_invitations' }]],
   ['list_members', { project_id: PROJECT }, [{ rpc: 'list_members', args: { project_id: PROJECT } }]],
   [
@@ -264,6 +270,35 @@ Deno.test('create_project sends a new project id and the title', async () => {
   assertEquals(rest, { title: 'Plans' })
 })
 
+Deno.test('category creation supplies an identity and category lists wrap readable assignments', async () => {
+  const created = await callTool('create_project_category', { name: 'Video scripts' })
+  assertEquals(created.calls.length, 1)
+  const call = created.calls[0]
+  assert('rpc' in call && call.rpc === 'create_project_category')
+  const { category_id, name } = call.args as Record<string, unknown>
+  assertMatch(String(category_id), UUID)
+  assertEquals(name, 'Video scripts')
+
+  const categories = [{ id: MUTATION, name: 'Video scripts', archived_at: null, revision: 2, project_ids: [PROJECT] }]
+  const listed = await callTool('list_project_categories', {}, { list_project_categories: { data: categories, error: null } })
+  assertEquals(listed.result.structuredContent, { categories })
+  const assigned = await callTool('set_project_categories', { project_id: PROJECT, category_ids: [] }, { set_project_categories: { data: categories, error: null } })
+  assertEquals(assigned.calls, [{ rpc: 'set_project_categories', args: { project_id: PROJECT, category_ids: [] } }])
+  assertEquals(assigned.result.structuredContent, { categories })
+})
+
+Deno.test('category name limits count Unicode characters rather than UTF-16 units', async () => {
+  const name = '😀'.repeat(100)
+  const valid = await callTool('create_project_category', { category_id: MUTATION, name })
+  assert(!valid.result.isError)
+  assertEquals(valid.calls, [{ rpc: 'create_project_category', args: { category_id: MUTATION, name } }])
+  for (const invalid of ['😀'.repeat(161), 'Two\nlines']) {
+    const refused = await callTool('create_project_category', { name: invalid })
+    assert(refused.result.isError)
+    assertEquals(refused.calls, [])
+  }
+})
+
 Deno.test('write_file without base_version sends a create', async () => {
   const { calls } = await callTool('write_file', { project_id: PROJECT, path: 'new.md', content: 'Hello' })
   const [call] = calls
@@ -375,6 +410,12 @@ Deno.test('invalid input is rejected before any Supabase call', async () => {
     ['save_files', { project_id: PROJECT, changes: [{ op: 'chmod', path: 'a.md' }] }],
     ['save_files', { project_id: PROJECT, changes: [] }],
     ['share_project', { project_id: PROJECT, member_id: MEMBER, role: 'owner' }],
+    ['create_project_category', { name: '   ' }],
+    ['rename_project_category', { category_id: MUTATION, name: 'x'.repeat(161) }],
+    ['set_project_category_archived', { category_id: 'not-a-uuid', archived: true }],
+    ['set_project_category_membership', { category_id: MUTATION, project_id: PROJECT, included: 'true' }],
+    ['set_project_categories', { project_id: PROJECT, category_ids: ['not-a-uuid'] }],
+    ['set_project_categories', { project_id: PROJECT, category_ids: Array.from({ length: 129 }, () => MUTATION) }],
   ]
   for (const [name, args] of invalid) {
     const { result, calls } = await callTool(name, args)
@@ -384,7 +425,7 @@ Deno.test('invalid input is rejected before any Supabase call', async () => {
 })
 
 Deno.test('no tool permanently deletes a project, accepts an invitation, or edits or deletes a comment', async () => {
-  const forbidden = ['delete_project', 'accept_invitation', 'edit_comment', 'delete_comment', 'delete_comment_thread']
+  const forbidden = ['delete_project', 'delete_project_category', 'accept_invitation', 'edit_comment', 'delete_comment', 'delete_comment_thread']
   for (const [name, args, , answers] of CASES) {
     assert(!forbidden.includes(name), `${name} is a tool`)
     const { calls } = await callTool(name, args, answers)

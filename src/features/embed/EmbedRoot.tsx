@@ -11,6 +11,7 @@ import { AccountPill, AppBar, Banner, ConfirmActionHost } from "@/features/desig
 import { parseProjectLocation } from "@/features/navigation"
 import { ProjectsHome, useProjectAccount, type ProjectAccount } from "@/features/projects"
 import { libraryFor } from "@/features/projects/account"
+import { categorySelection } from "@/features/projects/categorySelection"
 import { kindForPath } from "@/features/workbench/session"
 import { loadClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
@@ -263,7 +264,8 @@ export function EmbedRoot() {
   // loaded the router still shows the home route, which is the site's home
   // page, so the panel keeps its own projects list until then.
   const projectShown = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/projects/$projectId") })
-  const url = new URL(path, window.location.origin).href
+  const selectedCategory = !onProject && path === "/" ? categorySelection(new URL(href, window.location.origin).searchParams.get("category")) : undefined
+  const url = new URL(selectedCategory ? `${path}?category=${encodeURIComponent(selectedCategory)}` : path, window.location.origin).href
   useTellLocation(account.kind === "account" ? account.account : null, pass === "open" && onProject && projectShown ? href : null)
 
   let page: ReactNode

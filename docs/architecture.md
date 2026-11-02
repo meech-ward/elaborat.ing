@@ -195,6 +195,19 @@ folders, has an owner and members, and every save is version-checked.
 **Decision:** the project is the unit of sharing. Roles are `viewer`,
 `commenter`, `editor`, plus the owner. RLS enforces isolation.
 
+**Decision: project categories are personal organization.** Flat categories
+and project associations belong to an account, and a project may be in several.
+They are separate from project content, revisions and access. Even a viewer
+can organize a readable project without changing collaborators' categories.
+Association reads recheck project access. Category writes require a connection;
+an account-partitioned sidecar caches the last successful view for offline
+browsing, without changing legacy project storage. Category RPCs bind their
+in-memory session to that account so queued work cannot use a later sign-in.
+Archiving a category preserves its assignments and projects. Shared-group
+permissions are a later, explicit design and cannot inherit access to projects
+the category owner can only view. See [project categories](project-categories.md)
+for the implementation scope and checks.
+
 **Decision: one row per file.** Each file has its own row with its current
 content. History stores only the files that changed. A save is one database
 call (`save_files`) carrying a list of changes, each with the version it was

@@ -196,6 +196,12 @@ See [embedded documents](embedded-documents.md) for release status and limits.
   and agent steps were checked on a local Supabase stack).
 - **Hosted launch** at https://elaborat.ing (live; the hosted project stays on
   Supabase's Free plan for now).
+- **Personal project categories** (done: home groups projects into flat
+  categories, with All projects and Uncategorized filters, multiple category
+  assignments, archive/restore and matching MCP tools. Categories belong to
+  the person organizing them; only projects are shared. Organization changes
+  require a connection, with cached browsing offline. See
+  [project categories](project-categories.md)).
 
 ## Phase 4: sharing and comments
 

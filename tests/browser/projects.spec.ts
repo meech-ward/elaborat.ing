@@ -198,7 +198,8 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and me")
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("button", { name: /, project menu$/ }).click()
   await page.getByRole("menuitem", { name: "All projects" }).click()
@@ -274,7 +275,8 @@ test("an archived project moves to its own section and refuses edits until it is
   await page.getByRole("link", { name: "Notes" }).click()
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
   await typeAtEnd(" edited")
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   await expect.poll(() => server.content(id, "a.md")).toBe("# Notes edited")
 })
 
@@ -290,7 +292,8 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and more")
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("button", { name: /, project menu$/ }).click()
   await page.getByRole("menuitem", { name: "All projects" }).click()
@@ -324,7 +327,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await expect(page.getByText("No projects yet.")).toBeVisible()
 })
 
-test("a project's menu depends on the role: a viewer can only see its members, download it and leave", async ({ page }) => {
+test("a project's menu depends on the role: a viewer can categorize it, see members, download it and leave", async ({ page }) => {
   const server = new FakeProjectServer()
   await serverProject(server, "Mine", {})
   await sharedWithMe(server, "Edited", {}, true)
@@ -333,9 +336,9 @@ test("a project's menu depends on the role: a viewer can only see its members, d
   await fakeSupabase(page, { server })
   await signedIn(page)
   await home(page)
-  expect(await menuItems(page, "Mine")).toEqual(["Members", "Download project", "Archive", "Delete permanently"])
-  expect(await menuItems(page, "Edited")).toEqual(["Members", "Download project", "Archive", "Leave project"])
-  expect(await menuItems(page, "Viewed")).toEqual(["Members", "Download project", "Leave project"])
+  expect(await menuItems(page, "Mine")).toEqual(["Categories…", "Members", "Download project", "Archive", "Delete permanently"])
+  expect(await menuItems(page, "Edited")).toEqual(["Categories…", "Members", "Download project", "Archive", "Leave project"])
+  expect(await menuItems(page, "Viewed")).toEqual(["Categories…", "Members", "Download project", "Leave project"])
 })
 
 test("the projects home does not download the editor", async ({ page }) => {

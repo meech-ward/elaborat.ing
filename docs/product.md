@@ -47,6 +47,9 @@ Developer first, friendly for everyone.
   native canvas. Manual canvas edits survive regeneration.
 - **Projects** that hold files and folders. Each user has their own projects,
   invisible to everyone else unless shared.
+- **Personal project categories**, such as Video scripts or Work, with a
+  category overview and filters. A project can be in several categories;
+  project sharing stays independent. See [project categories](project-categories.md).
 - **No lock-in.** Any project downloads as a .zip of its files, exactly as
   saved, and a .zip or a folder imports as a new project.
 - **Offline drafts.** Edits live in the browser until saved. Saves are
