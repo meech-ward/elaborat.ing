@@ -51,8 +51,10 @@ test.afterEach(() => expectNoErrors(errors))
 
 const fresh = (page: Page, content = original) => load(page, content, "mdx", plain)
 
-/** Leave the editor so the edit commits, then check the exact source. */
+/** Leave the editor so the edit commits, then check the exact source. Tab
+ * stays in the text; Escape, then Tab, leaves it. */
 async function commit(page: Page, mark: Revision, expected: string) {
+  await page.keyboard.press("Escape")
   await page.keyboard.press("Tab")
   await accepted(page, mark)
   // Later keystrokes may still be on their way; wait for all of them.

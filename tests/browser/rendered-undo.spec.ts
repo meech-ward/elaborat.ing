@@ -249,10 +249,12 @@ test("a task's box ticks in Rendered, by click or Space: Source shows [x], it sa
   const ticked = TASKS.replace("- [ ] Pack", "- [x] Pack")
   expect(await saved(page, fake, id)).toBe(ticked)
 
-  // From the heading, Tab reaches the first box, and Space unticks it.
+  // From the heading, Escape then Tab reaches the first box (Tab alone stays
+  // in the text), and Space unticks it.
   await toRendered(page)
   await expect(pack).toBeChecked()
   await frameOf(page).getByRole("heading", { name: "Packing" }).click()
+  await page.keyboard.press("Escape")
   await page.keyboard.press("Tab")
   await expect(pack).toBeFocused()
   await page.keyboard.press("Space")

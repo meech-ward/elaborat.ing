@@ -1,8 +1,10 @@
 import { Selection, type Command, type Transaction } from "prosemirror-state";
 import type { Node as PMNode } from "prosemirror-model";
-import { joinTextblockBackward } from "prosemirror-commands";
+import { canJoin, Mapping, ReplaceStep, type Step } from "prosemirror-transform";
+import { joinTextblockBackward, joinTextblockForward } from "prosemirror-commands";
 import { liftListItem } from "prosemirror-schema-list";
 import { fluidSchema } from "./fluidSchema";
+import { changeTo } from "./nearestForm";
 
 /**
  * A paragraph that is only a code fence's opening line, as typed: three or
@@ -57,27 +59,179 @@ export const emptyListBackspace: Command = (state, dispatch, view) => {
     }
     return true;
   }
-  return liftListItem(fluidSchema.nodes.list_item)(state, dispatch, view);
+  return liftItem(state, dispatch, view);
 };
 
 /** Backspace at an item's text joins it to the preceding item's text in one
  * step, undoing an Enter split without leaving two paragraphs in that item.
+ * At the first item of a nested list it moves the item out a level, as
+ * Shift+Tab does, instead of making it a second paragraph of the item above.
  * Empty items keep their separate exit behavior above. */
 export const listItemBackspace: Command = (state, dispatch, view) => {
   const { $from, empty } = state.selection;
+  const { list_item, bullet_list } = fluidSchema.nodes;
   if (
     !empty ||
     $from.parent.type !== fluidSchema.nodes.paragraph ||
     !$from.parent.content.size ||
     $from.parentOffset !== 0 ||
     $from.depth < 3 ||
-    $from.node(-1).type !== fluidSchema.nodes.list_item ||
-    $from.index(-1) !== 0 ||
-    $from.index(-2) === 0
+    $from.node(-1).type !== list_item ||
+    $from.index(-1) !== 0
   )
     return false;
-  return joinTextblockBackward(state, dispatch, view);
+  if ($from.index(-2) > 0) return joinTextblockBackward(state, dispatch, view);
+  // Bullet lists only: the source cannot yet write an ordered item moved
+  // out this way, so those keep the standard Backspace.
+  return $from.depth >= 4 &&
+    $from.node(-3).type === list_item &&
+    $from.node(-2).type === bullet_list &&
+    $from.node(-4).type === bullet_list
+    ? liftItem(state, dispatch, view)
+    : false;
 };
+
+/** Delete at the end of an item's text joins the text after it (the next
+ * item's, or its nested list's first) in one step, as Backspace at the start
+ * of that text does, instead of joining two items into one item with two
+ * paragraphs. In an empty item it joins the next item's text into it. */
+export const listItemDelete: Command = (state, dispatch, view) => {
+  const { $from, empty } = state.selection;
+  if (
+    !empty ||
+    $from.parent.type !== fluidSchema.nodes.paragraph ||
+    $from.parentOffset !== $from.parent.content.size ||
+    $from.depth < 2 ||
+    $from.node(-1).type !== fluidSchema.nodes.list_item
+  )
+    return false;
+  return joinTextblockForward(state, dispatch, view);
+};
+
+const isList = (node: PMNode | null | undefined) =>
+  node?.type === fluidSchema.nodes.bullet_list || node?.type === fluidSchema.nodes.ordered_list;
+
+/** Pairs of lists of one kind side by side, which Markdown writes as one list. */
+function sideBySideLists(node: PMNode): number {
+  let pairs = 0;
+  node.forEach((child, _offset, index) => {
+    if (index > 0 && isList(child) && child.type === node.child(index - 1).type) pairs++;
+    if (!child.isTextblock) pairs += sideBySideLists(child);
+  });
+  return pairs;
+}
+
+/**
+ * Shift+Tab: the list item around the selection moves out a level
+ * (liftListItem). Out of its list, its own nested list and the items after
+ * it would be two lists of one kind side by side, which Markdown reads back
+ * as one list: they are joined into that one list. The parent checks each
+ * step of an edit on its own, so an edit that passes through such lists on
+ * its way (as moving an item with a nested list into the list above does) is
+ * sent as one step, from the document before it to the one after.
+ */
+export const liftItem: Command = (state, dispatch) => {
+  const item = fluidSchema.nodes.list_item;
+  const { $from, $to } = state.selection;
+  const range = $from.blockRange($to, (node) => node.childCount > 0 && node.firstChild!.type === item);
+  let lifted: Transaction | undefined;
+  if (!range || !liftListItem(item)(state, (tr) => (lifted = tr)) || !lifted) return false;
+  if (!dispatch) return true;
+  const tr: Transaction = lifted;
+  // Out of the list, the items after the lifted one stay in a copy of it,
+  // which opens just before where the lifted items ended.
+  if ($from.node(range.depth - 1).type !== item && range.endIndex < range.parent.childCount) {
+    const $after = tr.doc.resolve(tr.mapping.map(range.end, -1) - 1);
+    if (isList($after.nodeBefore) && $after.nodeAfter?.type === $after.nodeBefore!.type && canJoin(tr.doc, $after.pos))
+      tr.join($after.pos);
+  }
+  const pairs = sideBySideLists(state.doc);
+  if (!tr.docs.slice(1).some((doc) => sideBySideLists(doc) > pairs)) {
+    dispatch(tr);
+    return true;
+  }
+  const merged = state.tr;
+  for (const step of changeTo(state.doc, tr.doc).steps) merged.step(step);
+  // The documents are the same, so the caret is at the same place.
+  dispatch(merged.setSelection(tr.selection.map(merged.doc, new Mapping())).scrollIntoView());
+  return true;
+};
+
+/** Mod-Enter in a task item ticks or unticks its box, as Notion's shortcut
+ * does, with the edit a click on the box makes. */
+export const toggleTask: Command = (state, dispatch) => {
+  const { $from } = state.selection;
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (node.type !== fluidSchema.nodes.list_item) continue;
+    if (node.attrs.checked === null) return false;
+    dispatch?.(state.tr.setNodeMarkup($from.before(depth), undefined, { ...node.attrs, checked: !node.attrs.checked }));
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Shift+Enter: a line break in a paragraph, with no formatting (Markdown
+ * writes a break with none), in place of the selection and of the spaces
+ * after it, which Markdown cannot write at the start of a line. A heading
+ * has no line breaks in Markdown, so there the key does nothing.
+ */
+export const hardBreak: Command = (state, dispatch) => {
+  const { $from, $to } = state.selection;
+  if ($from.parent.type !== fluidSchema.nodes.paragraph || !$from.sameParent($to)) return true;
+  const after = $to.parent.textBetween($to.parentOffset, $to.parent.content.size, undefined, "\n");
+  const spaces = /^[ \t]*/.exec(after)![0].length;
+  dispatch?.(
+    state.tr
+      .replaceWith($from.pos, $to.pos + spaces, fluidSchema.nodes.hard_break.create())
+      .scrollIntoView(),
+  );
+  return true;
+};
+
+/**
+ * Where an edit put a line break that ends its paragraph (Shift+Enter at the
+ * end of a line), or null. Markdown cannot write a break there, so the editor
+ * shows it but holds it back until text follows (fluidEditor.ts).
+ */
+export function trailingBreak(steps: readonly Step[], doc: PMNode): ReplaceStep | null {
+  const [step] = steps;
+  if (steps.length !== 1 || !(step instanceof ReplaceStep) || step.slice.openStart || step.slice.openEnd) return null;
+  if (step.slice.content.lastChild?.type !== fluidSchema.nodes.hard_break) return null;
+  const $end = doc.resolve(step.from + step.slice.size);
+  return $end.parent.type === fluidSchema.nodes.paragraph && $end.parentOffset === $end.parent.content.size ? step : null;
+}
+
+/**
+ * An edit made just after a held line break (`held`, the step that made it),
+ * with it, as one step: another break, which is held too, or text, which
+ * Markdown can write after the break. "spaces" for spaces alone, which
+ * Markdown cannot write at the start of a line. Null for any other edit.
+ */
+export function afterHeldBreak(held: ReplaceStep, steps: readonly Step[]): ReplaceStep | "spaces" | null {
+  const [step] = steps;
+  const end = held.from + held.slice.size;
+  if (steps.length !== 1 || !(step instanceof ReplaceStep) || step.from !== end || step.to !== end) return null;
+  if (step.slice.openStart || step.slice.openEnd || !step.slice.size) return null;
+  let inline = true;
+  step.slice.content.forEach((node) => {
+    inline &&= node.isInline;
+  });
+  if (!inline) return null;
+  const text = step.slice.content.textBetween(0, step.slice.content.size, undefined, "\n");
+  if (/^[ \t]+$/.test(text)) return "spaces";
+  const merged = held.merge(step);
+  return merged instanceof ReplaceStep ? merged : null;
+}
+
+/** Two edits made one after the other, such as letters typed or deleted in
+ * a row, as one step (ReplaceStep.merge); null when they are not one. */
+export function typedTogether(first: readonly Step[], next: readonly Step[]): Step | null {
+  return first.length === 1 && next.length === 1 && first[0] instanceof ReplaceStep && next[0] instanceof ReplaceStep
+    ? first[0].merge(next[0])
+    : null;
+}
 
 /**
  * Enter at the start of a line in a quote. Markdown has no empty paragraph
