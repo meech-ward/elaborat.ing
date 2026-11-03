@@ -24,6 +24,8 @@
   // separated by spaces: origins, or https://*. and a domain for a host that
   // serves each app from its own subdomain. ChatGPT serves plugin views from
   // subdomains of web-sandbox.oaiusercontent.com inside chatgpt.com. The
+  // Claude entry is the sandbox origin derived from https://elaborat.ing/mcp,
+  // together with claude.ai (docs/architecture.md, Frontend hosting). The
   // panel's one-time pass is what keeps an account's data out of any other
   // view's frame (docs/architecture.md, Frontend hosting). Unset, or with a
   // bare wildcard, a path or anything else, nothing may frame it. The panel
@@ -34,7 +36,7 @@
     // The database's region: the MCP function runs there, so its several
     // database round trips per tool call stay in one region.
     "MCP_REGION": "us-east-1",
-    "EMBED_FRAME_ANCESTORS": "https://*.web-sandbox.oaiusercontent.com https://chatgpt.com",
+    "EMBED_FRAME_ANCESTORS": "https://*.web-sandbox.oaiusercontent.com https://chatgpt.com https://8f145b39f2855fffeaffba067d24140d.claudemcpcontent.com https://claude.ai",
     "MCP_PROBE_UPSTREAM": "https://njxjkmtvconypwujbiur.supabase.co/functions/v1/mcp-probe"
   },
   // The hosted instance's domain. Self-hosters: change or remove this route.

@@ -1907,16 +1907,29 @@ of at least two labels, checked as the sandbox domain's `FRAME_ANCESTORS` is
 anything else, the policy is `'none'`. frame-ancestors checks every ancestor.
 ChatGPT serves each plugin's view from its own subdomain of
 `web-sandbox.oaiusercontent.com`, nested in a frame of the same origin inside
-`https://chatgpt.com`, so the hosted value is
+`https://chatgpt.com`, so the hosted value includes
 `https://*.web-sandbox.oaiusercontent.com https://chatgpt.com`. That lets any
-plugin's view frame `/embed`; the pass (below) is what keeps an account out of
-every frame but this site's own view, and naming the panel's exact origin
-would not cover the case the pass leaves open, a server that gets the panel's
+ChatGPT plugin's view frame `/embed`; the pass (below) is what keeps an
+account out of every frame but this site's own view, and naming the panel's
+exact origin would not cover the case the pass leaves open, a server that gets the panel's
 own origin. The panel's view shows its origins when it cannot open, and
 reports them to `panel_origins`, so the list can be narrowed or extended for
 another host. The service worker
 never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
 panel none registers.
+
+**Claude panel framing is configured, with live verification still pending.**
+The hosted value also allows
+`https://8f145b39f2855fffeaffba067d24140d.claudemcpcontent.com` and
+`https://claude.ai`. Claude's
+[documented sandbox origin](https://claude.com/docs/connectors/building/mcp-apps/getting-started#set-uidomain-for-claude)
+is the first 32 hexadecimal characters of SHA-256 of the full connector URL,
+followed by `.claudemcpcontent.com`; the exact URL here is
+`https://elaborat.ing/mcp`, without a trailing slash. The exact sandbox
+origin and outer Claude origin are allowed, preserving the ChatGPT entries.
+This permits the expected ancestor chain at our Worker; it does not prove
+that Claude permits the nested frame or that the panel opens. Verify both
+in a live Claude conversation before describing the panel as working there.
 
 **Decision: the app in a panel also needs a pass only this site's server
 issues.** `frame-ancestors` is the first line of defence. It trusts the
