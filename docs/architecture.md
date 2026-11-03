@@ -864,6 +864,11 @@ The production server's tools are unchanged.
   to true.
   `tools/annotations.test.ts` holds the list and fails for a tool without
   all four.
+- **Tool descriptions explain only their own operation and input fields.**
+  Model workflow guidance, tool sequencing and the explicit authorization
+  rule for fetching external images live in the server instructions and
+  plugin skills, rather than tool descriptions, as Claude's directory
+  requires. The metadata test rejects cross-tool directives in descriptions.
 - **`whoami` is the account's profile** (`_meta["openai/profile"]`), which
   ChatGPT reads to tell connected accounts apart: exactly `id` (the account's
   id), and `name` and `email` where the account has them, as structured

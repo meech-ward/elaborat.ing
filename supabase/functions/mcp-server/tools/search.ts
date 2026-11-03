@@ -18,7 +18,7 @@ export function registerSearchTool(server: McpServer, { supabase, embed }: ToolC
       inputSchema: z.object({
         query: z.string().trim().min(1).max(500).describe('What to look for, in words.'),
         match_count: z.number().int().min(1).max(30).optional().describe('How many passages to return, up to 30. Defaults to 10.'),
-        project_id: projectId.optional().describe('Only search this project, by its id from list_projects. Leave it out to search every project.'),
+        project_id: projectId.optional().describe('An optional project id restricting the search. Without it, searches every readable project.'),
       }),
       annotations: { title: 'Search projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },

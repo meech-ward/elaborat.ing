@@ -44,7 +44,7 @@ export function registerWhoamiTool(server: McpServer, { userClaims }: ToolContex
     'whoami',
     {
       title: 'Connected account',
-      description: 'Use this to see which elaborat.ing account is connected: its id, and its name and email when it has them.',
+      description: 'Read the connected elaborat.ing account’s id, and its name and email when it has them.',
       inputSchema: z.object({}),
       outputSchema: profileSchema,
       annotations: { title: 'Connected account',

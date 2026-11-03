@@ -3,7 +3,7 @@ import { z } from 'npm:zod@4.4.3'
 import { jsonResult, runtimeErrorResult } from './result.ts'
 import type { ToolContext } from './types.ts'
 
-const categoryId = z.uuid().describe('A personal category id from list_project_categories.')
+const categoryId = z.uuid().describe('A personal category id.')
 const categoryName = z.string().trim().min(1)
   .refine(name => [...name.normalize('NFC')].length <= 160, 'Category names can contain up to 160 characters.')
   .refine(name => !/[\u0000-\u001f\u007f-\u009f]/.test(name), 'Category names cannot contain control characters.')
@@ -23,13 +23,13 @@ export function registerProjectCategoryTools(server: McpServer, { supabase }: To
 
   server.registerTool('list_project_categories', {
     title: 'List project categories',
-    description: 'List the user’s personal project categories, including archived ones. Each has id, name, archived_at and project_ids for projects the user can currently read. Categories organize the user’s own view and grant no access. A project can belong to several categories. Use list_projects for project titles and roles.',
+    description: 'List the user’s personal project categories, including archived ones. Each has id, name, archived_at and project_ids for projects the user can currently read. Categories organize the user’s own view and grant no access. A project can belong to several categories.',
     annotations: { title: 'List project categories', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, () => rpc('list_project_categories', undefined, true))
 
   server.registerTool('create_project_category', {
     title: 'Create project category',
-    description: 'Create a personal category, such as Video scripts. This does not move or share projects. Supply category_id when retrying a request with a lost response to reuse its identity.',
+    description: 'Create a personal category, such as Video scripts. This does not move or share projects. An optional category_id preserves the category identity across retries.',
     inputSchema: z.object({ name: categoryName, category_id: categoryId.optional() }),
     annotations: { title: 'Create project category', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   }, ({ name, category_id }) => rpc('create_project_category', { category_id: category_id ?? crypto.randomUUID(), name }))
@@ -57,7 +57,7 @@ export function registerProjectCategoryTools(server: McpServer, { supabase }: To
 
   server.registerTool('set_project_categories', {
     title: 'Set categories for project',
-    description: 'Replace a readable project’s active personal category assignments atomically. Pass every category that should remain; an empty list makes it Uncategorized. Read list_project_categories first to preserve existing choices. Archived category assignments are retained. This does not change project contents or sharing.',
+    description: 'Replace a readable project’s active personal category assignments atomically with the supplied category_ids. An empty list makes it Uncategorized. Archived category assignments are retained. This does not change project contents or sharing.',
     inputSchema: z.object({ project_id: z.uuid(), category_ids: z.array(categoryId).max(128) }),
     annotations: { title: 'Set categories for project', readOnlyHint: false, destructiveHint: true, openWorldHint: false },
   }, args => rpc('set_project_categories', args, true))

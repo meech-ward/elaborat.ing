@@ -94,6 +94,29 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   assertEquals(origins?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
 })
 
+Deno.test('tool descriptions describe their operation without cross-tool workflow instructions', async () => {
+  const tools = await withClient({}, async (client) => (await client.listTools()).tools)
+  const descriptions = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.flatMap(descriptions)
+    if (!value || typeof value !== 'object') return []
+    return Object.entries(value).flatMap(([key, inner]) =>
+      key === 'description' && typeof inner === 'string' ? [inner] : descriptions(inner)
+    )
+  }
+  for (const tool of tools) {
+    for (const description of descriptions(tool)) {
+      assert(!/\b(?:you|your|yourself)\b/i.test(description), `${tool.name} addresses the model in its description`)
+      assert(!/\b(?:see|follow|read) (?:the )?(?:server )?instructions\b/i.test(description), `${tool.name} refers to behavioral instructions`)
+      for (const other of tools) {
+        // Names containing underscores identify tools, unlike ordinary words such as draw and search.
+        if (other.name !== tool.name && other.name.includes('_')) {
+          assert(!description.includes(other.name), `${tool.name} directs to ${other.name} in its description`)
+        }
+      }
+    }
+  }
+})
+
 Deno.test('whoami is the account profile: exactly id, name and email, as structured content and JSON text', async () => {
   const context = {
     userClaims: {

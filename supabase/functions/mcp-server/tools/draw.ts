@@ -135,13 +135,11 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
       description:
         'Add elements to a drawing (.excalidraw) and save it, creating the drawing if there is none at the path. ' +
         'The user sees each new element sketched in turn, in elaborat.ing and in its panel beside the chat. ' +
-        'Add several shapes per call, a row or a group of related shapes with their arrows, about 4 to 10 elements. ' +
-        "Don't add one shape per call. " +
-        "Give a shape a label and leave out its size, and join two shapes with an arrow's from and to: " +
-        'draw sizes the shape to its label and places and binds the arrow. ' +
+        "A shape with a label and no size is sized to its label; an arrow's from and to identify the shapes it joins, " +
+        'and the arrow is placed and bound to them. ' +
         `A long label wraps, so a shape sized to it is at most about ${MAX_SIZED_WIDTH} px wide: shapes 300 apart leave room for an arrow. ` +
         `For example, elements: ${JSON.stringify(EXAMPLE)}. ` +
-        'It only adds: each element needs a new id. To change or remove elements, use write_file once with base_version, then draw what is new.',
+        'It only adds: each element needs a new id, and existing elements are preserved.',
       inputSchema: z.object({
         project_id: projectId,
         path: path.describe('The drawing, such as drawings/flow.excalidraw. It is created if it does not exist.'),
@@ -162,7 +160,7 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
           .int()
           .positive()
           .optional()
-          .describe('Optional. The version you last read or that draw returned: if the drawing changed since, nothing is saved.'),
+          .describe('Optional expected current version. If the drawing has a different saved version, nothing is saved.'),
       }),
       annotations: { title: 'Draw', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },

@@ -505,8 +505,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
       title: 'Projects',
       description:
         "Open elaborat.ing beside the chat: the user's projects, or one project or file in it, where they can read, edit and comment. " +
-        'Changes saved by an agent show there as they happen. Use this when the user wants to work in elaborat.ing next to the chat. ' +
-        'With no arguments it opens the projects list. To show one file in the chat instead, use show_file.',
+        'Changes saved by an agent show there as they happen. With no arguments it opens the projects list.',
       inputSchema: z
         .object({ project_id: projectId.optional(), path: path.optional() })
         .refine((input) => input.path === undefined || input.project_id !== undefined, {
@@ -551,7 +550,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
     'panel_pass',
     {
       title: 'Panel pass',
-      description: 'Used by the Projects panel itself: a one-time pass that lets it open elaborat.ing. Not for use in a conversation.',
+      description: 'Create a one-time pass that lets the Projects panel open elaborat.ing. This app-only tool adds a short-lived pass without changing project data.',
       inputSchema: z.object({}),
       annotations: { title: 'Panel pass', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
@@ -575,7 +574,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
     {
       title: 'Panel origins',
       description:
-        'Used by the Projects panel itself: reports the origins the panel sits in, so the site can allow them. Not for use in a conversation.',
+        'Report the Projects panel’s ancestor origins to the server log for the site’s frame allowlist. This app-only tool stores no project data.',
       inputSchema: z.object({ origins: originsLine, ok: z.boolean().optional(), host: hostReport.optional() }),
       annotations: { title: 'Panel origins', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },

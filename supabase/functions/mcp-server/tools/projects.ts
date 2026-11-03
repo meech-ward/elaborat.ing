@@ -10,7 +10,7 @@ import type { ToolContext } from './types.ts'
 // database's rules apply: agents can archive a project but never permanently
 // delete one, and cannot accept invitations on the user's behalf.
 
-export const projectId = z.uuid().describe('The project id, from list_projects.')
+export const projectId = z.uuid().describe('The project id.')
 export const path = z
   .string()
   .min(1)
@@ -19,11 +19,11 @@ export const baseVersion = z
   .number()
   .int()
   .positive()
-  .describe('The file version you last read. Saving fails with a conflict if the file changed since.')
+  .describe('The expected current file version. A different saved version causes a conflict.')
 export const mutationId = z
   .uuid()
   .optional()
-  .describe('Optional id for this change. Repeat it when retrying, so the change is never applied twice.')
+  .describe('Optional id for this change. Reusing the same id deduplicates retries.')
 
 /**
  * Lets the show_file view call a tool through the host (MCP Apps
@@ -89,7 +89,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description:
         'List the files and folders in a project, with each file version and who saved it (changed_by; via_agent when ' +
-        'an agent saved it for them, named like "Claude for Ada"). Does not return file contents; use read_file for that.',
+        'an agent saved it for them, named like "Claude for Ada"). Does not return file contents.',
       inputSchema: z.object({ project_id: projectId }),
       annotations: { title: 'List files', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
@@ -125,7 +125,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'read_file',
     {
       description:
-        'Read one file: text content or image metadata, and its version. Image bytes are not returned. Pass the version as base_version when you save changes to it. Insert an existing image into a note with a document-relative Markdown image reference.',
+        'Read one file: text content or image metadata, and its version. Image bytes are not returned.',
       inputSchema: z.object({ project_id: projectId, path }),
       annotations: { title: 'Read file', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       // update_and_show's card reads the file as saved before the change, to show what stays.
@@ -176,9 +176,9 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'write_file',
     {
       description:
-        'Create or replace one text file. Existing image files cannot be overwritten as text. To create a new file, omit base_version. To change an existing file, pass the version you read. ' +
-        'If the result status is "conflict", someone changed the file first: read it again, merge, and retry. ' +
-        'New notes are .mdx; embed drawings and diagrams with <Drawing src="..." /> and <Diagram src="..." /> (see the server instructions).',
+        'Create or replace one text file. Existing image files cannot be overwritten as text. ' +
+        'An omitted base_version creates a new file; replacing an existing file requires its current version. ' +
+        'A stale base_version returns a conflict without saving changes.',
       inputSchema: z.object({
         project_id: projectId,
         path,
@@ -209,7 +209,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         'Apply several changes to a project at once. Either every change is saved or none is. ' +
         'Each change is {"op":"put","path","content","base_version"?}, {"op":"delete","path","base_version"}, ' +
         '{"op":"move","path","to","base_version"}, {"op":"mkdir","path"} or {"op":"rmdir","path"}. ' +
-        'Use this to keep related files consistent, such as a D2 diagram and its generated canvas.',
+        'Related files, such as a D2 diagram and its generated canvas, can change in the same atomic save.',
       inputSchema: z.object({
         project_id: projectId,
         changes: z
@@ -245,7 +245,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
   server.registerTool(
     'move_file',
     {
-      description: 'Move or rename a file. Pass the version you read.',
+      description: 'Move or rename a file at its current version. A stale base_version returns a conflict without moving it.',
       inputSchema: z.object({ project_id: projectId, path, to: path, base_version: baseVersion, mutation_id: mutationId }),
       annotations: { title: 'Move file', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
@@ -257,7 +257,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     'delete_file',
     {
       description:
-        "Delete a file. Its history is kept, so a person can restore it. Pass the version you read.",
+        'Delete a file at its current version. Its history is kept, so a person can restore it. A stale base_version returns a conflict without deleting it.',
       inputSchema: z.object({ project_id: projectId, path, base_version: baseVersion, mutation_id: mutationId }),
       annotations: { title: 'Delete file', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
@@ -318,7 +318,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description:
         'List who a project is shared with: its owner first, then the members, each with user_id, email, name (their email when they have none), role, invited_at and accepted_at. ' +
-        'The owner also sees invitations not yet accepted (accepted_at null). Use a user_id with share_project to change a role.',
+        'The owner also sees invitations not yet accepted (accepted_at null).',
       inputSchema: z.object({ project_id: projectId }),
       annotations: { title: 'List project members', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
