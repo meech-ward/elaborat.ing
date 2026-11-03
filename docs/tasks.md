@@ -388,6 +388,16 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Record the exact successful release SHA as a GitHub production deployment
+  and reject an older or divergent candidate before any deployment writes.
+  The newest-green resolver can otherwise roll back a newer reviewed manual
+  release when an older CI run finishes or a manual run leaves its SHA empty.
+  Compare the successful deployment's SHA to the resolved candidate, rather
+  than using the workflow run's head, which can name a different checkout.
+- Investigate intermittent browser checks observed during the sharing release:
+  the animated image's reduced-motion Play/Pause check and Split's keyboard-save
+  check each passed on retry. Keep the assertions and use their traces to
+  distinguish readiness races from application regressions.
 - The explorer's resize separator sits outside the app's landmarks. A full
   page axe scan reports `region`; checks scoped to the editor pass. Put the
   separator inside an appropriate landmark without changing keyboard resizing.
