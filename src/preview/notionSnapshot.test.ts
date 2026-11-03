@@ -29,6 +29,20 @@ describe('static component snapshots', () => {
     expect(html).not.toMatch(/button|onclick|secret|Copy code|Edit code|menu/);
   });
 
+  test('live nested images keep their pixels but exclude image editing actions and dialogs', () => {
+    const html = serializeNotionSnapshot(root(`<section><h2>Component result</h2><span class="project-image"><button class="project-image-open"><img src="${PNG}" alt="Result image" width="1" height="1"/></button><span class="project-image-actions"><button>Edit description</button><button>Edit caption</button><button>Replace image</button><button>Remove image</button></span><dialog class="project-image-description"><label>Image description<input value="private draft"/></label><button>Apply description</button></dialog></span><button>Create account</button></section>`));
+    expect(html).toContain(`<img src="${PNG}" alt="Result image" width="1" height="1">`);
+    expect(html).toContain('<h2>Component result</h2>');
+    expect(html).toContain('<span>Create account</span>');
+    expect(html).not.toMatch(/Edit description|Edit caption|Replace image|Remove image|Apply description|private draft|<dialog|<input/);
+  });
+
+  test('built-in authoring controls do not leak labels while rendered content and ordinary labels remain', () => {
+    const html = serializeNotionSnapshot(root('<section><aside><strong>Callout title</strong><p>Callout content</p></aside><span class="callout-controls"><label class="authoring-prop-control">title<input value="draft title"/></label><label>tone<select><option>info</option></select></label></span><span><button>Count: 7</button><label class="authoring-prop-control">initial<input value="7"/></label><label class="authoring-prop-control">step<input value="2"/></label></span><form><label>Account name<input value="private name"/></label><button>Create account</button></form></section>'));
+    expect(html).toBe('<section><aside><strong>Callout title</strong><p>Callout content</p></aside><span><span>Count: 7</span></span>Account name<span>Create account</span></section>');
+    expect(html).not.toMatch(/draft title|private name|initial|step|tone|<input|<select/);
+  });
+
   test('URL attributes and CSS cannot carry executable code or external requests', () => {
     const html = serializeNotionSnapshot(root(`<a href="javascript:alert(1)" onclick="bad()">Bad</a><a href="https://example.com/path" target="_blank">Web</a><img src="https://external.example/pixel" onerror="bad()" alt="Remote"/><img src="${PNG}" alt="Local"/><p style="color:red;background:url(https://external.example/x);position:fixed;--private:secret">Styled</p>`));
     expect(html).toContain('<a>Bad</a><a href="https://example.com/path">Web</a>');

@@ -295,6 +295,7 @@ function NumberControl(props: {
   const [draft, setDraft] = useState(String(props.value));
   return (
     <label
+      className="authoring-prop-control"
       style={{ display: "inline-flex", gap: "0.25rem", alignItems: "center" }}
     >
       {props.label}
@@ -323,6 +324,7 @@ function StringControl(props: {
   const [draft, setDraft] = useState(props.value);
   return (
     <label
+      className="authoring-prop-control"
       style={{ display: "inline-flex", gap: "0.25rem", alignItems: "center" }}
     >
       {props.label}
@@ -382,7 +384,7 @@ function CustomControls(props: {__slot?: number; inline?: boolean; children?: Re
             : <StringControl label={label} value={String(prop.value ?? '')} onCommit={commit} />}
         </span>;
       })}
-    </fieldset> : slot ? <small>{slot.reason ?? 'Edit this component in Source.'}</small> : null}
+    </fieldset> : slot ? <small className="authoring-actions">{slot.reason ?? 'Edit this component in Source.'}</small> : null}
   </span>;
 }
 
@@ -403,7 +405,7 @@ function CounterWithControls(props: {
     >
       <Counter initial={props.initial} step={props.step} />
       {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
-        <small title={slot?.reason ?? "Computed output"}>
+        <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
       ) : null}
@@ -462,7 +464,7 @@ function CalloutWithControls(props: {
         {props.children}
       </Callout>
       {slotIndex !== null && !editable && !isReadOnly() ? (
-        <small title={slot?.reason ?? "Computed output"}>
+        <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
       ) : null}

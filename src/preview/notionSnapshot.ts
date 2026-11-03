@@ -2,7 +2,7 @@ import {MAX_NOTION_SNAPSHOT_HTML_BYTES} from '../features/rendered/protocol';
 
 const OMIT = new Set(['script','style','link','meta','base','iframe','object','embed','input','textarea','select','option','dialog','template','noscript']);
 const OMIT_ROLES = new Set(['menu','menubar','dialog','alertdialog','toolbar','tooltip','listbox','combobox']);
-const CHROME = new Set(['custom-component-controls','document-code-actions','authoring-insert','authoring-actions','authoring-block-menu']);
+const CHROME = new Set(['custom-component-controls','document-code-actions','project-image-actions','callout-controls','authoring-prop-control','authoring-insert','authoring-actions','authoring-block-menu']);
 const HTML = new Set(['p','div','span','h1','h2','h3','h4','h5','h6','section','article','aside','main','header','footer','blockquote','pre','code','br','hr','ul','ol','li','table','thead','tbody','tfoot','tr','th','td','a','strong','b','em','i','u','s','del','mark','small','sub','sup','abbr','details','summary','figure','figcaption','img','dl','dt','dd']);
 const SVG = new Set(['svg','g','path','rect','circle','ellipse','line','polyline','polygon','text','tspan','defs','clippath','lineargradient','radialgradient','stop','pattern','mask','use','image','title','desc']);
 const VOID = new Set(['br','hr','img']);

@@ -1,6 +1,7 @@
 import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {unzipSync, strFromU8} from 'fflate'
+import {DOMParser} from '@xmldom/xmldom'
 import AxeBuilder from './axe.ts'
 import {expect, test, type Download, type Page} from './fixtures.ts'
 import {fakeSupabase, person, signedIn, SUPABASE} from './fake-supabase.ts'
@@ -232,6 +233,80 @@ export const CustomGraphic = () => <svg xmlns="http://www.w3.org/2000/svg" viewB
     await expect(lines(page)).toBeVisible()
     await expect(page.locator(FRAME)).toHaveCount(0)
   }
+  expect(fake.server.content(id, NOTE)).toBe(source)
+})
+
+test('a live mixed Card retains reader content and full image pixels while excluding authoring controls', async ({page}) => {
+  const dataURL = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1600; canvas.height = 900
+    const context = canvas.getContext('2d')!
+    context.fillStyle = 'white'; context.fillRect(0, 0, 1600, 900)
+    context.fillStyle = 'black'
+    for (let x = 0; x < 1600; x += 4) context.fillRect(x, 0, 1, 900)
+    return canvas.toDataURL('image/png')
+  })
+  const original = Buffer.from(dataURL.split(',')[1], 'base64')
+  const source = `export const MixedCustomDetail = () => <p>Custom reader detail.</p>
+
+# Mixed export
+
+<Card>
+<CardHeader>
+<CardTitle>Mixed reader card</CardTitle>
+</CardHeader>
+<CardContent>
+
+<MixedCustomDetail />
+
+![Original reader screenshot](../images/mixed.png)
+
+<Callout tone="warn" title="Remember the reader">
+
+The actual callout body stays readable.
+
+</Callout>
+
+<Counter initial={13} step={4} />
+
+\`\`\`cpp
+const char* kept = "static code stays";
+\`\`\`
+
+</CardContent>
+</Card>`
+  const {fake, id} = await open(page, source, {}, [{path: 'images/mixed.png', bytes: original, type: 'image/png'}])
+  await showView(page, 'Rendered')
+  await expect(frame(page).getByText('Custom reader detail.', {exact: true})).toBeVisible()
+  const image = frame(page).getByRole('button', {name: 'View image: Original reader screenshot', exact: true}).locator('img')
+  await image.scrollIntoViewIfNeeded()
+  await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1600)
+  // These controls really exist in the editable view and must be removed
+  // from the static copy without removing adjacent reader content.
+  for (const name of ['Edit description', 'Edit caption', 'Replace image', 'Remove image'])
+    await expect(frame(page).getByRole('button', {name, exact: true})).toHaveCount(1)
+  await expect(frame(page).getByLabel('initial', {exact: true})).toHaveValue('13')
+  await expect(frame(page).getByLabel('step', {exact: true})).toHaveValue('4')
+  await expect(frame(page).getByLabel('title', {exact: true})).toHaveValue('Remember the reader')
+  await expect(frame(page).getByLabel('tone', {exact: true})).toHaveValue('warn')
+  await expect(frame(page).getByRole('button', {name: 'Copy code', exact: true})).toHaveCount(1)
+  await frame(page).getByRole('button', {name: 'Increment', exact: true}).click()
+  await frame(page).getByRole('button', {name: 'Increment', exact: true}).click()
+  await expect(frame(page).locator('[data-component="Counter"] output')).toHaveText('21')
+  const {entries, html} = await exported(page)
+  const assets = Object.keys(entries).filter(path => path.startsWith('assets/'))
+  const imageCopies = assets.filter(path => Buffer.from(entries[path]).equals(original))
+  expect(imageCopies).toHaveLength(1)
+  expect(inspectImage(entries[imageCopies[0]])).toMatchObject({width: 1600, height: 900})
+  expect(html).toContain(`<img src="${imageCopies[0]}"`)
+  const parsed = new DOMParser().parseFromString(html, 'text/html')
+  const text = parsed.documentElement?.textContent ?? ''
+  for (const content of ['Mixed reader card', 'Custom reader detail.', 'Remember the reader', 'The actual callout body stays readable.'])
+    expect(text).toContain(content)
+  expect(html).toContain('>21<')
+  expect(Array.from(parsed.getElementsByTagName('code')).some(code => code.textContent?.includes('const char* kept = "static code stays";'))).toBe(true)
+  expect(text).not.toMatch(/Edit description|Edit caption|Replace image|Remove image|Copy code|Edit code|\binitial\b|\bstep\b|\btitle\b|\btone\b|Computed output: edit in source/)
+  expect(html).not.toMatch(/<input|<select|<button|contenteditable|data-authoring|&lt;MixedCustomDetail/)
   expect(fake.server.content(id, NOTE)).toBe(source)
 })
 
