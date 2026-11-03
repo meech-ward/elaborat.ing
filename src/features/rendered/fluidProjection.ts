@@ -17,9 +17,7 @@ import { z } from "zod/mini";
 import { en } from "zod/locales";
 import type { FluidSyntaxHint } from "./protocol";
 import {
-  compileForPreview,
-  instrumentMdxSource,
-  instrumentMarkdownSource,
+  compileProjection,
   type ComponentSlot,
   type Instrumentation,
 } from "./instrumentation";
@@ -289,10 +287,6 @@ export async function projectFluidSource(
   environment?: ComponentEnvironment,
 ): Promise<FluidProjection> {
   const components = environment ?? (format === 'mdx' ? await prepareComponentEnvironment(text) : {source:text,catalog:COMPONENT_CATALOG,modules:[],key:'',code:[]});
-  const instrumentation = await (format === "mdx"
-    ? instrumentMdxSource(text, components.catalog)
-    : instrumentMarkdownSource(text));
-  const slots = instrumentation.components;
   const leaves: Leaf[] = [],
     nodes: MappedNode[] = [],
     roots: MappedNode[] = [],
@@ -609,12 +603,14 @@ export async function projectFluidSource(
     nodes.push({ node, ast, from, to, pos, end: pos + node.nodeSize, root });
     return node;
   };
-  const code = await compileForPreview(text, slots, format, false, {
-    before(tree) {
+  // One parse: the instrumentation is read from the same compile, before its
+  // preview markers.
+  const { code, instrumentation } = await compileProjection(text, format, {
+    before(tree, captured) {
       const content: PMNode[] = [];
       let pos = 0;
       const sourceChildren = (tree as Ast).children ?? [];
-      const gapOffsets = instrumentation.blocks
+      const gapOffsets = captured.blocks
         .filter((entry) => entry.kind === "gap")
         .map((entry) => entry.from);
       const lastSource = sourceChildren.at(-1);
@@ -716,7 +712,7 @@ export async function projectFluidSource(
     format,
     doc,
     code,
-    slots,
+    slots: instrumentation.components,
     islands,
     instrumentation,
     runtimeKey,
@@ -2110,6 +2106,9 @@ export async function prepareFluidTransaction(
   let queue = proposed;
   let candidate = projection;
   let nearest = false;
+  // Each text an attempt wrote, projected once. The format and the component
+  // environment stay the same through the transaction, so the text decides it.
+  const projections = new Map<string, Promise<FluidProjection>>();
   for (let index = 0; index < queue.length; index++) {
     const step = queue[index];
     const { from, to } = step as unknown as { from: number; to: number };
@@ -2190,11 +2189,16 @@ export async function prepareFluidTransaction(
           snapshot.revision,
           [patch],
         );
-        const projected = await projectFluidSource(
-          updated.text,
-          snapshot.format,
-          candidate.components,
-        );
+        let projecting = projections.get(updated.text);
+        if (!projecting) {
+          projecting = projectFluidSource(
+            updated.text,
+            snapshot.format,
+            candidate.components,
+          );
+          projections.set(updated.text, projecting);
+        }
+        const projected = await projecting;
         if (projected.doc.eq(result.doc)) {
           accepted = projected;
           break;
