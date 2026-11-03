@@ -5,6 +5,7 @@ import { APP_URL } from './urls.ts'
 import type { RemoteThread } from '../../src/features/comments/remote.ts'
 import type { CommentAnchor } from '../../src/features/comments/placement.ts'
 import type { SharedBundle } from '../../src/features/file-sharing/publicRemote.ts'
+import { inspectImage } from '../../src/features/images/format.ts'
 
 test.describe.configure({ timeout: 60_000 })
 const TOKEN = 'ab'.repeat(32)
@@ -133,6 +134,75 @@ test('shared notes render local images, drawings, diagrams, and collapsible embe
   await expect(page.locator('.monaco-editor')).toHaveCount(0)
   await details.click()
   await expect(details).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('embedded shared images retain original detail and vector or animated originals stay static', async ({page}) => {
+  const raster = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1600; canvas.height = 900
+    const context = canvas.getContext('2d')!
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
+    context.fillStyle = '#111'
+    for (let y = 0; y < canvas.height; y += 8) for (let x = 0; x < canvas.width; x += 8)
+      if ((x / 8 + y / 8) % 2) context.fillRect(x, y, 8, 8)
+    const original = canvas.toDataURL('image/png')
+    const preview = document.createElement('canvas')
+    preview.width = 480; preview.height = 270
+    preview.getContext('2d')!.drawImage(canvas, 0, 0, preview.width, preview.height)
+    return {original, preview: preview.toDataURL('image/png')}
+  })
+  const shared = bundle('# Shared guide\n\n![Detailed screenshot](screenshot.png)\n\n![Vector detail](vector.svg)\n\n![Paused animation](animated.gif)\n\n<Document src="details.mdx" title="More screenshots" defaultCollapsed />')
+  shared.files.push({id: crypto.randomUUID(), path: 'details.mdx', version: 7,
+    content: 'import {Screenshot} from "workspace:components/screenshot.mdx"\n\n# Screenshot details\n\n<Screenshot />'},
+  {id: crypto.randomUUID(), path: 'components/screenshot.mdx', version: 7,
+    content: 'export const Screenshot = () => <img src="../screenshot.png" alt="Component screenshot" />'})
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="white"/><path d="M0 1H1600M1 0V900M800 0V900" stroke="black" stroke-width="1"/></svg>'
+  shared.images.push(
+    {path: 'screenshot.png', dataURL: raster.original, width: 1600, height: 900, preview: {dataURL: raster.preview, width: 480, height: 270}},
+    {path: 'vector.svg', dataURL: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, width: 1600, height: 900, preview: {dataURL: raster.preview, width: 480, height: 270}},
+    {path: 'animated.gif', dataURL: 'data:image/gif;base64,R0lGODlhAgACAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAFAAAACwAAAAAAgACAAAIBgABCAQQEAAh+QQBFAABACwAAAAAAgACAIEAAP8AAAAAAAAAAAAIBgABCAQQEAA7', width: 2, height: 2, preview: {dataURL: PNG, width: 1, height: 1}},
+  )
+  const {fake} = await setup(page, {bundle: shared})
+  await page.goto(href)
+  const examples = [{name: 'Detailed screenshot', width: 1600, height: 900}, {name: 'Vector detail', width: 1600, height: 900}, {name: 'Paused animation', width: 2, height: 2}]
+  const expectDetail = async () => {
+    for (const example of examples) {
+      const inline = frame(page).getByRole('button', {name: `View image: ${example.name}`, exact: true}).locator('img')
+      await inline.scrollIntoViewIfNeeded()
+      await expect.poll(() => inline.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(example.width)
+      await expect.poll(() => inline.evaluate(element => (element as HTMLImageElement).naturalHeight)).toBe(example.height)
+      const source = (await inline.getAttribute('src'))!
+      if (example.name === 'Detailed screenshot') expect(source).toBe(raster.original)
+      else {
+        expect(source).toMatch(/^data:image\/(png|webp);base64,/)
+        expect(inspectImage(Buffer.from(source.split(',')[1], 'base64')).animated).toBe(false)
+      }
+    }
+  }
+  const expectNestedDetail = async () => {
+    await frame(page).getByRole('button', {name: /More screenshots/}).first().click()
+    await expect.poll(async () => (await Promise.all(page.frames().map(surface =>
+      surface.getByRole('heading', {name: 'Screenshot details', exact: true}).count()))).reduce((sum, count) => sum + count, 0)).toBe(1)
+    const surfaces = await Promise.all(page.frames().map(async surface =>
+      await surface.getByRole('heading', {name: 'Screenshot details', exact: true}).count() ? surface : null))
+    const nested = surfaces.find(surface => surface !== null)!.getByRole('button', {name: 'View image: Component screenshot', exact: true}).locator('img')
+    await nested.scrollIntoViewIfNeeded()
+    await expect(nested).toHaveAttribute('src', raster.original)
+    await expect.poll(() => nested.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1600)
+    await expectNoCodePrompt(page)
+  }
+  await expectDetail()
+  await expectNestedDetail()
+  await frame(page).getByRole('button', {name: 'View image: Detailed screenshot', exact: true}).click()
+  const viewer = frame(page).getByRole('dialog', {name: 'Detailed screenshot', exact: true})
+  await expect.poll(() => viewer.getByRole('img').evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1600)
+  await viewer.getByRole('button', {name: 'Close image', exact: true}).click()
+  await expect(viewer).toBeHidden()
+  await expectDetail()
+  await page.reload()
+  await expectDetail()
+  await expectNestedDetail()
+  expect(fake.requests.some(request => /storage\/v1|project_files/.test(request.url()))).toBe(false)
 })
 
 test('an embedded document opened separately fits a short landscape viewport', async ({page}) => {

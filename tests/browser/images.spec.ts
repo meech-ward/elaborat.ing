@@ -3,6 +3,7 @@ import { expect, test, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 import { recordFrameMessages } from "./rendered-support.ts"
+import { inspectImage } from "../../src/features/images/format.ts"
 
 // Real file input and frame context-menu gestures. The signed-out project
 // proves that image bytes and note drafts survive without a server upload.
@@ -42,9 +43,9 @@ async function picker(page: Page) {
   return dialog
 }
 
-async function upload(page: Page, alt: string) {
+async function upload(page: Page, alt: string, imageFile = file) {
   const dialog = await picker(page)
-  await dialog.getByLabel("Upload images", { exact: true }).setInputFiles(file)
+  await dialog.getByLabel("Upload images", { exact: true }).setInputFiles(imageFile)
   await expect(dialog.getByLabel("Image description", { exact: true })).toBeEnabled()
   await dialog.getByLabel("Image description", { exact: true }).fill(alt)
   await dialog.getByRole("button", { name: "Insert image", exact: true }).click()
@@ -71,6 +72,39 @@ test("upload inserts a portable reference, Undo and Redo work, and Save and relo
   await expect(lines(page)).not.toContainText("data:image")
   await expect(lines(page)).toContainText("Anchor paragraph.")
   await expect(lines(page)).toContainText("After paragraph.")
+})
+
+test("an embedded image keeps original screenshot detail before opening, after closing, and after reload", async ({page}) => {
+  const original = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1600; canvas.height = 900
+    const context = canvas.getContext('2d')!
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
+    context.fillStyle = '#111'
+    for (let y = 0; y < canvas.height; y += 8) for (let x = 0; x < canvas.width; x += 8)
+      if ((x / 8 + y / 8) % 2) context.fillRect(x, y, 8, 8)
+    return canvas.toDataURL('image/png')
+  })
+  await openNote(page)
+  await upload(page, 'Detailed screenshot', {name: 'screenshot.png', mimeType: 'image/png', buffer: Buffer.from(original.split(',')[1], 'base64')})
+  const open = frame(page).getByRole('button', {name: 'View image: Detailed screenshot', exact: true})
+  const inline = open.locator('img')
+  const expectOriginal = async () => {
+    await expect(inline).toHaveAttribute('src', original)
+    await expect.poll(() => inline.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1600)
+    await expect.poll(() => inline.evaluate(element => (element as HTMLImageElement).naturalHeight)).toBe(900)
+  }
+  await expectOriginal()
+  await open.click()
+  const viewer = frame(page).getByRole('dialog', {name: 'Detailed screenshot', exact: true})
+  await expect.poll(() => viewer.getByRole('img').evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1600)
+  await viewer.getByRole('button', {name: 'Close image', exact: true}).click()
+  await expect(viewer).toBeHidden()
+  await expectOriginal()
+  await page.getByRole('button', {name: 'Save', exact: true}).click()
+  await page.reload()
+  await expect(inline).toBeVisible({timeout: 15_000})
+  await expectOriginal()
 })
 
 test("Cancel keeps the note unchanged and a saved project image can be reused with separate alt text", async ({ page }) => {
@@ -199,6 +233,12 @@ test("an animated project image starts paused for reduced motion and Play and Pa
   const reference = imageReference()
   expect(reference).toBeTruthy()
   await expect.poll(() => fake.server.projects.get(projectId)?.files.get(reference!)?.kind).toBe("image")
+  await page.reload()
+  const inline = frame(page).getByRole('button', {name: 'View image: Red and blue animation', exact: true}).locator('img')
+  await expect.poll(() => inline.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(2)
+  const staticSource = (await inline.getAttribute('src'))!
+  expect(staticSource).toMatch(/^data:image\/(png|webp);base64,/)
+  expect(inspectImage(Buffer.from(staticSource.split(',')[1], 'base64')).animated).toBe(false)
   const location = new URL(page.url())
   location.pathname = `${location.pathname.slice(0, location.pathname.lastIndexOf("/") + 1)}${reference}`
   await page.emulateMedia({ reducedMotion: "reduce" })

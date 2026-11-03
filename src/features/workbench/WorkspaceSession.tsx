@@ -174,6 +174,9 @@ export function WorkspaceSession({
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
   const [imageEntries, setImageEntries] = useState<Awaited<ReturnType<WorkspaceStore["listEntries"]>>["files"]>([]);
   const [imageResources, setImageResources] = useState<Record<string, ImagePreview>>({});
+  // Assets are immutable. Reuse their pixels while typing instead of decoding
+  // and base64-encoding every full-size image for each source revision.
+  const documentImageCache = useRef(new Map<string, ImagePreview>());
   const [imageGeneration, setImageGeneration] = useState(0);
   useEffect(() => client.subscribe(() => setImageGeneration(value => value + 1)), [client]);
   useEffect(() => {
@@ -186,25 +189,43 @@ export function WorkspaceSession({
   useEffect(() => {
     if (!documentActive || !client.readImage || kindForPath(initial.path) !== "note") return;
     let live = true;
+    const controller = new AbortController();
     void (async () => {
-      const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
+      const [{ parseImageReferences }, { documentImage }] = await Promise.all([import("../images/references"), import("../images/documentImage")]);
       const refs = await parseImageReferences(snapshot.text, snapshot.format, initial.path, JSON.parse(imageModuleSources));
       const pixels: Record<string, ImagePreview> = {};
+      const loaded = new Map<string, ImagePreview>();
+      const nextCache = new Map<string, ImagePreview>();
       let total = 0;
       for (const ref of refs) {
         if (!live) return;
         try {
           const file = await client.read(ref.path);
           if (file.kind !== "image" || !file.asset || pixels[ref.key]) continue;
-          const blob = await client.readImage!(ref.path, true);
-          total += blob.size;
-          if (total > 20 * 1024 * 1024) break;
-          pixels[ref.key] = { dataURL: imageDataURL(new Uint8Array(await blob.arrayBuffer()), file.asset.preview_type), width: file.asset.width, height: file.asset.height };
+          let image = loaded.get(ref.path) ?? documentImageCache.current.get(file.asset.id);
+          if (!image) {
+            try {
+              image = await documentImage(await client.readImage!(ref.path), controller.signal);
+              nextCache.set(file.asset.id, image);
+            }
+            catch {
+              controller.signal.throwIfAborted();
+              image = await documentImage(await client.readImage!(ref.path, true), controller.signal);
+            }
+            loaded.set(ref.path, image);
+          } else if (documentImageCache.current.has(file.asset.id)) nextCache.set(file.asset.id, image);
+          if (total + image.dataURL.length > 20 * 1024 * 1024) {
+            nextCache.delete(file.asset.id);
+            image = await documentImage(await client.readImage!(ref.path, true), controller.signal);
+          }
+          if (total + image.dataURL.length > 20 * 1024 * 1024) continue;
+          total += image.dataURL.length;
+          pixels[ref.key] = image;
         } catch { /* Missing or incomplete images show the frame's placeholder. */ }
       }
-      if (live) setImageResources(pixels);
+      if (live) { documentImageCache.current = nextCache; setImageResources(pixels); }
     })().catch(() => { if (live) setImageResources({}); });
-    return () => { live = false; };
+    return () => { live = false; controller.abort(); };
   }, [documentActive, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
   const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
     if (!client.readImage) throw new Error("Image viewing is unavailable.");

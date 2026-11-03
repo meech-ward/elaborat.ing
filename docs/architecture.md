@@ -443,6 +443,12 @@ ordinary relative Markdown image paths in both formats. The trusted parent
 supplies bounded bytes without changing `img-src data:` or exposing tokens.
 
 The `project-images` bucket stores originals and separate raster thumbnails.
+Document rendering uses original-resolution static raster pixels, rather than
+stretching the stored 480-pixel thumbnails. Static PNG/JPEG/WebP retain their
+bytes; the trusted parent rasterizes SVG and animation at their original size.
+The existing 5 MiB, 8 MP per-image and bounded raster transport rules still
+apply, with thumbnail fallback for unavailable originals or the aggregate
+20 MiB encoded payload budget. Chat and MCP thumbnails stay separate.
 Reservations precede upload and the existing revision-checked `save_files`
 batch commits ready references atomically with note changes. Historical
 lookup resolves image paths at a saved project revision. Cleanup uses a

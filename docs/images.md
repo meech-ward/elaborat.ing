@@ -40,8 +40,11 @@ keeps manual descriptions and the Decorative choice in its image picker.
 Opening, uploading or inserting an image never starts model inference.
 
 Images fit the reading column, keep their colours in either theme, and have
-an accessible enlarged view. Note and chat previews use static thumbnails;
-opening an original GIF, APNG or animated WebP preserves its animation.
+an accessible enlarged view. Notes display full-resolution static images,
+including existing uploads. Static PNG, JPEG and WebP keep their original
+bytes; SVG and animation become full-size still rasters in the trusted app.
+Chat previews and MCP image inspection keep their small static thumbnails.
+Opening an original GIF, APNG or animated WebP preserves its animation.
 Replace, Edit description and Remove change precise source ranges and use the
 note's existing Undo/Redo history. Removing a reference keeps its reusable
 project file. The explorer opens images with dimensions and a download action.
@@ -187,7 +190,12 @@ Both document policies keep `img-src data:` and their existing network
 restrictions. The parent parses authoritative source, loads authorized bytes,
 and sends bounded payloads tied to the frame session, revision and reference.
 The frame receives no account tokens, Storage URLs or generic file access.
-Heavy processing and picker code load on demand.
+Heavy processing and picker code load on demand. Inline document images keep
+the original's pixel dimensions, bounded to 8 million pixels and 5 MiB each.
+Rasterized stills prefer lossless PNG, with WebP compression when needed to
+fit that byte limit. Image resources share a 20 MiB encoded payload budget;
+unavailable originals or images exceeding the remaining budget fall back to
+their stored thumbnails. Existing image uploads need no migration or reupload.
 
 Import from URL is an explicit online action. It downloads once and creates a
 project copy. The importer accepts public HTTPS URLs without credentials or

@@ -142,16 +142,36 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
     .map(module => ({path: module.path!, esm: module.esm})) ?? [], [componentState.environment])
   useEffect(() => {
     let alive = true
-    void parseImageReferences(file.content, format, file.path, imageModules).then(refs => {
+    const controller = new AbortController()
+    void parseImageReferences(file.content, format, file.path, imageModules).then(async refs => {
+      const [{documentImage}, {decodeImageDataURL}] = await Promise.all([
+        import('@/features/images/documentImage'), import('@/features/images/transport'),
+      ])
       const pixels: Record<string, ImagePreview> = Object.create(null)
       const paths = new Map<string, string>()
+      const loaded = new Map<string, ImagePreview>()
+      let total = 0
       for (const ref of refs) {
+        if (!alive) return
         const image = bundle.images.find(i => i.path === ref.path)
-        if (image) {pixels[ref.key] = image.preview; paths.set(ref.key, image.path)}
+        if (!image || pixels[ref.key]) continue
+        let display = loaded.get(image.path)
+        if (!display) {
+          try {
+            const {bytes, mediaType} = decodeImageDataURL(image.dataURL)
+            display = await documentImage(new Blob([new Uint8Array(bytes)], {type: mediaType}), controller.signal)
+          } catch {display = image.preview}
+          loaded.set(image.path, display)
+        }
+        if (total + display.dataURL.length > 20 * 1024 * 1024) display = image.preview
+        if (total + display.dataURL.length > 20 * 1024 * 1024) continue
+        total += display.dataURL.length
+        pixels[ref.key] = display
+        paths.set(ref.key, image.path)
       }
       if (alive) setImages({file, pixels, paths})
-    }, () => {if (alive) setImages({file, pixels: {}, paths: new Map()})})
-    return () => {alive = false}
+    }).catch(() => {if (alive) setImages({file, pixels: {}, paths: new Map()})})
+    return () => {alive = false; controller.abort()}
   }, [file, format, bundle, imageModules])
   const readImage = useCallback(async (key: string): Promise<ImagePreview> => {
     const path = images?.file === file ? images.paths.get(key) : null
