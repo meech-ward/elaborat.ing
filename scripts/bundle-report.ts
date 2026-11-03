@@ -76,6 +76,7 @@ const PAGES: Page[] = [
     start: ["src/routes/index.tsx?tsr-split=component", "src/features/embed/EmbedRoot.tsx"],
     note: "the embed's own chunk loads with the first route; a project there adds the project page's chunks",
   },
+  { id: "shared-file", name: "Unlisted file (/s/<token>)", start: ["src/routes/s.$token.tsx?tsr-split=component"], note: "the public shell paints before the file and its renderer load" },
 ]
 const PROJECT_PAGE = PAGES[3]
 

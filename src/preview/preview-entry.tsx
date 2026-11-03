@@ -4,7 +4,7 @@
  * This module is the ONLY place where compiled document JavaScript is
  * evaluated, via `run()` from `@mdx-js/mdx`. The build bundles it for the
  * frame's page on the sandbox domain and for the `srcdoc` frame
- * (`sandbox="allow-scripts"`, no `allow-same-origin`, either way), so it has
+ * (`sandbox="allow-scripts allow-forms"`, no `allow-same-origin`, either way), so it has
  * no access to the parent document, storage, or file privileges, and the CSP
  * forbids all network.
  *
@@ -1098,8 +1098,10 @@ window.addEventListener("error", (event: ErrorEvent) => {
 });
 
 connectToParent(onParentMessage);
-if (embeddedDocument) {
-  document.documentElement.dataset.embeddedDocument = '';
+if (embeddedDocument) document.documentElement.dataset.embeddedDocument = '';
+// Nested documents and standalone shared pages use their parent's scrolling.
+// The normal workbench has no height callback and keeps its own scroll box.
+{
   let height = 0;
   let requested = false;
   const reportHeight = () => {

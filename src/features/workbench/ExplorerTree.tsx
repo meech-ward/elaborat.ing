@@ -18,6 +18,7 @@ import { ExplorerFileRow } from "./ExplorerFileRow";
 import { ExplorerFolderRow } from "./ExplorerFolderRow";
 import type { FolderNode, FolderTree, TreeFile } from "./folderTree";
 import { canMove } from "./moveRules";
+import { supportsFileSharing } from "@/features/file-sharing/ownerEligibility";
 
 export interface ExplorerTreeProps {
   tree: FolderTree;
@@ -41,6 +42,8 @@ export interface ExplorerTreeProps {
   onMoveFile?: (path: string) => void;
   /** Copy a file next to itself; read-only projects offer no Duplicate. */
   onDuplicateFile?: (path: string) => void;
+  /** Owner-only unlisted link controls for files with a rendered view. */
+  onShareFile?: (path: string) => void;
   /** A folder moves with everything in it; without these its row offers neither. */
   onRenameFolder?: (path: string, newName: string) => Promise<void>;
   onMoveFolder?: (path: string) => void;
@@ -67,6 +70,7 @@ export function ExplorerTree({
   onRenameFile,
   onMoveFile,
   onDuplicateFile,
+  onShareFile,
   onRenameFolder,
   onMoveFolder,
   onDeleteFile,
@@ -102,6 +106,7 @@ export function ExplorerTree({
       onFeedback={onFeedback}
       onRename={onRenameFile && canMove(file.path) ? (newName) => onRenameFile(file.path, newName) : undefined}
       onDuplicate={onDuplicateFile ? () => onDuplicateFile(file.path) : undefined}
+      onShare={onShareFile && supportsFileSharing(file.path) ? () => onShareFile(file.path) : undefined}
       onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
       onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
     />

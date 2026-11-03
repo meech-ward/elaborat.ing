@@ -40,6 +40,7 @@ export function ExplorerFileRow({
   onFeedback,
   onRename,
   onDuplicate,
+  onShare,
   onMove,
   onDelete,
 }: {
@@ -74,6 +75,8 @@ export function ExplorerFileRow({
   onRename?: (newName: string) => Promise<void>;
   /** Copies the file next to itself and opens the copy; the workbench reports the result. */
   onDuplicate?: () => void;
+  /** Opens this file's unlisted link controls, without opening its editor. */
+  onShare?: () => void;
   onMove?: () => void;
   /** Opens the delete confirmation; the workbench deletes and reports the result. */
   onDelete?: () => void;
@@ -121,6 +124,7 @@ export function ExplorerFileRow({
         ]),
     ...(onRename ? [{ label: "Rename", onSelect: requestRename }] : []),
     ...(onDuplicate ? [{ label: "Duplicate", onSelect: onDuplicate, shortcut: duplicateShortcutLabel() }] : []),
+    ...(onShare ? [{ label: "Share file", onSelect: onShare }] : []),
     ...(onMove ? [{ label: "Move to folder", onSelect: onMove }] : []),
     ...(onDelete ? [{ label: "Delete", onSelect: onDelete, destructive: true }] : []),
   ];

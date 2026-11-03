@@ -188,7 +188,7 @@ export default defineConfig({
         // /embed (the app in a chat's panel) always comes from the network,
         // whose headers say who may frame it. Temporary host capability probe,
         // remove after testing: so does /embed-probe, whose headers refuse every frame.
-        navigateFallbackDenylist: [/^\/embed(\/|$)/, /^\/embed-probe\/?$/],
+        navigateFallbackDenylist: [/^\/embed(\/|$)/, /^\/embed-probe\/?$/, /^\/s(\/|$)/],
         // The first version takes over the page that installed it, so lazy
         // chunks load from the cache if the connection drops. Later versions
         // wait: skipWaiting stays off until the person chooses the update.

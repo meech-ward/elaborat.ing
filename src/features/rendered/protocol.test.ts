@@ -442,9 +442,10 @@ describe('resource-focus replies', () => {
 });
 
 describe('sandbox constants', () => {
-  test('sandbox grants scripts only', () => {
-    expect(PREVIEW_SANDBOX).toBe('allow-scripts');
+  test('sandbox grants scripts and local form events without origin or navigation access', () => {
+    expect(PREVIEW_SANDBOX).toBe('allow-scripts allow-forms');
     expect(PREVIEW_SANDBOX).not.toMatch(/allow-same-origin/);
+    expect(PREVIEW_SANDBOX).not.toMatch(/allow-top-navigation|allow-popups/);
   });
 
   test('child CSP forbids network and navigation', () => {

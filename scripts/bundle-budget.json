@@ -234,5 +234,29 @@
       "js": 100.3,
       "css": 10.4
     }
+  },
+  "shared-file": {
+    "js": 171,
+    "css": 30,
+    "measured": {
+      "js": 162.4,
+      "css": 28.2,
+      "chunks": {
+        "react.js": 59.1,
+        "ui.js": 32.6,
+        "router.js": 26.3,
+        "index.css": 23.3,
+        "app.js": 15.9,
+        "zod.js": 9.9,
+        "app.css": 4.9,
+        "index.js": 4.1,
+        "model.js": 3.9,
+        "remote.js": 3.6,
+        "s._token.js": 3.4,
+        "workbox-window.prod.es5.js": 2.2,
+        "preload-helper.js": 0.7,
+        "rolldown-runtime.js": 0.6
+      }
+    }
   }
 }

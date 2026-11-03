@@ -1,0 +1,322 @@
+import { assertEquals, assert, assertFalse } from 'jsr:@std/assert@1.0.19'
+import { handleFileShare, SHARE_LIMITS, type FileRecord, type FileShareDeps, type ShareContext } from './handler.ts'
+import { renderingReferences } from './references.ts'
+import { imageDigest } from '../../../src/features/images/types.ts'
+
+const PROJECT = 'aaaaaaaa-0000-4000-8000-000000000001'
+const ROOT = 'bbbbbbbb-0000-4000-8000-000000000001'
+const SHARE = 'cccccccc-0000-4000-8000-000000000001'
+const ASSET = 'dddddddd-0000-4000-8000-000000000001'
+const TOKEN = 'a'.repeat(64)
+const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='), c => c.charCodeAt(0))
+const text = (path: string, content = '# Hello'): FileRecord => ({ id: crypto.randomUUID(), path, content, version: 1, kind: 'text' })
+
+function fake(content = '# Public', path = 'note.mdx') {
+  const initial: ShareContext = { id: SHARE, file_id: ROOT, project_id: PROJECT, path, content, version: 1, revision: 3, archived: false, kind: 'text' }
+  const files = new Map<string, FileRecord>()
+  const downloads = new Map<string, Uint8Array>()
+  const calls: Array<[string, string?]> = []
+  let contexts = 0
+  const deps: FileShareDeps = {
+    context: token => {
+      calls.push(['context', token])
+      contexts++
+      return Promise.resolve(token === TOKEN ? { data: initial, error: null } : { data: null, error: { code: '42501' } })
+    },
+    read: (token, wanted) => {
+      assertEquals(token, TOKEN)
+      calls.push(['read', wanted])
+      return Promise.resolve({ data: files.get(wanted) ?? null, error: null })
+    },
+    download: key => { calls.push(['download', key]); return Promise.resolve(downloads.get(key) ?? null) },
+  }
+  return { initial, files, downloads, calls, deps, contexts: () => contexts }
+}
+async function image(path: string, bytes = png, mediaType = 'image/png') {
+  return { id: crypto.randomUUID(), path, content: '', version: 1, kind: 'image', asset: {
+    id: ASSET, media_type: mediaType, byte_length: bytes.length, width: 1, height: 1, sha256: await imageDigest(bytes),
+    object_key: `${PROJECT}/${ASSET}/original`, preview_key: `${PROJECT}/${ASSET}/preview`,
+    preview_type: 'image/png', preview_byte_length: png.length,
+  } } satisfies FileRecord
+}
+const readPaths = (calls: Array<[string, string?]>) => calls.filter(([kind]) => kind === 'read').map(([, path]) => path)
+
+Deno.test('a public read returns only the root without project or member metadata', async () => {
+  const f = fake()
+  Object.assign(f.initial, { title: 'Private project title', owner_id: 'private-owner', private_comments: ['secret'] })
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals(await response.json(), {
+    share: { id: SHARE, file_id: ROOT, path: 'note.mdx', version: 1, revision: 3, archived: false },
+    files: [{ id: ROOT, path: 'note.mdx', content: '# Public', version: 1 }], images: [],
+  })
+  assertEquals(f.contexts(), 2)
+  assertEquals(response.headers.get('cache-control'), 'no-store')
+  assertEquals(response.headers.get('referrer-policy'), 'no-referrer')
+  assert(response.headers.get('x-robots-tag')?.includes('noindex'))
+})
+
+Deno.test('malformed tokens and extra browser paths never reach the database', async () => {
+  for (const body of [null, {}, { token: 'x' }, { token: TOKEN.toUpperCase() }, { token: TOKEN, path: 'private.md' }, { token: `${TOKEN}\n` }]) {
+    const f = fake()
+    const response = await handleFileShare(body, f.deps)
+    assertEquals(response.status, 404)
+    assertEquals(await response.json(), { error: 'Shared file unavailable' })
+    assertEquals(f.calls, [])
+  }
+})
+
+Deno.test('invalid and revoked tokens have the same unavailable response', async () => {
+  const f = fake()
+  const response = await handleFileShare({ token: 'b'.repeat(64) }, f.deps)
+  assertEquals(response.status, 404)
+  assertEquals(await response.json(), { error: 'Shared file unavailable' })
+  assertEquals(readPaths(f.calls), [])
+})
+
+Deno.test('the parser includes only literal rendering references, never ordinary links or source examples', async () => {
+  const source = `import { Banner } from 'workspace:components/banner.mdx'
+
+[Private](private.md)
+
+![Photo](assets/a.png)
+
+<Document src="sections/details.md" title="Details" defaultCollapsed={true} />
+
+<Drawing src="drawings/a.excalidraw" />
+
+<Diagram src="diagrams/a.d2" />
+
+<Drawing src={"private.excalidraw"} />
+
+<Document {...props} src="private.md" />
+
+<Document src="private.md"></Document>
+
+<Document src="../private.md" />
+
+{/* <Document src="comment-secret.md" /> */}
+
+\`<Drawing src="inline-secret.excalidraw" />\`
+
+\`\`\`mdx
+<Drawing src="code-secret.excalidraw" />
+import { Secret } from 'workspace:private.mdx'
+\`\`\`
+`
+  const refs = await renderingReferences(source, 'note.mdx')
+  assertEquals(refs.map(ref => [ref.kind, ref.path]), [
+    ['module', 'components/banner.mdx'], ['document', 'sections/details.md'],
+    ['drawing', 'drawings/a.excalidraw'], ['diagram', 'diagrams/a.d2'], ['image', 'assets/a.png'],
+  ])
+})
+
+Deno.test('Markdown drawing tags render, but Document tags remain MDX-only', async () => {
+  const refs = await renderingReferences('<Drawing src="a.excalidraw" />\n\n<Document src="private.md" />\n\n```md\n<Diagram src="hidden.d2" />\n```', 'note.md')
+  assertEquals(refs, [{ kind: 'drawing', path: 'a.excalidraw' }])
+})
+
+Deno.test('module JSX images and drawing literals resolve without computed or spread reads', async () => {
+  const refs = await renderingReferences(`export const Card = () => <><img src="../assets/a.png" /><Drawing src="a.excalidraw" /><Drawing src={"hidden.excalidraw"} /><img {...props} src="../assets/hidden.png" /></>`, 'components/card.mdx')
+  assertEquals(refs, [{ kind: 'drawing', path: 'a.excalidraw' }, { kind: 'image', path: 'assets/a.png' }])
+})
+
+Deno.test('nested documents, transitive workspace modules and D2 companion files load in the original project', async () => {
+  const f = fake('<Document src="sections/one.mdx" />')
+  f.files.set('sections/one.mdx', text('sections/one.mdx', `import { Card } from 'workspace:components/card.mdx'\n\n<Diagram src="flow.d2" />\n\n<Card />`))
+  f.files.set('components/card.mdx', text('components/card.mdx', `import { Label } from 'workspace:components/label.mdx'\n\nexport const Card = () => <Label />`))
+  f.files.set('components/label.mdx', text('components/label.mdx', 'export const Label = () => <span>Label</span>'))
+  f.files.set('flow.d2', text('flow.d2', 'a -> b'))
+  f.files.set('flow.excalidraw', text('flow.excalidraw', '{"elements":[]}'))
+  f.files.set('flow.d2.json', text('flow.d2.json', '{"sourceHash":"x"}'))
+  f.files.set('private.md', text('private.md', 'secret'))
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  const payload = await response.json()
+  assertEquals(payload.files.map((file: FileRecord) => file.path), ['note.mdx', 'sections/one.mdx', 'components/card.mdx', 'components/label.mdx', 'flow.d2', 'flow.excalidraw', 'flow.d2.json'])
+  assertFalse(JSON.stringify(payload).includes('secret'))
+  assertFalse(readPaths(f.calls).includes('private.md'))
+})
+
+Deno.test('D2 without generated companions remains renderable from saved source', async () => {
+  const f = fake('a -> b', 'flow.d2')
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals((await response.json()).files.length, 1)
+  assertEquals(readPaths(f.calls), ['flow.excalidraw', 'flow.d2.json'])
+})
+
+Deno.test('literal image dependencies deliver originals and safe previews without Storage identities', async () => {
+  const f = fake('![Photo](../assets/a.png)', 'notes/root.md')
+  const file = await image('assets/a.png')
+  f.files.set(file.path, file)
+  f.downloads.set(`${PROJECT}/${ASSET}/original`, png)
+  f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  const payload = await response.json()
+  assertEquals(payload.images[0].path, 'assets/a.png')
+  assertEquals(payload.images[0].width, 1)
+  assert(payload.images[0].dataURL.startsWith('data:image/png;base64,'))
+  assertEquals(payload.images[0].preview, { dataURL: payload.images[0].dataURL, width: 1, height: 1 })
+  assertFalse(JSON.stringify(payload).includes('object_key'))
+  assertFalse(JSON.stringify(payload).includes(PROJECT))
+})
+
+Deno.test('a shared image root includes its original and preview', async () => {
+  const f = fake('', 'a.png')
+  Object.assign(f.initial, await image('a.png'), { id: SHARE, file_id: ROOT })
+  f.downloads.set(`${PROJECT}/${ASSET}/original`, png)
+  f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals((await response.json()).images.map((image: { path: string }) => image.path), ['a.png'])
+})
+
+Deno.test('cross-project image Storage keys fail closed before any download', async () => {
+  const f = fake('![Photo](a.png)', 'note.md')
+  const file = await image('a.png')
+  file.asset.object_key = file.asset.object_key.replace(PROJECT, ROOT)
+  file.asset.preview_key = file.asset.preview_key.replace(PROJECT, ROOT)
+  f.files.set(file.path, file)
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 409)
+  assertEquals(f.calls.filter(([kind]) => kind === 'download'), [])
+})
+
+Deno.test('original image hashes and preview bytes are checked before sharing', async () => {
+  for (const badPreview of [false, true]) {
+    const f = fake('![Photo](a.png)', 'note.md')
+    const file = await image('a.png')
+    f.files.set(file.path, file)
+    f.downloads.set(`${PROJECT}/${ASSET}/original`, badPreview ? png : png.slice(1))
+    f.downloads.set(`${PROJECT}/${ASSET}/preview`, badPreview ? png.slice(1) : png)
+    const response = await handleFileShare({ token: TOKEN }, f.deps)
+    assertEquals(response.status, 409)
+    assertFalse('files' in await response.json())
+  }
+})
+
+Deno.test('SVG validation rejects scripts and external resources before responding', async () => {
+  const f = fake('![Photo](a.svg)', 'note.md')
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>')
+  f.files.set('a.svg', await image('a.svg', svg, 'image/svg+xml'))
+  f.downloads.set(`${PROJECT}/${ASSET}/original`, svg)
+  f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 409)
+  assertFalse('files' in await response.json())
+})
+
+Deno.test('validated SVGs and animated GIFs retain original bytes while exposing only image pixels', async () => {
+  const gif = new Uint8Array(50)
+  gif.set(new TextEncoder().encode('GIF89a'))
+  const view = new DataView(gif.buffer)
+  view.setUint16(6, 1, true); view.setUint16(8, 1, true)
+  gif[10] = 128; gif.set([255, 255, 255], 16)
+  for (const at of [19, 34]) {
+    gif[at] = 44; view.setUint16(at + 5, 1, true); view.setUint16(at + 7, 1, true)
+    gif.set([0, 2, 2, 68, 1, 0], at + 9)
+  }
+  gif[49] = 59
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="red"/></svg>')
+  for (const [path, original, mediaType] of [['a.gif', gif, 'image/gif'], ['a.svg', svg, 'image/svg+xml']] as const) {
+    const f = fake(`![Photo](${path})`, 'note.md')
+    const file = await image(path, original, mediaType)
+    // Image payloads can never carry a private asset JSON or metadata as text.
+    file.content = 'object_key private storage identity'
+    f.files.set(path, file)
+    f.downloads.set(`${PROJECT}/${ASSET}/original`, original)
+    f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+    const response = await handleFileShare({ token: TOKEN }, f.deps)
+    assertEquals(response.status, 200)
+    const payload = await response.json()
+    assertEquals(payload.images[0].dataURL, `data:${mediaType};base64,${btoa(String.fromCharCode(...original))}`)
+    assertEquals(payload.files.find((file: FileRecord) => file.path === path).content, '')
+    assertFalse(JSON.stringify(payload).includes('object_key'))
+  }
+})
+
+Deno.test('missing literal dependencies fail visibly instead of exposing a partial document', async () => {
+  const f = fake('<Document src="missing.md" />')
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 409)
+  assertFalse('files' in await response.json())
+})
+
+Deno.test('a service read returning a different path cannot expand authority', async () => {
+  const f = fake('<Document src="allowed.md" />')
+  f.deps.read = () => Promise.resolve({ data: text('private.md', 'secret'), error: null })
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 409)
+  assertFalse(JSON.stringify(await response.json()).includes('secret'))
+})
+
+Deno.test('revocation during dependency assembly discards the entire response', async () => {
+  const f = fake('<Document src="child.md" />')
+  f.files.set('child.md', text('child.md'))
+  let contexts = 0
+  f.deps.context = () => Promise.resolve(++contexts === 1 ? { data: f.initial, error: null } : { data: null, error: { code: '42501' } })
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 404)
+  assertEquals(await response.json(), { error: 'Shared file unavailable' })
+})
+
+Deno.test('changes to any project dependency while loading require a fresh read', async () => {
+  const f = fake()
+  let contexts = 0
+  f.deps.context = () => Promise.resolve({ data: { ...f.initial, revision: ++contexts === 1 ? 3 : 4 }, error: null })
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 409)
+  assertFalse('files' in await response.json())
+})
+
+Deno.test('document and import cycles stop before repeated database reads', async () => {
+  for (const source of ['<Document src="note.mdx" />', `import { Again } from 'workspace:note.mdx'\n\n<Again />`]) {
+    const f = fake(source)
+    const response = await handleFileShare({ token: TOKEN }, f.deps)
+    assertEquals(response.status, 409)
+    assertEquals(readPaths(f.calls), [])
+  }
+})
+
+Deno.test('a dependency shared by two branches is read only once', async () => {
+  const f = fake('<Document src="a.mdx" />\n\n<Document src="b.mdx" />')
+  f.files.set('a.mdx', text('a.mdx', '<Document src="common.md" />'))
+  f.files.set('b.mdx', text('b.mdx', '<Document src="common.md" />'))
+  f.files.set('common.md', text('common.md'))
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals(readPaths(f.calls).filter(path => path === 'common.md').length, 1)
+})
+
+Deno.test('the graph depth is bounded before fetching the next file', async () => {
+  const f = fake('<Document src="1.mdx" />')
+  for (let i = 1; i <= SHARE_LIMITS.depth + 1; i++) f.files.set(`${i}.mdx`, text(`${i}.mdx`, `<Document src="${i + 1}.mdx" />`))
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 413)
+  assertEquals(readPaths(f.calls).length, SHARE_LIMITS.depth)
+})
+
+Deno.test('the graph count is bounded before fetching the next file', async () => {
+  const f = fake(Array.from({ length: SHARE_LIMITS.files }, (_, i) => `<Document src="${i}.md" />`).join('\n\n'))
+  for (let i = 0; i < SHARE_LIMITS.files; i++) f.files.set(`${i}.md`, text(`${i}.md`))
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 413)
+  assertEquals(readPaths(f.calls).length, SHARE_LIMITS.files - 1)
+})
+
+Deno.test('source byte limits refuse before parsing an oversized root', async () => {
+  const f = fake('x'.repeat(SHARE_LIMITS.textBytes + 1))
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 413)
+  assertEquals(readPaths(f.calls), [])
+})
+
+Deno.test('archived shares remain readable and announce their read-only comment state', async () => {
+  const f = fake()
+  f.initial.archived = true
+  const response = await handleFileShare({ token: TOKEN }, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals((await response.json()).share.archived, true)
+})

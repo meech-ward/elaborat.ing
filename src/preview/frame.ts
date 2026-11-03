@@ -5,7 +5,7 @@
  *
  * The rendered editor embeds this document as the iframe's `srcdoc`: one
  * inline script and inline styles, no network loads, so the opaque-origin
- * frame (`sandbox="allow-scripts"` only, no `allow-same-origin`) needs no
+ * frame (`sandbox="allow-scripts allow-forms"`, no `allow-same-origin`) needs no
  * CORS and cannot send data anywhere. The script is
  * `src/preview/preview-entry.tsx`, built by vite-plugins/preview-frame.ts.
  * Charts and code highlighting are built on their own and sent to the frame

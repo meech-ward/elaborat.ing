@@ -25,12 +25,14 @@ import {
   Diamond,
   Maximize2,
   Minimize2,
+  Share2,
   X,
 } from "lucide-react";
 import { Banner, BannerAction, FloatingPanel, PanelMessage, QuickOpen, confirmAction, type ActionMenuProps, type MenuEntry, type PanelRowSize, type QuickOpenCommand, type QuickOpenMode } from "@/features/design-system";
 import { DottedPage } from "@/components/panel";
 import { useOpenSettings } from "@/features/settings/SettingsDialog";
 import { embedded } from "@/features/embed/mode";
+import { fileSharingProblem, supportsFileSharing } from "@/features/file-sharing/ownerEligibility";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { accountName, personName, signOut, useAuth } from "@/features/auth";
 import { LocalConflictError } from "@/features/project-storage/fileStore";
@@ -132,6 +134,7 @@ export function WorkspaceWorkbench({
   projectName = "Project",
   projectMenu = [],
   onShare,
+  onShareFile,
   projectNotices,
   sync = null,
   onSyncNow,
@@ -151,6 +154,8 @@ export function WorkspaceWorkbench({
   projectMenu?: readonly MenuEntry[];
   /** Opens sharing; without it (a viewer, or offline) there is no share button. */
   onShare?: () => void;
+  /** Owner-only file-link controls; absent offline, locally and in a chat's panel. */
+  onShareFile?: (file: WorkspaceFileRef) => void;
   /** What the project needs to say (read-only, errors), under the project panel. */
   projectNotices?: ReactNode;
   /** The sync state, shown with the person. */
@@ -948,6 +953,19 @@ export function WorkspaceWorkbench({
   const neverSaved = (path: string) => draftPaths.includes(path) || files.some((file) => file.path === path && file.revision === null);
   const treeIsEmpty =
     tree.folders.length === 0 && tree.rootFiles.length === 0;
+  const requestShareFile = async (path: string) => {
+    if (!onShareFile) return;
+    try {
+      const entries = await client.listEntries();
+      const file = entries.files.find(candidate => candidate.path === path);
+      const dirty = leaveSessions.current.get(path)?.state().dirty || stateRef.current.tabs.some(tab => tab.path === path && tab.dirty);
+      const problem = fileSharingProblem(file, dirty);
+      if (problem) { setNotice(problem); return; }
+      if (file) onShareFile(file);
+    } catch {
+      setNotice("Could not check this file's saved copy. Try sharing it again.");
+    }
+  };
   // The side panels' size: the desktop's, or the phone's larger rows (the
   // two never show at once).
   const panelSize: PanelRowSize = narrow ? "touch" : "default";
@@ -986,6 +1004,7 @@ export function WorkspaceWorkbench({
           isNeverSaved={neverSaved}
           onMoveFile={readOnly ? undefined : moves.open}
           onDuplicateFile={readOnly ? undefined : (path) => void duplicateFile(path)}
+          onShareFile={onShareFile ? path => void requestShareFile(path) : undefined}
           onRenameFolder={readOnly ? undefined : moves.renameFolder}
           onMoveFolder={readOnly ? undefined : moves.openFolder}
           onDeleteFile={readOnly ? undefined : deletes.deleteFile}
@@ -1031,6 +1050,9 @@ export function WorkspaceWorkbench({
       ? [{ label: "Toggle comments", shortcut: commentsShortcut(apple), run: () => (comments ? comments.controller.setPanelOpen(!commentsUi.panelOpen) : setGuestComments((v) => !v)) }]
       : []),
     ...(embedded ? [] : [{ label: "Settings", run: () => { afterClose.current = openSettings; } }]),
+    ...(onShareFile && state.active && supportsFileSharing(state.active)
+      ? [{ label: "Share file", run: () => { const path = state.active; if (path) afterClose.current = () => void requestShareFile(path); } }]
+      : []),
     ...(narrow ? [] : [{ label: focus ? "Exit full screen" : "Focus", shortcut: commandShortcut(".", apple), run: () => setFocus((v) => !v) }]),
     ...(readOnly
       ? []
@@ -1256,6 +1278,7 @@ export function WorkspaceWorkbench({
               />
               {!narrow && <div className="contents" ref={setTablineSlot} />}
               {!narrow && state.active && !hideSessions && <CommentsToggle />}
+              {!narrow && state.active && !hideSessions && onShareFile && supportsFileSharing(state.active) && <IconButton label="Share file" onClick={() => { if (state.active) void requestShareFile(state.active); }}><Share2 /></IconButton>}
               {import.meta.env.VITE_CHATGPT_PLAN && assistantHost && !narrow && !hideSessions && <AssistantToggle />}
               {!narrow && (
                 <IconButton label={focus ? "Exit full screen" : "Focus"} shortcut={focusKey.label} keyShortcuts={focusKey.aria} onClick={() => setFocus((v) => !v)}>

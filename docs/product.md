@@ -87,8 +87,13 @@ Developer first, friendly for everyone.
 
 ## Sharing and comments
 
-- **The project is the unit of sharing.** References between notes, drawings
-  and diagrams live inside a project.
+- **Project invitations** share the whole project. References between notes,
+  drawings and diagrams live inside a project.
+- **Unlisted file links** let anyone with the link read one saved file and
+  the embedded content needed to render it, without an account. Owners can
+  replace or disable links. Posting to the link's separate discussion asks
+  the visitor to sign in, without granting project membership. Private project
+  comments stay private. See [unlisted file sharing](file-sharing.md).
 - **Roles:** viewer (the default), commenter, editor, plus the owner. The
   owner can hand the project to a member who has accepted it, whatever their
   role: that person becomes the owner, with permanent delete, and the old
@@ -97,7 +102,7 @@ Developer first, friendly for everyone.
   each other: the second save gets a conflict and recovery. Before sharing as
   editor, the app warns that real-time co-editing is not supported.
   Real-time co-editing is a possible future feature, and nothing should block it.
-- **Sharing is an invitation.** Nothing appears in someone's account until
+- **Project sharing is an invitation.** Nothing appears in someone's account until
   they accept, and only they can accept, never their agent. Anyone can leave a
   project shared with them.
 - **Invites by email**, including people without an account yet.

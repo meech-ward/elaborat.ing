@@ -16,6 +16,17 @@ describe("mcpPath", () => {
 });
 
 describe("handle", () => {
+  test('unlisted pages refuse caching, indexing and referrers without weakening framing', async () => {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await handle(new Request('https://site.test/s/secret', {method}), {
+        ASSETS: {fetch: async () => new Response(method === 'HEAD' ? null : 'app', {headers: {'X-Frame-Options': 'DENY'}})},
+      });
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow, noarchive');
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+    }
+  });
   test("serves the app for other paths, and when no upstream is set", async () => {
     expect(await (await handle(new Request("https://site.test/projects"), { ASSETS: assets, MCP_UPSTREAM: UPSTREAM })).text()).toBe("app");
     expect(await (await handle(new Request("https://site.test/mcp"), { ASSETS: assets })).text()).toBe("app");

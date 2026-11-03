@@ -476,6 +476,10 @@ verify_jwt = true
 [functions.share]
 verify_jwt = true
 
+# Unlisted file views verify a revocable file token in their POST body.
+[functions.file-share]
+verify_jwt = false
+
 # Called by the app for a signed-in person, to delete their own account.
 [functions.delete-account]
 verify_jwt = true

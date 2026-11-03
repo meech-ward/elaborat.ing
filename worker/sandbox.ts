@@ -12,7 +12,7 @@
  * scripts only from the page's own folder (plus eval, which MDX's `run()`
  * needs), no network, `data:` images and fonts, and framing only by the app
  * (`FRAME_ANCESTORS`). The files allow any origin, since the frame's own
- * origin is opaque (`sandbox="allow-scripts"`).
+ * origin is opaque (`sandbox="allow-scripts allow-forms"`, form-action 'none').
  */
 
 import { frameAncestors } from "./frameAncestors.ts";

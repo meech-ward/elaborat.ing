@@ -4,6 +4,7 @@ import { PanelPage } from "@/components/panel"
 import { AgentChangesProvider, AgentFollow, ProjectAgentChanges, SupabaseAgentChangesRemote } from "@/features/agent-changes"
 import { CommentsController, NEEDS_CONNECTION, ProjectComments, ProjectCommentsProvider, SupabaseCommentsRemote, type ProjectCommentsValue } from "@/features/comments"
 import { accountName } from "@/features/auth/accountName"
+import { LazyShareFileDialog } from "@/features/file-sharing/LazyShareFileDialog"
 import { CustomCodeProvider, type CustomCodePolicy } from "@/features/custom-code"
 import { useAuth } from "@/features/auth/useAuth"
 import { Banner, BannerAction, type MenuEntry } from "@/features/design-system"
@@ -64,6 +65,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
+  const [sharingFile, setSharingFile] = useState<{ fileId: string; path: string } | null>(null)
   const onError = useCallback((message: string) => setError(message), [])
   useBackgroundRefresh(library, onError)
   // Its owner deleted it: its page says so in its place (below), and leaving it keeps nothing.
@@ -352,6 +354,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           projectName={projectName}
           projectMenu={projectMenu}
           onShare={entry?.role === "owner" && account.online && !embedded ? () => setSharing(true) : undefined}
+          onShareFile={entry?.role === "owner" && !offline && !account.local && !embedded ? file => {
+            if (file.server) setSharingFile({ fileId: file.server.id, path: file.path })
+          } : undefined}
           projectNotices={notices}
           sync={sync}
           onSyncNow={account.online && !account.local ? () => void syncNow(true) : undefined}
@@ -366,6 +371,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         {download.dialog}
         {sharing && entry ? (
           <LazyMembersDialog library={library} projectId={projectId} title={entry.title} owner={entry.role === "owner"} you={account.userId} onClose={() => setSharing(false)} />
+        ) : null}
+        {sharingFile && entry?.role === "owner" && !offline && !account.local && !embedded ? (
+          <LazyShareFileDialog key={`${account.userId}:${sharingFile.fileId}`} projectId={projectId} fileId={sharingFile.fileId} path={sharingFile.path} userId={account.userId} workspace={workspace} onClose={() => setSharingFile(null)} />
         ) : null}
       </Suspense>
       </CustomCodeProvider>

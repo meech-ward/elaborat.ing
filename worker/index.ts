@@ -86,6 +86,14 @@ export async function handle(request: Request, env: Env, fetcher: typeof fetch =
   const url = new URL(request.url);
   if (url.pathname === OPENAI_CHALLENGE_PATH) return openAiChallenge(env);
   const read = request.method === "GET" || request.method === "HEAD";
+  if (read && url.pathname.startsWith('/s/')) {
+    const response = await env.ASSETS.fetch(request);
+    const headers = new Headers(response.headers);
+    headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('Cache-Control', 'no-store');
+    return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
+  }
   if (read && embedPage(url.pathname)) return framable(request, env, frameAncestors(env.EMBED_FRAME_ANCESTORS));
   const probeUpstream = env.MCP_PROBE_UPSTREAM?.replace(/\/+$/, "");
   if (probeUpstream && (url.pathname === PROBE_PREFIX || url.pathname.startsWith(`${PROBE_PREFIX}/`))) {

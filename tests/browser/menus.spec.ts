@@ -71,10 +71,10 @@ test("a file's menu works from the keyboard, highlights in the highlight colours
   await page.keyboard.press("Enter")
   const menu = page.getByRole("menu", { name: "Actions for b.md" })
   await expect(menu).toBeVisible()
-  expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Move to folder", "Delete"])
+  expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Share file", "Move to folder", "Delete"])
 
   const remove = menu.getByRole("menuitem", { name: "Delete" })
-  for (let step = 0; step < 6 && (await remove.getAttribute("data-highlighted")) === null; step++) await page.keyboard.press("ArrowDown")
+  for (let step = 0; step < 7 && (await remove.getAttribute("data-highlighted")) === null; step++) await page.keyboard.press("ArrowDown")
   await expect(remove).toHaveAttribute("data-highlighted")
   await expect(remove).toBeFocused()
   expect(await colours(remove)).toEqual({ background: await computed(page, "var(--accent-soft)"), text: await computed(page, "var(--accent-soft-text)") })
@@ -95,7 +95,7 @@ test("the action button and a right-click on the row list the same items", async
   const fromButton = await itemsOfOpenMenu(page)
   await files.getByRole("button", { name: "a.md", exact: true }).click({ button: "right" })
   expect(await itemsOfOpenMenu(page)).toEqual(fromButton)
-  expect(fromButton).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Move to folder", "Delete"])
+  expect(fromButton).toEqual(["Copy filename", "Copy path", "Rename", await duplicateItem(page), "Share file", "Move to folder", "Delete"])
 
   await files.getByRole("button", { name: "Actions for folder notes", exact: true }).click()
   const folderFromButton = await itemsOfOpenMenu(page)

@@ -65,7 +65,7 @@ object islands and resources. Flattening its output into the parent's prose
 editor would mix source ownership and undo histories. A nested preview
 instead reuses the existing compiler and validated editing protocol.
 
-Nested frames use `sandbox="allow-scripts"` and app-generated `srcdoc`.
+Nested frames use `sandbox="allow-scripts allow-forms"` and app-generated `srcdoc`.
 Only local `about:` child documents are added to the preview's `frame-src`;
 network connections, arbitrary frame URLs, same-origin access and storage
 remain unavailable. A hosted preview's child loads the same trusted,

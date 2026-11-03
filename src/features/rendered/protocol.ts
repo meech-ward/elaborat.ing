@@ -1,7 +1,7 @@
 /**
  * Parent/child frame protocol for the isolated MDX preview.
  *
- * Child runs in an opaque-origin iframe with `sandbox="allow-scripts"` only:
+ * Child runs in an opaque-origin iframe with scripts and local form events:
  * the frame's page on the sandbox domain (worker/sandbox.ts gives it this
  * policy, with its own folder's scripts), or a self-contained `srcdoc`
  * document (inline bootstrap, no network).
@@ -25,8 +25,8 @@ import { MAX_IMAGE_DATA_URL_LENGTH, MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYT
 import { MAX_IMAGE_PIXELS, ImageMediaTypeSchema } from '../images/types';
 import { MAX_DOCUMENT_EMBED_HEIGHT } from './documentEmbeds';
 
-/** Sandbox attribute for the preview iframe. allow-scripts ONLY. */
-export const PREVIEW_SANDBOX = "allow-scripts";
+/** Native component form events work; CSP form-action 'none' blocks every submission. */
+export const PREVIEW_SANDBOX = "allow-scripts allow-forms";
 
 /**
  * Restrictive child content-security-policy for the self-contained srcdoc

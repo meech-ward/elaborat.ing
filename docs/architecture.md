@@ -192,8 +192,28 @@ spend cap), or a persistent branch (about $10 a month, outside the spend cap).
 **Decision:** a user's space is their projects. A project holds files and
 folders, has an owner and members, and every save is version-checked.
 
-**Decision:** the project is the unit of sharing. Roles are `viewer`,
+**Decision:** the project is the unit of invited sharing. Roles are `viewer`,
 `commenter`, `editor`, plus the owner. RLS enforces isolation.
+
+**Decision: unlisted file links are separate from project membership.** An
+owner may enable a revocable, unpredictable link to one saved file. Visitors
+read its latest saved content and the transitive, literal dependencies needed
+to render it, including embedded documents and component source. Ordinary
+links do not authorize other files. A token-checking server resolves these
+dependencies; anonymous visitors never get project listing, history, search,
+member access or credentials. Image bytes remain in the private bucket and
+are delivered only through the checked link. Public readers use the normal
+isolated renderer and custom-code consent. The shared route requests no
+indexing, sends no referrer, and does not cache document responses offline.
+
+Link discussions are separate from private project comments. Reading needs
+the active link; writing also needs a signed-in person, with the unfinished
+comment and selection retained through sign-in. Public author projections
+omit email addresses. Authors manage their own comments and the owner can
+moderate. Revocation or replacement invalidates the old link, including
+further reads and comment writes, without granting or removing project
+membership. Already delivered content cannot be taken back. See
+[unlisted file sharing](file-sharing.md) for release scope and verification.
 
 **Decision: project categories are personal organization.** Flat categories
 and project associations belong to an account, and a project may be in several.
@@ -226,7 +246,7 @@ so a path and version pair identifies one exact write: an edit based on a file
 that was moved away can never land on a different file that later took its
 path.
 
-**Decision: sharing is an invitation.** Sharing a project with someone creates
+**Decision: project sharing is an invitation.** Sharing a project with someone creates
 an invitation that grants nothing until they accept it, and only a signed-in
 person can accept, never an agent. Members can leave a project (or decline an
 invitation) themselves. The owner and accepted members can see who a project
@@ -1489,7 +1509,19 @@ with `new Function`; no network
 `Access-Control-Allow-Origin: *`: the page loads its scripts with CORS from an
 opaque origin, so an error in them reports its message.
 
-The iframe has `sandbox="allow-scripts"` only, so the page's origin is opaque:
+**Decision: native forms may handle events but never submit.** Rendered
+notes allow native form events so interactive components can use React's
+`onSubmit`. Without `allow-forms`, browsers suppress the submit event before
+the component can prevent it. The existing `form-action 'none'` policy on
+both hosted and inline previews still refuses all form destinations, including
+direct `submit()` and `requestSubmit()`, and `connect-src 'none'` remains.
+This follows the browser's native [iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
+and [form-action](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/form-action)
+controls, without synthesizing events or granting origin access. Browser
+regressions cover event handling and blocked native GET and POST submission.
+
+The iframe has `sandbox="allow-scripts allow-forms"`, without same-origin,
+navigation or popup permissions, so the page's origin is opaque:
 nothing it stores is shared with another note or project. The frame says it
 is ready with `postMessage` (target `*`: an opaque origin cannot be named as
 a target), and the app, checking `event.source`, answers that first ready,
@@ -1518,7 +1550,7 @@ sets none) the frame is the `srcdoc` below, as before.
 **Decision: when the sandbox domain's page cannot load, the frame is a
 `srcdoc` document.** This is the model the app used before the sandbox
 domain, still sandboxed: the same document with its script inline, as the
-iframe's `srcdoc`, with `sandbox="allow-scripts"` only and the same policy in
+iframe's `srcdoc`, with `sandbox="allow-scripts allow-forms"` and the same policy in
 a meta tag (`PREVIEW_CHILD_CSP`: inline script in place of the folder's). The
 app uses it when the browser is offline as the note opens, or when the page
 does not say it is ready within 2 seconds of loading (an error page: offline,

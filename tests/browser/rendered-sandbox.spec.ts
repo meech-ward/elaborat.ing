@@ -32,6 +32,131 @@ const total = 40 + 35
 \`\`\`
 `
 
+const localFormNote = `import { useState } from 'react'
+
+export const LocalGreeting = () => {
+  const [greeting, setGreeting] = useState('No greeting yet')
+  return <form onSubmit={event => {
+    event.preventDefault()
+    setGreeting('Hello, ' + new FormData(event.currentTarget).get('name'))
+  }}>
+    <label>Your name <input name="name" required /></label>
+    <button type="submit">Show greeting</button>
+    <p role="status">{greeting}</p>
+  </form>
+}
+
+# Local form
+
+This form only changes its own state.
+
+<LocalGreeting />
+`
+
+for (const mode of ['sandbox domain', 'srcdoc'] as const) {
+  test(`native component forms in the ${mode} handle clicks and Enter without changing the note`, async ({page}) => {
+    const reached: string[] = []
+    await page.route('https://form-probe.example/**', route => {
+      reached.push(route.request().url())
+      return route.fulfill({status: 200, body: 'Unexpected form request'})
+    })
+    const errors = await openHarness(page, mode === 'srcdoc' ? '' : `?sandbox=${encodeURIComponent(SANDBOX)}`)
+    await load(page, localFormNote, 'mdx', 'This form only changes its own state.')
+    const frame = frameOf(page)
+    await expect(page.locator(FRAME)).toHaveAttribute('sandbox', 'allow-scripts allow-forms')
+    await frame.getByRole('textbox', {name: 'Your name'}).fill('Ada')
+    await frame.getByRole('button', {name: 'Show greeting'}).click()
+    await expect(frame.getByRole('status')).toHaveText('Hello, Ada')
+    await frame.getByRole('textbox', {name: 'Your name'}).fill('Grace')
+    await frame.getByRole('textbox', {name: 'Your name'}).press('Enter')
+    await expect(frame.getByRole('status')).toHaveText('Hello, Grace')
+    expect(await page.evaluate(() => window.renderedHarness.source())).toBe(localFormNote)
+    expect(reached).toEqual([])
+    expect(errors).toEqual([])
+  })
+
+  test(`form-action in the ${mode} blocks native and programmatic submissions while the frame stays opaque`, async ({page}) => {
+    const reached: string[] = []
+    await page.route('https://form-probe.example/**', route => {
+      reached.push(route.request().url())
+      return route.fulfill({status: 200, contentType: 'text/html', body: '<p>Unexpected form navigation</p>'})
+    })
+    const errors = await openHarness(page, mode === 'srcdoc' ? '' : `?sandbox=${encodeURIComponent(SANDBOX)}`)
+    const note = `# Unhandled form
+
+The browser must not send this form anywhere.
+
+<form aria-label="Network probe" action="https://form-probe.example/initial" method="get">
+  <input type="hidden" name="probe" value="sandbox-marker" />
+  <button type="submit">Send probe</button>
+</form>
+
+<button type="button" onClick={event => {
+  try {document.querySelector('form[aria-label="Network probe"]').submit()} catch {}
+  event.currentTarget.dataset.attempted = 'submit'
+}}>Submit programmatically</button>
+
+<button type="button" onClick={event => {
+  try {document.querySelector('form[aria-label="Network probe"]').requestSubmit()} catch {}
+  event.currentTarget.dataset.attempted = 'requestSubmit'
+}}>Request submit programmatically</button>
+`
+    await load(page, note, 'mdx', 'The browser must not send this form anywhere.')
+    const frame = frameOf(page)
+    const initialFrameUrl = await frame.locator('html').evaluate(() => location.href)
+    const initialPageUrl = page.url()
+    const navigations: string[] = []
+    page.on('framenavigated', navigated => {navigations.push(navigated.url())})
+    await frame.locator('html').evaluate(() => {
+      const state = window as unknown as {formViolations: string[]}
+      state.formViolations = []
+      document.addEventListener('securitypolicyviolation', event => {
+        if (event.effectiveDirective === 'form-action') state.formViolations.push(event.blockedURI)
+      })
+    })
+    let attempts = 0
+    for (const method of ['get', 'post'] as const) {
+      for (const trigger of ['click', 'submit', 'requestSubmit'] as const) {
+        await frame.getByRole('form', {name: 'Network probe'}).evaluate((form, {method, trigger}) => {
+          form.setAttribute('method', method)
+          form.setAttribute('action', `https://form-probe.example/${method}/${trigger}`)
+        }, {method, trigger})
+        if (trigger === 'click') await frame.getByRole('button', {name: 'Send probe'}).click()
+        else {
+          // Run from a real in-page event. Firefox's native blocked-submit
+          // exception does not serialize consistently through evaluate. The
+          // fixture catches it, marks completion, and must produce a fresh CSP
+          // violation below; unrelated errors cannot satisfy that requirement.
+          const probe = frame.getByRole('button', {name: trigger === 'submit' ? 'Submit programmatically' : 'Request submit programmatically', exact: true})
+          await probe.evaluate(button => button.removeAttribute('data-attempted'))
+          await probe.click()
+          await expect(probe).toHaveAttribute('data-attempted', trigger)
+        }
+        attempts++
+        // An observed CSP refusal proves each path actually attempted a
+        // submission; zero network requests alone could hide a dead button.
+        await expect.poll(() => frame.locator('html').evaluate(() =>
+          (window as unknown as {formViolations: string[]}).formViolations.length)).toBe(attempts)
+      }
+    }
+    expect(reached).toEqual([])
+    expect(navigations).toEqual([])
+    expect(await frame.locator('html').evaluate(() => location.href)).toBe(initialFrameUrl)
+    expect(page.url()).toBe(initialPageUrl)
+    await expect(page.locator(FRAME)).toHaveAttribute('sandbox', 'allow-scripts allow-forms')
+    expect(await frame.locator('html').evaluate(() => {
+      const blocked = (operation: () => void) => {try {operation(); return false} catch {return true}}
+      return {
+        parent: blocked(() => {void window.parent.document.title}),
+        local: blocked(() => {localStorage.setItem('form-probe', 'blocked')}),
+        session: blocked(() => {sessionStorage.setItem('form-probe', 'blocked')}),
+      }
+    })).toEqual({parent: true, local: true, session: true})
+    expect(await page.evaluate(() => window.renderedHarness.source())).toBe(note)
+    expect(errors).toEqual([])
+  })
+}
+
 for (const mode of ['sandbox domain', 'srcdoc'] as const) {
   test(`nested documents in the ${mode} keep opaque origins and block document network access`, async ({page}) => {
     const reached: string[] = []
@@ -63,7 +188,7 @@ int embedded = 1;
     await expect(nested.locator('.shiki')).toContainText('int embedded = 1;')
     expect(reached).toEqual([])
     expect(await nested.locator('html').evaluate(() => location.href)).toBe('about:srcdoc')
-    await expect(child.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts')
+    await expect(child.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts allow-forms')
     expect(await page.evaluate(() => window.renderedHarness.state().error)).toBeNull()
   })
 }
@@ -80,7 +205,7 @@ test("a note renders in the sandbox domain's frame, which loads its own charts a
   const frame = page.locator(FRAME)
   expect(await frame.getAttribute("src")).toMatch(new RegExp(`^${SANDBOX}/frame/[0-9a-f]{16}/$`))
   expect(await frame.getAttribute("srcdoc")).toBeNull()
-  expect(await frame.getAttribute("sandbox")).toBe("allow-scripts")
+  expect(await frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms")
 
   const slices = frameOf(page).getByRole("group", { name: "Fruit orders" }).locator(".recharts-pie-sector path")
   await expect(slices).toHaveCount(2)

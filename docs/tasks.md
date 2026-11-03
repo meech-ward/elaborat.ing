@@ -365,6 +365,17 @@ invitations, existing role actions and the no-category home. Browser, bundle,
 function and database checks pass; hosted verification follows the automatic
 release gate. See the scope for behavior and verification details.
 
+## T53: unlisted file links and signed-in public discussion
+
+**Status:** Done
+
+Build [unlisted file sharing](file-sharing.md), separate from project
+invitations: anonymous rendered reading of one saved file and its statically
+authorized embeds, revocable owner links, and isolated public discussion.
+Preserve drafts through sign-in, omit public email addresses and retain the
+existing renderer isolation. Verify database access boundaries, browser
+journeys, bundle budgets and the hosted flow, including the supplied script.
+
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it

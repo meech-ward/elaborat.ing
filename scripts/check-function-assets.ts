@@ -45,7 +45,7 @@ try {
   // functions deploy resolves --profile rather than SUPABASE_API_URL. Keep
   // the complete endpoint set local and override any inherited credentials.
   await Bun.write(profile, `name: source-assets-test\napi_url: http://127.0.0.1:${server.port}\ndashboard_url: http://127.0.0.1:${server.port}\nproject_host: localhost\n`)
-  for (const name of ["images", "mcp-server"]) {
+  for (const name of ["images", "mcp-server", "file-share"]) {
     const before = uploads.length
     const child = Bun.spawn([...cli, "functions", "deploy", name, "--use-api", "--project-ref", project, "--yes", "--profile", profile, "--workdir", sourceRoot], {
       cwd: sourceRoot,
@@ -68,9 +68,23 @@ try {
     assert.match(output + errors, new RegExp(sentinel), `${name} must reach the loopback API`)
     assert.equal(uploads.length, before + 1, `${name} must upload one source artifact`)
     const assets = uploads.at(-1)!.assets
-    assert.equal(assets.get(fontPath), font, `${name} deployment must contain the exact generated SVG font module`)
+    if (name === "file-share") {
+      for (const path of [
+        "supabase/functions/file-share/handler.ts",
+        "supabase/functions/file-share/dependencies.ts",
+        "supabase/functions/file-share/references.ts",
+        "src/features/images/referenceParser.ts",
+        "src/features/images/referencePaths.ts",
+        "src/features/images/figureNodes.ts",
+        "src/features/images/types.ts",
+        "src/features/images/format.ts",
+        "src/features/images/svg.ts",
+      ]) assert(assets.has(path), `${name} deployment must contain ${path}`)
+    } else {
+      assert.equal(assets.get(fontPath), font, `${name} deployment must contain the exact generated SVG font module`)
+    }
     assert(assets.has(`supabase/functions/${name}/index.ts`), `${name} must contain its entry point`)
-    console.log(`${name}: verified ${assets.size} source files, including the bundled SVG font`)
+    console.log(`${name}: verified ${assets.size} source files, including its rendering dependencies`)
   }
   assert.deepEqual(unexpected, [], "The source collector must make only expected loopback API requests")
 } finally {

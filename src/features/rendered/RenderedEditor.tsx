@@ -16,7 +16,7 @@
  *   compiler (with `format: 'md'` for plain markdown, so braces never
  *   evaluate as expressions) runs in the parent, and the emitted code is
  *   evaluated exclusively inside an opaque-origin iframe
- *   (`sandbox="allow-scripts"`): the frame's page on the sandbox domain when
+ *   (`sandbox="allow-scripts allow-forms"`, with form-action 'none'): the frame's page on the sandbox domain when
  *   the build has one, else (and when that page cannot load) a
  *   self-contained `srcdoc` document. The parent never calls `eval`/`run`
  *   on document code. After the frame says ready, document messages go over
@@ -1022,7 +1022,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       if (message.kind === 'document-height') {
-        if (externalFrame) onContentHeight?.(message.height);
+        onContentHeight?.(message.height);
         return;
       }
       // Ready is the handshake, a window post answered with this port (above).
@@ -1669,7 +1669,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           onLoad={onFrameLoad}
           aria-describedby={displayedError && errorBanner ? errorId : undefined}
           // The frame fills the space its container gives the editor; the
-          // document scrolls inside it. The sandbox stays allow-scripts only,
+          // document scrolls inside it. The sandbox keeps its opaque origin,
           // so the frame cannot be styled from here.
           style={{
             minWidth: 0,
