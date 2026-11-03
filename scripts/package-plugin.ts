@@ -3,7 +3,7 @@
 //   bun run package:plugin   writes dist-plugin/elaborating-<version>.zip and lists what is in it
 //
 // The ZIP holds plugins/elaborating with plugin.json at its root. Claude
-// Code's manifest (.claude-plugin/) stays out: the portal reads the root
+// Code's manifest (.claude-plugin/) and MCP config (.mcp.json) stay out: the portal reads the root
 // plugin.json. It refuses, and writes nothing, when the folder has something
 // the portal rejects: app references (`apps`, .app.json), lifecycle hooks,
 // reviewer credentials or instructions (`test_credentials`,
@@ -17,7 +17,7 @@ import { zipSync } from "fflate"
 const ROOT = path.join(import.meta.dirname, "..")
 const PLUGIN = path.join(ROOT, "plugins", "elaborating")
 const OUT = path.join(ROOT, "dist-plugin")
-const LEFT_OUT = new Set([".claude-plugin"])
+const LEFT_OUT = new Set([".claude-plugin", ".mcp.json"])
 
 /** Every file under `dir`, as `/`-separated paths relative to the plugin, sorted. */
 function filesIn(dir: string): string[] {
