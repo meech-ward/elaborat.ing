@@ -1,6 +1,6 @@
 import AxeBuilder from "./axe.ts"
 import { expect, test, type Page } from "./fixtures.ts"
-import { fakeSupabase } from "./fake-supabase.ts"
+import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 import { recordFrameMessages } from "./rendered-support.ts"
 
@@ -171,7 +171,17 @@ test("rendered image controls edit the description and rich caption, remove the 
 })
 
 test("an animated project image starts paused for reduced motion and Play and Pause switch actual bytes", async ({ page }) => {
-  await openNote(page)
+  const fake = await fakeSupabase(page)
+  const projectId = crypto.randomUUID()
+  const remote = fake.server.remote(person.id)
+  await remote.createProject(projectId, "Animation")
+  await remote.saveFiles(projectId, crypto.randomUUID(), [{op: "put", path: "pictures.mdx", content: NOTE}])
+  await recordFrameMessages(page)
+  await signedIn(page)
+  await page.goto(new URL(`projects/${projectId}/pictures.mdx`, APP_URL).href)
+  await expect(page.getByRole("tab", { name: "pictures.mdx", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Rendered", exact: true }).click()
+  await expect(frame(page).getByText("Anchor paragraph.", { exact: true })).toBeVisible()
   const dialog = await picker(page)
   const gif = Buffer.from("R0lGODlhAgACAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAFAAAACwAAAAAAgACAAAIBgABCAQQEAAh+QQBFAABACwAAAAAAgACAIEAAP8AAAAAAAAAAAAIBgABCAQQEAA7", "base64")
   await dialog.getByLabel("Upload images", { exact: true }).setInputFiles({ name: "animated.gif", mimeType: "image/gif", buffer: gif })
@@ -179,10 +189,16 @@ test("an animated project image starts paused for reduced motion and Play and Pa
   await dialog.getByLabel("Image description", { exact: true }).fill("Red and blue animation")
   await dialog.getByRole("button", { name: "Insert image", exact: true }).click()
   await expect(dialog).toBeHidden()
+  await expect(frame(page).getByRole("img", { name: "Red and blue animation", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Save", exact: true }).click()
-  await page.getByRole("button", { name: "Source", exact: true }).click()
-  const reference = /\]\(([^)]+\.gif)\)/.exec((await lines(page).textContent()) ?? "")?.[1]
+  // Read the saved document rather than Monaco's currently painted lines:
+  // switching editor modes does not guarantee its updated text has painted.
+  const savedSource = () => fake.server.projects.get(projectId)?.files.get("pictures.mdx")?.content ?? ""
+  const imageReference = () => /!\[Red and blue animation\]\(([^)]+\.gif)\)/.exec(savedSource())?.[1]
+  await expect.poll(imageReference).toBeTruthy()
+  const reference = imageReference()
   expect(reference).toBeTruthy()
+  await expect.poll(() => fake.server.projects.get(projectId)?.files.get(reference!)?.kind).toBe("image")
   const location = new URL(page.url())
   location.pathname = `${location.pathname.slice(0, location.pathname.lastIndexOf("/") + 1)}${reference}`
   await page.emulateMedia({ reducedMotion: "reduce" })

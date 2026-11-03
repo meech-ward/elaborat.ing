@@ -517,7 +517,7 @@ function ResourceEmbed(props: {
   const src = typeof props.src === "string" ? props.src : "";
   const svg = src ? resources[src] : undefined;
   const edit = () => {
-    if (!src || activeSession == null) return;
+    if (isReadOnly() || !src || activeSession == null) return;
     postToParent({
       kind: "edit-resource",
       session: activeSession,
@@ -615,7 +615,7 @@ function ResourceEmbed(props: {
           {props.kind === "drawing" ? "Drawing" : "Diagram"}:{" "}
           {src || "(missing src)"}
         </span>
-        {src ? (
+        {src && !isReadOnly() ? (
           <button type="button" onClick={edit}>
             Edit {label}
           </button>

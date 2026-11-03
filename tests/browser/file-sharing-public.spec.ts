@@ -83,19 +83,30 @@ test('anyone can read a complete long rendered file without project or source co
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer')
 })
 
-test('shared notes render local images, drawings, and collapsible embedded documents', async ({page}) => {
-  const shared = bundle('# Shared guide\n\n![Shared pixel](photo.png)\n\n<Drawing src="board.excalidraw" />\n\n<Document src="child.md" title="Implementation details" defaultCollapsed />')
+test('shared notes render local images, drawings, diagrams, and collapsible embedded documents', async ({page}) => {
+  const shared = bundle('# Shared guide\n\n![Shared pixel](photo.png)\n\n<Drawing src="board.excalidraw" />\n\n<Diagram src="flow.d2" />\n\n<Document src="child.md" title="Implementation details" defaultCollapsed />')
   shared.files.push({id: crypto.randomUUID(), path: 'child.md', content: '# Embedded details\n\nThis child remains a separate file.', version: 7},
     {id: crypto.randomUUID(), path: 'board.excalidraw', content: JSON.stringify({type: 'excalidraw', version: 2, elements: [
       {id: 'box', type: 'rectangle', x: 0, y: 0, width: 120, height: 60, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
         fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a0',
         roundness: null, seed: 1, version: 1, versionNonce: 1, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false},
-    ], appState: {}, files: {}}), version: 7})
+    ], appState: {}, files: {}}), version: 7},
+    {id: crypto.randomUUID(), path: 'flow.d2', content: 'a -> b: Shared diagram\n', version: 7})
   shared.images.push({path: 'photo.png', dataURL: PNG, width: 1, height: 1, preview: {dataURL: PNG, width: 1, height: 1}})
   await setup(page, {bundle: shared})
   await page.goto(href)
   await expect(frame(page).getByRole('img', {name: 'Shared pixel'})).toBeVisible({timeout: 20_000})
-  await expect(frame(page).locator('figure[data-src="board.excalidraw"]')).toHaveAttribute('data-pixels', 'true')
+  await expect(frame(page).locator('figure[data-src="board.excalidraw"]')).toHaveAttribute('data-pixels', 'true', {timeout: 45_000})
+  await expect(frame(page).locator('figure[data-src="flow.d2"]')).toHaveAttribute('data-pixels', 'true', {timeout: 45_000})
+  await expect(frame(page).getByRole('button', {name: /^Edit (drawing|diagram)$/})).toHaveCount(0)
+  await frame(page).getByRole('button', {name: 'View drawing board.excalidraw', exact: true}).click()
+  const drawing = page.getByRole('dialog', {name: 'Drawing: board.excalidraw', exact: true})
+  await expect(drawing).toBeVisible()
+  await drawing.getByRole('button', {name: 'Close', exact: true}).click()
+  await frame(page).getByRole('button', {name: 'View diagram flow.d2', exact: true}).click()
+  const diagram = page.getByRole('dialog', {name: 'Diagram: flow.d2', exact: true})
+  await expect(diagram).toBeVisible()
+  await diagram.getByRole('button', {name: 'Close', exact: true}).click()
   const details = frame(page).getByRole('button', {name: /Implementation details/}).first()
   await details.click()
   await expect(page.locator(FRAME)).toHaveCount(1)

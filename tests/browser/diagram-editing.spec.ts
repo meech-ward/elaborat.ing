@@ -269,6 +269,8 @@ test("a note shows pictures of the drawing and diagram it embeds, made from thei
   await expect(frame.locator('[data-resource-pixels="flow.d2"] svg')).toHaveCount(2, { timeout: 45_000 })
   await expect(frame.locator('[data-resource-pixels="other.d2"] svg')).toBeVisible({ timeout: 45_000 })
   await expect(frame.getByText(/Preview unavailable/)).toHaveCount(0)
+  await expect(frame.getByRole("button", { name: "Edit drawing", exact: true })).toHaveCount(1)
+  await expect(frame.getByRole("button", { name: "Edit diagram", exact: true })).toHaveCount(3)
 
   // Both diagrams have an arrow from a to b, and the note shows flow.d2
   // twice. Each copy is masked by its own picture's mask, which hides the
