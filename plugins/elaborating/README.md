@@ -26,6 +26,9 @@ Or: "Sketch this idea as a drawing in elaborat.ing and show it to me."
 Agents can archive projects. Permanent deletion is available only to a
 person in the elaborat.ing app.
 
+If the Projects panel cannot open in your chat, choose **Open in elaborat.ing**
+to continue in the app.
+
 ## Data and privacy
 
 The plugin sends the tool arguments needed for your request to elaborat.ing

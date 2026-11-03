@@ -31,7 +31,7 @@ import type { ToolContext } from './types.ts'
 // https://github.com/openai/mcp-extensions/blob/main/docs/spec.md
 
 /** Change the URI when the HTML changes: hosts cache the view by it. */
-export const PANEL_VIEW_URI = 'ui://elaborating/panel-v6.html'
+export const PANEL_VIEW_URI = 'ui://elaborating/panel-v7.html'
 /**
  * Earlier names of the panel view. A host keeps the tool list it last read, so
  * it asks for the name that list carries until it refreshes; serving the
@@ -39,6 +39,7 @@ export const PANEL_VIEW_URI = 'ui://elaborating/panel-v6.html'
  * The content is always the current view.
  */
 export const OLD_PANEL_VIEW_URIS = [
+  'ui://elaborating/panel-v6.html',
   'ui://elaborating/panel-v5.html',
   'ui://elaborating/panel-v4.html',
   'ui://elaborating/panel-v3.html',
@@ -468,7 +469,7 @@ export const PANEL_VIEW_HTML = `<!doctype html>
 <body>
 <iframe id="app" title="elaborat.ing" hidden></iframe>
 <div id="fallback" hidden>
-<p>elaborat.ing isn't switched on for this panel yet.</p>
+<p>The Projects panel could not open in this chat.</p>
 <button id="open" type="button">Open in elaborat.ing</button>
 <details><summary>Details</summary>Origins to allow:<code id="origins"></code></details>
 </div>
@@ -533,7 +534,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
         }
         const url = `${APP_ORIGIN}${appPath}`
         return {
-          content: [{ type: 'text', text: `Opened ${title} beside the chat.` }],
+          content: [{ type: 'text', text: `Projects panel for ${title}. If it cannot open in this chat, use Open in elaborat.ing: ${url}` }],
           structuredContent: { url },
           _meta: { [PANEL_META_KEY]: appPath === '/' ? '/embed' : `/embed${appPath}`, [PANEL_PASS_KEY]: await mintPass() },
         }

@@ -1333,8 +1333,8 @@ The production server's tools are unchanged.
   `open_panel` tool (`tools/panel.ts`, titled Projects) opens from ChatGPT's
   sidebar (global entrypoint), a conversation's side panel (thread
   entrypoint), or a model's call with a project and file; `{}` opens the
-  projects list. Its view (`ui://elaborating/panel-v5.html`, earlier names still answering) is a small
-  hand-written page, not the card's build: it declares
+  projects list. Its view (`ui://elaborating/panel-v7.html`, earlier names
+  still answering) is a small hand-written page, not the card's build: it declares
   `https://elaborat.ing` in `frameDomains` (and `frame_domains` and
   `redirect_domains` in `openai/widgetCSP`), uses the card's widget domain so
   a chat has one view origin to allow, and frames
@@ -1346,7 +1346,7 @@ The production server's tools are unchanged.
   `https://elaborat.ing/...` links through `ui/open-link`. When the host's
   `sandbox.csp.frameDomains` lacks the app's origin (Claude restricts frame
   domains), or the app has not said it is ready within 10 seconds, the view
-  says "elaborat.ing isn't switched on for this panel yet." with Open in
+  says "The Projects panel could not open in this chat." with Open in
   elaborat.ing and, under Details, its own origin and its ancestors: what
   `EMBED_FRAME_ANCESTORS` must cover (Frontend hosting). It also sends that
   line to `panel_origins` once (and once more, with `ok: true`, when the app
@@ -1358,7 +1358,9 @@ The production server's tools are unchanged.
   function,
   `{"event":"panel_origins"|"panel_ok","user":<caller>,"origins":...,"host":{...}}`,
   and stores nothing, so the line can be read from the function's logs
-  instead of copied from the panel. The app in the panel keeps a
+  instead of copied from the panel. The tool response names the requested
+  Projects panel and gives the external app link without claiming that the
+  host loaded it. The app in the panel keeps a
   sign-in of its own (the host partitions its storage under the chat's site)
   and updates through the app's own Realtime sync when an agent saves. It
   tells the view what the person has open whenever that changes
@@ -1918,18 +1920,32 @@ another host. The service worker
 never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
 panel none registers.
 
-**Claude panel framing is configured, with live verification still pending.**
+**Claude showed the panel fallback in a live check on 2026-11-03.**
 The hosted value also allows
 `https://8f145b39f2855fffeaffba067d24140d.claudemcpcontent.com` and
 `https://claude.ai`. Claude's
 [documented sandbox origin](https://claude.com/docs/connectors/building/mcp-apps/getting-started#set-uidomain-for-claude)
-is the first 32 hexadecimal characters of SHA-256 of the full connector URL,
+for the optional `ui.domain` is the first 32 hexadecimal characters of SHA-256
+of the full connector URL,
 followed by `.claudemcpcontent.com`; the exact URL here is
 `https://elaborat.ing/mcp`, without a trailing slash. The exact sandbox
 origin and outer Claude origin are allowed, preserving the ChatGPT entries.
-This permits the expected ancestor chain at our Worker; it does not prove
-that Claude permits the nested frame or that the panel opens. Verify both
-in a live Claude conversation before describing the panel as working there.
+The resource currently omits `ui.domain`. In the live check, Claude invoked
+`open_panel` for a synthetic project and file and rendered the fallback; its
+visible Details listed
+`https://8f51e8647d651821b352a5a4dac0d569.claudemcpcontent.com` and
+`https://claude.ai`. That default sandbox origin differed from the documented
+stable hash above. We have not added this observed default origin to the
+allowlist.
+
+[Anthropic's public issue tracker](https://github.com/anthropics/claude-ai-mcp/issues/40)
+reports that Claude restricts nested iframes despite declared `frameDomains`.
+This is a reported host limitation, not proof of the exact fallback branch
+in this check: the view also falls back when its frame has not reported ready
+within ten seconds. Our Worker allowlist cannot override the host's
+`frame-src` policy. Setting `ui.domain` stabilizes an origin; it does not
+establish that nested frames are permitted. Functioning Claude panel rendering
+remains unverified.
 
 **Decision: the app in a panel also needs a pass only this site's server
 issues.** `frame-ancestors` is the first line of defence. It trusts the
