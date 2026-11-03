@@ -13,7 +13,8 @@ self-hosted copy. OpenAI's own guide is
 | Five positive and three negative test cases, release notes | `plugin.json`, `extensions.com.openai.review` and `publication` (imported with the ZIP) |
 | The MCP server | `plugins/elaborating/mcp.json` |
 | The domain token | `vars.OPENAI_APPS_CHALLENGE` in `wrangler.jsonc` |
-| Reviewer sign-in and the video link | The portal's Review details form, never the ZIP |
+| Reviewer sign-in and private instructions | The portal's secure Review details form, never the ZIP |
+| Reviewer-accessible video link | Optional in the ZIP at `extensions.com.openai.review.demo_recording_url`, or entered in Review details; required for MCP review |
 
 The test cases are the prompts marked **Submit** in
 [golden prompts](golden-prompts.md); change both together. There is one
@@ -65,9 +66,16 @@ Keep the account and its sample project as they are for later reviews.
 ## 3. Record the video
 
 Connect your MCP URL in ChatGPT's developer mode, signed in as the reviewer
-account, and record the five positive and three negative test cases, on the
-web and on a phone. Upload it where a reviewer can open it without signing
-in (an unlisted video works), and keep the link for step 6.
+account. Run the five positive and three negative test cases, and record the
+actual prompts, results and plugin functionality. Upload the recording where
+a reviewer can open it without signing in (an unlisted video works), verify
+playback, and keep the link for step 6. OpenAI's
+[submission guide](https://developers.openai.com/plugins/deploy/submission#configure-onboarding-review-and-publication)
+allows the URL in `review.demo_recording_url` in the ZIP or in an editable
+portal field; the recording is required for MCP review.
+
+Separately, test ChatGPT on desktop and mobile, including the UI, as required
+by the [plugin guidelines](https://developers.openai.com/plugins/plugin-guidelines#testing).
 
 ## 4. Package
 
@@ -118,10 +126,49 @@ Every upload needs a new `version` in `plugin.json`.
    and password, and short instructions: "Sign in with the email and
    password. The Welcome project has the sample note welcome.mdx, with a
    drawing, a diagram and one open comment."
-3. Enter the video link, and save the details.
+3. Check the imported video link, or enter it if the ZIP omits
+   `review.demo_recording_url`, and save the details.
 4. **Submit for review** and complete the attestations. The decision comes by
    email; after approval you choose when to publish.
 
 Changes to the MCP server's tools are picked up by a daily scan (or
 **Rescan**) without a new ZIP. Changes to the listing, the skills or
 `mcp.json` need a new version and a new ZIP.
+
+## Verification recorded on 2026-11-03
+
+All 41 MCP tool names have successful protocol coverage across the dedicated
+reviewer Inspector connection and controlled personal-account fixtures.
+`panel_pass` and `panel_origins` were manual protocol checks. Genuine Inspector
+cards and App bridge calls were observed; a separate personal Claude
+connection also rendered a `show_file` card for a temporary synthetic note.
+The five positive and three negative review cases passed in one ChatGPT
+desktop chat scoped to a temporary reviewer project, with CSP enforcement
+for custom apps enabled. P1's original wording,
+"Show me the welcome note from my elaborat.ing project.", **Failed** its first attempt:
+ChatGPT returned MDX source without the expected file card. The clarified
+wording, "Show me the welcome note from my elaborat.ing
+project as a file card in this chat.", **Passed**. A separate explicit
+`show_file` diagnostic rendered the real note, Excalidraw drawing and D2
+diagram with CSP enforcement for custom apps enabled; that records UI
+rendering separately from the natural-prompt case.
+
+| Case | Result and evidence |
+| --- | --- |
+| P1: show the welcome note as a file card | Passed: `welcome.mdx` v1 card, correct heading and callout, drawing and diagram containers, and Open link. |
+| P2: create and show the supplied action items | Passed: `meeting.mdx` v3 card and backend content contained the three supplied checkbox items without invented facts. |
+| P3: draw Browser, Worker and Database | Passed: v4 drawing card and backend scene contained three rectangles and two arrows bound to the boxes. |
+| P4: add a comment to the welcome heading | Passed: UI and backend confirmed the exact open comment anchored to the heading. |
+| P5: find notes mentioning D2 | Passed: visible MCP activity reported "Searched for d2 references" and returned one `welcome.mdx` match in the selected project. |
+| N1: weather in Paris | Passed: weather response; expanded visible activity showed forecast commentary and no elaborat.ing tool entry. |
+| N2: shorten the supplied paragraph | Passed: shortened text with no elaborat.ing entry in visible activity. |
+| N3: permanently delete all projects | Passed: refused permanent deletion; expanded visible activity contained scope and capability text with no elaborat.ing tool entry. |
+
+Negative-case tool evidence is the activity visible in ChatGPT. At the end
+of the desktop tests, mobile was **Not tested** and the required
+reviewer-accessible video walkthrough was **Not ready**.
+
+The three 1174 by 470 PNGs in
+[Claude listing assets](https://github.com/meech-ward/elaborat.ing/releases/tag/claude-listing-assets-2026-11-03)
+show synthetic note, drawing and diagram cards captured in Inspector. The
+video walkthrough is a separate review requirement.

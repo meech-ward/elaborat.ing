@@ -46,7 +46,7 @@
           "positive": [
             {
               "description": "Show a note in the chat",
-              "prompt": "Show me the welcome note from my elaborat.ing project.",
+              "prompt": "Show me the welcome note from my elaborat.ing project as a file card in this chat.",
               "tools_triggered": "list_projects, show_file",
               "expected_behavior": "Finds the project, then shows welcome.mdx as a card with its drawing, its diagram and an Open in elaborat.ing link."
             },
