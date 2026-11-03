@@ -146,21 +146,24 @@ test("charts and code highlighting load into the frame the first time a note sho
   expect(loaded.sort()).toEqual(["charts", "highlighter"])
 })
 
-test("in the source view, typing <Rel offers the imported component with its default props", async ({ page }) => {
+test("in the source view, typing <Rel offers the imported component with its default props", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/source.mdx": importCard }, "notes/source.mdx")
   // The rendered view shows once the imported module has loaded, so the
-  // suggestions list it as soon as the tag is started: the half-typed tag
-  // does not compile, but no error shows while it is typed.
+  // suggestions list it as soon as the tag is started. A slow runner can
+  // outlast typing suppression while this deliberately incomplete tag waits.
   await rendered(page)
   await showView(page, "Source")
   await endOfSource(page)
   const offered = page.getByRole("listbox", { name: "Suggest" }).getByRole("listitem", { name: /^ReleaseCard\b/ })
+  appErrors.expect(/^Render error: Expected a closing tag for `<Rel>` \(3:1-3:6\) Source is unchanged and remains editable\.$/)
   await page.keyboard.type("<Rel")
   if (!(await offered.isVisible())) await page.keyboard.press("Control+Space")
   await expect(offered).toBeVisible()
   await page.keyboard.press("Enter")
-  await page.keyboard.press("ControlOrMeta+s")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+s")
   await expect.poll(() => fake.server.content(id, "notes/source.mdx")).toBe(`${importCard}<ReleaseCard title="Review" count={3} ready={true} />`)
+  await expect(page.getByRole("alert").filter({ hasText: /^Render error:/ })).toHaveCount(0)
 })
 
 test("the prop controls change the output, and saving changes only those props", async ({ page }) => {
