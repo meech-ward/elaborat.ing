@@ -398,6 +398,11 @@ matters.
   the animated image's reduced-motion Play/Pause check and Split's keyboard-save
   check each passed on retry. Keep the assertions and use their traces to
   distinguish readiness races from application regressions.
+- Investigate one unreproduced Bun highlighter mismatch: inline JavaScript
+  comment annotations were tokenized as operators in one full local run, while
+  the isolated check, full rerun and CI all passed. Preserve the annotation
+  assertions and obtain a reproducer before changing Shiki's regex engine or
+  tokenization budget.
 - The explorer's resize separator sits outside the app's landmarks. A full
   page axe scan reports `region`; checks scoped to the editor pass. Put the
   separator inside an appropriate landmark without changing keyboard resizing.
