@@ -140,7 +140,6 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
       attached.clear()
     }
   }, [budget])
-  const [height, setHeight] = useState(640)
   const [notice, setNotice] = useState<string | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [images, setImages] = useState<{file: SharedFile; pixels: Record<string, ImagePreview>; paths: Map<string, string>} | null>(null)
@@ -165,12 +164,10 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
     if (!image) throw new Error('This image is not included in the shared file.')
     return {dataURL: image.dataURL, width: image.width, height: image.height}
   }, [images, file, bundle])
-  const interactive = (componentState.environment?.code.length ?? 0) > 0
   const contentHeight = useCallback((value: number) => {
     const bounded = Math.min(2_000_000, Math.max(320, value))
     if (embed) embed.onState({height: bounded, pending: false, readOnly: true})
-    else if (!interactive) setHeight(bounded)
-  }, [embed, interactive])
+  }, [embed])
   const asking = gate.kind === 'ask'
   const prepared = gate.kind === 'open' ? gate.components : {pending: true}
   useEffect(() => {
@@ -187,13 +184,13 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
       <Button onClick={gate.run}>Run code</Button></div> : null}
     {!embed && notice ? <Banner className="m-3">{notice}</Banner> : null}
     {!embed && renderError ? <Banner tone="danger" className="m-3">{renderError}</Banner> : null}
-    <div style={embed ? {display: 'contents'} : {height: interactive ? 'calc(100dvh - 10rem)' : height, minHeight: interactive ? 480 : undefined, display: asking ? 'none' : undefined, minWidth: 0}}>
+    <div style={embed ? {display: 'contents'} : {height: 'calc(100dvh - 10rem)', minHeight: 480, display: asking ? 'none' : undefined, minWidth: 0}}>
       <LazyRenderedEditor document={{text: file.content, format, revision: file.version}} documentId={file.version} documentPath={file.path}
         externalFrame={embed?.frame} externalFrameScriptUrl={embed?.frameScriptUrl} embeddedAncestors={embed?.ancestors ?? [file.path]}
         documentEmbedHost={host} componentEnvironment={prepared.environment} componentError={prepared.error} componentPending={prepared.pending}
         readOnly onPatch={() => false} onOpenLink={openLink} onError={setRenderError} errorBanner={false}
         resources={resources} allowedResourcePaths={Object.keys(resources)} imageResources={images?.file === file ? images.pixels : {}} onReadImage={readImage}
-        onContentHeight={contentHeight} comments={comments} apiRef={apiRef} />
+        onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={apiRef} />
     </div>
     {views.map(view => {
       const child = bundle.files.find(f => f.path === view.path)

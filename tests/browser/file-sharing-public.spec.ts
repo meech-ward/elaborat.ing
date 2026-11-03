@@ -277,7 +277,7 @@ test('posting asks for sign-in and returns with the selection, comment draft, an
   await expect(panel(page).locator('blockquote')).toContainText('Review this section')
   await panel(page).getByRole('textbox', {name: 'New comment'}).fill('Keep my feedback through sign-in.')
   await expect(page).toHaveURL(href)
-  const scroll = await page.evaluate(() => window.scrollY)
+  const scroll = await frame(page).locator('html').evaluate(() => window.scrollY)
   expect(scroll).toBeGreaterThan(0)
   await panel(page).getByRole('button', {name: 'Sign in to post'}).click()
   await expect(page).toHaveURL(new URL(`sign-in?next=%2Fs%2F${TOKEN}`, APP_URL).href)
@@ -288,7 +288,8 @@ test('posting asks for sign-in and returns with the selection, comment draft, an
   await expect(page).toHaveURL(href)
   await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toHaveValue('Keep my feedback through sign-in.')
   await expect(panel(page).locator('blockquote')).toContainText('Review this section')
-  await expect.poll(() => page.evaluate(() => window.scrollY), {timeout: 10_000}).toBeGreaterThan(0)
+  await expect.poll(() => frame(page).locator('html').evaluate(() => window.scrollY), {timeout: 10_000}).toBeGreaterThan(scroll * 0.7)
+  await expect(frame(page).getByRole('heading', {name: 'Review this section'})).toBeInViewport()
   await panel(page).getByRole('button', {name: 'Comment', exact: true}).click()
   await expect(panel(page).getByText('Keep my feedback through sign-in.', {exact: true})).toBeVisible()
   const posted = state.calls.find(c => c.name === 'add_file_share_comment')!

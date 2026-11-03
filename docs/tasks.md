@@ -378,6 +378,13 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 
 ## Small things
 
+- A large unlisted file currently resolves dependencies and image bytes in
+  sequence, and its periodic refresh builds the whole bundle again. Batch
+  authorized dependency reads and check for an unchanged revision after
+  validating the active link, retaining revocation checks and byte limits.
+  The first hosted script check returned 35 files and 18 images in 12.8
+  seconds without an account; keep that case as the performance reference.
+
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 

@@ -1098,10 +1098,8 @@ window.addEventListener("error", (event: ErrorEvent) => {
 });
 
 connectToParent(onParentMessage);
-if (embeddedDocument) document.documentElement.dataset.embeddedDocument = '';
-// Nested documents and standalone shared pages use their parent's scrolling.
-// The normal workbench has no height callback and keeps its own scroll box.
-{
+if (embeddedDocument) {
+  document.documentElement.dataset.embeddedDocument = '';
   let height = 0;
   let requested = false;
   const reportHeight = () => {

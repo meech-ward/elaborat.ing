@@ -1022,7 +1022,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       if (message.kind === 'document-height') {
-        onContentHeight?.(message.height);
+        if (externalFrame) onContentHeight?.(message.height);
         return;
       }
       // Ready is the handshake, a window post answered with this port (above).

@@ -171,7 +171,7 @@ describe("the probe routes", () => {
     expect(headers).not.toMatch(/!\s*X-Frame-Options|frame-ancestors/i);
     const wrangler = await Bun.file(new URL("../wrangler.jsonc", import.meta.url)).text();
     const first = JSON.parse(wrangler.match(/"run_worker_first":\s*(\[[^\]]*\])/)![1]) as string[];
-    expect(first).toEqual(["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/mcp-probe", "/mcp-probe/*"]);
+    expect(first).toEqual(["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/s/*", "/mcp-probe", "/mcp-probe/*"]);
   });
 
   test("/mcp-probe passes to the probe function, and /mcp still to the MCP server", async () => {

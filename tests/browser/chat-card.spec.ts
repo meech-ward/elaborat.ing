@@ -406,13 +406,16 @@ for (const policy of ["default", "declared"] as const) {
     if (policy === "default") {
       // This host never advertised resource policy, so the card attempts its
       // usual fonts and highlighter and their existing CSP failures stay plain.
-      expect(await violations(page)).toEqual(expect.arrayContaining([
+      // Firefox may report the same blocked font more than once. Keep the
+      // exact set of allowed failures without counting duplicate reports.
+      const blocked = [...new Set(await violations(page))]
+      expect(blocked).toEqual(expect.arrayContaining([
         expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/space-grotesk-latin-[\w-]{8}\.woff2$/),
         expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/jetbrains-mono-latin-[\w-]{8}\.woff2$/),
         expect.stringMatching(/^font-src https:\/\/elaborat\.ing\/chat-card\/excalifont-latin-[\w-]{8}\.woff2$/),
         expect.stringMatching(/^script-src-elem https:\/\/elaborat\.ing\/chat-card\/highlight-[\w-]{8}\.js$/),
       ]))
-      expect(await violations(page)).toHaveLength(4)
+      expect(blocked).toHaveLength(4)
     } else expect(await violations(page)).toEqual([])
   })
 }

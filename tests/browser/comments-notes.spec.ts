@@ -103,7 +103,8 @@ test("commented text is marked in both views and follows edits elsewhere in the 
 
   // Two lines typed at the top of the source move the marks down with their text.
   await sourceLines(page).click()
-  await page.keyboard.press("ControlOrMeta+Home")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+Home")
   await page.keyboard.type("Read this first.\n\n")
   await expect(marker(page, 5)).toBeVisible()
   await expect(marker(page, 7)).toBeVisible()
@@ -242,13 +243,15 @@ test("a selection in Rendered is commented on, and so is a heading pointed at", 
 test("the comment key comments on a heading's section in Source, and elsewhere shows and hides the comments; the context menu comments too", async ({ page }) => {
   await seeded(page, { threads: false, view: "Source" })
   await sourceLines(page).getByText("## Steps").click()
-  await page.keyboard.press("ControlOrMeta+Alt+m")
+  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
+  await page.keyboard.press("Control+Alt+m")
   await send(page, "Add a step for inviting a teammate.")
   await expect(thread(page, "section Steps")).toBeVisible()
   await expect(marker(page, 5)).toBeVisible()
 
   // On a line that is not a heading, with nothing selected, the key hides the comments.
   await sourceLines(page).getByText("Create a project.").click()
+  // Unhandled by Monaco, this is the page shortcut on the host platform.
   await page.keyboard.press("ControlOrMeta+Alt+m")
   await expect(panel(page)).toBeHidden()
 
@@ -358,15 +361,18 @@ test("a detached thread is attached to other text from its card, and its new tex
 test("a comment sent on text a save removed just before comes back detached, and asks for its text at once", async ({ page }) => {
   const { fake, id } = await seeded(page, { threads: false, view: "Rendered" })
   const frame = frameOf(page)
+  const words = "How a customer moves from sign-up to their first project, and where agents help.\n\n"
   const paragraph = frame.locator("p").filter({ hasText: "How a customer moves" })
   await paragraph.click({ position: { x: 1, y: 8 } })
-  await page.keyboard.press("Shift+End")
+  // Native End selects to different boundaries on macOS and Windows.
+  // Select the exact paragraph with the same character keys on either host.
+  for (let index = 0; index < words.trim().length; index++) await page.keyboard.press("Shift+ArrowRight")
+  await expect.poll(() => frame.locator("html").evaluate(() => window.getSelection()?.toString())).toBe(words.trim())
   await commentButton(page).click()
   const field = panel(page).getByRole("textbox", { name: "New comment" })
   await expect(field).toBeFocused()
 
   // An agent's save removes the paragraph while the comment is written; the note shows it.
-  const words = "How a customer moves from sign-up to their first project, and where agents help.\n\n"
   await fake.agentChanges.save(person.id, id, PATH, NOTE.replace(words, ""))
   fake.signal(id, fake.server.projects.get(id)!.revision)
   await expect(paragraph).toHaveCount(0)

@@ -85,7 +85,7 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
     }
     timer = window.setTimeout(() => void restore(), 500)
     return () => {stopped = true; clearTimeout(timer)}
-  }, [draft, root.content.length])
+  }, [draft, root.content])
 
   const start = (anchor: CommentAnchor = {kind: 'document'}) => {
     setDraft(newDraft(bundle, anchor))

@@ -146,11 +146,21 @@ the deploy token's existing permissions.
 The `config` job (`supabase config diff` and `supabase config push`) runs
 after the `supabase` job, beside the app. The CLI works on every plan, and
 self-hosters can run the same workflow from their own fork. The workflow runs
-only after CI passes on `main`, and deploys the newest commit CI has passed
+automatically after CI passes on `main`, and deploys the newest commit CI has passed
 there, not the one that triggered it: CI runs can finish out of order, so
 whichever deploy runs last ships the newest green commit and an older one
 never replaces it. Every job deploys the commit the first one found. A failing
 build never ships half a release; every step is safe to repeat.
+
+**Decision: an explicitly requested manual release may name a reviewed
+commit.** The optional `reviewed_sha` dispatch input takes a full commit SHA
+that the workflow verifies belongs to `main`. It deploys that exact revision
+through the same function, migration, sandbox, app and MCP jobs, and logs that
+CI was bypassed without changing any CI result. This is for a maintainer's
+explicit instruction to publish a reviewed version before remaining checks
+or fixes; automatic releases and manual runs without the input retain the
+newest-green-commit rule. Follow-up fixes preserve file-share tokens and are
+checked against the already issued links.
 
 - **No `supabase link`.** Linking reads the project's API keys, which needs a
   token that can see every secret key. Each command takes `--project-ref`
