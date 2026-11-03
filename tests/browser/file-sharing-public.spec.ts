@@ -19,6 +19,14 @@ const CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers'
 const now = () => new Date().toISOString()
 const author = () => ({user_id: person.id, email: null, name: 'Visitor'})
 
+async function expectNoCodePrompt(page: Page) {
+  for (const surface of page.frames()) {
+    await expect(surface.getByRole('heading', {name: 'This file runs custom code', exact: true})).toHaveCount(0)
+    await expect(surface.getByRole('button', {name: /^Run (code|document)$/})).toHaveCount(0)
+    await expect(surface.getByText('This document contains code. Review it separately or run it here.', {exact: true})).toHaveCount(0)
+  }
+}
+
 function bundle(content = '# Shared guide\n\nRead without an account.', path = 'guide.mdx'): SharedBundle {
   return {share: {id: SHARE, file_id: FILE, path, version: 7, revision: 7, archived: false},
     files: [{id: FILE, path, content, version: 7}], images: []}
@@ -116,17 +124,54 @@ test('shared notes render local images, drawings, diagrams, and collapsible embe
   await expect(details).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('ordinary project links stay private and custom components ask before running', async ({page}) => {
+test('ordinary project links stay private while shared custom components render automatically', async ({page}) => {
   const shared = bundle('export const PublicBadge = () => <span>Custom shared badge</span>\n\n# Shared guide\n\n<PublicBadge />\n\n[Private planning](secret.md)')
   const {state} = await setup(page, {bundle: shared})
   await page.goto(href)
-  await expect(page.getByRole('heading', {name: 'This file runs custom code'})).toBeVisible()
-  await page.getByRole('button', {name: 'Run code', exact: true}).click()
   await expect(frame(page).getByText('Custom shared badge')).toBeVisible({timeout: 20_000})
+  await expectNoCodePrompt(page)
   await frame(page).getByRole('link', {name: 'Private planning'}).click()
   await expect(page.getByText('That link points to another project file. It needs its own share link.')).toBeVisible()
   await expect(page).toHaveURL(href)
   expect(state.calls.filter(c => c.name === 'read').every(c => Object.keys(c.args).join() === 'token')).toBe(true)
+})
+
+test('nested shared documents run components automatically while keeping their sandbox isolation', async ({page}) => {
+  const shared = bundle('# Shared guide\n\n<Document src="nested/child.mdx" title="Interactive details" defaultCollapsed />')
+  shared.files.push({id: crypto.randomUUID(), path: 'nested/child.mdx', version: 7,
+    content: 'import {NestedCounter} from "workspace:components/nested-counter.mdx"\n\n# Nested interactive details\n\n<NestedCounter />'},
+  {id: crypto.randomUUID(), path: 'components/nested-counter.mdx', version: 7,
+    content: "import {useState} from 'react'\n\nexport function NestedCounter() { const [count, setCount] = useState(0); return <button type=\"button\" onClick={() => setCount(count + 1)}>Nested count: {count}</button> }"})
+  const reached: string[] = []
+  await page.route('https://nested-component-probe.example/**', route => {
+    reached.push(route.request().url())
+    return route.fulfill({status: 200, body: 'Unexpected network access'})
+  })
+  const {state, fake} = await setup(page, {bundle: shared})
+  const original = state.bundle.files.map(file => file.content)
+  await page.goto(href)
+  await frame(page).getByRole('button', {name: /Interactive details/}).first().click()
+  await expect.poll(async () => (await Promise.all(page.frames().map(surface =>
+    surface.getByRole('heading', {name: 'Nested interactive details', exact: true}).count()))).reduce((sum, count) => sum + count, 0)).toBe(1)
+  const surfaces = await Promise.all(page.frames().map(async surface =>
+    await surface.getByRole('heading', {name: 'Nested interactive details', exact: true}).count() ? surface : null))
+  const child = surfaces.find(surface => surface !== null)!
+  await child.getByRole('button', {name: 'Nested count: 0', exact: true}).click()
+  await expect(child.getByRole('button', {name: 'Nested count: 1', exact: true})).toBeVisible()
+  await expectNoCodePrompt(page)
+  expect(await child.locator('html').evaluate(async () => {
+    const blocked = (operation: () => void) => {try {operation(); return false} catch {return true}}
+    const network = await fetch('https://nested-component-probe.example/read').then(() => false, () => true)
+    return {
+      parent: blocked(() => {void window.parent.document.title}),
+      local: blocked(() => {localStorage.setItem('nested-probe', 'blocked')}),
+      session: blocked(() => {sessionStorage.setItem('nested-probe', 'blocked')}),
+      network,
+    }
+  })).toEqual({parent: true, local: true, session: true, network: true})
+  expect(reached).toEqual([])
+  expect(state.bundle.files.map(file => file.content)).toEqual(original)
+  expect(fake.requests.some(request => /save_files|share_project|accept_invitation/.test(request.url()))).toBe(false)
 })
 
 test('an image file can be shared directly and still has its own comment discussion', async ({page}) => {
@@ -184,8 +229,8 @@ async function sharedForm(page: Page) {
   shared.files.push({id: crypto.randomUUID(), path: 'forms/form-demo.mdx', content: FORM_MODULE, version: 7})
   const setupResult = await setup(page, {bundle: shared})
   await page.goto(href)
-  await page.getByRole('button', {name: 'Run code', exact: true}).click()
   await expect(frame(page).getByLabel('Your name')).toBeVisible({timeout: 20_000})
+  await expectNoCodePrompt(page)
   return setupResult
 }
 
@@ -263,7 +308,8 @@ export function DetailsModal() {
 ${'Read a paragraph in this long interactive document.\n\n'.repeat(65)}`
   await setup(page, {bundle: bundle(content)})
   await page.goto(href)
-  await page.getByRole('button', {name: 'Run code', exact: true}).click()
+  await expect(frame(page).getByRole('button', {name: 'Open details', exact: true})).toBeVisible()
+  await expectNoCodePrompt(page)
   await frame(page).getByRole('button', {name: 'Open details', exact: true}).click()
   const modal = frame(page).getByRole('dialog', {name: 'Form details'})
   await expect(modal).toBeAttached()
@@ -315,8 +361,8 @@ test('signing in from a long interactive note restores its internal reading posi
   const content = `export const LocalGreeting = () => <span>Interactive note</span>\n\n# Shared guide\n\n<LocalGreeting />\n\n${'A short paragraph to read before the later section.\n\n'.repeat(65)}## Return to this part\n\nRead from here after signing in.`
   const {state} = await setup(page, {bundle: bundle(content)})
   await page.goto(href)
-  await page.getByRole('button', {name: 'Run code', exact: true}).click()
   await expect(frame(page).getByRole('heading', {name: 'Shared guide'})).toBeVisible({timeout: 20_000})
+  await expectNoCodePrompt(page)
   await frame(page).getByRole('heading', {name: 'Return to this part'}).scrollIntoViewIfNeeded()
   const readPosition = await frame(page).locator('html').evaluate(() => window.scrollY)
   expect(readPosition).toBeGreaterThan(1000)

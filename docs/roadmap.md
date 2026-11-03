@@ -206,7 +206,8 @@ See [embedded documents](embedded-documents.md) for release status and limits.
 ## Phase 4: sharing and comments
 
 - Unlisted links for individual files (done): rendered anonymous reading, validated
-  rendering dependencies, owner enable/copy/replace/disable controls and a
+  rendering dependencies, automatic isolated component rendering without a
+  custom-code prompt, owner enable/copy/replace/disable controls and a
   separate discussion that requires sign-in only to post. See
   [unlisted file sharing](file-sharing.md) for release scope and checks.
 

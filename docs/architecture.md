@@ -213,7 +213,9 @@ links do not authorize other files. A token-checking server resolves these
 dependencies; anonymous visitors never get project listing, history, search,
 member access or credentials. Image bytes remain in the private bucket and
 are delivered only through the checked link. Public readers use the normal
-isolated renderer and custom-code consent. The shared route requests no
+isolated renderer, with custom components rendered automatically and no
+custom-code warning or Run code step. This also applies to embedded documents.
+The frame still has no network or account access. The shared route requests no
 indexing, sends no referrer, and does not cache document responses offline.
 
 Link discussions are separate from private project comments. Reading needs
@@ -1637,7 +1639,9 @@ What the domain does not fix: a component can still navigate its own frame
 (carrying out whatever the frame displays) and can draw a fake login prompt
 inside its own rectangle. The mitigations are what the frame is given (only
 the document's compiled code and rendered images, never tokens or other files)
-and a notice on shared projects that they run custom code.
+and a notice on invited shared projects that they run custom code. Unlisted
+file pages render their included components automatically in that same
+isolated frame, without a warning or an extra Run code step.
 
 **Decision: in a project shared with the person, a note that runs custom
 code asks first.** A note that imports component files (`workspace:`

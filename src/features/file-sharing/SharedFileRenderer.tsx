@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { Banner, LoadingLine } from '@/features/design-system'
 import { useComponentEnvironment } from '@/features/document/useComponentEnvironment'
-import { useCustomCodeGate } from '@/features/custom-code/useCustomCodeGate'
 import { LazyRenderedEditor } from '@/features/workbench/LazyRenderedEditor'
 import { resolveNoteLink } from '@/features/workbench/noteLinks'
 import type { DocumentEmbedHost } from '@/features/rendered/documentEmbeds'
@@ -15,7 +13,7 @@ import { drawingSvgForContent, diagramSvgForWorkspace } from '@/features/workben
 import { MissingFileError } from '@/features/workbench/workspaceStore'
 import type { SharedBundle, SharedFile } from './publicRemote'
 
-type Attached = Parameters<DocumentEmbedHost['attach']>[0] & {runs: number}
+type Attached = Parameters<DocumentEmbedHost['attach']>[0]
 type Budget = {reserve: () => boolean; release: () => void}
 function documentBudget(): Budget {
   let count = 0
@@ -81,8 +79,8 @@ export function SharedFileRenderer(props: Props) {
   </>
 }
 
-function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed, runRequest = 0}: Props & {
-  resources: Record<string, string>; budget: Budget; embed?: Attached; runRequest?: number
+function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed}: Props & {
+  resources: Record<string, string>; budget: Budget; embed?: Attached
 }) {
   const format = /\.mdx$/i.test(file.path) ? 'mdx' : 'md'
   const load = useCallback(async (path: string) => {
@@ -91,11 +89,6 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
     return {text: module.content, revision: String(module.version)}
   }, [bundle])
   const componentState = useComponentEnvironment(file.content, format === 'mdx', load, bundle.share.revision, undefined, file.version)
-  const policy = useMemo(() => ({key: `file-share:${bundle.share.id}`, editors: async () => new Map<string, string>()}), [bundle.share.id])
-  const gate = useCustomCodeGate(policy, file.path, componentState, false, file.version)
-  const run = useRef<(() => void) | null>(null)
-  useEffect(() => {run.current = gate.kind === 'ask' ? gate.run : null})
-  useEffect(() => {if (runRequest) run.current?.()}, [runRequest])
   const [views, setViews] = useState<Attached[]>([])
   const viewMap = useRef(new Map<string, Attached>())
   const onOpen = useRef(onOpenEmbedded)
@@ -107,13 +100,13 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
         request.ancestors.length < 2 || request.ancestors.length > MAX_DOCUMENT_EMBED_DEPTH ||
         request.ancestors.at(-2) !== file.path || request.ancestors.at(-1) !== request.path ||
         new Set(request.ancestors).size !== request.ancestors.length || !budget.reserve()) {
-        request.onState({pending: false, readOnly: true, error: 'This embedded document is unavailable or too many documents are open.'})
+        request.onState({pending: false, readOnly: true, needsCodeConsent: false, error: 'This embedded document is unavailable or too many documents are open.'})
         return () => {}
       }
-      const view = {...request, runs: 0}
+      const view = request
       viewMap.current.set(request.id, view)
       setViews([...viewMap.current.values()])
-      request.onState({pending: true, readOnly: true})
+      request.onState({pending: true, readOnly: true, needsCodeConsent: false})
       let removed = false
       return () => {
         if (removed) return
@@ -128,7 +121,6 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
       const view = viewMap.current.get(id)
       if (!view) return
       if (action === 'open') onOpen.current(view.path)
-      if (action === 'run') {viewMap.current.set(id, {...view, runs: view.runs + 1}); setViews([...viewMap.current.values()])}
     },
   }), [allowed, budget, file.path])
   useEffect(() => {
@@ -168,26 +160,21 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
     const bounded = Math.min(2_000_000, Math.max(320, value))
     if (embed) embed.onState({height: bounded, pending: false, readOnly: true})
   }, [embed])
-  const asking = gate.kind === 'ask'
-  const prepared = gate.kind === 'open' ? gate.components : {pending: true}
   useEffect(() => {
-    embed?.onState({pending: !asking && Boolean(prepared.pending), needsCodeConsent: asking, readOnly: true, error: renderError ?? prepared.error ?? null})
-  }, [embed, asking, prepared.pending, prepared.error, renderError])
+    embed?.onState({pending: Boolean(componentState.pending), needsCodeConsent: false, readOnly: true, error: renderError ?? componentState.error ?? null})
+  }, [embed, componentState.pending, componentState.error, renderError])
   const openLink = (href: string) => {
     const link = resolveNoteLink(href, file.path)
     if (link.kind === 'web') window.open(link.url, '_blank', 'noopener,noreferrer')
     else if (link.kind === 'file') setNotice('That link points to another project file. It needs its own share link.')
   }
   return <>
-    {!embed && asking ? <div className="rounded-xl border border-border p-6"><h2 className="mb-2 text-lg font-semibold">This file runs custom code</h2>
-      <p className="mb-4 text-sm text-muted-foreground">Its components run in an isolated frame with no network or account access. Run them to view this file.</p>
-      <Button onClick={gate.run}>Run code</Button></div> : null}
     {!embed && notice ? <Banner className="m-3">{notice}</Banner> : null}
     {!embed && renderError ? <Banner tone="danger" className="m-3">{renderError}</Banner> : null}
-    <div style={embed ? {display: 'contents'} : {height: 'calc(100dvh - 10rem)', minHeight: 480, display: asking ? 'none' : undefined, minWidth: 0}}>
+    <div style={embed ? {display: 'contents'} : {height: 'calc(100dvh - 10rem)', minHeight: 480, minWidth: 0}}>
       <LazyRenderedEditor document={{text: file.content, format, revision: file.version}} documentId={file.version} documentPath={file.path}
         externalFrame={embed?.frame} externalFrameScriptUrl={embed?.frameScriptUrl} embeddedAncestors={embed?.ancestors ?? [file.path]}
-        documentEmbedHost={host} componentEnvironment={prepared.environment} componentError={prepared.error} componentPending={prepared.pending}
+        documentEmbedHost={host} componentEnvironment={componentState.environment} componentError={componentState.error} componentPending={componentState.pending}
         readOnly onPatch={() => false} onOpenLink={openLink} onError={setRenderError} errorBanner={false}
         resources={resources} allowedResourcePaths={Object.keys(resources)} imageResources={images?.file === file ? images.pixels : {}} onReadImage={readImage}
         onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={apiRef} />
@@ -195,7 +182,7 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
     {views.map(view => {
       const child = bundle.files.find(f => f.path === view.path)
       return child ? <SharedNote key={view.id} bundle={bundle} file={child} resources={resources} budget={budget}
-        embed={view} runRequest={view.runs} onOpenEmbedded={onOpenEmbedded} /> : null
+        embed={view} onOpenEmbedded={onOpenEmbedded} /> : null
     })}
   </>
 }

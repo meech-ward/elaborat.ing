@@ -28,7 +28,10 @@ The server validates the active token and resolves a bounded dependency graph
 from authoritative saved source. Arbitrary client paths never authorize
 reads. It checks access again before returning the bundle. Images are sent
 from the existing private bucket without exposing object keys or reusable
-Storage links. The normal preview isolation and custom-code consent remain.
+Storage links. Custom components render automatically, including in embedded
+documents, without a custom-code warning or Run code step. The normal preview
+isolation remains: components have no network or account access. Invited
+shared projects retain their separate custom-code consent flow.
 
 Share responses use no-store, and shared pages request noindex and
 no-referrer. Unlisted means anyone can forward the link; it is not an
