@@ -81,6 +81,8 @@ import {
   checkProseEdit,
   checkViewResource,
   PREVIEW_SANDBOX,
+  MAX_NOTION_SNAPSHOT_ENTRIES,
+  matchNotionSnapshotEntries,
   staleChildMessage,
   type CommentMarksMessage,
   type ConnectMessage,
@@ -225,6 +227,8 @@ export type RenderedComments = {
 };
 
 export type RenderedEditorApi = {
+  /** Static, untrusted HTML for source-owned outermost islands. No edits or file access. */
+  exportSnapshot(): Promise<Array<{from: number; to: number; html: string}>>;
   /** Scroll the rendered text of source[from, to) into view and flash it; `focus` moves the keyboard to its start. */
   revealRange(from: number, to: number, focus: boolean): void;
   /**
@@ -370,6 +374,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // The port given to the frame's document when it said ready: every message
   // to the frame goes on it, and only messages on it are the frame's.
   const portRef = useRef<MessagePort | null>(null);
+  const snapshotAcknowledged = useRef<{port: MessagePort; projection: Exposed} | null>(null);
   const onPortMessage = useRef<((event: MessageEvent) => void) | null>(null);
   const session = useMemo(() => newSessionToken(), []);
   // The frame's document: the sandbox domain's page, or the `srcdoc`. Each
@@ -387,6 +392,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // one at once (every post goes on its port), and the new one gets the
   // current render when it says ready.
   const replaceFrame = useCallback((next: { hosted?: boolean; stopped?: boolean }) => {
+    snapshotAcknowledged.current = null;
     frameRef.current = null;
     portRef.current?.close();
     portRef.current = null;
@@ -439,6 +445,20 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const sentModules = useRef(new Set<string>());
   // What the frame was last told (Exposed above).
   const authority = useRef<Exposed | null>(null);
+  const snapshotAlive = useRef(true);
+  const snapshotPreparing = useRef(false);
+  const snapshotProblem = useRef<string | null>(null);
+  const snapshotPending = useRef<{
+    request: string; projection: Exposed;
+    answer: (result: {entries?: Array<{id:string;html:string}>; error?:string}) => void;
+  } | null>(null);
+  useEffect(() => {
+    snapshotAlive.current = true;
+    return () => {snapshotAlive.current = false; snapshotPending.current = null;};
+  }, []);
+  useLayoutEffect(() => {
+    snapshotProblem.current = componentError ?? (compileError?.text === document.text ? compileError.message : null);
+  }, [componentError, compileError, document.text]);
   const latestDocument = useRef(document);
   const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,
     owner:externalFrame ?? null as Window | null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
@@ -901,6 +921,58 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
+      async exportSnapshot() {
+        if (snapshotPreparing.current) throw new Error('Another component export is already running.');
+        snapshotPreparing.current = true;
+        const frozen = {...latestDocument.current};
+        const identity = imageTarget.current.documentId;
+        const deadline = performance.now() + 20_000;
+        const currentDocument = () => {
+          const next = latestDocument.current;
+          if (!snapshotAlive.current) throw new Error('The preview closed while preparing the export.');
+          if (next.text !== frozen.text || next.revision !== frozen.revision || next.format !== frozen.format || imageTarget.current.documentId !== identity)
+            throw new Error('The document changed while preparing the export.');
+          if (pendingOwners.current.fluid || pendingOwners.current.draft) throw new Error('Finish the current edit before exporting.');
+          if (snapshotProblem.current) throw new Error(snapshotProblem.current);
+          if (performance.now() >= deadline) throw new Error('The component preview did not finish rendering in time.');
+        };
+        try {
+          let projection: Exposed;
+          let port: MessagePort;
+          while (true) {
+            currentDocument();
+            const candidate = authority.current, channel = portRef.current;
+            if (candidate && channel && candidate.text === frozen.text && candidate.revision === frozen.revision &&
+              candidate.format === frozen.format && candidate.identity === identity && candidate.epoch === epoch.current &&
+              snapshotAcknowledged.current?.port === channel && snapshotAcknowledged.current.projection === candidate) {
+              projection = candidate; port = channel; break;
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 25));
+          }
+          const expected: typeof projection.islands = [];
+          for (const island of [...projection.islands].sort((a,b) => a.from - b.from || b.to - a.to)) {
+            if (!expected.some(parent => parent.from <= island.from && parent.to >= island.to)) expected.push(island);
+          }
+          if (expected.length > MAX_NOTION_SNAPSHOT_ENTRIES) throw new Error('A document can export at most 128 component snapshots.');
+          if (!expected.length) return [];
+          const request = newSessionToken();
+          const answer: {value?: {entries?: Array<{id:string;html:string}>; error?:string}} = {};
+          snapshotPending.current = {request, projection, answer: value => {answer.value = value;}};
+          port.postMessage({kind:'export-snapshot', session, revision:projection.revision, epoch:projection.epoch,
+            request, ids:expected.map(entry => entry.id)});
+          while (!answer.value) {
+            currentDocument();
+            if (authority.current !== projection || epoch.current !== projection.epoch || portRef.current !== port)
+              throw new Error('The document changed while preparing the export.');
+            await new Promise(resolve => window.setTimeout(resolve, 25));
+          }
+          currentDocument();
+          if (authority.current !== projection || epoch.current !== projection.epoch || portRef.current !== port)
+            throw new Error('The document changed while preparing the export.');
+          if (answer.value.error) throw new Error(answer.value.error);
+          return matchNotionSnapshotEntries(expected, answer.value.entries ?? []);
+        } finally {snapshotPending.current = null; snapshotPreparing.current = false;}
+      },
       revealRange(from, to, focus) {
         const frame = frameRef.current;
         const port = portRef.current;
@@ -971,6 +1043,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         revision: authority.current?.revision ?? -1,
       });
       if (!checked.ok) {
+        if ((event.data as {kind?:unknown}|null)?.kind === 'export-snapshot-result') {
+          if ((event.data as {request?:unknown}|null)?.request === snapshotPending.current?.request)
+            snapshotPending.current?.answer({error:'The component export returned an invalid or stale snapshot.'});
+          return;
+        }
         const parsed = childMessageSchema.safeParse(event.data);
         const stale = checked.error.startsWith("Rejected stale frame message");
         // A rejected rendered transaction resets the frame to the current document.
@@ -1021,6 +1098,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       const message = checked.message;
+      if (message.kind === 'export-snapshot-result') {
+        const pending = snapshotPending.current;
+        if (pending?.request === message.request) pending.answer(
+          message.epoch === pending.projection.epoch && authority.current === pending.projection
+            ? {entries:message.entries, error:message.error}
+            : {error:'The document changed while preparing the export.'});
+        return;
+      }
       if (message.kind === 'document-embed-open' || message.kind === 'document-embed-release' || message.kind === 'document-embed-action') {
         const current = authority.current;
         const snapshot = latestDocument.current;
@@ -1050,6 +1135,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       if (message.kind === "rendered") {
+        const current = authority.current;
+        if (current && message.epoch === current.epoch && message.revision === current.revision)
+          snapshotAcknowledged.current = {port, projection:current};
         onShown?.();
         return;
       }

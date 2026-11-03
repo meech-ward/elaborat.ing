@@ -155,6 +155,13 @@ See [embedded documents](embedded-documents.md) for release status and limits.
 
 ## Phase 3: public v1
 
+Browser-generated Notion exports package a note as semantic HTML with local
+image assets, expanded child notes and static component output. The note's
+file menu keeps source export and offers Export to Notion with a conversion
+review before download. This needs no account connection. See
+[Notion export](notion-export.md). PDF and direct Notion publishing are not
+included in this release.
+
 - **All sign-in methods** that exist today: email and password, magic link and
   one-time code (custom SMTP), passkeys, GitHub, Google, and phone codes with
   Turnstile. (Done in the app: the one-time code; passkeys, added in

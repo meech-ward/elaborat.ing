@@ -13,6 +13,26 @@ function attach(pool: DocumentEmbedSessions, path: string, id = path, owner = "p
 }
 
 describe("shared embedded document sessions", () => {
+  test("exports capture live retained drafts and only reuse a matching rendered snapshot", async () => {
+    const pool = new DocumentEmbedSessions(async path => file(path));
+    let text = "Current child draft";
+    const islands = [{from: 0, to: 5, html: "<p>Current component</p>"}];
+    const release = pool.register("child.mdx", {save: async () => true, run: () => {},
+      sourceSnapshot: () => ({text, pending: false}), exportSnapshot: async () => islands});
+    expect(pool.exportSources().get("child.mdx")).toBe(text);
+    expect(await pool.exportSnapshot("child.mdx", text)).toBe(islands);
+    text = "New source";
+    expect(pool.exportSnapshot("child.mdx", "Current child draft")).toBeNull();
+    release();
+    expect(pool.exportSources().size).toBe(0);
+  });
+
+  test("export refuses a child buffer while its rendered edit is finishing", () => {
+    const pool = new DocumentEmbedSessions(async path => file(path));
+    pool.register("child.md", {save: async () => true, run: () => {}, sourceSnapshot: () => ({text: "Draft", pending: true})});
+    expect(() => pool.exportSources()).toThrow("edit in progress");
+    expect(pool.exportSnapshot("child.md", "Draft")).toBeNull();
+  });
   test("lazy expansion coalesces reads and shares one canonical session with a tab", async () => {
     const reads: string[] = [];
     const pool = new DocumentEmbedSessions(async path => { reads.push(path); return file(path); }, () => {});

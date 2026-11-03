@@ -15,6 +15,8 @@ export interface EmbeddedDocumentView {
 export interface EmbeddedDocumentSession {
   save: () => Promise<boolean>;
   run: () => void;
+  sourceSnapshot?: () => {text: string; pending: boolean};
+  exportSnapshot?: () => Promise<Array<{from: number; to: number; html: string}>> | null;
 }
 
 type PooledFile = TabFile & { generation?: number; replacementEpoch: number };
@@ -154,6 +156,25 @@ export class DocumentEmbedSessions {
   register(path: string, session: EmbeddedDocumentSession): () => void {
     this.sessions.set(path, session);
     return () => { if (this.sessions.get(path) === session) this.sessions.delete(path); };
+  }
+
+  /** Capture live editor buffers together, including collapsed retained notes. */
+  exportSources(): Map<string, string> {
+    const sources = new Map<string, string>();
+    for (const [path, session] of this.sessions) {
+      const snapshot = session.sourceSnapshot?.();
+      if (!snapshot) continue;
+      if (snapshot.pending) throw new Error(`${path} has an edit in progress. Finish that edit before exporting.`);
+      sources.set(path, snapshot.text);
+    }
+    return sources;
+  }
+
+  exportSnapshot(path: string, source: string): Promise<Array<{from: number; to: number; html: string}>> | null {
+    const session = this.sessions.get(path);
+    const snapshot = session?.sourceSnapshot?.();
+    if (!snapshot || snapshot.pending || snapshot.text !== source) return null;
+    return session?.exportSnapshot?.() ?? null;
   }
 
   publish(path: string, state: DocumentEmbedState): void {

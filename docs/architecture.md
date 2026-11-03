@@ -1496,6 +1496,23 @@ client.
   the only parts in existing chunks; the panel, the loop and the readers load
   when it first opens, and the live view's renderers when a write starts.
 
+## Portable Notion export
+
+**Decision:** a note exports to a browser-generated ZIP containing semantic
+HTML and local image assets. It needs no Notion account connection, backend
+export job or change to sharing. Embedded documents expand into the page;
+the root and retained child drafts are frozen together. Imported component
+modules retain saved-source authority.
+
+Custom component snapshots use the ordinary isolated preview and a bounded,
+revision- and render-epoch-bound request. The parent owns source ranges and
+reconstructs untrusted snapshot HTML through an inert parser and a semantic
+allowlist. Canvas and strictly validated SVG become raster assets. Scripts,
+form values and authoring controls never enter the package. Custom-code
+consent, document network isolation and first-paint budgets stay intact.
+Unsupported content is explicit, with source fallback and conversion notes.
+See [Notion export](notion-export.md) for behavior and bounds.
+
 ## Component isolation
 
 MDX compiles to JavaScript, and user components run in the browser. They must
@@ -2037,6 +2054,11 @@ Browser tests block service workers (`playwright.config.ts`) except in
 and each test would otherwise download the whole app. The harness's rendered
 specs allow them: Playwright's blocking script throws inside the sandboxed
 preview frame, and the harness registers no worker.
+
+For concurrent worktrees, `ELABORATING_BROWSER_TEST_PORT_OFFSET=100 npx
+playwright test` uses 4273, 4274 and 4275 for the app, harness and sandbox.
+The default remains 4173 through 4175. A nonzero offset starts its own strict
+servers instead of reusing another checkout's preview build.
 
 **Not yet:** icons in the web manifest (browsers will not offer to install the
 app without them), and update checks while a page stays open (a new version is

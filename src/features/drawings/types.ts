@@ -157,6 +157,8 @@ export interface ExportDrawingOptions {
   padding?: number;
   /** Export scale for PNG. Default 1. */
   scale?: number;
+  /** Reduce PNG scale before canvas allocation to fit this pixel budget. */
+  maxPixels?: number;
   theme?: DrawingCanvasTheme;
 }
 

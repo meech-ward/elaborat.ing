@@ -48,6 +48,7 @@ import {
 } from "./session";
 import { linkedFile, resolveNoteLink } from "./noteLinks";
 import { useSettledError, useTyping } from "@/lib/settledError";
+import { LazyNotionExportDialog } from "@/features/exports/LazyNotionExportDialog";
 
 type Mode = EditorView;
 
@@ -158,6 +159,7 @@ export function WorkspaceSession({
   const shownSourceError = useSettledError(sourceError?.message ?? null, typing, sourceError?.text === snapshot.text);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [notionExportOpen, setNotionExportOpen] = useState(false);
   const [componentGeneration, setComponentGeneration] = useState(0);
   const loadComponentSource = useCallback(async (path: string) => {
     const file = await client.read(path);
@@ -745,7 +747,9 @@ export function WorkspaceSession({
       return !readOnly && target !== null && await doWrite(target, openFile.baseRevision, openFile.path ? "Saved" : "Created");
     },
     run: () => { if (componentGate.kind === "ask") componentGate.run(); },
-  }), [documentEmbeds, initial.path, openFile, readOnly, doWrite, componentGate]);
+    sourceSnapshot: () => ({text: store.snapshot().text, pending: renderedPendingRef.current}),
+    exportSnapshot: () => renderedApi.current?.exportSnapshot() ?? null,
+  }), [documentEmbeds, initial.path, openFile, readOnly, doWrite, componentGate, store]);
   useEffect(() => {
     documentEmbeds?.publish(initial.path, {
       dirty: ownDirty,
@@ -937,6 +941,24 @@ export function WorkspaceSession({
     }
   }, [displayName, settle, store]);
 
+  const captureNotionSources = useCallback(async () => {
+    settle();
+    if (renderedPendingRef.current) throw new Error("Finish the current edit before exporting.");
+    await client.flushLocalDrafts();
+    const sources = documentEmbeds?.exportSources() ?? new Map<string, string>();
+    const source = store.snapshot().text;
+    sources.set(displayName, source);
+    return {source, sources};
+  }, [client, displayName, documentEmbeds, settle, store]);
+  const existingNotionSnapshot = useCallback((path: string, source: string) => {
+    const registered = documentEmbeds?.exportSnapshot(path, source);
+    if (registered) return registered;
+    return path === displayName && source === store.snapshot().text ? renderedApi.current?.exportSnapshot() ?? null : null;
+  }, [displayName, documentEmbeds, store]);
+  const notionProjectFileUrl = useCallback((path: string) => client.projectId
+    ? `${location.origin}/projects/${encodeURIComponent(client.projectId)}/${path.split('/').map(encodeURIComponent).join('/')}` : null,
+  [client.projectId]);
+
   const handleFormat = useCallback(async () => {
     settle();
     if (frozen.current) return;
@@ -984,6 +1006,7 @@ export function WorkspaceSession({
     // Read-only, the file follows its saved copy by itself.
     ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
     { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },
+    ...(isNote ? [{ label: "Export to Notion", disabled: renderedPending, onSelect: () => {settle(); setNotionExportOpen(true);} }] : []),
     ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending, onSelect: () => void handleFormat() }] : []),
     ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
   ];
@@ -1191,6 +1214,9 @@ export function WorkspaceSession({
           return importProjectImageURL(client.projectId!, url, signal);
         }} />}
     </div>
+    {notionExportOpen && <LazyNotionExportDialog path={displayName} client={client}
+      capture={captureNotionSources} existingSnapshot={existingNotionSnapshot} projectFileUrl={notionProjectFileUrl}
+      onClose={() => setNotionExportOpen(false)} />}
     {/* A nested engine accepts its private port once. Keep that connection
         across the consent prompt; pending stops projection and clears edit
         authority until the checked environment is allowed to run. */}

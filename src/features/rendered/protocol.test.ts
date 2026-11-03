@@ -27,12 +27,66 @@ import {
   PREVIEW_CHILD_CSP,
   PREVIEW_SANDBOX,
   staleChildMessage,
+  matchNotionSnapshotEntries,
+  MAX_NOTION_SNAPSHOT_HTML_BYTES,
+  MAX_NOTION_SNAPSHOT_TOTAL_BYTES,
   type ChildMessage,
   type SlotRange,
 } from './protocol';
 
 const FRAME = { id: 'frame' };
 const OTHER = { id: 'other' };
+
+describe('Notion component snapshot boundary', () => {
+  const response = {kind:'export-snapshot-result',session:'session-1234',revision:7,epoch:3,request:'request-1234',entries:[{id:'island:a:0',html:'<p>Shown</p>'}]};
+  test('private-port replies remain sender, session and revision checked', () => {
+    const valid = {data:response,source:FRAME,expectedSource:FRAME,session:response.session,revision:7};
+    expect(checkChildMessage(valid).ok).toBe(true);
+    expect(checkChildMessage({...valid,source:OTHER}).ok).toBe(false);
+    expect(checkChildMessage({...valid,session:'another-session'}).ok).toBe(false);
+    expect(checkChildMessage({...valid,revision:8}).ok).toBe(false);
+    expect(staleChildMessage('export-snapshot-result')).toBe('drop');
+    for (const invalid of [{...response,epoch:-1},{...response,request:'x'},{...response,entries:undefined,error:undefined},
+      {...response,error:'Both result types'}, {...response,entries:[{id:'a',html:'x'},{id:'a',html:'y'}]},
+      {...response,entries:[{id:'a',html:'x',from:0,to:99}]}, {...response,entries:Array.from({length:129},(_,i)=>({id:String(i),html:''}))}])
+      expect(childMessageSchema.safeParse(invalid).success).toBe(false);
+  });
+  test('requests cannot add selectors, unknown capabilities or duplicate block identities', () => {
+    const request = {kind:'export-snapshot',session:response.session,revision:7,epoch:3,request:response.request,ids:['island:a:0']};
+    const check = (data:unknown) => checkParentMessage({data,source:FRAME,activeSession:response.session}).ok;
+    expect(check(request)).toBe(true);
+    expect(checkParentMessage({data:request,source:FRAME,activeSession:null}).ok).toBe(false);
+    for (const invalid of [{...request,selector:'body'},{...request,path:'secret.md'}, {...request,ids:['a','a']}, {...request,epoch:-1}]) expect(check(invalid)).toBe(false);
+  });
+  test('snapshot readiness acknowledgements retain their actual projection epoch', () => {
+    const ack = {kind:'rendered',session:response.session,revision:7,epoch:3};
+    const check = (data:unknown) => checkChildMessage({data,source:FRAME,expectedSource:FRAME,session:response.session,revision:7});
+    const result = check(ack);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.message.kind === 'rendered') expect(result.message.epoch).toBe(3);
+    expect(check({...ack,epoch:-1}).ok).toBe(false);
+    expect(check({...ack,epoch:1.5}).ok).toBe(false);
+    expect(check({...ack,revision:6}).ok).toBe(false);
+    // Non-fluid clients may still report ordinary display readiness; the
+    // export API additionally requires a matching explicit epoch.
+    expect(check({kind:'rendered',session:response.session,revision:7}).ok).toBe(true);
+  });
+  test('only parent-owned exact source ranges are returned, in requested order', () => {
+    const expected = [{id:'a',from:12,to:25},{id:'b',from:30,to:44}];
+    expect(matchNotionSnapshotEntries(expected,[{id:'b',html:'Second'},{id:'a',html:'First'}])).toEqual([
+      {from:12,to:25,html:'First'},{from:30,to:44,html:'Second'},
+    ]);
+    expect(() => matchNotionSnapshotEntries(expected,[{id:'a',html:'Only one'}])).toThrow();
+    expect(() => matchNotionSnapshotEntries(expected,[{id:'a',html:'First'},{id:'unknown',html:'Outside'}])).toThrow();
+    expect(() => matchNotionSnapshotEntries(expected,[{id:'a',html:'First'},{id:'a',html:'Duplicate'}])).toThrow();
+  });
+  test('payload limits count UTF-8 bytes per island and across the whole response', () => {
+    expect(childMessageSchema.safeParse({...response,entries:[{id:'a',html:'😀'.repeat(MAX_NOTION_SNAPSHOT_HTML_BYTES / 3)}]}).success).toBe(false);
+    const html = 'x'.repeat(MAX_NOTION_SNAPSHOT_HTML_BYTES);
+    const entries = Array.from({length:MAX_NOTION_SNAPSHOT_TOTAL_BYTES / MAX_NOTION_SNAPSHOT_HTML_BYTES + 1},(_,i)=>({id:String(i),html}));
+    expect(childMessageSchema.safeParse({...response,entries}).success).toBe(false);
+  });
+});
 
 test('reading space for floating controls is optional and bounded at the frame boundary', () => {
   const data = {kind: 'reading-preferences', session: 'session-1234',
@@ -266,6 +320,7 @@ describe('staleChildMessage', () => {
       ready: 'drop',
       'load-module': 'drop',
       rendered: 'drop',
+      'export-snapshot-result': 'drop',
       activity: 'drop',
       'render-error': 'drop',
       'edit-resource': 'drop',
