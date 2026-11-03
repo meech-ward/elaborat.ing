@@ -47,7 +47,7 @@ export function registerWhoamiTool(server: McpServer, { userClaims }: ToolContex
       description: 'Use this to see which elaborat.ing account is connected: its id, and its name and email when it has them.',
       inputSchema: z.object({}),
       outputSchema: profileSchema,
-      annotations: {
+      annotations: { title: 'Connected account',
         readOnlyHint: true,
         destructiveHint: false,
         openWorldHint: false,

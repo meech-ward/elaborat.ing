@@ -164,7 +164,7 @@ export function registerDrawTool(server: McpServer, { supabase }: ToolContext): 
           .optional()
           .describe('Optional. The version you last read or that draw returned: if the drawing changed since, nothing is saved.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Draw', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, elements, base_version }) => {
       if (!DRAWING.test(path)) {

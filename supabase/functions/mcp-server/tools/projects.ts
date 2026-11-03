@@ -79,7 +79,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description:
         "List the projects the user can read: their own and ones shared with them. Each has an id, title, revision, archived_at and the user's role.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     () => rpc('list_projects', undefined, 'projects')
   )
@@ -91,7 +91,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         'List the files and folders in a project, with each file version and who saved it (changed_by; via_agent when ' +
         'an agent saved it for them, named like "Claude for Ada"). Does not return file contents; use read_file for that.',
       inputSchema: z.object({ project_id: projectId }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List files', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id }) => {
       try {
@@ -127,7 +127,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       description:
         'Read one file: text content or image metadata, and its version. Image bytes are not returned. Pass the version as base_version when you save changes to it. Insert an existing image into a note with a document-relative Markdown image reference.',
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Read file', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       // update_and_show's card reads the file as saved before the change, to show what stays.
       _meta: VIEW_CALLABLE,
     },
@@ -157,7 +157,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Create a new project owned by the user.',
       inputSchema: z.object({ title: z.string().min(1).max(160).describe('The project title.') }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Create project', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     ({ title }) => rpc('create_project', { project_id: crypto.randomUUID(), title })
   )
@@ -167,7 +167,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Change a project title. Needs editor access.',
       inputSchema: z.object({ project_id: projectId, title: z.string().min(1).max(160) }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Rename project', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, title }) => rpc('rename_project', { project_id, title })
   )
@@ -186,7 +186,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         base_version: baseVersion.optional(),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Write file', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       // The show_file card saves an edited note with this tool.
       _meta: VIEW_CALLABLE,
     },
@@ -226,7 +226,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
           .max(4096),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Save files', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, changes, mutation_id }) => {
       const completed: typeof changes = []
@@ -247,7 +247,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Move or rename a file. Pass the version you read.',
       inputSchema: z.object({ project_id: projectId, path, to: path, base_version: baseVersion, mutation_id: mutationId }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Move file', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, path, to, base_version, mutation_id }) =>
       save(project_id, [{ op: 'move', path, to, base_version }], mutation_id)
@@ -259,7 +259,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       description:
         "Delete a file. Its history is kept, so a person can restore it. Pass the version you read.",
       inputSchema: z.object({ project_id: projectId, path, base_version: baseVersion, mutation_id: mutationId }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Delete file', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, path, base_version, mutation_id }) =>
       save(project_id, [{ op: 'delete', path, base_version }], mutation_id)
@@ -270,7 +270,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Create an empty folder. Folders that contain files exist without this.',
       inputSchema: z.object({ project_id: projectId, path, mutation_id: mutationId }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Create folder', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, path, mutation_id }) => save(project_id, [{ op: 'mkdir', path }], mutation_id)
   )
@@ -281,7 +281,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
       description:
         'Archive a project, making it read-only until unarchived. This is how an agent removes a project; only the user can permanently delete one, in the app.',
       inputSchema: z.object({ project_id: projectId }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Archive project', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id }) => rpc('archive_project', { project_id })
   )
@@ -291,7 +291,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Unarchive a project so it can be changed again.',
       inputSchema: z.object({ project_id: projectId }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Unarchive project', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id }) => rpc('unarchive_project', { project_id })
   )
@@ -307,7 +307,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         member_id: z.uuid().describe("The other person's account id."),
         role: z.enum(['viewer', 'commenter', 'editor']).nullable().describe('null removes them.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Share project', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ project_id, member_id, role }) =>
       rpc('share_project', { project_id, member_id, member_role: role })
@@ -320,7 +320,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
         'List who a project is shared with: its owner first, then the members, each with user_id, email, name (their email when they have none), role, invited_at and accepted_at. ' +
         'The owner also sees invitations not yet accepted (accepted_at null). Use a user_id with share_project to change a role.',
       inputSchema: z.object({ project_id: projectId }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List project members', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     ({ project_id }) => rpc('list_members', { project_id }, 'members')
   )
@@ -330,7 +330,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description:
         'List projects other people have invited the user to. Only the user can accept an invitation, in the app.',
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List project invitations', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     () => rpc('list_invitations', undefined, 'invitations')
   )
@@ -340,7 +340,7 @@ export function registerProjectTools(server: McpServer, context: ToolContext): v
     {
       description: 'Leave a project shared with the user, or decline an invitation to it.',
       inputSchema: z.object({ project_id: projectId }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Leave project', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
     ({ project_id }) => rpc('leave_project', { project_id })
   )

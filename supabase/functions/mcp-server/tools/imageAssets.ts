@@ -227,7 +227,7 @@ export function registerImageTools(server: McpServer, context: ToolContext) {
         path,
         revision: z.number().int().positive().optional(),
       }),
-      annotations: {
+      annotations: { title: 'Preview image',
         readOnlyHint: true,
         destructiveHint: false,
         openWorldHint: false,
@@ -246,7 +246,7 @@ export function registerImageTools(server: McpServer, context: ToolContext) {
       url: z.url().max(2048),
       mutation_id: mutationId,
     }),
-    annotations: {
+    annotations: { title: 'Import image',
       readOnlyHint: false,
       destructiveHint: false,
       openWorldHint: true,

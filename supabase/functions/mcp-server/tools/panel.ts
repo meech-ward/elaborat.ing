@@ -513,7 +513,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
           message: 'path needs project_id: give the project the file is in.',
           path: ['path'],
         }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       icons: [{ src: ICON, mimeType: 'image/svg+xml', sizes: ['any'] }],
       _meta: {
         ui: { resourceUri: PANEL_VIEW_URI, visibility: ['model', 'app'] },
@@ -553,7 +553,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
       title: 'Panel pass',
       description: 'Used by the Projects panel itself: a one-time pass that lets it open elaborat.ing. Not for use in a conversation.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Panel pass', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     async () => {
@@ -577,7 +577,7 @@ export function registerPanel(server: McpServer, { supabase, userClaims }: ToolC
       description:
         'Used by the Projects panel itself: reports the origins the panel sits in, so the site can allow them. Not for use in a conversation.',
       inputSchema: z.object({ origins: originsLine, ok: z.boolean().optional(), host: hostReport.optional() }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Panel origins', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     ({ origins, ok, host }) => {

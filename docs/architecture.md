@@ -853,14 +853,17 @@ The production server's tools are unchanged.
   archive and unarchive, share, and leave. There is no tool to
   permanently delete a project or accept an invitation; the database refuses
   both for agents anyway. Search is added with hybrid search.
-- **Every tool states its three hints** (`readOnlyHint`, `destructiveHint`,
-  `openWorldHint`), as a plugin directory requires. A tool that changes or
+- **Every tool states its title and three hints** (`annotations.title`,
+  `readOnlyHint`, `destructiveHint`, `openWorldHint`). Claude's directory
+  requires the title in the annotations. Tools with a top-level `title` use
+  the same title there. A tool that changes or
   removes anything (a file, a title, a thread's state, who has access) is
   destructive, even when history or another tool can undo it; only tools that
-  just add (a project, a folder, a comment, a reply) are not. No tool reaches
-  past the person's own account, so `openWorldHint` is always false.
+  just add (a project, a folder, a comment, a reply) are not. Only
+  `import_image` reaches an external URL, so only it has `openWorldHint` set
+  to true.
   `tools/annotations.test.ts` holds the list and fails for a tool without
-  all three.
+  all four.
 - **`whoami` is the account's profile** (`_meta["openai/profile"]`), which
   ChatGPT reads to tell connected accounts apart: exactly `id` (the account's
   id), and `name` and `email` where the account has them, as structured

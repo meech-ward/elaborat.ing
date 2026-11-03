@@ -64,33 +64,33 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // view is a short-lived row of the server's own, not the person's data, so
   // it stays read-only: a host may ask before running a tool that is not.
   const panel = tools.find((tool) => tool.name === 'open_panel')
-  assertEquals(panel?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+  assertEquals(panel?.annotations, { title: 'Projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
   // create_and_show only adds a file: the database refuses it where one exists. Its view is the file view.
   const create = tools.find((tool) => tool.name === 'create_and_show')
-  assertEquals(create?.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
+  assertEquals(create?.annotations, { title: 'Create and show', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
   assertEquals(create?._meta, { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } })
   // draw only adds elements to a drawing (or creates it): none already there is removed or changed.
   const draw = tools.find((tool) => tool.name === 'draw')
-  assertEquals(draw?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(draw?.annotations, { title: 'Draw', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   // append_to_note only adds text at the end of a note (or creates it): nothing already in it changes.
   const append = tools.find((tool) => tool.name === 'append_to_note')
   assertEquals(append?.title, 'Add to note')
-  assertEquals(append?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(append?.annotations, { title: 'Add to note', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   // update_and_show overwrites a file, as write_file does, and mounts the same view.
   const update = tools.find((tool) => tool.name === 'update_and_show')
   assertEquals(update?.title, 'Change and show')
-  assertEquals(update?.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false })
+  assertEquals(update?.annotations, { title: 'Change and show', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false })
   assertEquals(update?._meta, { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } })
   // card_report logs how a live card went, for the view only, and stores nothing.
   const report = tools.find((tool) => tool.name === 'card_report')
-  assertEquals(report?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(report?.annotations, { title: 'Card report', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   assertEquals(report?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
   // panel_pass adds a short-lived pass for the panel's view, and changes nothing of the person's.
   const pass = tools.find((tool) => tool.name === 'panel_pass')
-  assertEquals(pass?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(pass?.annotations, { title: 'Panel pass', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   // panel_origins logs where the panel's view sits, and stores nothing.
   const origins = tools.find((tool) => tool.name === 'panel_origins')
-  assertEquals(origins?.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+  assertEquals(origins?.annotations, { title: 'Panel origins', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
   assertEquals(origins?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
 })
 

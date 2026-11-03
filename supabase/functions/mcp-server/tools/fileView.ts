@@ -490,7 +490,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         'Where the chat allows it, the user can edit a note in the card and save it; read the file again after that. ' +
         'Use this when the user wants to see or edit a file. To read a file yourself, use read_file.',
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Show file', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ...VIEW_CALLABLE, ui: { ...VIEW_CALLABLE.ui, resourceUri: FILE_VIEW_URI } },
     },
     ({ project_id, path }) => showFilePayload(context, project_id, path)
@@ -514,7 +514,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         content: z.string().describe('The complete content of the new file.'),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Create and show', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       // The model's tool only: the view never calls it.
       _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
     },
@@ -558,7 +558,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         mutation_id: mutationId,
       }),
       // It overwrites the file, so it is destructive, as write_file is.
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Change and show', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       // The model's tool only: the view never calls it.
       _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
     },
@@ -610,7 +610,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         first_partial_ms: z.number().int().min(0).max(DAY_MS).nullable().describe('When the first came, in ms after the card started; null for none.'),
         total_ms: z.number().int().min(0).max(DAY_MS).describe('When the card settled, in ms after it started.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Card report', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     ({ host, tool, partials, first_partial_ms, total_ms }) => {
@@ -628,7 +628,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
       description:
         "Used by the file view itself: one drawing or diagram a note embeds that did not fit in show_file's result, for the view to show. Not for use in a conversation.",
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Card embed', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     ({ project_id, path }) => cardEmbedPayload(context, project_id, path)

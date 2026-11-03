@@ -866,7 +866,7 @@ Deno.test("card_embed is the view's alone, and sends it a drawing or diagram as 
     // Only the view can call it, so the SVG in its structuredContent never reaches the model.
     const tool = (await client.listTools()).tools.find((entry) => entry.name === 'card_embed')
     assertEquals(tool?._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
-    assertEquals(tool?.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+    assertEquals(tool?.annotations, { title: 'Card embed', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
     const call = async (name: string, path: string) => (await client.callTool({ name, arguments: { project_id: PROJECT, path } })) as CallToolResult
     const cases = [['art/flow.excalidraw', 'drawn'], ['art/huge.excalidraw', 'too_big'], ['art/broken.excalidraw', 'unreadable'], ['flows/new.d2', 'not_drawn'], ['flows/signup.d2', 'stale']]
     for (const [path, status] of cases) {

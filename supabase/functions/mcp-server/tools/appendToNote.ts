@@ -85,7 +85,7 @@ export function registerAppendToNote(server: McpServer, { supabase }: ToolContex
           .describe('Optional. The version you last read or that append_to_note returned: if the note changed since, nothing is saved.'),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Add to note', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, text, base_version, mutation_id }) => {
       if (!NOTE.test(path) || OBSIDIAN_DRAWING.test(path)) return errorResult(notANote(path))

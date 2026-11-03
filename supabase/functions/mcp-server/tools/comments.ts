@@ -194,7 +194,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         since: z.number().int().nonnegative().optional()
           .describe('With ask_agent: only threads asked about after this revision, from an earlier list.'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List comments', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, include_resolved, ask_agent, since }) => {
       try {
@@ -263,7 +263,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         point: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional()
           .describe('A spot on the element, as fractions of its width and height from its top-left corner.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Add comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     async (input): Promise<CallToolResult> => {
       const { project_id, path, body, quote, prefix, suffix, heading, element_id, point } = input
@@ -345,7 +345,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         version: z.number().int().positive().optional()
           .describe("The version of the thread's file you saved in answer, from write_file or save_files."),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Reply to comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     async ({ thread_id, body, version }) => {
       try {
@@ -371,7 +371,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         thread_id: threadId,
         resolved: z.boolean().optional().describe('false reopens the thread. Defaults to true.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Resolve or reopen comment', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ thread_id, resolved }) => {
       try {

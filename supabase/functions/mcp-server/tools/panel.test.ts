@@ -57,7 +57,7 @@ Deno.test('open_panel opens from the sidebar and a conversation panel, and its v
     const tool = (await client.listTools()).tools.find((entry) => entry.name === 'open_panel')
     assert(tool, 'open_panel is listed')
     assertEquals(tool.title, 'Projects')
-    assertEquals(tool.annotations, { readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+    assertEquals(tool.annotations, { title: 'Projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
     assertEquals(tool._meta, {
       ui: { resourceUri: PANEL_VIEW_URI, visibility: ['model', 'app'] },
       'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
@@ -118,7 +118,7 @@ Deno.test('panel_origins is for the view only, and logs one line with the caller
     const tool = (await client.listTools()).tools.find((entry) => entry.name === 'panel_origins')
     assert(tool, 'panel_origins is listed')
     assertEquals(tool._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
-    assertEquals(tool.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+    assertEquals(tool.annotations, { title: 'Panel origins', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
 
     const origins = 'https://a1b2c3.web-sandbox.example https://chat.example'
     const { lines, value: result } = await withLog(
@@ -212,7 +212,7 @@ Deno.test('panel_pass is for the view only, and gives it a new pass in _meta alo
     assert(tool, 'panel_pass is listed')
     assertEquals(tool._meta, { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true })
     // It adds a short-lived row, and changes nothing of the person's.
-    assertEquals(tool.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false })
+    assertEquals(tool.annotations, { title: 'Panel pass', readOnlyHint: false, destructiveHint: false, openWorldHint: false })
 
     const first = (await client.callTool({ name: 'panel_pass', arguments: {} })) as CallToolResult
     const second = (await client.callTool({ name: 'panel_pass', arguments: {} })) as CallToolResult
