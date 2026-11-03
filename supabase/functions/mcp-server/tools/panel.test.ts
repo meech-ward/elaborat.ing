@@ -87,7 +87,7 @@ Deno.test('open_panel opens from the sidebar and a conversation panel, and its v
     })
     // One widget origin for the card and the panel, so the site allows one view origin per chat.
     assertEquals(view._meta['openai/widgetDomain'], FILE_VIEW_META['openai/widgetDomain'])
-    assertStringIncludes(view.text, "elaborat.ing isn't switched on for this panel yet.")
+    assertStringIncludes(view.text, 'The Projects panel could not open in this chat.')
     assertStringIncludes(view.text, 'Open in elaborat.ing')
     assertStringIncludes(view.text, '<summary>Details</summary>Origins to allow:<code id="origins">')
     // The view puts each page's pass in its fragment, never its query, and asks panel_pass for a new one.
@@ -256,7 +256,7 @@ Deno.test('with no arguments it opens the projects list, reading nothing, with a
   await withClient(async (client, queries) => {
     const result = await call(client, {})
     assert(!result.isError, JSON.stringify(result))
-    assertEquals(text(result), 'Opened your projects beside the chat.')
+    assertEquals(text(result), 'Projects panel for your projects. If it cannot open in this chat, use Open in elaborat.ing: https://elaborat.ing/')
     assertEquals(result.structuredContent, { url: 'https://elaborat.ing/' })
     const pass = String(result._meta?.[PANEL_PASS_KEY])
     assertMatch(pass, /^[0-9a-f]{64}$/)
@@ -271,14 +271,14 @@ Deno.test('with a project it reads its title as the user, and opens it or one of
   await withClient(async (client, queries) => {
     const project = await call(client, { project_id: PROJECT })
     assert(!project.isError, JSON.stringify(project))
-    assertEquals(text(project), 'Opened Launch plan beside the chat.')
+    assertEquals(text(project), `Projects panel for Launch plan. If it cannot open in this chat, use Open in elaborat.ing: https://elaborat.ing/projects/${PROJECT}`)
     assertEquals(project.structuredContent, { url: `https://elaborat.ing/projects/${PROJECT}` })
     assertEquals(project._meta?.[PANEL_META_KEY], `/embed/projects/${PROJECT}`)
     assertMatch(String(project._meta?.[PANEL_PASS_KEY]), /^[0-9a-f]{64}$/)
     assertEquals(queries[0], ['from', 'projects', 'select', 'title', 'eq', 'id', PROJECT])
 
     const file = await call(client, { project_id: PROJECT, path: 'notes/a plan#1.mdx' })
-    assertEquals(text(file), 'Opened notes/a plan#1.mdx in Launch plan beside the chat.')
+    assertEquals(text(file), `Projects panel for notes/a plan#1.mdx in Launch plan. If it cannot open in this chat, use Open in elaborat.ing: https://elaborat.ing/projects/${PROJECT}/notes/a%20plan%231.mdx`)
     assertEquals(file.structuredContent, { url: `https://elaborat.ing/projects/${PROJECT}/notes/a%20plan%231.mdx` })
     assertEquals(file._meta?.[PANEL_META_KEY], `/embed/projects/${PROJECT}/notes/a%20plan%231.mdx`)
     assert(file._meta?.[PANEL_PASS_KEY] !== project._meta?.[PANEL_PASS_KEY], 'each result has a new pass')

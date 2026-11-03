@@ -51,10 +51,10 @@
               "expected_behavior": "Finds the project, then shows welcome.mdx as a card with its drawing, its diagram and an Open in elaborat.ing link."
             },
             {
-              "description": "Write a new note and show it",
-              "prompt": "In elaborat.ing, add a note called meeting.mdx to my welcome project with three action items from today's standup, then show it.",
-              "tools_triggered": "list_projects, create_and_show (or write_file, then show_file)",
-              "expected_behavior": "Saves a new meeting.mdx with three action items in the project and shows it as a card, with create_and_show, or with write_file and then show_file."
+              "description": "Create a note from supplied action items. Setup: the reviewer project contains welcome.mdx and no meeting.mdx.",
+              "prompt": "In elaborat.ing, add meeting.mdx to the project containing welcome.mdx with these sample standup action items: draft the test plan, review the diagram, and update the README. Then show the note.",
+              "tools_triggered": "list_projects, list_files as needed, create_and_show (or write_file, then show_file)",
+              "expected_behavior": "Saves a new meeting.mdx in the project containing welcome.mdx with all three supplied action items, without inventing meeting details, then shows it as a card using create_and_show, or write_file followed by show_file."
             },
             {
               "description": "Make a drawing and show it",

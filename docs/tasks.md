@@ -392,6 +392,10 @@ matters.
   Sign out action uses Supabase's default global scope, which signs out
   other devices too. Cover session scope and account switching with tests
   so a reviewer account can be used without revoking personal sessions.
+- Preserve safe image import validation details when the `images` function
+  returns an HTTP error. The MCP wrapper currently exposes only "Edge Function
+  returned a non-2xx status code", hiding expected URL refusals such as an
+  own-host URL. Cover this boundary without weakening the URL restrictions.
 - Record the exact successful release SHA as a GitHub production deployment
   and reject an older or divergent candidate before any deployment writes.
   The newest-green resolver can otherwise roll back a newer reviewed manual
