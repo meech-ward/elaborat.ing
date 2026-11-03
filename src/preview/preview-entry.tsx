@@ -76,11 +76,13 @@ import type { ComponentProps, ComponentPropsWithoutRef } from "react";
 import {
   checkParentMessage,
   encodePropLiteral,
+  MAX_NOTION_SNAPSHOT_TOTAL_BYTES,
   type CommentMarksMessage,
   type FrameRect,
   type RenderMessage,
   type SlotInfo,
 } from "../features/rendered/protocol";
+import {serializeNotionSnapshot, notionPresentationStyle, notionElementHidden} from './notionSnapshot';
 import {
   SourceBlock,
   SourceLeaf,
@@ -110,6 +112,8 @@ setCodeCopyHandler(text => codeClipboard.copy(text));
 let slotTable: SlotInfo[] = [];
 /** Monotonic render generation: completions from a superseded generation are dropped. */
 let renderSeq = 0;
+let snapshotRender: {session: string; revision: number; epoch: number; sequence: number} | null = null;
+let snapshotBusy = false;
 /**
  * Generated pixels for Drawing/Diagram embeds, keyed by workspace path.
  * Pixels only: the frame never receives file bytes, tokens, or filesystem
@@ -291,6 +295,7 @@ function NumberControl(props: {
   const [draft, setDraft] = useState(String(props.value));
   return (
     <label
+      className="authoring-prop-control"
       style={{ display: "inline-flex", gap: "0.25rem", alignItems: "center" }}
     >
       {props.label}
@@ -319,6 +324,7 @@ function StringControl(props: {
   const [draft, setDraft] = useState(props.value);
   return (
     <label
+      className="authoring-prop-control"
       style={{ display: "inline-flex", gap: "0.25rem", alignItems: "center" }}
     >
       {props.label}
@@ -378,7 +384,7 @@ function CustomControls(props: {__slot?: number; inline?: boolean; children?: Re
             : <StringControl label={label} value={String(prop.value ?? '')} onCommit={commit} />}
         </span>;
       })}
-    </fieldset> : slot ? <small>{slot.reason ?? 'Edit this component in Source.'}</small> : null}
+    </fieldset> : slot ? <small className="authoring-actions">{slot.reason ?? 'Edit this component in Source.'}</small> : null}
   </span>;
 }
 
@@ -399,7 +405,7 @@ function CounterWithControls(props: {
     >
       <Counter initial={props.initial} step={props.step} />
       {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
-        <small title={slot?.reason ?? "Computed output"}>
+        <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
       ) : null}
@@ -458,7 +464,7 @@ function CalloutWithControls(props: {
         {props.children}
       </Callout>
       {slotIndex !== null && !editable && !isReadOnly() ? (
-        <small title={slot?.reason ?? "Computed output"}>
+        <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
       ) : null}
@@ -786,6 +792,7 @@ const appOwnedComponents = {
 
 async function renderDocument(pending: PendingRender): Promise<void> {
   const seq = ++renderSeq;
+  snapshotRender = null;
   // Publish the newest metadata synchronously so edits made while the new
   // code still compiles attribute to the latest revision; the slow
   // completion below is dropped unless it is still the newest generation.
@@ -807,7 +814,8 @@ async function renderDocument(pending: PendingRender): Promise<void> {
           () => {
             for (const listener of islandListeners) listener();
           },
-          postToParent,
+          message => postToParent((message as {kind?: unknown}).kind === 'rendered'
+            ? {...message, epoch:shownEpoch} : message),
           { codeFences: true, plugins: [typeInPlugin] },
         ));
         setCodeBlockHooks({
@@ -881,6 +889,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         typing = typeIn(editor.view, start, keepWritingInView);
       }
       showPlace();
+      snapshotRender = {session: pending.session, revision: pending.revision, epoch: projection.epoch, sequence: seq};
       return;
     }
     // The JSX runtime stays in evaluation scope; document components arrive
@@ -946,6 +955,67 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   }
 }
 
+/** Only trusted parent requests select blocks. This never crosses an iframe or reads files. */
+async function exportSnapshot(message: Extract<import('../features/rendered/protocol').ParentMessage, {kind:'export-snapshot'}>): Promise<void> {
+  const response = (result: {entries: Array<{id:string;html:string}>} | {error:string}) =>
+    postToParent({kind:'export-snapshot-result', session:message.session, revision:message.revision,
+      epoch:message.epoch, request:message.request, ...result});
+  if (snapshotBusy) {response({error:'Another component export is already running.'}); return;}
+  snapshotBusy = true;
+  const deadline = performance.now() + 10_000;
+  let observer: MutationObserver | undefined;
+  try {
+    const stillCurrent = () => activeSession === message.session && activeRevision === message.revision;
+    let roots: HTMLElement[] = [];
+    while (true) {
+      if (!stillCurrent() || shownEpoch > message.epoch) throw new Error('The document changed while preparing the export.');
+      if (fluidEditor?.hasPendingEdits) throw new Error('Finish the current edit before exporting.');
+      if (snapshotRender?.session === message.session && snapshotRender.revision === message.revision && snapshotRender.epoch === message.epoch) {
+        roots = message.ids.map(id => {
+          const root = currentIslandOffsets.has(id) ? fluidEditor?.islands.get(id) : undefined;
+          if (!root?.isConnected) throw new Error('A requested component is no longer rendered.');
+          return root;
+        });
+        break;
+      }
+      if (performance.now() >= deadline) throw new Error('The component preview did not finish rendering in time.');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const generation = snapshotRender;
+    let changedAt = performance.now();
+    observer = new MutationObserver(() => {changedAt = performance.now();});
+    for (const root of roots) observer.observe(root, {subtree:true, childList:true, attributes:true, characterData:true});
+    // Let effects, lazy charts, inline fonts and validated raster images
+    // settle. A perpetual component is bounded by the same deadline.
+    while (true) {
+      if (!stillCurrent() || snapshotRender !== generation || fluidEditor?.hasPendingEdits)
+        throw new Error('The document changed while preparing the export.');
+      const pendingCharts = roots.flatMap(root => [...root.querySelectorAll('[data-chart-pending]')]);
+      if (pendingCharts.some(chart => chart.getAttribute('aria-busy') !== 'true')) throw new Error('A chart could not render for export.');
+      const images = roots.flatMap(root => [...root.querySelectorAll('img')]);
+      // Hidden export frames are outside lazy-image visibility thresholds.
+      // Their parent-validated data pixels can be serialized without changing
+      // the live loading mode or waiting for a visibility-triggered decode.
+      const lazyPixels = (image: HTMLImageElement) => image.loading === 'lazy' && /^data:image\/(?:png|jpeg|webp|gif);base64,/.test(image.getAttribute('src') ?? '');
+      if (images.some(image => image.complete && !image.naturalWidth && !lazyPixels(image))) throw new Error('An image could not render for export.');
+      if (!pendingCharts.length && images.every(image => image.complete || lazyPixels(image)) && document.fonts.status !== 'loading' && performance.now() - changedAt >= 150) break;
+      if (performance.now() >= deadline) throw new Error('The component preview did not finish rendering in time.');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    let total = 0;
+    const entries = roots.map((root, index) => {
+      const html = serializeNotionSnapshot(root, {style:notionPresentationStyle, hidden:notionElementHidden});
+      total += new TextEncoder().encode(html).byteLength;
+      if (total > MAX_NOTION_SNAPSHOT_TOTAL_BYTES) throw new Error('The component export exceeds the snapshot size limit.');
+      return {id:message.ids[index], html};
+    });
+    if (!stillCurrent() || snapshotRender !== generation) throw new Error('The document changed while preparing the export.');
+    response({entries});
+  } catch (error) {
+    response({error:(error instanceof Error ? error.message : 'The component could not be exported.').slice(0, 1000)});
+  } finally {observer?.disconnect(); snapshotBusy = false;}
+}
+
 // Everything from the app arrives on the port it gave this document
 // (parentPort.ts): nothing else (sibling frames, opener, extensions) has it.
 function onParentMessage(event: MessageEvent): void {
@@ -956,6 +1026,10 @@ function onParentMessage(event: MessageEvent): void {
   });
   if (!checked.ok) return;
   const message = checked.message;
+  if (message.kind === 'export-snapshot') {
+    void exportSnapshot(message);
+    return;
+  }
   if (message.kind === 'document-embed-bootstrap' || message.kind === 'document-embed-state') {
     receiveDocumentEmbed(message);
     return;

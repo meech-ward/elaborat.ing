@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test"
 import { APP_URL, HARNESS_URL, SANDBOX_URL } from "./tests/browser/urls.ts"
 
+// An explicitly selected port range belongs to this checkout. Refuse an
+// occupied port instead of silently testing another checkout's build.
+const reuseExistingServer = !process.env.CI && process.env.ELABORATING_BROWSER_TEST_PORT_OFFSET === undefined
+
 // Browser tests run against production builds: the app built against a
 // stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test),
 // the test harness (`bun run build:harness`, which also writes its frame page
@@ -35,14 +39,14 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npx vite preview --host 127.0.0.1 --port 4173 --strictPort",
+      command: `npx vite preview --host 127.0.0.1 --port ${new URL(APP_URL).port} --strictPort`,
       url: APP_URL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
     },
     {
-      command: "npx vite preview --config tests/browser/harness/vite.config.ts --host 127.0.0.1 --port 4174 --strictPort",
+      command: `npx vite preview --config tests/browser/harness/vite.config.ts --host 127.0.0.1 --port ${new URL(HARNESS_URL).port} --strictPort`,
       url: HARNESS_URL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
     },
     // The harness's frame page on a second origin, through the sandbox
     // domain's Worker (rendered-sandbox.spec.ts). Every path but the frame's
@@ -50,7 +54,7 @@ export default defineConfig({
     {
       command: "node tests/browser/sandbox-server.ts",
       port: Number(new URL(SANDBOX_URL).port),
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
     },
   ],
 })

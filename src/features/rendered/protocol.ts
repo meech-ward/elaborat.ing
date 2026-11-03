@@ -209,6 +209,42 @@ export function literalMatchesKind(
 
 /** A whole number from 0: an index, a position, a revision or an epoch. */
 const whole = z.int().check(z.nonnegative());
+
+export const MAX_NOTION_SNAPSHOT_ENTRIES = 128;
+export const MAX_NOTION_SNAPSHOT_HTML_BYTES = 2 * 1024 * 1024;
+export const MAX_NOTION_SNAPSHOT_TOTAL_BYTES = 8 * 1024 * 1024;
+const snapshotId = z.string().check(z.minLength(1), z.maxLength(128));
+const snapshotRequestId = z.string().check(z.minLength(8), z.maxLength(128));
+export const notionSnapshotEntriesSchema = z.array(z.strictObject({
+  id: snapshotId,
+  html: z.string().check(z.maxLength(MAX_NOTION_SNAPSHOT_HTML_BYTES)),
+})).check(z.maxLength(MAX_NOTION_SNAPSHOT_ENTRIES), z.refine(entries => {
+  let total = 0;
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    const bytes = new TextEncoder().encode(entry.html).byteLength;
+    total += bytes;
+    if (ids.has(entry.id) || bytes > MAX_NOTION_SNAPSHOT_HTML_BYTES || total > MAX_NOTION_SNAPSHOT_TOTAL_BYTES) return false;
+    ids.add(entry.id);
+  }
+  return true;
+}));
+
+/** Frame HTML is untrusted display data. Source ownership stays in the parent. */
+export function matchNotionSnapshotEntries(
+  expected: readonly {id: string; from: number; to: number}[],
+  entries: readonly {id: string; html: string}[],
+): Array<{from: number; to: number; html: string}> {
+  const checked = notionSnapshotEntriesSchema.parse(entries);
+  if (checked.length !== expected.length || new Set(expected.map(entry => entry.id)).size !== expected.length)
+    throw new Error('The export snapshot did not match the requested document blocks.');
+  const byId = new Map(checked.map(entry => [entry.id, entry.html]));
+  return expected.map(entry => {
+    const html = byId.get(entry.id);
+    if (html === undefined) throw new Error('The export snapshot did not match the requested document blocks.');
+    return {from: entry.from, to: entry.to, html};
+  });
+}
 const embedId = z.string().check(z.minLength(1), z.maxLength(128));
 export const documentEmbedStateSchema = z.strictObject({
   dirty: z.optional(z.boolean()), pending: z.optional(z.boolean()),
@@ -433,6 +469,11 @@ export type CommentMarksMessage = z.infer<typeof commentMarksMessageSchema>;
 
 export const parentMessageSchema = z.union([
   z.strictObject({
+    kind: z.literal('export-snapshot'), session: z.string().check(z.minLength(8)),
+    revision: whole, epoch: whole, request: snapshotRequestId,
+    ids: z.array(snapshotId).check(z.maxLength(MAX_NOTION_SNAPSHOT_ENTRIES), z.refine(ids => new Set(ids).size === ids.length)),
+  }),
+  z.strictObject({
     kind: z.literal('document-embed-bootstrap'), session: z.string().check(z.minLength(8)),
     revision: whole, id: embedId,
     srcdoc: z.string().check(z.maxLength(10 * 1024 * 1024)),
@@ -550,6 +591,12 @@ export type FrameRect = z.infer<typeof frameRectSchema>;
 /** Child -> parent: result or edit messages. */
 export const childMessageSchema = z.discriminatedUnion("kind", [
   z.strictObject({
+    kind: z.literal('export-snapshot-result'), session: z.string().check(z.minLength(8)),
+    revision: whole, epoch: whole, request: snapshotRequestId,
+    entries: z.optional(notionSnapshotEntriesSchema),
+    error: z.optional(z.string().check(z.minLength(1), z.maxLength(1000))),
+  }).check(z.refine(message => (message.entries === undefined) !== (message.error === undefined))),
+  z.strictObject({
     kind: z.literal('document-embed-open'), session: z.string().check(z.minLength(8)),
     revision: whole, id: embedId, path: z.string().check(z.minLength(1), z.maxLength(512)), from: whole,
   }),
@@ -665,6 +712,8 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     kind: z.literal("rendered"),
     session: z.string().check(z.minLength(1)),
     revision: whole,
+    /** The projection actually mounted by the fluid preview, including module reloads at one revision. */
+    epoch: z.optional(whole),
   }),
   // The person used the frame (a key, a press, the wheel): the page around
   // it cannot see input there. In a chat's panel the workbench then leaves
@@ -857,6 +906,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case 'document-embed-action':
     case 'document-height':
     case "place":
+    case 'export-snapshot-result':
       return "drop";
     case "edit-rejected":
       return "refusal";

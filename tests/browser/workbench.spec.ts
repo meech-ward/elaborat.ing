@@ -788,7 +788,7 @@ const tabBeside = (page: Page, name: string) =>
 test("a tab's file actions open from ... on the active tab, and on right-click on any tab", async ({ page }) => {
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await openFromExplorer(page, "b.md")
-  const items = ["Save", "Duplicate", "Reload", "Export", "Format"]
+  const items = ["Save", "Duplicate", "Reload", "Export", "Export to Notion", "Format"]
   const menu = page.getByRole("menu", { name: "File actions" })
   const more = page.getByRole("button", { name: "File actions" })
   // "..." sits over the active tab's end, shown under the pointer and with
@@ -802,7 +802,7 @@ test("a tab's file actions open from ... on the active tab, and on right-click o
   expect((await tabBeside(page, "b.md")).width).toBe(width)
   expect((await tabBeside(page, "b.md")).room).toBeGreaterThanOrEqual(0)
   await more.click()
-  for (const name of items) await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  for (const name of items) await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible()
   expect((await tabBeside(page, "b.md")).width).toBe(width)
   expect((await tabBeside(page, "b.md")).room).toBeGreaterThanOrEqual(0)
   await expect(menu.getByRole("menuitem")).toHaveCount(items.length)
@@ -813,7 +813,7 @@ test("a tab's file actions open from ... on the active tab, and on right-click o
   await expect(page.getByRole("button", { name: "File actions" })).toBeFocused()
   // Right-click opens the same menu for that tab's file.
   await page.getByRole("tab", { name: "a.md" }).click({ button: "right" })
-  for (const name of items) await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  for (const name of items) await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(menu).toHaveCount(0)
 })

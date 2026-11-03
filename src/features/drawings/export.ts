@@ -112,6 +112,9 @@ export async function exportDrawingPng(
   if (!Number.isFinite(scale) || scale <= 0) {
     throw new Error(`invalid export scale: expected a positive number, got ${String(scale)}`);
   }
+  if (options?.maxPixels !== undefined && (!Number.isSafeInteger(options.maxPixels) || options.maxPixels < 1)) {
+    throw new Error('invalid PNG pixel limit: expected a positive safe integer');
+  }
   const { exportToBlob } = await loadExporters();
   return exportToBlob({
     elements: scene.elements,
@@ -119,9 +122,17 @@ export async function exportDrawingPng(
     files: scene.files ?? null,
     mimeType: 'image/png',
     exportPadding: options?.padding ?? 10,
-    getDimensions: (width: number, height: number) => ({
-      width: Math.max(1, Math.round(width * scale)),
-      height: Math.max(1, Math.round(height * scale)),
-    }),
+    getDimensions: (width: number, height: number) => drawingPngDimensions(width, height, scale, options?.maxPixels),
   });
+}
+
+/** The native export calls this with its exact bounds, before allocating a canvas. */
+export function drawingPngDimensions(width: number, height: number, scale: number, maxPixels?: number) {
+  if (maxPixels === undefined) return {width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale))};
+  if (![width, height, scale].every(value => Number.isFinite(value) && value > 0) || !Number.isSafeInteger(maxPixels) || maxPixels < 1)
+    throw new Error('invalid bounded PNG dimensions');
+  // The per-axis bounds also cover very thin scenes, whose other dimension
+  // must still occupy one pixel after rounding.
+  const bounded = Math.min(scale, Math.sqrt(maxPixels / width / height), maxPixels / width, maxPixels / height);
+  return {width: Math.max(1, Math.floor(width * bounded)), height: Math.max(1, Math.floor(height * bounded))};
 }
