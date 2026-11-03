@@ -29,10 +29,9 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
       title: 'Preview component',
       description:
         'Show the user a preview of the MDX components a component file (.mdx) exports, drawn with sample props in the chat as a card. ' +
-        'To preview a draft before saving it, pass its source; it is not saved, and its workspace: imports come from the saved files. ' +
-        'Name one component to show only it, and pass props to use instead of the defaults its componentMeta declares. ' +
-        'Where the chat allows it, a preview that fails or a component that throws is reported to you on your next turn. ' +
-        'Notes that use components are previewed by show_file.',
+        'An optional source previews an unsaved draft; its workspace: imports come from the saved files. ' +
+        'An optional component limits the preview to that export, and props override its componentMeta defaults. ' +
+        'Where the chat allows it, a failed preview or component error is reported in the conversation.',
       inputSchema: z.object({
         project_id: projectId,
         path: path.describe('The component file, such as components/chart.mdx. With source, the path the draft is for.'),
@@ -44,7 +43,7 @@ export function registerComponentPreview(server: McpServer, { supabase, userClai
           .describe('The one exported component to show. By default, each one the file exports.'),
         props: z.record(z.string(), z.unknown()).optional().describe('Sample props as JSON values, such as {"title": "Q3"}. By default, the componentMeta defaults.'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Preview component', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { resourceUri: FILE_VIEW_URI } },
     },
     async ({ project_id, path, source, component, props }) => {

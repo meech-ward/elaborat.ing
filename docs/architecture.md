@@ -853,14 +853,22 @@ The production server's tools are unchanged.
   archive and unarchive, share, and leave. There is no tool to
   permanently delete a project or accept an invitation; the database refuses
   both for agents anyway. Search is added with hybrid search.
-- **Every tool states its three hints** (`readOnlyHint`, `destructiveHint`,
-  `openWorldHint`), as a plugin directory requires. A tool that changes or
+- **Every tool states its title and three hints** (`annotations.title`,
+  `readOnlyHint`, `destructiveHint`, `openWorldHint`). Claude's directory
+  requires the title in the annotations. Tools with a top-level `title` use
+  the same title there. A tool that changes or
   removes anything (a file, a title, a thread's state, who has access) is
   destructive, even when history or another tool can undo it; only tools that
-  just add (a project, a folder, a comment, a reply) are not. No tool reaches
-  past the person's own account, so `openWorldHint` is always false.
+  just add (a project, a folder, a comment, a reply) are not. Only
+  `import_image` reaches an external URL, so only it has `openWorldHint` set
+  to true.
   `tools/annotations.test.ts` holds the list and fails for a tool without
-  all three.
+  all four.
+- **Tool descriptions explain only their own operation and input fields.**
+  Model workflow guidance, tool sequencing and the explicit authorization
+  rule for fetching external images live in the server instructions and
+  plugin skills, rather than tool descriptions, as Claude's directory
+  requires. The metadata test rejects cross-tool directives in descriptions.
 - **`whoami` is the account's profile** (`_meta["openai/profile"]`), which
   ChatGPT reads to tell connected accounts apart: exactly `id` (the account's
   id), and `name` and `email` where the account has them, as structured
@@ -1899,16 +1907,29 @@ of at least two labels, checked as the sandbox domain's `FRAME_ANCESTORS` is
 anything else, the policy is `'none'`. frame-ancestors checks every ancestor.
 ChatGPT serves each plugin's view from its own subdomain of
 `web-sandbox.oaiusercontent.com`, nested in a frame of the same origin inside
-`https://chatgpt.com`, so the hosted value is
+`https://chatgpt.com`, so the hosted value includes
 `https://*.web-sandbox.oaiusercontent.com https://chatgpt.com`. That lets any
-plugin's view frame `/embed`; the pass (below) is what keeps an account out of
-every frame but this site's own view, and naming the panel's exact origin
-would not cover the case the pass leaves open, a server that gets the panel's
+ChatGPT plugin's view frame `/embed`; the pass (below) is what keeps an
+account out of every frame but this site's own view, and naming the panel's
+exact origin would not cover the case the pass leaves open, a server that gets the panel's
 own origin. The panel's view shows its origins when it cannot open, and
 reports them to `panel_origins`, so the list can be narrowed or extended for
 another host. The service worker
 never answers `/embed` (it is in `navigateFallbackDenylist`), and in the
 panel none registers.
+
+**Claude panel framing is configured, with live verification still pending.**
+The hosted value also allows
+`https://8f145b39f2855fffeaffba067d24140d.claudemcpcontent.com` and
+`https://claude.ai`. Claude's
+[documented sandbox origin](https://claude.com/docs/connectors/building/mcp-apps/getting-started#set-uidomain-for-claude)
+is the first 32 hexadecimal characters of SHA-256 of the full connector URL,
+followed by `.claudemcpcontent.com`; the exact URL here is
+`https://elaborat.ing/mcp`, without a trailing slash. The exact sandbox
+origin and outer Claude origin are allowed, preserving the ChatGPT entries.
+This permits the expected ancestor chain at our Worker; it does not prove
+that Claude permits the nested frame or that the panel opens. Verify both
+in a live Claude conversation before describing the panel as working there.
 
 **Decision: the app in a panel also needs a pass only this site's server
 issues.** `frame-ancestors` is the first line of defence. It trusts the

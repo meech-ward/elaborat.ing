@@ -62,9 +62,7 @@ export function registerAppendToNote(server: McpServer, { supabase }: ToolContex
         "The text goes after the note's last line with exactly one blank line between them: the note's trailing whitespace " +
         'is trimmed first, and the note then ends with one line break. ' +
         'Each call saves, and the user sees the new text come in, in elaborat.ing and in its panel beside the chat. ' +
-        'To let them watch a note being written, call this several times, a section each (a heading and its paragraphs), ' +
-        'in reading order, not one big write_file. It only adds: nothing already in the note changes. ' +
-        'To change or remove text, read the note and use write_file with base_version. ' +
+        'It only adds: nothing already in the note changes. ' +
         "Returns the note's new version, the characters added and the note's new length.",
       inputSchema: z.object({
         project_id: projectId,
@@ -74,18 +72,17 @@ export function registerAppendToNote(server: McpServer, { supabase }: ToolContex
           .min(1)
           .max(MAX_APPEND_CHARS)
           .describe(
-            "The text to add, in the note's format: Markdown, or MDX in a .mdx note. At most 4,000 characters, so write a " +
-              'long note a section at a time. Keep each block (a list, a table, a code block, a component) whole in one call.'
+            "The text to add, in the note's format: Markdown, or MDX in a .mdx note. At most 4,000 characters; each value is appended as one complete block."
           ),
         base_version: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe('Optional. The version you last read or that append_to_note returned: if the note changed since, nothing is saved.'),
+          .describe('Optional expected current version. If the note has a different saved version, nothing is saved.'),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Add to note', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, text, base_version, mutation_id }) => {
       if (!NOTE.test(path) || OBSIDIAN_DRAWING.test(path)) return errorResult(notANote(path))

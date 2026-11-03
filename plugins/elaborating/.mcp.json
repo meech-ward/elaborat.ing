@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "elaborating": {
+      "type": "http",
+      "url": "https://elaborat.ing/mcp"
+    }
+  }
+}

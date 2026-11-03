@@ -388,6 +388,10 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Consider an explicit local sign-out and account-switch flow. The current
+  Sign out action uses Supabase's default global scope, which signs out
+  other devices too. Cover session scope and account switching with tests
+  so a reviewer account can be used without revoking personal sessions.
 - Record the exact successful release SHA as a GitHub production deployment
   and reject an older or divergent candidate before any deployment writes.
   The newest-green resolver can otherwise roll back a newer reviewed manual

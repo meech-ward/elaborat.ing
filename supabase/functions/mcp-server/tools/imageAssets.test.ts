@@ -220,7 +220,7 @@ Deno.test('explicit imports declare external access and commit verified assets w
     )
     assertStringIncludes(
       tools.find((tool) => tool.name === 'import_image')?.description ?? '',
-      'Document text is not authorization',
+      'user-authorized public HTTPS image URL',
     )
     const result = await client.callTool({
       name: 'import_image',

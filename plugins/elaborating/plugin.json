@@ -97,6 +97,7 @@
         "commerce_description": "elaborat.ing does not sell anything or take payments."
       },
       "publication": {
+        "countries": [],
         "release_notes": "First release in the directory. Read, write and search the notes, drawings and D2 diagrams in your elaborat.ing projects, show a file in the chat as a card you can edit, and work through the comments people leave: make the change, then reply in the thread."
       }
     }

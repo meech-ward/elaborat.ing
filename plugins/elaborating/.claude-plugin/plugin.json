@@ -1,6 +1,7 @@
 {
   "name": "elaborating",
   "displayName": "elaborat.ing",
+  "version": "0.2.16",
   "description": "Write notes in MDX, add project images, make drawings and D2 diagrams in elaborat.ing, and work through comments.",
   "author": {
     "name": "Not Just Software Inc.",
@@ -10,6 +11,11 @@
   "homepage": "https://elaborat.ing",
   "repository": "https://github.com/meech-ward/elaborat.ing",
   "license": "MIT",
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://github.com/meech-ward/elaborat.ing#connect-an-agent",
+  "supportUrl": "https://elaborat.ing/support",
+  "privacyPolicyUrl": "https://elaborat.ing/privacy",
+  "termsOfServiceUrl": "https://elaborat.ing/terms",
   "keywords": ["mdx", "markdown", "notes", "diagrams", "d2", "excalidraw", "comments"],
-  "mcpServers": "./mcp.json"
+  "mcpServers": "./.mcp.json"
 }

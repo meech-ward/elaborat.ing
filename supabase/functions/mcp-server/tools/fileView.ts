@@ -487,10 +487,9 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         'Show one file to the user in the chat as a card with a link to open it in elaborat.ing. ' +
         'Notes are rendered, and drawings and diagrams are drawn, also where a note embeds them. ' +
         "An MDX note's components, built in or imported from the project's files, are previewed where the chat allows it. " +
-        'Where the chat allows it, the user can edit a note in the card and save it; read the file again after that. ' +
-        'Use this when the user wants to see or edit a file. To read a file yourself, use read_file.',
+        'Where the chat allows it, the user can edit a note in the card and save it.',
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Show file', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ...VIEW_CALLABLE, ui: { ...VIEW_CALLABLE.ui, resourceUri: FILE_VIEW_URI } },
     },
     ({ project_id, path }) => showFilePayload(context, project_id, path)
@@ -502,19 +501,17 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
       title: 'Create and show',
       description:
         'Create a new note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
-        'which draws it while you write it where the chat allows that. It only creates: a file already at the path is not changed. ' +
-        'Use it when the user should watch a new note, drawing or diagram being made. ' +
-        "Write a drawing in draw's short form, a fraction of the full JSON to write: give a shape a label and leave out its size, " +
-        "and join two shapes with an arrow's from and to, its label a word or two. It is saved as the full elements draw would make: the shape sized to its label, " +
+        'which renders incoming content while it is being written where the chat allows that. It only creates: a file already at the path is not changed. ' +
+        "Drawings accept short-form elements: a shape with a label and no size, or an arrow with from and to. These become full saved elements: the shape sized to its label, " +
         'the label a text bound to it, and the arrow placed and bound. ' +
-        'To change a file, read it and use update_and_show, or write_file for a quiet change, with base_version.',
+        'Existing file content is never overwritten.',
       inputSchema: z.object({
         project_id: projectId,
         path,
         content: z.string().describe('The complete content of the new file.'),
         mutation_id: mutationId,
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Create and show', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       // The model's tool only: the view never calls it.
       _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
     },
@@ -545,11 +542,8 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
       title: 'Change and show',
       description:
         'Change a note (.mdx or .md), drawing (.excalidraw) or diagram (.d2) and show it to the user in the chat as a card, ' +
-        'which shows the change while you write it where the chat allows that: what stays shows at once, and what changes comes in. ' +
-        'Read the file first and pass the version you read as base_version, with the complete new content. ' +
-        'It saves as write_file does: if the result status is "conflict", someone changed the file first: read it again, merge, and retry. ' +
-        'Use it when the user should watch the change happen. For quiet changes, and for files the user is not watching ' +
-        '(components, code, many files at once), use write_file.',
+        'which renders incoming changes where the chat allows that: unchanged content appears at once, followed by the changes. ' +
+        'The complete replacement content and current base_version are required. A stale base_version returns a conflict without saving changes.',
       inputSchema: z.object({
         project_id: projectId,
         path,
@@ -558,7 +552,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         mutation_id: mutationId,
       }),
       // It overwrites the file, so it is destructive, as write_file is.
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Change and show', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       // The model's tool only: the view never calls it.
       _meta: { ui: { resourceUri: FILE_VIEW_URI, visibility: ['model'] } },
     },
@@ -602,7 +596,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
     {
       title: 'Card report',
       description:
-        'Used by the file view itself: reports how a card that showed a file as it was written went, for the server log. Not for use in a conversation.',
+        'Report the file view’s timing and partial-input counts for a card to the server log. This app-only tool stores no project data.',
       inputSchema: z.object({
         host: z.string().min(1).max(40).describe("The host's name, as it gave it."),
         tool: z.enum(['create_and_show', 'update_and_show']),
@@ -610,7 +604,7 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
         first_partial_ms: z.number().int().min(0).max(DAY_MS).nullable().describe('When the first came, in ms after the card started; null for none.'),
         total_ms: z.number().int().min(0).max(DAY_MS).describe('When the card settled, in ms after it started.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Card report', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     ({ host, tool, partials, first_partial_ms, total_ms }) => {
@@ -626,9 +620,9 @@ export function registerFileView(server: McpServer, context: ToolContext): void 
     {
       title: 'Card embed',
       description:
-        "Used by the file view itself: one drawing or diagram a note embeds that did not fit in show_file's result, for the view to show. Not for use in a conversation.",
+        'Read one drawing or diagram embedded in a note for the file view when it did not fit in the initial result. This app-only tool supplies deferred embedded content.',
       inputSchema: z.object({ project_id: projectId, path }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'Card embed', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true },
     },
     ({ project_id, path }) => cardEmbedPayload(context, project_id, path)

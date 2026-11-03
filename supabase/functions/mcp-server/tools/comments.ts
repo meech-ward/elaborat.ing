@@ -144,7 +144,7 @@ function presentComment(comment: RemoteComment) {
   }
 }
 
-const threadId = z.uuid().describe('The thread id, from list_comments.')
+const threadId = z.uuid().describe('The comment thread id.')
 const body = z.string().min(1).max(100_000).describe('The comment, 1 to 100,000 characters.')
 
 export function registerCommentTools(server: McpServer, { supabase }: ToolContext): void {
@@ -181,10 +181,8 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         'a drawing element, or the whole file). A thread\'s first comment opens it; the rest are replies. ' +
         'Resolved threads are left out unless include_resolved is true. A deleted file\'s threads are listed by its last path. ' +
         'With ask_agent true, returns only the open threads the user started and asked an agent about ("Ask an agent" in the app), ' +
-        'from every file (or only path), each with its path and the file\'s version, plus revision: pass it as since next time ' +
-        'for only the threads asked about after it (new ones, and ones the user replied to again). This is the loop when the ' +
-        'user asks you to work through their comments: list with ask_agent, change each file, reply_comment with the version ' +
-        'your save returned, and leave the thread open for the user to resolve.',
+        'from every file (or only path), each with its path and the file\'s version, plus revision. The since filter limits ' +
+        'results to threads asked about after that revision, including new threads and new user replies.',
       inputSchema: z.object({
         project_id: projectId,
         path: path.optional().describe('A file to read the threads of, such as notes/plan.md. Leave it out for counts per file.'),
@@ -194,7 +192,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         since: z.number().int().nonnegative().optional()
           .describe('With ask_agent: only threads asked about after this revision, from an earlier list.'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: { title: 'List comments', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ project_id, path, include_resolved, ask_agent, since }) => {
       try {
@@ -245,8 +243,8 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
     'add_comment',
     {
       description:
-        'Start a comment thread on a file, as the user. Anchor it with one of: quote (text copied exactly from the ' +
-        "file's source; add prefix or suffix when it appears more than once), heading (a note's heading, or its path " +
+        'Start a comment thread on a file, as the user. Supported anchors are quote (text copied exactly from the ' +
+        "file's source, with optional prefix or suffix to disambiguate), heading (a note's heading, or its path " +
         'like "Guide > Setup"), or element_id (an element of a drawing; point optionally marks a spot on it as fractions ' +
         'of its width and height). With none, the comment is on the whole file. People who can read the project see it.',
       inputSchema: z.object({
@@ -254,7 +252,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         path,
         body,
         quote: z.string().min(1).max(5000).optional()
-          .describe("Text to comment on, copied exactly from the file's source as read_file returns it, Markdown included."),
+          .describe("Text to comment on, copied exactly from the file's saved source, Markdown included."),
         prefix: z.string().optional().describe('Text right before quote, to pick one of several.'),
         suffix: z.string().optional().describe('Text right after quote, to pick one of several.'),
         heading: z.string().min(1).optional()
@@ -263,7 +261,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         point: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional()
           .describe('A spot on the element, as fractions of its width and height from its top-left corner.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Add comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     async (input): Promise<CallToolResult> => {
       const { project_id, path, body, quote, prefix, suffix, heading, element_id, point } = input
@@ -337,15 +335,14 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
     'reply_comment',
     {
       description:
-        'Reply to a comment thread, as the user. When you changed the file in answer, pass version: the file\'s new version ' +
-        'from your save, so the reply links to the change. People who can read the project see it.',
+        'Reply to a comment thread, as the user. An optional version links the reply to that saved version of the thread\'s file. People who can read the project see it.',
       inputSchema: z.object({
         thread_id: threadId,
         body,
         version: z.number().int().positive().optional()
-          .describe("The version of the thread's file you saved in answer, from write_file or save_files."),
+          .describe("The saved version of the thread's file that this reply addresses."),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: { title: 'Reply to comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     async ({ thread_id, body, version }) => {
       try {
@@ -371,7 +368,7 @@ export function registerCommentTools(server: McpServer, { supabase }: ToolContex
         thread_id: threadId,
         resolved: z.boolean().optional().describe('false reopens the thread. Defaults to true.'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Resolve or reopen comment', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ thread_id, resolved }) => {
       try {
