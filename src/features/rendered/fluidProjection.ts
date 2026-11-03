@@ -95,6 +95,12 @@ export interface FluidProjection {
   islands: FluidIsland[];
   instrumentation: Instrumentation;
   runtimeKey: string;
+  /**
+   * The note's code outside its islands: format, workspace modules, ESM and
+   * frontmatter. The frame keeps the islands an edit did not change while
+   * this stays the same (preview-entry.tsx).
+   */
+  scopeKey: string;
   /** Parent-owned mapping; never accept this object from the child. */
   mapping: { leaves: Leaf[]; nodes: MappedNode[]; roots: MappedNode[] };
 }
@@ -685,6 +691,13 @@ export async function projectFluidSource(
                   name: "id",
                   value: islands[index].id,
                 },
+                // The compiler makes this React's key: an island keeps its
+                // state while islands before it come and go.
+                {
+                  type: "mdxJsxAttribute",
+                  name: "key",
+                  value: islands[index].id,
+                },
               ],
               children: [ast],
             }) as Ast,
@@ -706,6 +719,18 @@ export async function projectFluidSource(
       })),
     }),
   );
+  const scopeKey = islandHash(
+    JSON.stringify({
+      format,
+      modules: components.key,
+      scope: retained
+        .filter((ast) => ["mdxjsEsm", "yaml", "toml"].includes(ast.type))
+        .map((ast) => {
+          const { from, to } = range(ast);
+          return text.slice(from, to);
+        }),
+    }),
+  );
   return {
     components,
     text,
@@ -716,6 +741,7 @@ export async function projectFluidSource(
     islands,
     instrumentation,
     runtimeKey,
+    scopeKey,
     mapping: { leaves, nodes, roots },
   };
 }

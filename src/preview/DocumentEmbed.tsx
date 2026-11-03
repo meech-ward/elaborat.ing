@@ -8,6 +8,14 @@ let context = { session: '', revision: -1 };
 const entries = new Map<string, Entry>();
 const listeners = new Set<() => void>();
 const EMPTY: Entry = { state: {} };
+/** Before an embedded document reports its height, its box is this tall. */
+const PLACEHOLDER_HEIGHT = 160;
+/**
+ * The height each embedded document last had in this note, by path: a view
+ * of it that starts again (its own line changed, or the same document shown
+ * twice) starts at that size instead of growing from the placeholder.
+ */
+const heights = new Map<string, number>();
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 
 export function setDocumentEmbedContext(session: string, revision: number): void {
@@ -35,6 +43,12 @@ export function DocumentEmbed({src, title, defaultCollapsed = false, from}: {
   const state = entry.state;
   const valid = typeof src === 'string' && typeof from === 'number' && Number.isSafeInteger(from);
   useEffect(() => {
+    if (typeof src === 'string' && typeof state.height === 'number') heights.set(src, state.height);
+  }, [src, state.height]);
+  // The status and then the document fill one box, so nothing below moves
+  // until the document says how tall it is.
+  const height = state.height ?? (typeof src === 'string' ? heights.get(src) : undefined) ?? PLACEHOLDER_HEIGHT;
+  useEffect(() => {
     if (!opened || !expanded || !valid) return;
     postToParent({kind:'document-embed-open', ...context, id, path:src, from});
   }, [opened, expanded, valid, id, src, from]);
@@ -61,9 +75,9 @@ export function DocumentEmbed({src, title, defaultCollapsed = false, from}: {
       {!valid ? <p role="status">Use a literal project Markdown or MDX file path.</p> : null}
       {state.error ? <p role="status" className="document-embed-error">{state.error}</p> : null}
       {state.needsCodeConsent ? <div className="document-embed-consent"><p>This document contains code. Review it separately or run it here.</p><button type="button" onClick={event => {if (event.nativeEvent.isTrusted) action('run');}}>Run document</button></div> : null}
-      {valid && !entry.srcdoc && !state.error ? <p role="status">Loading document…</p> : null}
+      {valid && !entry.srcdoc && !state.error ? <p role="status" style={{height, margin:0}}>Loading document…</p> : null}
       {entry.srcdoc ? <iframe ref={frame} title={`Embedded document: ${title || src}`} sandbox={PREVIEW_SANDBOX}
-        srcDoc={entry.srcdoc} scrolling="no" style={{height:state.height ?? 160, display:state.error || state.needsCodeConsent ? 'none' : 'block'}} /> : null}
+        srcDoc={entry.srcdoc} scrolling="no" style={{height, display:state.error || state.needsCodeConsent ? 'none' : 'block'}} /> : null}
     </div>
   </section>;
 }

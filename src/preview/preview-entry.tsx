@@ -20,6 +20,7 @@ import { trustedReact } from './trustedReact';
 import {
   StrictMode,
   createContext,
+  memo,
   useContext,
   useId,
   useLayoutEffect,
@@ -40,7 +41,7 @@ import { TextSelection, type EditorState } from "prosemirror-state";
 import { mapThroughDoc } from "../features/document/writeIn";
 import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, ExampleCard, Tabs, Tab, type SideBySideProps } from '../features/rendered/documentBlocks';
 import { InlineLiteral } from './InlineLiteral';
-import { isReadOnly, setReadOnly } from './readOnly';
+import { isReadOnly, setReadOnly, subscribeReadOnly, useReadOnly } from './readOnly';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
@@ -110,10 +111,28 @@ let activeRevision = -1;
 const codeClipboard = new CodeClipboard(() => ({ session: activeSession, revision: activeRevision }), postCodeCopyToParent);
 setCodeCopyHandler(text => codeClipboard.copy(text));
 let slotTable: SlotInfo[] = [];
+const slotListeners = new Set<() => void>();
 /** Monotonic render generation: completions from a superseded generation are dropped. */
 let renderSeq = 0;
 let snapshotRender: {session: string; revision: number; epoch: number; sequence: number} | null = null;
 let snapshotBusy = false;
+// The frame's fonts are data URLs in its stylesheet (vite-plugins/preview-frame.ts).
+// Asked for now, they are ready before the first render, so the note's first
+// paint is already in them: a stand-in font would change the width of the
+// text, and where its lines wrap, as they arrived. A font that cannot load
+// holds the first render back for at most half a second.
+let fontsLoaded = false;
+const fontFamilies = [...document.styleSheets].flatMap((sheet) =>
+  [...sheet.cssRules].flatMap((rule) => (rule instanceof CSSFontFaceRule ? [rule.style.getPropertyValue("font-family")] : [])),
+);
+// Styled once, the page's font set knows the stylesheet's fonts and can load them.
+getComputedStyle(document.documentElement).getPropertyValue("font-family");
+const fontsReady: Promise<void> = Promise.race([
+  Promise.all(fontFamilies.map((family) => document.fonts.load(`1em ${family}`).catch(() => null))),
+  new Promise((resolve) => setTimeout(resolve, 500)),
+]).then(() => {
+  fontsLoaded = true;
+});
 /**
  * Generated pixels for Drawing/Diagram embeds, keyed by workspace path.
  * Pixels only: the frame never receives file bytes, tokens, or filesystem
@@ -131,6 +150,10 @@ function subscribeResources(listener: () => void): () => void {
 
 let imageTable:Record<string,ImagePreview> = Object.create(null);
 let originalImages:Record<string,{image?:ImagePreview;error?:string}> = Object.create(null);
+/** The revision of the latest pixels applied: older ones still on their way are dropped. */
+let imagesRevision = -1;
+/** Each image's size as its pixels last arrived: while they are missing, its box keeps that size. */
+const imageSizes = new Map<string,{width:number;height:number}>();
 const imageListeners = new Set<() => void>();
 const readImages = () => imageTable;
 const readOriginalImages = () => originalImages;
@@ -143,8 +166,10 @@ function ProjectImage(props: {src?:string;alt?:string;__imageFrom?:number;'data-
   const {src,alt = ''} = props;
   const images = useSyncExternalStore(subscribeImages,readImages);
   const originals = useSyncExternalStore(subscribeImages,readOriginalImages);
+  const readOnly = useReadOnly();
   const pixels = typeof src === 'string' && Object.hasOwn(images,src) ? images[src] : undefined;
   const original = typeof src === 'string' && Object.hasOwn(originals,src) ? originals[src] : undefined;
+  const size = typeof src === 'string' ? imageSizes.get(src) : undefined;
   const enlarged = original?.image ?? pixels;
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -164,7 +189,10 @@ function ProjectImage(props: {src?:string;alt?:string;__imageFrom?:number;'data-
       if (activeSession && src) postToParent({kind:'view-image',session:activeSession,revision:activeRevision,key:src});
     }}>
       <img src={pixels.dataURL} alt={alt} width={pixels.width} height={pixels.height} loading="lazy" decoding="async" />
-    </button> : <span className="project-image-missing" role="img" aria-label={alt || 'Image unavailable'}>{alt || 'Image unavailable'}</span>}
+    </button> : <span className="project-image-missing" role="img" aria-label={alt || 'Image unavailable'}
+      // Pixels that were here keep their place: the picture's size, and the
+      // space above and below an image in the note's type (prose).
+      style={size ? {display:'block',width:size.width,maxWidth:'100%',aspectRatio:`${size.width} / ${size.height}`,overflow:'hidden',marginBlock:'2em'} : undefined}>{alt || 'Image unavailable'}</span>}
     {pixels ? <dialog ref={dialog} className="project-image-viewer" aria-label={alt || 'Image'} onClose={() => {
       trigger.current?.focus({preventScroll:true});
       originalImages = Object.create(null);
@@ -174,7 +202,7 @@ function ProjectImage(props: {src?:string;alt?:string;__imageFrom?:number;'data-
       {original?.error ? <p role="status">{original.error}</p> : null}
       <img src={enlarged!.dataURL} alt={alt} width={enlarged!.width} height={enlarged!.height} />
     </dialog> : null}
-    {!isReadOnly() && from !== undefined ? <span className="project-image-actions">
+    {!readOnly && from !== undefined ? <span className="project-image-actions">
       <button type="button" onClick={() => {setDraft(alt);description.current?.showModal();}}>Edit description</button>
       <button type="button" onClick={() => {setCaptionDraft(caption);captionDialog.current?.showModal();}}>Edit caption</button>
       <button type="button" onClick={() => edit('replace')}>Replace image</button>
@@ -277,6 +305,30 @@ function slotByIndex(index: number): SlotInfo | undefined {
   return slotTable.find((slot) => slot.index === index);
 }
 
+/** A render's slots, keeping each slot that did not change, so a component showing it has nothing new to show. */
+function setSlotTable(slots: SlotInfo[]): void {
+  const kept = new Map(slotTable.map((slot) => [JSON.stringify(slot), slot]));
+  slotTable = slots.map((slot) => kept.get(JSON.stringify(slot)) ?? slot);
+}
+
+function subscribeSlots(listener: () => void): () => void {
+  slotListeners.add(listener);
+  const stop = subscribeReadOnly(listener);
+  return () => {
+    slotListeners.delete(listener);
+    stop();
+  };
+}
+
+/**
+ * slotByIndex() for rendering. A component's island is not rendered again on
+ * a keystroke elsewhere in the note, so it follows the slot table (whose
+ * source offsets move with typing before it) by subscription.
+ */
+function useSlot(index: unknown): SlotInfo | undefined {
+  return useSyncExternalStore(subscribeSlots, () => (typeof index === "number" ? slotByIndex(index) : undefined));
+}
+
 /**
  * One editable prose leaf, edited in place where it renders (inside its
  * heading, emphasis, list item, ...). The span stays uncontrolled while
@@ -369,7 +421,7 @@ function commitProp(
 
 /** Compiler-inserted wrapper; lexical local/imported React bindings stay intact. */
 function CustomControls(props: {__slot?: number; inline?: boolean; children?: ReactNode}): ReactNode {
-  const slot = typeof props.__slot === 'number' ? slotByIndex(props.__slot) : undefined;
+  const slot = useSlot(props.__slot);
   return <span className="custom-component not-prose" data-inline={props.inline ? 'true' : undefined}>
     {props.children}
     {slot?.supported && slot.props.length ? <fieldset className="custom-component-controls not-prose">
@@ -393,8 +445,8 @@ function CounterWithControls(props: {
   initial?: number;
   step?: number;
 }): ReactNode {
-  const slot =
-    typeof props.__slot === "number" ? slotByIndex(props.__slot) : undefined;
+  const slot = useSlot(props.__slot);
+  const readOnly = useReadOnly();
   const editable = slot?.supported === true;
   const initialProp = slot?.props.find((entry) => entry.name === "initial");
   const stepProp = slot?.props.find((entry) => entry.name === "step");
@@ -404,7 +456,7 @@ function CounterWithControls(props: {
       style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}
     >
       <Counter initial={props.initial} step={props.step} />
-      {typeof props.__slot === "number" && !editable && !isReadOnly() ? (
+      {typeof props.__slot === "number" && !editable && !readOnly ? (
         <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
@@ -441,8 +493,8 @@ function CalloutWithControls(props: {
   title?: string;
   children?: ReactNode;
 }): ReactNode {
-  const slot =
-    typeof props.__slot === "number" ? slotByIndex(props.__slot) : undefined;
+  const slot = useSlot(props.__slot);
+  const readOnly = useReadOnly();
   const editable = slot?.supported === true;
   const titleProp = slot?.props.find((entry) => entry.name === "title");
   const toneProp = slot?.props.find((entry) => entry.name === "tone");
@@ -463,7 +515,7 @@ function CalloutWithControls(props: {
       <Callout tone={props.tone as "info" | "warn" | "error" | undefined} title={props.title}>
         {props.children}
       </Callout>
-      {slotIndex !== null && !editable && !isReadOnly() ? (
+      {slotIndex !== null && !editable && !readOnly ? (
         <small className="authoring-actions" title={slot?.reason ?? "Computed output"}>
           Computed output: edit in source.
         </small>
@@ -520,6 +572,7 @@ function ResourceEmbed(props: {
   src?: string;
 }): ReactNode {
   const resources = useSyncExternalStore(subscribeResources, readResources);
+  const readOnly = useReadOnly();
   const src = typeof props.src === "string" ? props.src : "";
   const svg = src ? resources[src] : undefined;
   const edit = () => {
@@ -621,7 +674,7 @@ function ResourceEmbed(props: {
           {props.kind === "drawing" ? "Drawing" : "Diagram"}:{" "}
           {src || "(missing src)"}
         </span>
-        {src && !isReadOnly() ? (
+        {src && !readOnly ? (
           <button type="button" onClick={edit}>
             Edit {label}
           </button>
@@ -677,10 +730,67 @@ let typing: TypeIn | null = null;
 let runtimeKey: string | null = null;
 /** The commented text to mark, as the parent last sent it for a revision. */
 let commentMarks: CommentMarksMessage | null = null;
-let fluidContent: Awaited<ReturnType<typeof run>>["default"] | null = null;
+type Content = Awaited<ReturnType<typeof run>>["default"];
+type WorkspaceModules = Record<string, Awaited<ReturnType<typeof run>>>;
+let fluidContent: Content | null = null;
+/** The note's code outside its islands, for the content on screen (fluidProjection.ts). */
+let bodyScope = "";
+/** Counts the bodies started again because their own text called hooks (bodyReact). */
+let bodyGeneration = 0;
+let renderingBody = false;
+let bodyCalledHooks = false;
+/** The workspace modules as last run, by their code: a note's imported components keep their identity while those files stay the same. */
+let workspaceRun: { key: string; modules: WorkspaceModules } | null = null;
 let originalIslandOffsets = new Map<string, number>();
 let currentIslandOffsets = new Map<string, number>();
 const IslandOffset = createContext(0);
+
+/**
+ * React's hooks as the note's code gets them. A hook the note calls in its
+ * own text (not in a component) runs in DocumentBody, and new code could call
+ * other hooks there than the code before it: a body that called one starts
+ * again with each new code, as every body did before it was kept.
+ */
+const bodyReact: typeof trustedReact = Object.freeze(Object.fromEntries(
+  Object.entries(trustedReact).map(([name, value]) => [
+    name,
+    name.startsWith("use")
+      ? (...args: unknown[]) => {
+          if (renderingBody) bodyCalledHooks = true;
+          return (value as (...args: unknown[]) => unknown)(...args);
+        }
+      : value,
+  ]),
+)) as typeof trustedReact;
+
+/** Runs a note's compiled code in the frame, with what the frame gives it. */
+const runCode = (code: string, workspaceModules: WorkspaceModules) =>
+  run(code, { ...jsxRuntime, workspaceModules, trustedReact: bodyReact, projectImage: ProjectImage } as Parameters<typeof run>[1]);
+
+/** The note's body, noting whether its own text called a hook. */
+function renderBody(content: Content): ReactNode {
+  renderingBody = true;
+  bodyCalledHooks = false;
+  try {
+    return content({ components: fluidComponents });
+  } finally {
+    renderingBody = false;
+  }
+}
+
+/**
+ * The note: one component for the frame's life, which calls the latest
+ * compiled content. New code only gives it a new function to call, and React
+ * keeps each island it has by the island's key (its id, fluidProjection.ts),
+ * so the islands an edit did not change keep their state, their charts and
+ * their embedded documents. It renders again only for new code: an island's
+ * offsets reach it through IslandOffset, and what it reads for each revision
+ * (slots, read-only) by subscription.
+ */
+const DocumentBody = memo(function DocumentBody({ content }: { content: Content }) {
+  return renderBody(content);
+});
+
 function FluidIsland({ id, children }: { id: string; children: ReactNode }) {
   const container = useSyncExternalStore(
     subscribeIslands,
@@ -720,7 +830,7 @@ type TitledComponent = typeof Note;
 function TitledWithControls({ Component, name, __slot, ...props }: ComponentProps<typeof Note> & {
   Component: TitledComponent; name: string; __slot?: number;
 }) {
-  const slot = typeof __slot === 'number' ? slotByIndex(__slot) : undefined;
+  const slot = useSlot(__slot);
   const value = typeof props.title === 'string' ? props.title
     : props.title === undefined && name !== 'ExampleCard' ? name : undefined;
   const titleProp = slot?.props.find((prop) => prop.name === 'title');
@@ -732,13 +842,13 @@ function TitledWithControls({ Component, name, __slot, ...props }: ComponentProp
   return <Component {...props} title={title} />;
 }
 function SideBySideWithControls({ __slot, ...props }: SideBySideProps & { __slot?: number }) {
-  const slot = typeof __slot === 'number' ? slotByIndex(__slot) : undefined;
+  const slot = useSlot(__slot);
   const editable = slot?.supported && slot.element === 'SideBySide';
   return <SideBySide {...props} readOnly={props.readOnly || !editable}
     onRatioCommit={editable ? (ratio) => commitComponentValue(slot.index, 'ratio', ratio) : undefined} />;
 }
 function InstructionWithControls({ __slot, ...props }: SideBySideProps & { __slot?: number }) {
-  const slot = typeof __slot === 'number' ? slotByIndex(__slot) : undefined;
+  const slot = useSlot(__slot);
   const editable = slot?.supported && slot.element === 'Instruction';
   return <Instruction {...props} readOnly={props.readOnly || !editable}
     onRatioCommit={editable ? (ratio) => commitComponentValue(slot.index, 'ratio', ratio) : undefined} />;
@@ -796,15 +906,20 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   // Publish the newest metadata synchronously so edits made while the new
   // code still compiles attribute to the latest revision; the slow
   // completion below is dropped unless it is still the newest generation.
-  if (activeSession !== pending.session || activeRevision !== pending.revision) {
+  // Pictures stay through the note's revisions, so an image keeps its
+  // pixels until the parent sends the next revision's: only another session
+  // starts without them.
+  if (activeSession !== pending.session) {
     imageTable = Object.create(null);
     originalImages = Object.create(null);
+    imagesRevision = -1;
+    imageSizes.clear();
     for (const listener of imageListeners) listener();
   }
   activeSession = pending.session;
   activeRevision = pending.revision;
   setDocumentEmbedContext(pending.session, pending.revision);
-  slotTable = pending.slots;
+  setSlotTable(pending.slots);
   setReadOnly(pending.readOnly === true);
   try {
     if (pending.fluid) {
@@ -824,18 +939,30 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         });
       }
       if (!fluidContent || runtimeKey !== pending.fluid.runtimeKey) {
-        const workspaceModules: Record<string, Awaited<ReturnType<typeof run>>> = Object.create(null);
-        for (const module of pending.modules ?? []) {
-          workspaceModules[module.path] = await run(module.code, {...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage} as Parameters<typeof run>[1]);
-          if (seq !== renderSeq) return;
+        const modules = pending.modules ?? [];
+        const modulesKey = JSON.stringify(modules.map(({ path, code }) => [path, code]));
+        let workspaceModules = workspaceRun?.key === modulesKey ? workspaceRun.modules : null;
+        if (!workspaceModules) {
+          workspaceModules = Object.create(null) as WorkspaceModules;
+          for (const module of modules) {
+            workspaceModules[module.path] = await runCode(module.code, workspaceModules);
+            if (seq !== renderSeq) return;
+          }
+          workspaceRun = { key: modulesKey, modules: workspaceModules };
         }
-        const result = await run(pending.code, { ...jsxRuntime, workspaceModules, trustedReact, projectImage:ProjectImage } as Parameters<typeof run>[1]);
+        const result = await runCode(pending.code, workspaceModules);
         if (seq !== renderSeq) return;
+        if (bodyCalledHooks) bodyGeneration++;
         fluidContent = result.default;
         runtimeKey = pending.fluid.runtimeKey;
+        bodyScope = pending.fluid.scopeKey ?? pending.fluid.runtimeKey;
         originalIslandOffsets = new Map(
           pending.fluid.islands.map(({ id, from }) => [id, from]),
         );
+      }
+      if (!fontsLoaded) {
+        await fontsReady;
+        if (seq !== renderSeq) return;
       }
       const projection = pending.fluid;
       const editor = fluidEditor;
@@ -863,13 +990,14 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         projection.islands.map(({ id, from }) => [id, from]),
       );
       for (const listener of islandListeners) listener();
+      for (const listener of slotListeners) listener();
       setAuthoringContext(pending.session, pending.revision, pending.authoring);
       editor.receive({ kind: "render", ...pending });
       if (replaced) keepSelection(editor, replaced);
       applyCommentMarks();
       root.render(
         <StrictMode>
-          <Content components={fluidComponents} />
+          <DocumentBody key={`${bodyScope}:${bodyGeneration}`} content={Content} />
           <BlockPicker blockPositionAt={blockPositionAt} />
         </StrictMode>,
       );
@@ -1115,9 +1243,14 @@ function onParentMessage(event: MessageEvent): void {
     return;
   }
   if (message.kind === 'images') {
-    if (message.revision !== activeRevision) return;
+    // Pixels for this session (checkParentMessage). Keys name image files,
+    // so pixels fit every revision that shows those files: only pixels older
+    // than the ones applied last are dropped.
+    if (message.revision < imagesRevision) return;
+    imagesRevision = message.revision;
     imageTable = Object.assign(message.reset ? Object.create(null) : {...imageTable},
       Object.fromEntries(message.images.map(({key,...pixels}) => [key,pixels])));
+    for (const {key, width, height} of message.images) imageSizes.set(key, {width, height});
     for (const listener of imageListeners) listener();
     return;
   }

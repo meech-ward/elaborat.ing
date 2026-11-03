@@ -310,6 +310,12 @@ export const fluidRenderSchema = z.object({
   operation: whole,
   reset: z.boolean(),
   runtimeKey: z.string(),
+  /**
+   * The note's code outside its islands (fluidProjection.ts). While it stays
+   * the same, new code keeps the islands it did not change, with their state;
+   * without it, every new code starts the note's components again.
+   */
+  scopeKey: z.optional(z.string().check(z.maxLength(64))),
   islands: z.array(
     z.object({ id: z.string(), from: whole }),
   ),

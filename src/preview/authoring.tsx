@@ -11,7 +11,7 @@ import { isDocumentPath } from '../features/document/documentPaths';
 import type { RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
-import { isReadOnly } from './readOnly';
+import { useReadOnly } from './readOnly';
 import { postToParent as post } from './parentPort';
 import { imageFilePayloads } from '../features/images/transport';
 
@@ -156,6 +156,7 @@ export function SourceLeaf(props: {
 /** Compiler-only component: source ownership is revalidated in the parent. */
 export function SourceCode(props: { from: number; to: number; expected: string; value: string; language: string }): ReactNode {
   const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
+  const readOnly = useReadOnly();
   // An empty code block the parent put the caret in was just made from a
   // typed fence: it opens for typing, with anything typed meanwhile, and
   // Ctrl+Z before anything else undoes making it.
@@ -165,7 +166,7 @@ export function SourceCode(props: { from: number; to: number; expected: string; 
     startSourceDraft(props, codeBlockHooks.typed(), props.value);
     return true;
   });
-  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={isReadOnly()}
+  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={readOnly}
     onUndo={made ? codeBlockHooks.undo : undefined}
     draft={getSourceDraft(props)} onEditorInput={captureSourceDraft} onEditorMount={restoreSourceDraft} onCommit={value => {
     if (value === props.value) return;
@@ -184,6 +185,7 @@ function EditableText(props: {
   const sent = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { session, revision } = useSyncExternalStore(subscribe, getAuthoringContext);
+  const readOnly = useReadOnly();
   useEffect(() => { sent.current = false; }, [revision, props.from, props.leaf?.expected]);
   useLayoutEffect(() => {
     if (props.literal && ref.current) restoreSourceDraft(ref.current);
@@ -232,7 +234,7 @@ function EditableText(props: {
       else post({ kind: action === 'enter' ? 'prose-enter' : 'prose-edit', ...message });
     }
   };
-  if (isReadOnly())
+  if (readOnly)
     return <span data-source-text={`${props.from}:${props.leaf?.to ?? props.from + props.value.length}`}>{props.value}</span>;
   return (
     <span
@@ -358,9 +360,13 @@ export function BlockPicker({ blockPositionAt }: {
   const [boundary, setBoundary] = useState(
     context.metadata?.boundaries.at(-1)?.id ?? "start",
   );
+  // The dialog lists every position in the note only while it is open: the
+  // positions change with every keystroke, and a closed dialog would make
+  // them again each time.
+  const [open, setOpen] = useState(false);
   const paths = useSyncExternalStore(subscribe, getPaths);
   const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
-  const readOnly = isReadOnly();
+  const readOnly = useReadOnly();
   useEffect(() => {
     const ingest = (event: ClipboardEvent | DragEvent) => {
       const files = [...(event instanceof ClipboardEvent ? event.clipboardData?.files ?? [] : event.dataTransfer?.files ?? [])];
@@ -500,6 +506,7 @@ export function BlockPicker({ blockPositionAt }: {
                 setElement(name);
                 setPath("");
                 setBoundary(menuBoundary.current);
+                setOpen(true);
                 dialog.current?.showModal();
               } else insert(name, menuBoundary.current);
             }}
@@ -513,6 +520,7 @@ export function BlockPicker({ blockPositionAt }: {
         type="button"
         onClick={() => {
           returnFocus.current = trigger.current;
+          setOpen(true);
           dialog.current?.showModal();
         }}
       >
@@ -521,7 +529,10 @@ export function BlockPicker({ blockPositionAt }: {
       <dialog
         ref={dialog}
         aria-label="Insert block"
-        onClose={() => returnFocus.current?.focus({ preventScroll: true })}
+        onClose={() => {
+          setOpen(false);
+          returnFocus.current?.focus({ preventScroll: true });
+        }}
       >
         <div>
           <h2>Insert block</h2>
@@ -558,11 +569,13 @@ export function BlockPicker({ blockPositionAt }: {
               value={selectedBoundary}
               onChange={(event) => setBoundary(event.target.value)}
             >
-              {metadata?.boundaries.map((entry, index) => (
-                <option key={entry.id} value={entry.id}>
-                  {index === 0 ? "Document start" : `After block ${index}`}
-                </option>
-              ))}
+              {open
+                ? metadata?.boundaries.map((entry, index) => (
+                    <option key={entry.id} value={entry.id}>
+                      {index === 0 ? "Document start" : `After block ${index}`}
+                    </option>
+                  ))
+                : null}
             </select>
           </label>
           {resource ? (

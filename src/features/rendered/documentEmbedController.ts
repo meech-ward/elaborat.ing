@@ -19,6 +19,18 @@ type Entry = {
 type Request = Extract<ChildMessage, {kind:'document-embed-open'|'document-embed-release'|'document-embed-action'}>;
 /** Assigned at instance creation, never during render or HTML generation. */
 let documentView = 0;
+/**
+ * The height each embedded document last reported, by path, while this page
+ * is open: a new view of it (its note opened again, or it expanded) starts at
+ * that height instead of growing from a placeholder once it has loaded.
+ */
+const reportedHeights = new Map<string, number>();
+const MAX_REPORTED_HEIGHTS = 64;
+function rememberHeight(path: string, height: number) {
+  reportedHeights.delete(path);
+  reportedHeights.set(path, height);
+  if (reportedHeights.size > MAX_REPORTED_HEIGHTS) reportedHeights.delete(reportedHeights.keys().next().value as string);
+}
 
 /** Every capability comes from literal references in app-owned source. */
 export class DocumentEmbedController {
@@ -92,7 +104,7 @@ export class DocumentEmbedController {
     const entry: Entry = {
       id:message.id, path:message.path, nonce:this.options.nonce(), owner:context.owner, host:context.host,
       label:`Embedded document ${message.path}, view ${++documentView}`,
-      state:{pending:true,error:null},
+      state:{pending:true,error:null,...(reportedHeights.has(message.path) ? {height:reportedHeights.get(message.path)} : {})},
       timer:setTimeout(() => {
         if (this.entries.get(message.id) !== entry || entry.cleanup) return;
         this.release(message.id);
@@ -129,6 +141,7 @@ export class DocumentEmbedController {
       ancestors:[...context.ancestors, entry.path],frame,frameScriptUrl:context.frameScriptUrl,
       onState:state => {
         if (this.entries.get(entry.id) !== entry) return;
+        if (typeof state.height === 'number') rememberHeight(entry.path, state.height);
         entry.state = {...entry.state, ...state};
         this.state(entry.id, entry.state);
       }});

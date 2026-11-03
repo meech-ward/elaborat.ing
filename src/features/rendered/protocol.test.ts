@@ -382,6 +382,15 @@ describe('checkParentMessage', () => {
     for (const invalid of [-1, 1.5, '12', null])
       expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
   });
+  test("a render can name the note's code outside its islands, so the frame keeps the islands an edit did not change", () => {
+    const fluid = { epoch: 3, operation: 0, reset: false, runtimeKey: 'k', islands: [], doc: { type: 'doc' } };
+    const render = (scopeKey: unknown) => ({ kind: 'render', session: 'session-1a', revision: 8, code: 'x', slots: [], fluid: { ...fluid, scopeKey } });
+    const checked = checkParentMessage({ data: render('1x2y3z'), source: {}, activeSession: 'session-1a' });
+    expect(checked.ok && checked.message.kind === 'render' ? checked.message.fluid?.scopeKey : null).toBe('1x2y3z');
+    expect(checkParentMessage({ data: render(undefined), source: {}, activeSession: 'session-1a' }).ok).toBe(true);
+    for (const invalid of [3, null, 'k'.repeat(65)])
+      expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
+  });
 
   test('accepts a well-formed render for a fresh child', () => {
     const result = checkParentMessage({

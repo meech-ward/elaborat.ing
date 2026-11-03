@@ -123,6 +123,22 @@ describe('document embed capabilities', () => {
     f.controller.reconcile();
     expect(f.detached()).toBe(2);
   });
+  test('a new view of an embedded document starts at the height it last reported', () => {
+    const first = fixture();
+    first.context.text = '<Document src="tall.mdx" />';
+    first.open('one', 'tall.mdx');
+    first.ready();
+    first.attaches[0].onState({pending:false,height:612});
+    // Another note (another controller) showing the same document, and one never shown here.
+    const second = fixture();
+    second.context.text = '<Document src="tall.mdx" />\n\n<Document src="never-shown.mdx" />';
+    second.open('two', 'tall.mdx');
+    second.open('three', 'never-shown.mdx', 29);
+    const states = second.sent.filter(message => message.kind === 'document-embed-state');
+    expect(states[0]).toMatchObject({id:'two',state:{pending:true,error:null,height:612}});
+    expect(states[1]).toMatchObject({id:'three',state:{pending:true,error:null}});
+    expect((states[1].state as Record<string, unknown>).height).toBeUndefined();
+  });
   test('prose moving a reference keeps the mounted child and removing it cancels queued bootstrap', async () => {
     const f = fixture();
     f.open(); f.ready();

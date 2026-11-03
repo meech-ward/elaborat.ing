@@ -1,4 +1,4 @@
-import { isValidElement, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { isValidElement, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { useModule } from '../../lib/moduleLoader';
 import { frameModules } from '../../preview/frameModules';
 import { CodeCopyButton } from './CodeCopyButton';
@@ -12,6 +12,18 @@ function useHighlightedCode(code: string, language: string): string | null {
   const { module } = useModule(frameModules.highlighter, language !== '');
   return module && language ? module.highlightCode(code, language) : null;
 }
+
+/**
+ * The highlighted HTML as React's markup. One object while the HTML stays the
+ * same: React writes the markup again for a new object, which would replace
+ * the block on every keystroke in the note and lose its scroll and selection.
+ */
+function useMarkup(highlighted: string | null): { __html: string } {
+  return useMemo(() => ({ __html: highlighted ?? '' }), [highlighted]);
+}
+
+/** The editor has a row for each line, as the block it replaces shows them, so nothing below it moves. */
+const codeRows = (code: string) => code.split('\n').length;
 
 /** Two-space indent/outdent, with selection offsets retained for native input. */
 export function indentCode(value: string, start: number, end: number, outdent: boolean) {
@@ -41,6 +53,7 @@ export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'
   const code = typeof fence?.children === 'string' ? fence.children : '';
   const language = fence ? /(?:^|\s)language-([^\s]+)/.exec(fence.className ?? '')?.[1] ?? '' : '';
   const highlighted = useHighlightedCode(code, language);
+  const markup = useMarkup(highlighted);
   if (!fence) return <pre {...props}>{children}</pre>;
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
@@ -51,7 +64,7 @@ export function CodeFence({ children, ...props }: ComponentPropsWithoutRef<'pre'
       {highlighted === null
         ? <pre {...props} tabIndex={0} aria-label={`${language || 'Plain text'} code`}><code>{code}</code></pre>
         // Only escaped HTML from the fixed Shiki pipeline (codeHighlight.ts), never raw MDX.
-        : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={{ __html: highlighted }} />}
+        : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={markup} />}
     </div>
   );
 }
@@ -73,6 +86,7 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
   const [editing, setEditing] = useState(!!draft);
   const editor = useRef<HTMLTextAreaElement>(null);
   const highlighted = useHighlightedCode(value, language);
+  const markup = useMarkup(highlighted);
   return (
     <div className="not-prose document-code" data-code-language={language || 'text'}>
       <div className="document-code-label">
@@ -92,10 +106,19 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
           data-authoring-expected={sourceRegion?.expected}
           data-authoring-value={value}
           defaultValue={draft?.value ?? value}
-          ref={element => { editor.current = element; if (element) onEditorMount?.(element); }}
-          onInput={event => onEditorInput?.(event.currentTarget)}
+          ref={element => {
+            editor.current = element;
+            if (!element) return;
+            onEditorMount?.(element);
+            element.rows = codeRows(element.value);
+          }}
+          onInput={event => {
+            // A line typed or removed grows or shrinks the editor with it.
+            event.currentTarget.rows = codeRows(event.currentTarget.value);
+            onEditorInput?.(event.currentTarget);
+          }}
           spellCheck={false}
-          rows={Math.max(3, Math.min(24, value.split('\n').length + 1))}
+          rows={codeRows(value)}
           onBlur={event => {
             onEditorInput?.(event.currentTarget);
             onCommit(event.currentTarget.value);
@@ -116,6 +139,7 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
               const next = indentCode(input.value, input.selectionStart, input.selectionEnd, event.shiftKey);
               input.value = next.value;
               input.setSelectionRange(next.start, next.end);
+              input.rows = codeRows(input.value);
               onEditorInput?.(input);
             }
             if (event.key === 'Escape') {
@@ -130,7 +154,7 @@ export function EditableCodeFence({ value, language, onCommit, onUndo, sourceReg
         <div>
           {highlighted === null
             ? <pre tabIndex={0} aria-label={`${language || 'Plain text'} code`}><code>{value}</code></pre>
-            : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={{ __html: highlighted }} />}
+            : <div role="group" aria-label={`${language} code`} className="document-code-highlight" dangerouslySetInnerHTML={markup} />}
         </div>
       )}
     </div>

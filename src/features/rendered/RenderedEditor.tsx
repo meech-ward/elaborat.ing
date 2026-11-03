@@ -781,6 +781,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         operation: exposed.operation,
         reset: exposed.reset,
         runtimeKey: exposed.runtimeKey,
+        scopeKey: exposed.scopeKey,
         doc: exposed.doc.toJSON(),
         selection: exposed.selection,
         nearest: !exposed.reset && exposed.nearest ? true : undefined,
