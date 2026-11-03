@@ -126,7 +126,8 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
     if (current.replyTo) await mutate('reply_file_share_comment', {thread_id: current.replyTo, comment_id: current.commentId, body})
     else await mutate('add_file_share_comment', {thread_id: current.threadId, comment_id: current.commentId,
       file_version: current.fileVersion, anchor: current.anchor, body})
-    forgetShareDraft(bundle.share.id); setDraft(null)
+    forgetShareDraft(bundle.share.id)
+    setDraft(activeDraft => activeDraft?.commentId === current.commentId ? null : activeDraft)
   }
   const threads = discussion?.threads ?? NO_THREADS
   const places = useMemo(() => notePlaces(threads, root.content), [threads, root.content])
@@ -161,7 +162,8 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
       onCommentOnFile={canComment ? () => start() : undefined}
       draft={draft ? <div className="p-3"><p className="mb-2 text-sm font-medium">{draft.replyTo ? 'Reply' : draft.anchor.kind === 'document' ? 'Comment on the whole file' : 'Comment on selected text'}</p>
         {(draft.anchor.kind === 'text' || draft.anchor.kind === 'section') ? <blockquote className="mb-3 line-clamp-3 border-l-2 border-accent-line pl-3 text-sm text-muted-foreground">{draft.anchor.quote.exact}</blockquote> : null}
-        <CommentComposer label="New comment" value={draft.body} onValueChange={body => setDraft({...draft, body})}
+        <CommentComposer key={draft.commentId} label="New comment" value={draft.body}
+          onValueChange={body => setDraft(activeDraft => activeDraft?.commentId === draft.commentId ? {...activeDraft, body} : activeDraft)}
           submitLabel={userId ? draft.replyTo ? 'Reply' : 'Comment' : 'Sign in to post'} maxLength={10_000}
           disabledReason={canComment ? undefined : 'This project is archived.'} onSubmit={submit}
           onCancel={() => {forgetShareDraft(bundle.share.id); setDraft(null)}} autoFocus />

@@ -46,6 +46,8 @@ async function setup(page: Page, options: {bundle?: SharedBundle; signedIn?: boo
     const makeComment = () => ({id: String(args.comment_id), author: author(), via_agent: false, agent: null,
       body: String(args.body), created_at: now(), edited_at: null, deleted_at: null, file_version: null})
     if (name === 'add_file_share_comment') {
+      const existing = state.threads.find(thread => thread.id === args.thread_id)
+      if (existing) return json(route, {thread: existing})
       const thread: RemoteThread = {id: String(args.thread_id), file_id: FILE, path: state.bundle.share.path,
         file_deleted: false, file_version: Number(args.file_version), anchor: args.anchor as CommentAnchor,
         created_at: now(), resolved_at: null, resolved_by: null, ask_agent: false, comments: [makeComment()]}
@@ -333,6 +335,7 @@ test('signed-in visitors can post, reply, edit, resolve, reopen, and remove thei
   await panel(page).getByRole('button', {name: 'Comment', exact: true}).click()
   const thread = panel(page).getByRole('article').first()
   await expect(thread.getByText('Initial feedback', {exact: true})).toBeVisible()
+  await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toHaveCount(0)
   await thread.getByRole('button', {name: 'Reply', exact: true}).click()
   await thread.getByRole('textbox', {name: 'Reply', exact: true}).fill('A useful reply')
   await thread.getByRole('button', {name: 'Reply', exact: true}).last().click()
@@ -353,6 +356,29 @@ test('signed-in visitors can post, reply, edit, resolve, reopen, and remove thei
     'list_file_share_comments','add_file_share_comment','reply_file_share_comment','edit_file_share_comment','resolve_file_share_thread','delete_file_share_comment',
   ]))
   expect(fake.server.projects.size).toBe(0)
+})
+
+test('two consecutive comments close their composers and use different thread and comment identities', async ({page}) => {
+  const {state} = await setup(page, {signedIn: true})
+  await page.goto(href)
+  const bodies = ['First separate comment', 'Second separate comment']
+  for (const body of bodies) {
+    await page.getByRole('button', {name: 'Add comment', exact: true}).click()
+    await panel(page).getByRole('textbox', {name: 'New comment'}).fill(body)
+    await panel(page).getByRole('button', {name: 'Comment', exact: true}).click()
+    await expect(panel(page).getByText(body, {exact: true})).toBeVisible()
+    await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toHaveCount(0)
+  }
+  const writes = state.calls.filter(call => call.name === 'add_file_share_comment')
+  expect(writes).toHaveLength(2)
+  expect(new Set(writes.map(call => call.args.thread_id)).size).toBe(2)
+  expect(new Set(writes.map(call => call.args.comment_id)).size).toBe(2)
+  for (const {args} of writes) {
+    expect(args.thread_id).toMatch(/^[a-f0-9-]{36}$/)
+    expect(args.comment_id).toMatch(/^[a-f0-9-]{36}$/)
+  }
+  expect(state.threads.map(thread => thread.comments[0].body)).toEqual(bodies)
+  for (const body of bodies) await expect(panel(page).getByText(body, {exact: true})).toBeVisible()
 })
 
 test('revoking a link clears an already-open file on the next focus check', async ({page, appErrors}) => {
