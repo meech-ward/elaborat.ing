@@ -454,6 +454,7 @@ export const parentMessageSchema = z.union([
     kind: z.literal("reading-preferences"),
     session: z.string().check(z.minLength(8)),
     preferences: readingPreferencesSchema,
+    bottomInset: z.optional(whole.check(z.maximum(256))),
   }),
   z.object({
     kind: z.literal("authoring-paths"),

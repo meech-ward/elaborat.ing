@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/features/auth'
-import { Banner, CommentComposer, CommentThread, CommentsPanel } from '@/features/design-system'
+import { Banner, CommentComposer, CommentThread, CommentsPanel, CommentsSheet, type CommentsPanelProps } from '@/features/design-system'
+import { useCompactWorkbench } from '@/features/workbench/compactWorkbench'
 import { noteMarks, notePlaces } from '@/features/comments/noteMarks'
 import { sectionAnchor, textAnchor, type CommentAnchor } from '@/features/comments/placement'
 import { threadViews, fileNoun } from '@/features/comments/ui/threadViews'
@@ -19,6 +20,7 @@ function newDraft(bundle: SharedBundle, anchor: CommentAnchor): ShareCommentDraf
 /** Link discussion uses existing anchors and UI, with no project membership or private threads. */
 export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnavailable: () => void) {
   const auth = useAuth()
+  const compact = useCompactWorkbench()
   const userId = auth.status === 'ready' ? auth.user.id : null
   const root = bundle.files.find(file => file.id === bundle.share.file_id)!
   const [loadedDiscussion, setDiscussion] = useState<{viewer: string | null; value: SharedDiscussion} | null>(null)
@@ -63,8 +65,14 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
   }, [refresh, userId, bundle.share.revision])
   const restored = useRef(false)
   const restoringSignIn = useRef(draft !== null)
+  const [readingPlace, setReadingPlace] = useState<{top: number} | null>(() =>
+    draft?.anchor.kind === 'document' && draft.sourceOffset !== undefined ? {top: draft.sourceOffset} : null)
+  const readingPlaceShown = useCallback(() => {restored.current = true; setReadingPlace(null)}, [])
   useEffect(() => {
     if (!restoringSignIn.current || restored.current || !draft) return
+    // A reading position may be a paragraph boundary with no text to flash.
+    // The editor's place prop handles it once this source is rendered.
+    if (draft.anchor.kind === 'document' && draft.sourceOffset !== undefined) return
     let stopped = false
     let timer = 0
     const restore = async () => {
@@ -75,13 +83,6 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
       restored.current = true
       window.scrollTo({top: draft.scroll})
       if (draft.anchor.kind === 'text' || draft.anchor.kind === 'section') apiRef.current?.revealRange(draft.anchor.position.start, draft.anchor.position.end, false)
-      else if (draft.sourceOffset !== undefined && root.content.length) {
-        // revealRange highlights a nonempty source range. A reading position
-        // can be a caret or EOF, so reveal its nearest character.
-        const from = Math.max(0, Math.min(root.content.length - 1, draft.sourceOffset))
-        const width = (root.content.codePointAt(from) ?? 0) > 0xffff ? 2 : 1
-        apiRef.current?.revealRange(from, Math.min(root.content.length, from + width), false)
-      }
     }
     timer = window.setTimeout(() => void restore(), 500)
     return () => {stopped = true; clearTimeout(timer)}
@@ -135,7 +136,7 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
   const views = threadViews(threads, places, {userId, owner: discussion?.can_moderate ?? false}, fileNoun(root.path))
   const canComment = !bundle.share.archived
   const select = (id: string, focus = false) => {
-    setActive(id); setOpen(true)
+    setActive(id); setOpen(!compact || !focus)
     const range = places.get(id)?.range
     if (range) apiRef.current?.revealRange(range.start, range.end, focus)
     requestAnimationFrame(() => document.getElementById(`shared-thread-${id}`)?.scrollIntoView({block: 'nearest'}))
@@ -152,24 +153,35 @@ export function useSharedDiscussion(token: string, bundle: SharedBundle, onUnava
     canComment={canComment} canResolve={Boolean(userId && (view.own || discussion?.can_moderate))} signedIn={userId !== null}
     onSelect={select} onReply={reply} mutate={mutate} />
   const comments: RenderedComments = {marks, source: root.content, canComment, onComment: requestComment, onOpen: select}
-  const panel = open ? <aside aria-label="Shared file comments" className="min-w-0 rounded-xl border border-border bg-panel lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:w-96 lg:overflow-y-auto">
-    <p className="px-4 pt-4 text-xs text-muted-foreground">Visible to anyone with this link. Private project comments stay private.</p>
-    {!userId && canComment ? <p className="px-4 pt-2 text-xs text-muted-foreground">You can read comments here. Posting will ask you to sign in.</p> : null}
-    {error ? <Banner tone="danger" className="m-3">{error}</Banner> : null}
-    <CommentsPanel onClose={() => setOpen(false)} fileNoun={fileNoun(root.path)} openThreads={views.open.map(renderThread)} resolvedThreads={views.resolved.map(renderThread)}
-      status={discussion ? 'ready' : error ? 'error' : 'loading'} onRetry={() => void refresh()}
-      readOnly={canComment ? false : 'This project is archived. Comments are read only.'}
-      onCommentOnFile={canComment ? () => start() : undefined}
-      draft={draft ? <div className="p-3"><p className="mb-2 text-sm font-medium">{draft.replyTo ? 'Reply' : draft.anchor.kind === 'document' ? 'Comment on the whole file' : 'Comment on selected text'}</p>
+  const body: Omit<CommentsPanelProps, 'title' | 'headingLevel' | 'onClose'> = {
+    fileNoun: fileNoun(root.path), openThreads: views.open.map(renderThread), resolvedThreads: views.resolved.map(renderThread),
+    status: discussion ? 'ready' : error ? 'error' : 'loading', onRetry: () => void refresh(),
+    readOnly: canComment ? false : 'This project is archived. Comments are read only.',
+    onCommentOnFile: canComment ? () => start() : undefined,
+    intro: <div className="px-1 text-xs text-muted-foreground">
+      <p>Visible to anyone with this link. Private project comments stay private.</p>
+      {!userId && canComment ? <p className="mt-2">You can read comments here. Posting will ask you to sign in.</p> : null}
+      {error ? <Banner tone="danger" className="mt-3">{error}</Banner> : null}
+    </div>,
+    draft: draft ? <div className="p-3"><p className="mb-2 text-sm font-medium">{draft.replyTo ? 'Reply' : draft.anchor.kind === 'document' ? 'Comment on the whole file' : 'Comment on selected text'}</p>
         {(draft.anchor.kind === 'text' || draft.anchor.kind === 'section') ? <blockquote className="mb-3 line-clamp-3 border-l-2 border-accent-line pl-3 text-sm text-muted-foreground">{draft.anchor.quote.exact}</blockquote> : null}
         <CommentComposer key={draft.commentId} label="New comment" value={draft.body}
           onValueChange={body => setDraft(activeDraft => activeDraft?.commentId === draft.commentId ? {...activeDraft, body} : activeDraft)}
           submitLabel={userId ? draft.replyTo ? 'Reply' : 'Comment' : 'Sign in to post'} maxLength={10_000}
           disabledReason={canComment ? undefined : 'This project is archived.'} onSubmit={submit}
           onCancel={() => {forgetShareDraft(bundle.share.id); setDraft(null)}} autoFocus />
-      </div> : undefined} />
-  </aside> : null
-  return {comments, apiRef, panel, open, toggle: () => setOpen(value => !value), start: () => start(), canComment}
+      </div> : undefined,
+  }
+  const close = () => {
+    setOpen(false)
+    requestAnimationFrame(() => document.getElementById('shared-comments-toggle')?.focus())
+  }
+  const panel = compact
+    ? <CommentsSheet open={open} onOpenChange={setOpen} title="Shared file comments" {...body} />
+    : open ? <CommentsPanel {...body} render={<aside aria-label="Shared file comments" />} onClose={close}
+      className="h-full min-h-0 w-80 shrink-0 rounded-none border-y-0 border-r-0 shadow-none"
+      onKeyDown={event => {if (event.key === 'Escape' && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest('textarea, input'))) {event.preventDefault(); close()}}} /> : null
+  return {comments, apiRef, panel, open, readingPlace, readingPlaceShown, toggle: () => setOpen(value => !value), start: () => start(), canComment}
 }
 
 function SharedDiscussionThread({view, active, canComment, canResolve, signedIn, onSelect, onReply, mutate}: {

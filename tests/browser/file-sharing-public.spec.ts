@@ -13,7 +13,8 @@ const FILE = 'f0000000-0000-4000-8000-000000000001'
 const href = new URL(`s/${TOKEN}`, APP_URL).href
 const FRAME = 'iframe[title="Isolated document preview"]'
 const frame = (page: Page) => page.frameLocator(FRAME).first()
-const panel = (page: Page) => page.getByRole('complementary', { name: 'Shared file comments' })
+const panel = (page: Page) => page.getByRole('complementary', {name: 'Shared file comments'})
+  .or(page.getByRole('dialog', {name: 'Shared file comments'}))
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY6kAAAAASUVORK5CYII='
 const CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS'}
 const now = () => new Date().toISOString()
@@ -30,6 +31,16 @@ async function expectNoCodePrompt(page: Page) {
 function bundle(content = '# Shared guide\n\nRead without an account.', path = 'guide.mdx'): SharedBundle {
   return {share: {id: SHARE, file_id: FILE, path, version: 7, revision: 7, archived: false},
     files: [{id: FILE, path, content, version: 7}], images: []}
+}
+
+function discussionThreads(count: number): RemoteThread[] {
+  return Array.from({length: count}, (_, index) => ({
+    id: crypto.randomUUID(), file_id: FILE, path: 'guide.mdx', file_deleted: false, file_version: 7,
+    anchor: {kind: 'document'}, created_at: now(), resolved_at: null, resolved_by: null, ask_agent: false,
+    comments: [{id: crypto.randomUUID(), author: author(), via_agent: false, agent: null,
+      body: `Review ${index + 1}: ${'Keep this part clear. '.repeat(6).trim()}`,
+      created_at: now(), edited_at: null, deleted_at: null, file_version: null}],
+  }))
 }
 
 async function setup(page: Page, options: {bundle?: SharedBundle; signedIn?: boolean; threads?: RemoteThread[]} = {}) {
@@ -122,6 +133,32 @@ test('shared notes render local images, drawings, diagrams, and collapsible embe
   await expect(page.locator('.monaco-editor')).toHaveCount(0)
   await details.click()
   await expect(details).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('an embedded document opened separately fits a short landscape viewport', async ({page}) => {
+  await page.setViewportSize({width: 844, height: 390})
+  const shared = bundle('# Shared guide\n\n<Document src="child.md" title="Landscape details" />')
+  shared.files.push({id: crypto.randomUUID(), path: 'child.md', version: 7,
+    content: `# Embedded landscape details\n\n${'Read a paragraph in the embedded file.\n\n'.repeat(20)}The landscape document ends here.`})
+  await setup(page, {bundle: shared})
+  await page.goto(href)
+  await frame(page).getByRole('button', {name: 'Open separately', exact: true}).click()
+  const dialog = page.getByRole('dialog', {name: 'child.md', exact: true})
+  await expect(dialog).toBeVisible()
+  const preview = dialog.locator(FRAME)
+  await expect(dialog.frameLocator(FRAME).getByRole('heading', {name: 'Embedded landscape details'})).toBeVisible()
+  const box = (await dialog.boundingBox())!
+  const previewBox = (await preview.boundingBox())!
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.y + box.height).toBeLessThanOrEqual(391)
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(845)
+  expect(previewBox.y).toBeGreaterThanOrEqual(box.y)
+  expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(box.y + box.height + 1)
+  const close = dialog.getByRole('button', {name: 'Close', exact: true})
+  await expect(close).toBeInViewport()
+  await close.click()
+  await expect(dialog).toHaveCount(0)
 })
 
 test('ordinary project links stay private while shared custom components render automatically', async ({page}) => {
@@ -286,7 +323,8 @@ test('unhandled and programmatic native form submissions cannot send data or nav
   expect(state.calls.every(call => call.name === 'read' || call.name === 'list_file_share_comments')).toBe(true)
 })
 
-test('a fixed-position modal in a long interactive shared note opens fully in the visible browser viewport', async ({page}) => {
+for (const width of [390, 1280]) test(`a fixed-position modal in a long interactive shared note opens fully in the viewport at ${width}px`, async ({page}) => {
+  await page.setViewportSize({width, height: 900})
   const content = `import {useState} from 'react'
 
 export function DetailsModal() {
@@ -325,7 +363,8 @@ ${'Read a paragraph in this long interactive document.\n\n'.repeat(65)}`
   await expect(modal).toHaveCount(0)
 })
 
-test('posting asks for sign-in and returns with the selection, comment draft, and reading position', async ({page}) => {
+for (const width of [390, 1280]) test(`posting asks for sign-in and restores the selection, draft, and reading position at ${width}px`, async ({page}) => {
+  await page.setViewportSize({width, height: 900})
   const shared = bundle(`# Shared guide\n\n${'Read this paragraph before reviewing the later section.\n\n'.repeat(45)}## Review this section\n\nFeedback belongs here.`)
   const {state, fake} = await setup(page, {bundle: shared})
   await page.goto(href)
@@ -348,7 +387,15 @@ test('posting asks for sign-in and returns with the selection, comment draft, an
   await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toHaveValue('Keep my feedback through sign-in.')
   await expect(panel(page).locator('blockquote')).toContainText('Review this section')
   await expect.poll(() => frame(page).locator('html').evaluate(() => window.scrollY), {timeout: 10_000}).toBeGreaterThan(scroll * 0.7)
+  if (width < 650) {
+    await panel(page).getByRole('button', {name: 'Close comments', exact: true}).click()
+    await expect(panel(page)).toHaveCount(0)
+  }
   await expect(frame(page).getByRole('heading', {name: 'Review this section'})).toBeInViewport()
+  if (width < 650) {
+    await page.getByRole('button', {name: 'Comments', exact: true}).click()
+    await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toHaveValue('Keep my feedback through sign-in.')
+  }
   await panel(page).getByRole('button', {name: 'Comment', exact: true}).click()
   await expect(panel(page).getByText('Keep my feedback through sign-in.', {exact: true})).toBeVisible()
   const posted = state.calls.find(c => c.name === 'add_file_share_comment')!
@@ -466,13 +513,78 @@ test('an unavailable link explains itself and an archived file stays readable wi
   await expect(panel(page).getByRole('textbox')).toHaveCount(0)
 })
 
-for (const width of [390, 1280]) test(`the public file and comment draft fit at ${width}px and axe finds nothing`, async ({page}) => {
+for (const width of [390, 1280]) test(`the shared document fills the viewport and floating comments work at ${width}px with no axe violations`, async ({page}) => {
   await page.setViewportSize({width, height: 900})
-  await setup(page)
+  const lastLine = 'This final paragraph stays clear of the floating controls.'
+  await setup(page, {threads: discussionThreads(12), bundle: bundle(`# Shared guide\n\n${'A paragraph in the full-height reading view.\n\n'.repeat(40)}${lastLine}`)})
   await page.goto(href)
   await expect(frame(page).getByRole('heading', {name: 'Shared guide'})).toBeVisible({timeout: 20_000})
+  const preview = page.locator(FRAME).first()
+  const before = (await preview.boundingBox())!
+  expect(before.y).toBeGreaterThanOrEqual(-1)
+  expect(before.y).toBeLessThanOrEqual(16)
+  expect(before.height).toBeGreaterThanOrEqual(900 - 32)
+  expect(before.y + before.height).toBeLessThanOrEqual(901)
+  expect(before.width).toBeGreaterThanOrEqual(width - 32)
+  const controlsTop: number[] = []
+  for (const name of ['Comments', 'Add comment']) {
+    const box = (await page.getByRole('button', {name, exact: true}).boundingBox())!
+    expect(box.width).toBeLessThanOrEqual(48)
+    expect(box.height).toBeLessThanOrEqual(48)
+    expect(box.y).toBeGreaterThan(900 / 2)
+    expect(box.y + box.height).toBeLessThanOrEqual(900)
+    controlsTop.push(box.y)
+  }
+  await frame(page).locator('html').evaluate(async () => {
+    await document.fonts.ready
+    window.scrollTo(0, document.documentElement.scrollHeight)
+  })
+  const eof = frame(page).getByText(lastLine, {exact: true})
+  await expect(eof).toBeInViewport()
+  const eofBox = (await eof.boundingBox())!
+  expect(eofBox.y + eofBox.height).toBeLessThan(Math.min(...controlsTop))
+  await page.getByRole('button', {name: 'Comments', exact: true}).click()
+  await expect(panel(page)).toBeVisible()
+  await expect(panel(page).getByRole('article')).toHaveCount(12)
+  const open = (await preview.boundingBox())!
+  expect(Math.abs(open.y - before.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(open.height - before.height)).toBeLessThanOrEqual(1)
+  if (width < 650) expect(Math.abs(open.width - before.width)).toBeLessThanOrEqual(1)
+  else expect(open.width).toBeLessThan(before.width - 280)
+  await expect.poll(async () => {
+    const box = await panel(page).boundingBox()
+    return box ? box.y + box.height : Number.POSITIVE_INFINITY
+  }).toBeLessThanOrEqual(901)
+  const rail = (await panel(page).boundingBox())!
+  expect(rail.x).toBeGreaterThanOrEqual(0)
+  expect(rail.y).toBeGreaterThanOrEqual(0)
+  expect(rail.x + rail.width).toBeLessThanOrEqual(width + 1)
+  expect(rail.y + rail.height).toBeLessThanOrEqual(901)
+  const last = panel(page).getByRole('article').last()
+  await expect(last).not.toBeInViewport()
+  await last.scrollIntoViewIfNeeded()
+  await expect(last).toBeInViewport()
+  expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  await panel(page).getByRole('button', {name: 'Close comments', exact: true}).click()
+  await expect(panel(page)).toHaveCount(0)
+  await expect.poll(async () => (await preview.boundingBox())?.width).toBe(before.width)
   await page.getByRole('button', {name: 'Add comment', exact: true}).click()
-  await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toBeVisible()
+  const field = panel(page).getByRole('textbox', {name: 'New comment'})
+  await field.fill('Keep this draft when I close comments.')
+  const submit = panel(page).getByRole('button', {name: 'Sign in to post', exact: true})
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeInViewport()
+  const submitBox = (await submit.boundingBox())!
+  expect(submitBox.y).toBeGreaterThanOrEqual(0)
+  expect(submitBox.y + submitBox.height).toBeLessThanOrEqual(901)
+  expect(Math.abs((await preview.boundingBox())!.height - before.height)).toBeLessThanOrEqual(1)
+  expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  await panel(page).getByRole('button', {name: 'Close comments', exact: true}).click()
+  await expect(panel(page)).toHaveCount(0)
+  await page.getByRole('button', {name: 'Comments', exact: true}).click()
+  await expect(field).toHaveValue('Keep this draft when I close comments.')
+  await expect(submit).toBeInViewport()
+  await expect(panel(page)).toHaveCSS('opacity', '1')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const result = await new AxeBuilder({page}).analyze()
   expect(result.violations.map(v => ({id: v.id, targets: v.nodes.map(n => n.target)}))).toEqual([])

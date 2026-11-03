@@ -6,7 +6,7 @@ import { resolveNoteLink } from '@/features/workbench/noteLinks'
 import type { DocumentEmbedHost } from '@/features/rendered/documentEmbeds'
 import { MAX_DOCUMENT_EMBED_DEPTH } from '@/features/rendered/documentEmbeds'
 import { isDocumentPath } from '@/features/document/documentPaths'
-import type { RenderedComments, RenderedEditorApi } from '@/features/rendered'
+import type { RenderedComments, RenderedEditorApi, RenderedEditorProps } from '@/features/rendered'
 import { parseImageReferences } from '@/features/images/referenceParser'
 import type { ImagePreview } from '@/features/images/transport'
 import { drawingSvgForContent, diagramSvgForWorkspace } from '@/features/workbench/resources'
@@ -26,6 +26,9 @@ type Props = {
   bundle: SharedBundle; file: SharedFile; comments?: RenderedComments;
   apiRef?: React.RefObject<RenderedEditorApi | null>;
   onOpenEmbedded: (path: string) => void;
+  bottomInset?: number;
+  place?: RenderedEditorProps['place'];
+  onPlaceShown?: () => void;
 }
 
 function useResourcePixels(bundle: SharedBundle) {
@@ -66,20 +69,20 @@ export function SharedFileRenderer(props: Props) {
   const pixels = useResourcePixels(props.bundle)
   const [budget] = useState(documentBudget)
   const image = props.bundle.images.find(i => i.path === props.file.path)
-  if (image) return <figure className="p-4"><img src={image.dataURL} alt={props.file.path.split('/').pop() ?? 'Shared image'} width={image.width} height={image.height} className="mx-auto h-auto max-h-[80dvh] max-w-full object-contain" /></figure>
+  if (image) return <figure className="h-full min-h-0 p-4" style={{paddingBottom: 16 + (props.bottomInset ?? 0)}}><img src={image.dataURL} alt={props.file.path.split('/').pop() ?? 'Shared image'} width={image.width} height={image.height} className="h-full w-full object-contain" /></figure>
   if (/\.(?:excalidraw(?:\.md)?|d2)$/i.test(props.file.path)) {
     if (!pixels) return <LoadingLine label="Rendering drawing" />
     const svg = pixels.pixels[props.file.path]
-    return svg ? <img alt={`Shared drawing ${props.file.path}`} className="h-auto max-h-[80dvh] w-full object-contain p-4" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />
+    return svg ? <img alt={`Shared drawing ${props.file.path}`} className="h-full w-full object-contain p-4" style={{paddingBottom: 16 + (props.bottomInset ?? 0)}} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />
       : <Banner tone="danger">The drawing could not render.</Banner>
   }
   if (!/\.(?:md|mdx)$/i.test(props.file.path)) return <Banner>This file type has no rendered preview.</Banner>
-  return <>{pixels?.error ? <Banner tone="warn">{pixels.error}</Banner> : null}
+  return <div className="flex h-full min-h-0 flex-col">{pixels?.error ? <Banner tone="warn">{pixels.error}</Banner> : null}
     <SharedNote {...props} resources={pixels?.pixels ?? {}} budget={budget} />
-  </>
+  </div>
 }
 
-function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed}: Props & {
+function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed, bottomInset = 0, place, onPlaceShown}: Props & {
   resources: Record<string, string>; budget: Budget; embed?: Attached
 }) {
   const format = /\.mdx$/i.test(file.path) ? 'mdx' : 'md'
@@ -171,13 +174,14 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
   return <>
     {!embed && notice ? <Banner className="m-3">{notice}</Banner> : null}
     {!embed && renderError ? <Banner tone="danger" className="m-3">{renderError}</Banner> : null}
-    <div style={embed ? {display: 'contents'} : {height: 'calc(100dvh - 10rem)', minHeight: 480, minWidth: 0}}>
+    <div style={embed ? {display: 'contents'} : {height: '100%', flex: '1 1 0%', minHeight: 0, minWidth: 0}}>
       <LazyRenderedEditor document={{text: file.content, format, revision: file.version}} documentId={file.version} documentPath={file.path}
         externalFrame={embed?.frame} externalFrameScriptUrl={embed?.frameScriptUrl} embeddedAncestors={embed?.ancestors ?? [file.path]}
         documentEmbedHost={host} componentEnvironment={componentState.environment} componentError={componentState.error} componentPending={componentState.pending}
         readOnly onPatch={() => false} onOpenLink={openLink} onError={setRenderError} errorBanner={false}
+        minViewportHeight={0} bottomInset={embed ? 0 : bottomInset}
         resources={resources} allowedResourcePaths={Object.keys(resources)} imageResources={images?.file === file ? images.pixels : {}} onReadImage={readImage}
-        onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={apiRef} />
+        onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={apiRef} place={place} onPlaceShown={onPlaceShown} />
     </div>
     {views.map(view => {
       const child = bundle.files.find(f => f.path === view.path)

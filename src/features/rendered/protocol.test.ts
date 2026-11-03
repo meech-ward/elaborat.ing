@@ -34,6 +34,15 @@ import {
 const FRAME = { id: 'frame' };
 const OTHER = { id: 'other' };
 
+test('reading space for floating controls is optional and bounded at the frame boundary', () => {
+  const data = {kind: 'reading-preferences', session: 'session-1234',
+    preferences: {width: 'standard', textSize: 'default', wideMedia: false, wideTables: false}};
+  const check = (message: unknown) => checkParentMessage({data: message, source: FRAME, activeSession: data.session}).ok;
+  expect(check(data)).toBe(true);
+  for (const bottomInset of [0, 72, 256]) expect(check({...data, bottomInset})).toBe(true);
+  for (const bottomInset of [-1, 257, 1.5, Infinity, '72px']) expect(check({...data, bottomInset})).toBe(false);
+});
+
 test('embedded document requests and auto-height messages are bounded and revision-checked', () => {
   const data = {kind:'document-embed-open',session:'session-1234',revision:7,id:'embed',path:'child.mdx',from:42};
   expect(checkChildMessage({data,source:FRAME,expectedSource:FRAME,session:data.session,revision:7}).ok).toBe(true);

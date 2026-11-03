@@ -60,17 +60,13 @@ export function PublicFilePage({token}: {token: string}) {
       document.title = oldTitle
     }
   }, [refresh])
-  return <div className="min-h-dvh bg-background text-foreground">
-    <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 sm:px-8">
-      <Link to="/" className="font-semibold">elaborat.ing</Link>
-      <span className="text-sm text-muted-foreground">Shared file · Read only</span>
-    </header>
-    {loading ? <main className="mx-auto max-w-3xl p-8"><LoadingLine label="Loading shared file" /></main> : null}
-    {error ? <main className="mx-auto max-w-3xl p-8"><h1 className="mb-4 text-xl font-semibold">Shared file unavailable</h1>
+  return <div className="h-dvh overflow-hidden bg-background text-foreground">
+    {loading ? <main className="flex h-full items-center justify-center p-8"><LoadingLine label="Loading shared file" /></main> : null}
+    {error ? <main className="mx-auto h-full max-w-3xl overflow-y-auto p-8"><Link to="/" className="mb-8 inline-block font-semibold">elaborat.ing</Link><h1 className="mb-4 text-xl font-semibold">Shared file unavailable</h1>
       <Banner tone="danger">{error}</Banner><Button className="mt-4" variant="secondary" onClick={() => {setLoading(true); void refresh()}}>Try again</Button>
     </main> : null}
     {bundle && module ? <module.PublicFileContent token={token} bundle={bundle} onUnavailable={() => void refresh()} /> : null}
-    {bundle && !module ? <main className="mx-auto max-w-3xl p-8">{moduleError
+    {bundle && !module ? <main className="flex h-full flex-col items-center justify-center gap-4 p-8">{moduleError
       ? <><Banner tone="danger">The file viewer could not load.</Banner><Button onClick={retry}>Try again</Button></>
       : <LoadingLine label="Loading file viewer" />}</main> : null}
   </div>

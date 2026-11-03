@@ -973,6 +973,7 @@ function onParentMessage(event: MessageEvent): void {
     return;
   }
   if (message.kind === "reading-preferences") {
+    document.documentElement.style.setProperty('--reading-bottom-inset', `${message.bottomInset ?? 0}px`);
     for (const [property, value] of Object.entries(
       readingStyle(message.preferences),
     ))

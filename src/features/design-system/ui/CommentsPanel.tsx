@@ -41,6 +41,8 @@ export type CommentsBodyProps = {
   placeholder?: ReactNode
   /** A CommentDraft being written, or a CommentAttachPrompt, shown first. */
   draft?: ReactNode
+  /** Context shown inside the scrolling body before comments or a draft. */
+  intro?: ReactNode
   /** Start a comment on the whole file; shows the header button and the empty state's action. */
   onCommentOnFile?: () => void
   /** What the file is, in "Comment on the whole note": note, drawing, diagram or file. */
@@ -137,6 +139,7 @@ function CommentsBody({
   readOnly = false,
   placeholder,
   draft,
+  intro,
   onCommentOnFile,
   fileNoun = "note",
   onRetry,
@@ -261,6 +264,7 @@ function CommentsBody({
       </p>
       <ScrollArea className="min-h-0 flex-1">
         <div data-slot="comments-body" className={cn("flex flex-col", touch ? "gap-4 p-3 pb-6" : "gap-3.5 p-2.5")}>
+          {intro}
           {content}
         </div>
       </ScrollArea>
@@ -315,6 +319,7 @@ export function CommentsPanel({
   readOnly = false,
   placeholder,
   draft,
+  intro,
   onCommentOnFile,
   fileNoun = "note",
   onRetry,
@@ -349,6 +354,7 @@ export function CommentsPanel({
         readOnly={readOnly}
         placeholder={placeholder}
         draft={draft}
+        intro={intro}
         onCommentOnFile={onCommentOnFile}
         fileNoun={fileNoun}
         onRetry={onRetry}
@@ -399,6 +405,7 @@ export function CommentsSheet({
   readOnly = false,
   placeholder,
   draft,
+  intro,
   onCommentOnFile,
   fileNoun = "note",
   onRetry,
@@ -448,6 +455,7 @@ export function CommentsSheet({
           readOnly={readOnly}
           placeholder={placeholder}
           draft={draft}
+          intro={intro}
           onCommentOnFile={onCommentOnFile}
           fileNoun={fileNoun}
           onRetry={onRetry}

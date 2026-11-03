@@ -117,6 +117,10 @@ export type RenderedEditorProps = {
   /** Root-to-current file chain, used to stop cycles before any file is read. */
   embeddedAncestors?: readonly string[];
   onContentHeight?: (height: number) => void;
+  /** Space to scroll past floating controls without reducing the viewport. */
+  bottomInset?: number;
+  /** Small dialogs can allocate less than the editor's usual 320px minimum. */
+  minViewportHeight?: number;
   onSave?: () => void;
   /** Mounted frames in hidden tabs/Source mode cannot own a viewer portal. */
   active?: boolean;
@@ -323,6 +327,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     documentEmbedHost,
     embeddedAncestors,
     onContentHeight,
+    bottomInset = 0,
+    minViewportHeight = 320,
     onSave,
     active = true,
     documentId,
@@ -855,8 +861,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (exposed) portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
   }, [appearance, exposed, readyTick, session]);
   useEffect(() => {
-    if (exposed) portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading });
-  }, [reading, exposed, readyTick, session]);
+    if (exposed) portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
+  }, [reading, bottomInset, exposed, readyTick, session]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
   // other text wait for the next; meanwhile the frame's marks move with edits.
@@ -1674,7 +1680,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           style={{
             minWidth: 0,
             flex: "1 1 auto",
-            minHeight: 320,
+            minHeight: minViewportHeight,
             border: 0,
             display: "block",
             // The sandbox domain's page shows once it says ready, never a browser's error page.

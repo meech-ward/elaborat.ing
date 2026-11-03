@@ -20,9 +20,12 @@ comments. Public author information never includes email addresses. Authors
 can edit or remove their own words; the owner can moderate. Archived projects
 remain readable but refuse comment writes.
 
-Notes use the workbench's viewport-sized scrolling preview, so fixed controls
-and dialogs stay within the reader's view. Sign-in recovery retains both the
-page position and the renderer's source position.
+Notes fill the viewport with the workbench's scrolling preview. Compact
+floating controls replace the page header and outer document card. Comments
+open in a full-height desktop rail or the normal bottom sheet on phones.
+The document can scroll above the floating controls, including its last line;
+fixed component dialogs stay within the preview. Sign-in recovery retains
+the renderer's source position.
 
 The server validates the active token and resolves a bounded dependency graph
 from authoritative saved source. Arbitrary client paths never authorize
