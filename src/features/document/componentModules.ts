@@ -220,5 +220,7 @@ export async function prepareComponentEnvironment(source: string, load?: Compone
   if (custom.length > 64) throw new Error('A note supports at most 64 custom components');
   if (new Set(custom.map(c => c.name)).size !== custom.length) throw new Error('Duplicate component binding');
   // Exact version material is an internal key, never an authorization token.
-  return {source,catalog:[...COMPONENT_CATALOG,...custom],modules,key:versions.join('\0'),code};
+  // Without custom components the catalog is the built-in one itself, the same
+  // array for every note and keystroke.
+  return {source,catalog:custom.length ? [...COMPONENT_CATALOG,...custom] : COMPONENT_CATALOG,modules,key:versions.join('\0'),code};
 }

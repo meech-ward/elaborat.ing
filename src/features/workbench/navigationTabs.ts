@@ -7,11 +7,16 @@ export interface NavigationTabState extends TabState {
 }
 export const emptyNavigationTabs: NavigationTabState = { ...emptyTabs, locationVersion: 0, locationCommand: null };
 
-/** User/automatic tab transitions emit one URL command. URL reads emit none. */
+/**
+ * User/automatic tab transitions emit one URL command. URL reads emit none.
+ * An action that changes nothing returns `state` itself, so React renders
+ * nothing for it.
+ */
 export function navigationTabTransition(state: NavigationTabState, action: NavigationTabAction): NavigationTabState {
   const next = tabTransition(state, action);
-  if (action.fromLocation) return { ...state, ...next, locationCommand: null };
-  if (next === state || (next.active === state.active && action.type !== "select" && action.type !== "opened")) return { ...state, ...next };
+  if (action.fromLocation) return next === state && state.locationCommand === null ? state : { ...state, ...next, locationCommand: null };
+  if (next === state) return state;
+  if (next.active === state.active && action.type !== "select" && action.type !== "opened") return { ...state, ...next };
   const version = state.locationVersion + 1;
   return { ...state, ...next, locationVersion: version, locationCommand: {
     version, path: next.active, replace: action.type !== "opened" && action.type !== "select",

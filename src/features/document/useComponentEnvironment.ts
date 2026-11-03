@@ -56,6 +56,37 @@ export function componentPreparationForIdentity(state: ComponentPreparation, ide
   return { environment: state.environment, error: state.error, pending: !state.settled || state.loader !== loader };
 }
 
+/** Longer than this, a text could pass 2 MiB (three UTF-8 bytes per UTF-16 unit), which only a compile reports. */
+const MAX_PLAIN_TEXT = Math.floor((2 * 1024 * 1024) / 3);
+
+/**
+ * Text with nothing a component environment is made from: no brace (MDX
+ * expressions, attribute values and spreads all start with one) and no line
+ * that could begin an import or export (the first one after a byte order
+ * mark too). Anything else may hold code.
+ */
+export function holdsNoCode(source: string): boolean {
+  return source.length <= MAX_PLAIN_TEXT && !source.includes('{') && !/^\uFEFF?[ \t]{0,3}(?:import|export)\b/m.test(source);
+}
+
+/**
+ * The environment for `source` without compiling it, when the last one
+ * compiled for this document (with this loader, and no error) has no custom
+ * code or modules and the new text holds no code either: the catalog,
+ * modules and code are then the same, and only the source is new. Otherwise
+ * null, and the text is compiled. Typing prose in such a note compiles nothing.
+ */
+export function reusedEnvironment(state: ComponentPreparation, identity: number, loader: ComponentSourceLoader | undefined, source: string): ComponentEnvironment | null {
+  const environment = state.environment;
+  if (!environment || !state.settled || state.error !== undefined || state.identity !== identity || state.loader !== loader) return null;
+  if (environment.modules.length > 0 || environment.code.length > 0 || !holdsNoCode(source)) return null;
+  return environment.source === source ? environment : { ...environment, source };
+}
+
+// The MDX compiler loads with the first note that needs it.
+const componentModules = () => import('./componentModules');
+const NO_COMPONENTS = {};
+
 /**
  * Saved dependencies are cached until the explicit note Reload generation, or
  * until one of the modules they came from is saved again, here or by sync.
@@ -68,20 +99,25 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   const cached = useMemo(() => cachedSourceLoader(load,`${identity}:${generation}:${moduleEpoch}`), [load,identity,generation,moduleEpoch]);
   const cachedLoader = cached?.loader;
   const [state,setState] = useState<ComponentPreparation>({});
+  // Made in the same render as the text, so the rendered view never waits for it.
+  const reused = useMemo(() => enabled ? reusedEnvironment(state,identity,cachedLoader,source) : null, [enabled,state,identity,cachedLoader,source]);
+  const compile = enabled && reused === null;
   useEffect(() => {
-    if (!enabled) return;
+    if (!compile) return;
     let cancelled = false;
-    // The MDX compiler loads with the first note that needs it.
-    import('./componentModules').then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
+    componentModules().then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
       if (!cancelled) setState({environment,loader:cachedLoader,settled:true,identity});
     },error => {
       if (!cancelled) setState(previous => ({environment:previous.identity === identity ? previous.environment : undefined,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true,identity}));
     });
     return () => {cancelled = true;};
-  },[source,enabled,cachedLoader,identity]);
+  },[source,compile,cachedLoader,identity]);
   useEffect(() => {
     if (!enabled || !load || !subscribe || !cached) return;
     return watchSavedModules(subscribe,cached.revisions,load,() => setModuleEpoch(epoch => epoch + 1));
   },[enabled,load,subscribe,cached]);
-  return enabled ? componentPreparationForIdentity(state,identity,cachedLoader) : {};
+  return useMemo(() => {
+    if (!enabled) return NO_COMPONENTS;
+    return reused ? {environment:reused,pending:false} : componentPreparationForIdentity(state,identity,cachedLoader);
+  }, [enabled,reused,state,identity,cachedLoader]);
 }

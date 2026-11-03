@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { NEEDS_CONNECTION, useCommentsUi, useFileThreads, useProjectComments } from "./context"
 import type { CommentFile, ThreadPlace } from "./controller"
 import { DRAFT_MARK, noteMarks, notePlaces, type CommentMark } from "./noteMarks"
@@ -66,10 +66,15 @@ export function useNoteComments({
   const [shown, setShown] = useState(active)
   if (active && !shown) setShown(true)
   const { threads } = useFileThreads(shown && file ? file.fileId : null)
-  // Placing every thread runs as the text changes; a deferred copy keeps typing quick.
-  const source = useDeferredValue(text)
-  const places = useMemo(() => notePlaces(threads, source), [threads, source])
   const request = ui.request && file && ui.request.file.fileId === file.fileId ? ui.request : null
+  // Placing every thread runs as the text changes; a deferred copy keeps
+  // typing quick. With no thread and no new comment there is nothing to
+  // place, so the text serves as it is: a deferred copy would only render the
+  // note's session once more after every keystroke.
+  const placing = threads.length > 0 || request !== null
+  const deferred = useDeferredValue(placing ? text : null)
+  const source = placing ? (deferred ?? text) : text
+  const places = useMemo(() => notePlaces(threads, source), [threads, source])
   const marks = useMemo(
     () => (threads.length === 0 && !request ? NO_MARKS : noteMarks(threads, places, ui.activeThreadId, request && { anchor: request.anchor, source })),
     [places, request, source, threads, ui.activeThreadId],
@@ -114,38 +119,42 @@ export function useNoteComments({
   }, [active, controller, fileId])
 
   const canComment = Boolean(comments?.canWrite && file)
+  // The same functions while the project and file are the same, so views
+  // that take them do not see a change at every keystroke.
+  const open = useCallback((threadId: string, focus = true) => {
+    if (!comments) return
+    if (threadId === DRAFT_MARK) comments.controller.setPanelOpen(true)
+    else comments.controller.openThread(threadId, focus)
+  }, [comments])
+  const comment = useCallback((request: NoteCommentRequest, text: string): string | null => {
+    if (!comments || !file || !comments.canWrite) return null
+    if (request.kind === "section") {
+      try {
+        const anchor = sectionAnchor(text, request.offset)
+        comments.controller.requestComment({ file, anchor, text: text.slice(anchor.position.start, anchor.position.end) })
+        return null
+      } catch {
+        return "Put the cursor on a heading to comment on its section."
+      }
+    }
+    // Leave out the spaces and line breaks at either end of the selection.
+    let from = request.from
+    let to = request.to
+    while (from < to && /\s/.test(text[from])) from++
+    while (to > from && /\s/.test(text[to - 1])) to--
+    if (from >= to) return "Select some text to comment on."
+    if (to - from > MAX_QUOTE_LENGTH) return "A comment can quote at most 5,000 characters. Select less, or comment on its section."
+    const anchor = textAnchor(text, from, to)
+    comments.controller.requestComment({ file, anchor, text: anchor.quote.exact })
+    return null
+  }, [comments, file])
   return {
     canComment,
     offline: Boolean(file && comments?.writeBlocked === NEEDS_CONNECTION),
     attaching: ui.attaching !== null && threads.some((thread) => thread.id === ui.attaching),
     marks,
     marksSource: source,
-    open(threadId, focus = true) {
-      if (!comments) return
-      if (threadId === DRAFT_MARK) comments.controller.setPanelOpen(true)
-      else comments.controller.openThread(threadId, focus)
-    },
-    comment(request, text) {
-      if (!comments || !file || !comments.canWrite) return null
-      if (request.kind === "section") {
-        try {
-          const anchor = sectionAnchor(text, request.offset)
-          comments.controller.requestComment({ file, anchor, text: text.slice(anchor.position.start, anchor.position.end) })
-          return null
-        } catch {
-          return "Put the cursor on a heading to comment on its section."
-        }
-      }
-      // Leave out the spaces and line breaks at either end of the selection.
-      let from = request.from
-      let to = request.to
-      while (from < to && /\s/.test(text[from])) from++
-      while (to > from && /\s/.test(text[to - 1])) to--
-      if (from >= to) return "Select some text to comment on."
-      if (to - from > MAX_QUOTE_LENGTH) return "A comment can quote at most 5,000 characters. Select less, or comment on its section."
-      const anchor = textAnchor(text, from, to)
-      comments.controller.requestComment({ file, anchor, text: anchor.quote.exact })
-      return null
-    },
+    open,
+    comment,
   }
 }

@@ -1,4 +1,4 @@
-import { FileStoreError, type ConflictCopies, type FileRef, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
+import { FileStoreError, type ConflictCopies, type FileRef, type FileStoreChange, type LocalChange, type ProjectFileStore, type StoredFile } from "@/features/project-storage/fileStore"
 import type { ImageAsset } from "@/features/images/types"
 
 /**
@@ -32,9 +32,15 @@ export interface WorkspaceStore {
   discardLocalDraft(path: string): Promise<void>
   /** Rename a new file that was never saved: only the name it will be saved under changes. */
   renameDraft(from: string, to: string): Promise<void>
-  /** Called after any change on this device, including changes sync brings in. */
-  subscribe(listener: () => void): () => void
+  /**
+   * Called after any change on this device, including changes sync brings in.
+   * "drafts" says it only replaced the unsaved text of files that already had
+   * unsaved edits (typing), which nothing in the file list shows.
+   */
+  subscribe(listener: (change: WorkspaceChange) => void): () => void
 }
+
+export type WorkspaceChange = FileStoreChange
 
 /** A listed file. `revision` is null for a file that exists only as an unsaved draft. */
 export type WorkspaceFileRef = Omit<FileRef, "revision"> & { revision: string | null }
@@ -113,7 +119,7 @@ export function projectWorkspace(
     renameDraft: (from, to) => store.renameDraft(from, to),
     subscribe(listener) {
       const local = store.subscribe(listener)
-      const synced = subscribeSync(listener)
+      const synced = subscribeSync(() => listener("files"))
       return () => {
         local()
         synced()
