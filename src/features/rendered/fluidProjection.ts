@@ -66,6 +66,14 @@ type MappedNode = {
   pos: number;
   end: number;
   root: number;
+  /** An inline island's formatting, which text typed at its edges is written inside. */
+  frames?: Frame[];
+  /**
+   * An island's source as written at the start of a line, without its
+   * container's prefix on its later lines: what the serializer writes for it
+   * in another place. Absent when that cannot be exact (`islandCopy`).
+   */
+  copy?: string;
 };
 type Leaf = {
   from: number;
@@ -100,6 +108,69 @@ const range = (node: Ast) => {
     throw new Error("Projection node has no authoritative source range");
   return { from, to };
 };
+/**
+ * The column a list item's blocks start at, as CommonMark reads it: after
+ * its marker and one to four spaces, or one past the marker when the line
+ * has nothing else or more spaces follow. Null inside a quote or with a tab,
+ * where the prefix is not plain spaces.
+ */
+function contentColumn(text: string, from: number): number | null {
+  const start = text.lastIndexOf("\n", from - 1) + 1;
+  const line = text.slice(from, (text.indexOf("\n", from) + 1 || text.length + 1) - 1);
+  const marker = /^(?:[-+*]|\d{1,9}[.)])([ \t]*)/.exec(line);
+  if (!marker || /[\t>]/.test(text.slice(start, from) + marker[1])) return null;
+  const spaces = marker[1].length;
+  const width = !line.slice(marker[0].length).trim() || spaces >= 5 ? 1 : spaces;
+  return from - start + marker[0].length - marker[1].length + width;
+}
+
+/**
+ * An island's source as its container holds it, at the start of a line: its
+ * own indentation past the `column` its container's blocks start at, then
+ * its lines without the `column` spaces the container puts before each.
+ * Written into any container, the island holds exactly what it held.
+ * Undefined when the container's prefix is not `column` spaces on every
+ * line (a quote, a tab), or for an inline island on more than one line; an
+ * island on one line is its source as it is.
+ */
+function islandCopy(text: string, from: number, to: number, column: number | null): string | undefined {
+  const source = text.slice(from, to);
+  if (!source.includes("\n")) return source;
+  const own = from - (text.lastIndexOf("\n", from - 1) + 1) - (column ?? 0);
+  if (column === null || own < 0 || /[^ ]/.test(text.slice(from - own, from))) return undefined;
+  const indent = " ".repeat(column);
+  const lines = source.split("\n");
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].startsWith(indent)) lines[i] = lines[i].slice(column);
+    else if (/^ *\r?$/.test(lines[i])) lines[i] = lines[i].replace(/^ */, "");
+    else return undefined;
+  }
+  return " ".repeat(own) + lines.join("\n");
+}
+
+/**
+ * The source of a node from `from` to `to` as written at the start of a
+ * line: each later line without the prefix (list indentation, quote markers)
+ * that its first line has before the node, so a writer can put the node into
+ * another container and add that container's own. A line without the prefix,
+ * such as a paragraph's lazy line, keeps what it has.
+ */
+function detached(text: string, from: number, to: number): string {
+  const start = text.lastIndexOf("\n", from - 1) + 1;
+  const prefix = text.slice(start, from).replace(/[^\s>]/g, " ");
+  const source = text.slice(from, to);
+  if (!prefix) return source;
+  return source
+    .split("\n")
+    .map((line, i) => {
+      if (!i) return line;
+      let at = 0;
+      while (at < prefix.length && line[at] === prefix[at]) at++;
+      return line.slice(at);
+    })
+    .join("\n");
+}
+
 function islandHash(value: string): string {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++)
@@ -229,10 +300,16 @@ export async function projectFluidSource(
     inline: boolean,
     pos: number,
     root: number,
-    marks: readonly Mark[] = [],
+    frames: Frame[] = [],
+    column: number | null = null,
   ): PMNode => {
-    const { from, to } = range(ast),
-      hash = islandHash(text.slice(from, to));
+    const { from, to } = range(ast);
+    // An inline island on more than one line keeps its source in place.
+    const copy = islandCopy(text, from, to, inline ? null : column);
+    // Named by what it holds, so an island written into another container
+    // (Shift+Tab on its item) keeps its name, and a change to what it holds
+    // does not.
+    const hash = islandHash(copy ?? text.slice(from, to));
     const count = occurrences.get(hash) ?? 0;
     occurrences.set(hash, count + 1);
     const id = `island:${hash}:${count}`;
@@ -242,9 +319,13 @@ export async function projectFluidSource(
       inline ? "inline_object" : "object",
       { id },
       undefined,
-      marks,
+      Mark.setFrom(frames.map((frame) => frame.mark)),
     );
-    nodes.push({ node, ast, from, to, pos, end: pos + node.nodeSize, root });
+    nodes.push({
+      node, ast, from, to, pos, end: pos + node.nodeSize, root,
+      ...(inline ? { frames } : {}),
+      ...(copy === undefined ? {} : { copy }),
+    });
     return node;
   };
   const inline = (
@@ -349,21 +430,14 @@ export async function projectFluidSource(
       frame.end = pos;
       return result;
     }
-    return [
-      island(
-        ast,
-        true,
-        pos,
-        root,
-        Mark.setFrom(frames.map((frame) => frame.mark)),
-      ),
-    ];
+    return [island(ast, true, pos, root, frames)];
   };
   const isContainer = (ast: Ast): boolean =>
     ["list", "listItem", "blockquote"].includes(ast.type);
   const isPlainBlock = (ast: Ast): boolean =>
     ["paragraph", "heading", "thematicBreak"].includes(ast.type);
-  const block = (ast: Ast, pos: number, root: number): PMNode => {
+  /** `column`: where its container's blocks start (`contentColumn`), null in a quote. */
+  const block = (ast: Ast, pos: number, root: number, column: number | null = 0): PMNode => {
     const { from, to } = range(ast);
     let node: PMNode;
     if (ast.type === "paragraph" || ast.type === "heading") {
@@ -453,35 +527,54 @@ export async function projectFluidSource(
       const task = ast.type === "listItem" ? taskItem(ast, text) : null;
       const content: PMNode[] = [];
       let at = pos + 1;
-      for (const child of task?.children ?? ast.children ?? []) {
-        const next =
-          isPlainBlock(child) || isContainer(child)
-            ? block(child, at, root)
-            : island(child, false, at, root);
-        content.push(next);
-        at += next.nodeSize;
-      }
-      if (!content.length) {
-        const prefix =
-          /^(?:[-+*]|\d+[.)]|>)\s*/.exec(text.slice(from, to))?.[0].length ?? 0;
+      // An empty paragraph right after the item's (or quote's) marker, where
+      // typing writes its text. After a bare "-" that text needs a space.
+      const emptyHead = () => {
+        const marker = /^(?:[-+*]|\d{1,9}[.)]|>)[ \t]*/.exec(text.slice(from))?.[0] ?? "";
         const empty: Ast = {
           type: "paragraph",
           children: [],
+          ...(ast.type === "listItem" && !/[ \t]$/.test(marker) ? { pad: " " } : {}),
           position: {
-            start: { offset: from + prefix },
-            end: { offset: from + prefix },
+            start: { offset: from + marker.length },
+            end: { offset: from + marker.length },
           },
         };
-        content.push(block(empty, at, root));
+        const node = block(empty, at, root);
+        content.push(node);
+        at += node.nodeSize;
+      };
+      const children = task?.children ?? ast.children ?? [];
+      // An item that does not open with a paragraph. With nothing else on its
+      // marker's line, that line is an empty paragraph, so Enter at the end of
+      // an item can move what follows into a new one ("- \n  - b"). A block
+      // on the marker's line itself ("- ```js", "- - b") is shown as an
+      // island, and the item's other blocks and its list stay editable.
+      const head =
+        ast.type === "listItem" && children[0]?.type !== "paragraph"
+          ? children[0]
+          : undefined;
+      const headLine = head && !/\n/.test(text.slice(from, range(head).from));
+      if (head && !headLine) emptyHead();
+      const inner =
+        ast.type === "listItem" ? contentColumn(text, from) : ast.type === "list" ? column : null;
+      for (const child of children) {
+        const next =
+          (child !== head || !headLine) && (isPlainBlock(child) || isContainer(child))
+            ? block(child, at, root, inner)
+            : island(child, false, at, root, [], inner);
+        content.push(next);
+        at += next.nodeSize;
       }
-      // A list item opens with its paragraph; a list holds only items. Any
-      // other shape (code-first item, prose directly under a list) keeps the
+      if (!content.length) emptyHead();
+      // A list item opens with its paragraph or an island; a list holds only
+      // items. Any other shape (prose directly under a list) keeps the
       // previous whole-container island instead of violating the schema.
       const shapeValid =
         (ast.type === "list" &&
           content.every((entry) => entry.type.name === "list_item")) ||
         (ast.type === "listItem" &&
-          content[0]?.type.name === "paragraph") ||
+          ["paragraph", "object"].includes(content[0]?.type.name ?? "")) ||
         ast.type === "blockquote";
       let built: PMNode | undefined;
       if (shapeValid) {
@@ -501,10 +594,10 @@ export async function projectFluidSource(
       }
       if (!built) {
         rollback();
-        return island(ast, false, pos, root);
+        return island(ast, false, pos, root, [], column);
       }
       node = built;
-    } else return island(ast, false, pos, root);
+    } else return island(ast, false, pos, root, [], column);
     nodes.push({ node, ast, from, to, pos, end: pos + node.nodeSize, root });
     return node;
   };
@@ -633,13 +726,41 @@ function leafAt(
   );
   return assoc === 1 ? candidates.at(-1) : candidates[0];
 }
+/**
+ * Where text written at `position` goes when no text is there: at the edge of
+ * the inline island (an image, a component) beside it, inside the island's
+ * formatting. `side` says which island wins where two touch: "start" the one
+ * after the position, "end" the one before it.
+ */
+function islandEdge(
+  projection: FluidProjection,
+  position: number,
+  side: "start" | "end",
+): { raw: number; frames: Frame[] } | undefined {
+  const inline = projection.mapping.nodes.filter(
+    (entry) => entry.node.type === fluidSchema.nodes.inline_object,
+  );
+  const after = inline.find((entry) => entry.pos === position),
+    before = inline.find((entry) => entry.end === position);
+  const edge =
+    side === "start"
+      ? after && { raw: after.from, frames: after.frames ?? [] }
+      : before && { raw: before.to, frames: before.frames ?? [] };
+  return (
+    edge ??
+    (side === "start"
+      ? before && { raw: before.to, frames: before.frames ?? [] }
+      : after && { raw: after.from, frames: after.frames ?? [] })
+  );
+}
 export function fluidSourceOffsetForPosition(
   projection: FluidProjection,
   position: number,
   assoc: -1 | 1 = 1,
 ): number | null {
   const leaf = leafAt(projection, position, assoc);
-  return leaf?.boundaries[position - leaf.pos] ?? null;
+  if (leaf) return leaf.boundaries[position - leaf.pos] ?? null;
+  return islandEdge(projection, position, assoc === 1 ? "start" : "end")?.raw ?? null;
 }
 export function fluidPositionForSourceOffset(
   projection: FluidProjection,
@@ -738,6 +859,21 @@ function inlineSource(
       output += "\\\n";
       return;
     }
+    if (node.type === fluidSchema.nodes.inline_object && preserve) {
+      // An island the note already has, as it is written there.
+      const known = islandEntry(preserve, node);
+      transition(
+        Mark.sameSet(known.node.marks, node.marks) && known.frames
+          ? known.frames
+          : node.marks.map(
+              (mark) =>
+                [...active, ...start, ...end].find((frame) => frame.mark.eq(mark)) ??
+                canonicalFrame(mark, hint),
+            ),
+      );
+      output += islandSource(known);
+      return;
+    }
     if (!node.isText)
       throw new Error("Inline mutation touches a protected object");
     const original = preserve?.mapping.leaves.find(
@@ -804,10 +940,11 @@ function endpoint(
   expand: boolean,
 ) {
   const leaf = leafAt(projection, position, side === "start" ? 1 : -1);
-  if (!leaf) throw new Error("Unsupported structural endpoint");
-  let raw = leaf.boundaries[position - leaf.pos];
+  const edge = leaf ? undefined : islandEdge(projection, position, side);
+  if (!leaf && !edge) throw new Error("Unsupported structural endpoint");
+  let raw = leaf ? leaf.boundaries[position - leaf.pos] : edge!.raw;
   if (raw == null) throw new Error("Cannot split an encoded source character");
-  let frames = leaf.frames;
+  let frames = leaf ? leaf.frames : edge!.frames;
   if (expand) {
     const removed = frames.filter((frame) =>
       side === "start" ? position === frame.pos : position === frame.end,
@@ -822,6 +959,49 @@ function endpoint(
   }
   return { raw, frames, leaf };
 }
+/** The note's island `node` stands for: one with its name, which the editor cannot make up. */
+function islandEntry(projection: FluidProjection, node: PMNode): MappedNode {
+  const known = projection.mapping.nodes.find(
+    (entry) => entry.node.type === node.type && entry.node.attrs.id === node.attrs.id,
+  );
+  if (!known) throw new Error("Selection crosses a protected object");
+  return known;
+}
+/** An island's source to write in another place, when that is exact. */
+function islandSource(entry: MappedNode): string {
+  if (entry.copy === undefined) throw new Error("Selection crosses a protected object");
+  return entry.copy;
+}
+const islandsOf = (doc: PMNode) => {
+  const found: PMNode[] = [];
+  doc.descendants((node) => {
+    if (node.type === fluidSchema.nodes.object || node.type === fluidSchema.nodes.inline_object)
+      found.push(node);
+  });
+  return found;
+};
+/**
+ * A change that moves blocks (Enter, Tab, joining items) may move islands
+ * with them, which the serializer writes as they are, but keeps every one,
+ * in the same order and with the same formatting: it never drops, copies,
+ * makes, reorders or formats one.
+ */
+function assertIslandsKept(before: PMNode, after: PMNode) {
+  const kept = islandsOf(before),
+    now = islandsOf(after);
+  if (kept.length !== now.length || kept.some((node, i) => !node.eq(now[i])))
+    throw new Error("Selection crosses a protected object");
+}
+/** A source change that writes only part of an island's source would change the island. */
+function assertIslandsWhole(projection: FluidProjection, patch: SourcePatch) {
+  for (const island of projection.islands)
+    if (
+      patch.from < island.to &&
+      patch.to > island.from &&
+      (patch.from > island.from || patch.to < island.to)
+    )
+      throw new Error("Selection crosses a protected object");
+}
 function assertUnprotected(
   projection: FluidProjection,
   from: number,
@@ -835,6 +1015,14 @@ function assertUnprotected(
     )
       throw new Error("Selection crosses a protected object");
   }
+  assertRenderedBetween(projection, from, to);
+}
+/** Source the note does not show (exports, comments) between the blocks from `from` to `to`. */
+function assertRenderedBetween(
+  projection: FluidProjection,
+  from: number,
+  to: number,
+) {
   const crossed = projection.mapping.roots.filter(
     (root) => from < root.end && to > root.pos,
   );
@@ -888,9 +1076,17 @@ function inlinePatch(
       delimiters,
     );
   let lead = 0;
-  if (start.leaf.pad && insert && !split) {
+  if (start.leaf?.pad && insert && !split) {
     insert = start.leaf.pad + insert;
     lead = start.leaf.pad.length;
+  }
+  let sourceFrom = start.raw;
+  const blank = insert && !split && from === to ? blankBeforeEmptyItem(projection, from) : null;
+  if (blank) {
+    const written = blank.insert + projection.text.slice(blank.to, start.raw);
+    insert = written + insert;
+    lead += written.length;
+    sourceFrom = blank.from;
   }
   const emptyRoot = projection.mapping.roots.find(
     (root) => root.pos + 1 === from && root.from === root.to,
@@ -906,10 +1102,10 @@ function inlinePatch(
     lead += 2;
   }
   const patch = {
-    from: start.raw,
+    from: sourceFrom,
     to: sourceTo,
     insert,
-    expected: projection.text.slice(start.raw, sourceTo),
+    expected: projection.text.slice(sourceFrom, sourceTo),
   };
   return flank
     ? flanked(
@@ -918,6 +1114,48 @@ function inlinePatch(
         delimiters.map((delimiter) => ({ ...delimiter, at: delimiter.at + lead })),
       )
     : patch;
+}
+
+/**
+ * The blank line before a nested list whose first item is empty at
+ * `position` (`requiredGap`), as the source to write in its place once that
+ * item has text: the same line break without the blank line. Null when the
+ * list spaces its nested lists with blank lines anyway, or the source there
+ * is another shape.
+ */
+function blankBeforeEmptyItem(
+  projection: FluidProjection,
+  position: number,
+): { from: number; to: number; insert: string } | null {
+  const $pos = projection.doc.resolve(position);
+  if ($pos.depth < 4 || $pos.parent.content.size || $pos.index(-1) !== 0 || $pos.index(-2) !== 0) return null;
+  const item = $pos.node(-1),
+    list = $pos.node(-2),
+    parent = $pos.node(-3);
+  if (item.type !== fluidSchema.nodes.list_item || parent.type !== fluidSchema.nodes.list_item || !isList(list)) return null;
+  const index = $pos.index(-3);
+  if (!index || requiredGap(parent, index) !== "\n\n") return null;
+  if (list.type === fluidSchema.nodes.ordered_list && list.attrs.order !== 1) return null;
+  const source = (node: PMNode) => projection.mapping.nodes.find((entry) => entry.node === node);
+  const before = source(parent.child(index - 1)),
+    after = source(list);
+  if (!before || !after) return null;
+  const gap = projection.text.slice(before.to, after.from);
+  if (!blankLine(gap)) return null;
+  // Spaced as the lists around it are, from the outermost in (listItemsPatch).
+  let style = TIGHT;
+  for (let depth = 1; depth < $pos.depth - 4; depth++) {
+    const node = $pos.node(depth);
+    if (!isList(node)) continue;
+    const own = listStyle(projection, node, style);
+    style = { ...own, loose: own.nested };
+  }
+  if (listStyle(projection, $pos.node(-4), style).nested) return null;
+  const second = list.childCount > 1 ? source(list.child(1)) : undefined,
+    first = source(item);
+  if (second && first && blankLine(projection.text.slice(first.to, second.from))) return null;
+  const lines = gap.split("\n");
+  return { from: before.to, to: after.from, insert: `${lines[0]}\n${lines.at(-1)}` };
 }
 
 /** How Markdown's parser sees a character next to `*`, `_` or `~` (micromark's classifyCharacter). */
@@ -1042,9 +1280,19 @@ function flanked(
  * How a written list marks its items and spaces them: `delimiter` keeps an
  * ordered marker's dot or closing parenthesis, `loose` puts a blank line
  * between items, `nested` one between an item's text and its nested list.
+ * `numbering` says how an ordered list counts: "sequential" (1, 2, 3), "same"
+ * (every item 1.), or "kept" when its numbers follow no rule, so each item
+ * keeps its own.
  */
-type ListStyle = { marker: string; delimiter: string; loose: boolean; nested: boolean };
-const TIGHT: ListStyle = { marker: "-", delimiter: ".", loose: false, nested: false };
+type ListStyle = {
+  marker: string;
+  delimiter: string;
+  loose: boolean;
+  nested: boolean;
+  numbering: "sequential" | "same" | "kept";
+};
+const TIGHT: ListStyle = { marker: "-", delimiter: ".", loose: false, nested: false, numbering: "sequential" };
+const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])/;
 const isList = (node: PMNode) =>
   node.type === fluidSchema.nodes.bullet_list ||
   node.type === fluidSchema.nodes.ordered_list;
@@ -1075,15 +1323,156 @@ function listStyle(
     for (let i = 1; i < item.childCount && nested === undefined; i++) {
       const before = source(item.child(i - 1)),
         after = source(item.child(i));
-      if (isList(item.child(i)) && before && after)
+      // A gap Markdown requires says nothing about the author's spacing.
+      if (isList(item.child(i)) && before && after && requiredGap(item, i) === null)
         nested = blankLine(text.slice(before.to, after.from));
     }
+  const numbers = list.content.content.map((item) => {
+    const entry = source(item);
+    return entry ? Number(/^\d+/.exec(text.slice(entry.from))?.[0]) : NaN;
+  });
   return {
     marker: (first && /^[-+*]/.exec(text.slice(first.from))?.[0]) || fallback.marker,
     delimiter: (first && /^\d+([.)])/.exec(text.slice(first.from))?.[1]) || fallback.delimiter,
     loose,
     nested: nested ?? loose,
+    numbering:
+      list.type !== fluidSchema.nodes.ordered_list
+        ? fallback.numbering
+        : numbers.every((number, i) => number === numbers[0] + i)
+          ? "sequential"
+          : numbers.every((number) => number === numbers[0])
+            ? "same"
+            : "kept",
   };
+}
+
+/**
+ * The marker item `index` of `list` is written with: the list's bullet, or
+ * its number and delimiter. The first item of an ordered list carries the
+ * list's start, as Markdown reads it; the others count on from it, or keep
+ * the list's one number, or (in a list whose numbers follow no rule) the
+ * number `source`, the item's source, already has.
+ */
+function itemMarker(
+  list: PMNode,
+  index: number,
+  style: ListStyle,
+  hint: FluidSyntaxHint | undefined,
+  source?: string,
+): string {
+  if (list.type !== fluidSchema.nodes.ordered_list)
+    return hint && "marker" in hint ? hint.marker : style.marker;
+  const kept = source && /^(\d{1,9})[.)]/.exec(source)?.[1];
+  const number =
+    index === 0 || style.numbering === "same"
+      ? list.attrs.order
+      : style.numbering === "kept" && kept
+        ? Number(kept)
+        : list.attrs.order + index;
+  return `${number}${style.delimiter}`;
+}
+
+/**
+ * An item's source with `marker` in place of the one it starts with. Its
+ * later lines move by the change in width, so its blocks stay in the item;
+ * the space after the marker stays as written.
+ */
+function withMarker(source: string, marker: string): string {
+  const old = LIST_MARKER.exec(source)?.[0];
+  if (old === undefined || old === marker) return source;
+  const delta = marker.length - old.length;
+  return source
+    .split("\n")
+    .map((line, i) =>
+      !i
+        ? marker + line.slice(old.length)
+        : delta > 0
+          ? line && " ".repeat(delta) + line
+          : line.slice(Math.min(-delta, /^ */.exec(line)![0].length)),
+    )
+    .join("\n");
+}
+
+/**
+ * The gap Markdown requires before block `index` of list item `item`, or
+ * null when it may be tight or loose. With no text on the marker's line, the
+ * item's blocks start on the next line: a blank line there would end the
+ * item. After text, a nested list whose first item is empty, or an ordered
+ * one not starting at 1, cannot interrupt the paragraph (a bare "-" under it
+ * would make it a heading), so a blank line goes before it.
+ */
+function requiredGap(item: PMNode, index: number): string | null {
+  const before = item.child(index - 1),
+    child = item.child(index);
+  if (before.type !== fluidSchema.nodes.paragraph) return null;
+  const box = index === 1 && item.attrs.checked !== null;
+  if (!before.content.size && !box) return index === 1 ? "\n" : null;
+  if (!isList(child)) return null;
+  const first = child.firstChild!;
+  return (child.type === fluidSchema.nodes.ordered_list && child.attrs.order !== 1) ||
+    (first.attrs.checked === null && first.firstChild?.type === fluidSchema.nodes.paragraph && !first.firstChild.content.size)
+    ? "\n\n"
+    : null;
+}
+
+/**
+ * Backspace or Delete that joins items of an ordered list numbered 1, 2, 3
+ * (written in place, as typing is): the changes to the numbers of the items
+ * after the join, so they count on as they do after Enter (listItemsPatch).
+ * None where a number would change width in an item of more than one line,
+ * whose lines would have to move.
+ */
+function countingOn(projection: FluidProjection, from: number, to: number): SourcePatch[] {
+  const $from = projection.doc.resolve(from),
+    $to = projection.doc.resolve(to);
+  const depth = $from.sharedDepth(to);
+  const list = $from.node(depth);
+  const removed = $to.index(depth) - $from.index(depth);
+  if (
+    list.type !== fluidSchema.nodes.ordered_list ||
+    removed < 1 ||
+    listStyle(projection, list, TIGHT).numbering !== "sequential"
+  )
+    return [];
+  const patches: SourcePatch[] = [];
+  for (let i = $to.index(depth) + 1; i < list.childCount; i++) {
+    const entry = projection.mapping.nodes.find((candidate) => candidate.node === list.child(i));
+    const digits = entry && /^\d{1,9}/.exec(projection.text.slice(entry.from))?.[0];
+    if (!entry || !digits) return [];
+    const number = String(list.attrs.order + i - removed);
+    if (number.length !== digits.length && projection.text.slice(entry.from, entry.to).includes("\n")) return [];
+    patches.push({ from: entry.from, to: entry.from + digits.length, insert: number, expected: digits });
+  }
+  return patches;
+}
+
+/** Source changes that do not overlap, as one. */
+function joined(text: string, patches: readonly SourcePatch[]): SourcePatch {
+  const sorted = [...patches].sort((a, b) => a.from - b.from);
+  let insert = "";
+  for (const [i, patch] of sorted.entries())
+    insert += (i ? text.slice(sorted[i - 1].to, patch.from) : "") + patch.insert;
+  const from = sorted[0].from,
+    to = sorted.at(-1)!.to;
+  return { from, to, insert, expected: text.slice(from, to) };
+}
+
+/**
+ * The line breaks between two blocks where the source has them side by side
+ * (one right after the other in the same container), so an item's blocks
+ * stay as close as they were written: "\n" or "\n\n".
+ */
+function sourceGap(projection: FluidProjection, before: PMNode, after: PMNode): string | undefined {
+  const find = (node: PMNode) =>
+    projection.mapping.nodes.find((entry) => entry.node === node) ??
+    projection.mapping.nodes.find((entry) => entry.node.eq(node));
+  const above = find(before),
+    below = find(after);
+  if (!above || !below || above.to > below.from) return undefined;
+  const gap = projection.text.slice(above.to, below.from);
+  if (!/^[ \t]*\r?\n[\s>]*$/.test(gap)) return undefined;
+  return blankLine(gap) ? "\n\n" : "\n";
 }
 
 /** One item of `list`: an unchanged item exactly as written, or its marker, box and blocks. */
@@ -1095,27 +1484,33 @@ function itemSource(
   style: ListStyle,
 ): string {
   const item = list.child(index);
-  const unchanged = projection.mapping.nodes.find((entry) =>
-    entry.node.eq(item),
-  );
-  if (unchanged) return projection.text.slice(unchanged.from, unchanged.to);
-  const marker =
-    list.type.name === "ordered_list"
-      ? `${list.attrs.order + index}${style.delimiter} `
-      : `${hint && "marker" in hint ? hint.marker : style.marker} `;
+  const unchanged =
+    projection.mapping.nodes.find((entry) => entry.node === item) ??
+    projection.mapping.nodes.find((entry) => entry.node.eq(item));
+  // An unchanged item as written, with the marker of the list it is in now
+  // (Tab or Shift+Tab moves items between lists).
+  if (unchanged) {
+    const source = detached(projection.text, unchanged.from, unchanged.to);
+    return withMarker(source, itemMarker(list, index, style, hint, source));
+  }
+  const marker = `${itemMarker(list, index, style, hint)} `;
   const box =
     item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
   let body = "";
   item.forEach((child, _, i) => {
-    // A nested list can start on the line after the item's text, except an
-    // ordered one not starting at 1, which cannot interrupt a paragraph.
+    // Two blocks the source has side by side keep the line breaks between
+    // them. A nested list can start on the line after the item's text,
+    // except an ordered one not starting at 1, which cannot interrupt a
+    // paragraph.
     if (i)
       body +=
-        !style.nested &&
+        requiredGap(item, i) ??
+        sourceGap(projection, item.child(i - 1), child) ??
+        (!style.nested &&
         (child.type === fluidSchema.nodes.bullet_list ||
           (child.type === fluidSchema.nodes.ordered_list && child.attrs.order === 1))
           ? "\n"
-          : "\n\n";
+          : "\n\n");
     body += blockSource(
       child,
       projection,
@@ -1133,18 +1528,23 @@ function itemSource(
 }
 
 /** Serialize only a changed, parser-owned ordinary subtree. Exact unchanged
- * sibling subtrees are reused; this never serializes the document. */
+ * sibling subtrees are reused; this never serializes the document. `avoid`:
+ * bullets or delimiters a list may not use, those of a list of its kind
+ * beside it. */
 function blockSource(
   node: PMNode,
   projection: FluidProjection,
   reuse = true,
   hint?: FluidSyntaxHint,
   style: ListStyle = TIGHT,
+  avoid: readonly string[] = [],
 ): string {
-  const old = reuse
+  if (node.type === fluidSchema.nodes.object)
+    return islandSource(islandEntry(projection, node));
+  const old = reuse && !avoid.length
     ? projection.mapping.nodes.find((entry) => entry.node.eq(node))
     : undefined;
-  if (old) return projection.text.slice(old.from, old.to);
+  if (old) return detached(projection.text, old.from, old.to);
   // Markdown drops spaces and tabs at the start of a paragraph or heading, so
   // they are not written (the editor takes the document without them).
   const text = () =>
@@ -1178,7 +1578,17 @@ function blockSource(
         projection.mapping.nodes.find(
           (entry) => isList(entry.node) && entry.node.content.content.includes(kept.node),
         );
-      const own = original ? listStyle(projection, original.node, style) : style;
+      const spaced = original ? listStyle(projection, original.node, style) : style;
+      // Beside a list of its kind, another bullet or delimiter keeps the two apart.
+      const own = {
+        ...spaced,
+        marker: avoid.includes(spaced.marker)
+          ? (["-", "*", "+"].find((marker) => !avoid.includes(marker)) ?? spaced.marker)
+          : spaced.marker,
+        delimiter: avoid.includes(spaced.delimiter)
+          ? ([".", ")"].find((delimiter) => !avoid.includes(delimiter)) ?? spaced.delimiter)
+          : spaced.delimiter,
+      };
       const parts: string[] = [];
       node.forEach((_, __, index) => {
         parts.push(itemSource(node, index, projection, hint, own));
@@ -1235,10 +1645,16 @@ function listItemsPatch(
         before.forEach((child, _, i) => {
           if (!child.eq(after.child(i))) changed = changed === -1 ? i : -2;
         });
+      const gap = () => {
+        const above = projection.mapping.nodes.find((entry) => entry.node === before.child(changed - 1)),
+          list = projection.mapping.nodes.find((entry) => entry.node === before.child(changed));
+        return above && list ? text.slice(above.to, list.from) : "";
+      };
       if (
         changed >= 0 &&
         isList(before.child(changed)) &&
-        before.child(changed).sameMarkup(after.child(changed))
+        before.child(changed).sameMarkup(after.child(changed)) &&
+        (requiredGap(after, changed) !== "\n\n" || blankLine(gap()))
       ) {
         const parent = listStyle(projection, previous, context);
         context = { ...parent, loose: parent.nested };
@@ -1267,12 +1683,18 @@ function listItemsPatch(
       gaps[Math.min(Math.max(first - (oldLast > first ? 0 : 1), 0), gaps.length - 1)];
     const style = listStyle(projection, previous, context, near);
     const gap = near ?? (style.loose ? "\n\n" : "\n") + indent;
+    // In a list numbered 1, 2, 3, the items after the change count on: they
+    // are written too, each changing only its number.
+    if (next.type === fluidSchema.nodes.ordered_list && style.numbering === "sequential")
+      for (let i = newLast; i < next.childCount; i++) {
+        const entry = projection.mapping.nodes.find((candidate) => candidate.node === next.child(i));
+        if (entry && Number(/^\d+/.exec(text.slice(entry.from))?.[0]) === next.attrs.order + i) continue;
+        oldLast = previous.childCount;
+        newLast = next.childCount;
+        break;
+      }
     const written: string[] = [];
     for (let i = first; i < newLast; i++) {
-      next.child(i).descendants((node) => {
-        if (node.type === fluidSchema.nodes.object || node.type === fluidSchema.nodes.inline_object)
-          throw new Error("Selection crosses a protected object");
-      });
       written.push(
         itemSource(next, i, projection, hint, style)
           .split("\n")
@@ -1284,7 +1706,6 @@ function listItemsPatch(
       from: number,
       to: number;
     if (oldLast > first) {
-      assertUnprotected(projection, items[first].pos, items[oldLast - 1].end);
       from = items[first].from;
       to = items[oldLast - 1].to;
       // Removed items take a gap with them.
@@ -1304,11 +1725,19 @@ function listItemsPatch(
   }
 }
 
+/**
+ * The top-level blocks a step changed, written again. `separate` puts a
+ * blank line between them and a block on the line next to them, where the
+ * change would otherwise run into it (a paragraph would continue the list
+ * before it, a bare "-" would underline the paragraph before it): null when
+ * there is no such block.
+ */
 function structuralPatch(
   projection: FluidProjection,
   next: PMNode,
   hint?: FluidSyntaxHint,
-): SourcePatch {
+  separate = false,
+): SourcePatch | null {
   let prefix = 0;
   while (
     prefix < projection.doc.childCount &&
@@ -1328,6 +1757,7 @@ function structuralPatch(
   }
   const affected = projection.mapping.roots.slice(prefix, oldEnd);
   if (!affected.length) {
+    if (separate) return null;
     const added = next.content.content.slice(prefix, newEnd);
     if (added.length === 1 && added[0].type === fluidSchema.nodes.paragraph && !added[0].content.size)
       return blankParagraphPatch(projection, prefix);
@@ -1360,6 +1790,7 @@ function structuralPatch(
   const previous = affected[0].node,
     replacement = content.firstChild;
   if (
+    !separate &&
     affected.length === 1 &&
     content.childCount === 1 &&
     replacement &&
@@ -1369,17 +1800,66 @@ function structuralPatch(
     const patch = listItemsPatch(projection, previous, replacement, hint);
     if (patch) return patch;
   }
-  assertUnprotected(projection, affected[0].pos, affected.at(-1)!.end);
+  assertRenderedBetween(projection, affected[0].pos, affected.at(-1)!.end);
+  const blank = (node: PMNode) => node.type === fluidSchema.nodes.paragraph && !node.content.size;
+  /** The marker a list's source starts with: its bullet, or its delimiter. */
+  const markerOf = (source: string) => {
+    const marker = LIST_MARKER.exec(source)?.[0] ?? "";
+    return /^\d/.test(marker) ? marker.slice(-1) : marker;
+  };
   const chunks: string[] = [];
-  content.forEach((node) => {
-    chunks.push(blockSource(node, projection, true, hint, style));
+  content.forEach((node, _, index) => {
+    // A list beside one of its kind, with only empty paragraphs between,
+    // would join it: Enter on an empty middle item leaves two lists.
+    const avoid: string[] = [];
+    if (isList(node)) {
+      let j = index - 1;
+      while (j >= 0 && blank(content.child(j))) j--;
+      if (j >= 0) {
+        if (content.child(j).type === node.type) avoid.push(markerOf(chunks[j]));
+      } else {
+        let root = prefix - 1;
+        while (root >= 0 && blank(projection.doc.child(root))) root--;
+        if (root >= 0 && projection.doc.child(root).type === node.type)
+          avoid.push(markerOf(projection.text.slice(projection.mapping.roots[root].from)));
+      }
+      let k = index + 1;
+      while (k < content.childCount && blank(content.child(k))) k++;
+      if (k === content.childCount) {
+        let root = oldEnd;
+        while (root < projection.doc.childCount && blank(projection.doc.child(root))) root++;
+        if (root < projection.doc.childCount && projection.doc.child(root).type === node.type)
+          avoid.push(markerOf(projection.text.slice(projection.mapping.roots[root].from)));
+      }
+    }
+    chunks.push(blockSource(node, projection, true, hint, style, avoid));
   });
   const from = affected[0].from,
     to = affected.at(-1)!.to;
+  let insert = chunks.join("\n\n");
+  const breaks = (space: string) => space.split("\n").length - 1;
+  const before = breaks(/\s*$/.exec(projection.text.slice(0, from))![0]),
+    after = breaks(/^\s*/.exec(projection.text.slice(to))![0]),
+    following = oldEnd < projection.doc.childCount;
+  const first = content.firstChild,
+    last = content.lastChild;
+  // An empty paragraph is blank lines, four line breaks between blocks
+  // (blankParagraphPatch): at the start of the change, or at its end before
+  // a block, the source around it gives the rest.
+  if (content.childCount > 1 && blank(first!))
+    insert = "\n".repeat(Math.max(0, 2 - before)) + insert;
+  if (content.childCount > 1 && blank(last!) && following)
+    insert += "\n".repeat(Math.max(0, 2 - after));
+  if (separate) {
+    const lead = !!first && prefix > 0 && before === 1 && !blank(first),
+      trail = !!last && following && after === 1 && !blank(last);
+    if (!lead && !trail) return null;
+    insert = (lead ? "\n" : "") + insert + (trail ? "\n" : "");
+  }
   return {
     from,
     to,
-    insert: chunks.join("\n\n"),
+    insert,
     expected: projection.text.slice(from, to),
   };
 }
@@ -1562,10 +2042,6 @@ export async function prepareFluidTransaction(
     const heading = protectedHeadingPatch(candidate, result.doc);
     // A task box patch touches only the box, so an item holding an island can be ticked too.
     const task = heading ? null : taskBoxPatch(candidate, result.doc, from);
-    if (!heading && !task) assertUnprotected(candidate, from, to);
-    const attempts: Array<() => SourcePatch> = [];
-    if (heading) attempts.push(() => heading);
-    if (task) attempts.push(() => task);
     // A delete or typing: inline content in place of a range.
     const inline =
       step instanceof ReplaceStep &&
@@ -1574,6 +2050,21 @@ export async function prepareFluidTransaction(
       step.slice.content.content.every((node) => node.isInline)
         ? step.slice.content
         : null;
+    const formatted = step instanceof AddMarkStep || step instanceof RemoveMarkStep;
+    // Typing, a delete or a format change over an island would change it;
+    // a change that moves blocks may move islands, which are written as
+    // they are, but must keep every one of them.
+    if (!heading && !task) {
+      if (inline || formatted) assertUnprotected(candidate, from, to);
+      else {
+        assertRenderedBetween(candidate, from, to);
+        assertIslandsKept(candidate.doc, result.doc);
+      }
+    }
+    // An attempt that does not apply to this step gives null.
+    const attempts: Array<() => SourcePatch | null> = [];
+    if (heading) attempts.push(() => heading);
+    if (task) attempts.push(() => task);
     if (step instanceof ReplaceStep) {
       const split =
         from === to &&
@@ -1583,28 +2074,38 @@ export async function prepareFluidTransaction(
         !step.slice.content.textBetween(0, step.slice.content.size);
       if (inline || split)
         attempts.push(() =>
-          inlinePatch(candidate, from, to, step.slice.content, split, hint),
+          joined(candidate.text, [
+            inlinePatch(candidate, from, to, step.slice.content, split, hint),
+            ...countingOn(candidate, from, to),
+          ]),
         );
     }
     // Bold, italics or another format added or taken off: the text with its new formatting.
-    const marked =
-      step instanceof AddMarkStep || step instanceof RemoveMarkStep
-        ? result.doc.slice(from, to).content
-        : null;
+    const marked = formatted ? result.doc.slice(from, to).content : null;
     if (marked)
       attempts.push(() => inlinePatch(candidate, from, to, marked, false, hint));
     attempts.push(() => structuralPatch(candidate, result.doc!, hint));
-    // Last, a delete, typing or format change that leaves a formatting
+    // Then a delete, typing or format change that leaves a formatting
     // delimiter where Markdown would not read it as one, with the spaces
     // beside it moved out of the formatting or the letter a reference (`flanked`).
     if (inline ?? marked)
-      attempts.push(() => inlinePatch(candidate, from, to, (inline ?? marked)!, false, hint, true));
+      attempts.push(() =>
+        joined(candidate.text, [
+          inlinePatch(candidate, from, to, (inline ?? marked)!, false, hint, true),
+          ...(inline ? countingOn(candidate, from, to) : []),
+        ]),
+      );
+    // Last, the changed blocks set apart by a blank line from a block on the
+    // line next to them, which they would otherwise run into.
+    attempts.push(() => structuralPatch(candidate, result.doc!, hint, true));
     let accepted: FluidProjection | undefined,
       near: FluidProjection | undefined,
       failure: unknown;
     for (const attempt of attempts) {
       try {
         const patch = attempt();
+        if (!patch) continue;
+        assertIslandsWhole(candidate, patch);
         const updated = applySourcePatches(
           { ...snapshot, text: candidate.text },
           snapshot.revision,

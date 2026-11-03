@@ -276,27 +276,36 @@ test.describe("MDX documents", () => {
     await frameOf(page).locator(".ProseMirror > h1").filter({ hasText: /^Inline 4 text\.$/ }).waitFor()
     await expect.poll(() => source(page)).toBe(heading)
 
+    // A list shortcut writes the computed text as it is, too.
+    const list = heading.replace("-Inline", "- Inline")
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^-Inline 6 text\.$/ }).click()
     await press(page, "Home")
     await press(page, "ArrowRight")
     await page.keyboard.type(" ")
+    await frameOf(page).locator(".ProseMirror li").filter({ hasText: /^Inline 6 text\.$/ }).waitFor()
+    await expect.poll(() => source(page)).toBe(list)
+
+    // Bold across the computed text would change it.
+    await clickAt(page, "Inline 6 text.", 0)
+    await press(page, "Shift+ArrowRight", "Inline 6 t".length)
+    await press(page, "ControlOrMeta+b")
     // The notice is the library's banner, a status, and says why in plain words.
     const notice = page.getByRole("status").filter({ hasText: PROTECTED }).first()
     await expect(notice).toBeVisible()
     await expect(notice).toHaveText(/^Edit not applied:/)
-    expect(await source(page)).toBe(heading)
+    expect(await source(page)).toBe(list)
 
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^Before\.$/ }).click()
     await press(page, "ControlOrMeta+a")
     await press(page, "Backspace")
     await expect(page.getByText(/This selection crosses computed output/).first()).toBeVisible()
-    expect(await source(page)).toBe(heading)
+    expect(await source(page)).toBe(list)
     await expect(page.locator('iframe[title="Isolated document preview"]')).toBeVisible()
 
     await frameOf(page).locator(".ProseMirror > p").filter({ hasText: /^After\.$/ }).click()
     await press(page, "End")
     await page.keyboard.type(" More")
-    await expect.poll(() => source(page)).toBe(`${heading} More`)
+    await expect.poll(() => source(page)).toBe(`${list} More`)
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
   })
 

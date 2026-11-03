@@ -310,7 +310,7 @@ test("native list split and empty-item exit stay source/projection equivalent", 
 for (const delimiter of [".", ")"]) {
   for (const nested of [false, true]) {
     for (const loose of [false, true]) {
-      test(`ordered ${delimiter} splits keep numbering, indentation and ${loose ? "loose" : "tight"} spacing ${nested ? "inside a bullet list" : "at the root"}`, async () => {
+      test(`ordered ${delimiter} splits keep counting, indentation and ${loose ? "loose" : "tight"} spacing ${nested ? "inside a bullet list" : "at the root"}`, async () => {
         const indent = nested ? "  " : "";
         const gap = (loose ? "\n\n" : "\n") + indent;
         const head = guard + (nested ? "- Parent\n\n  " : "");
@@ -328,11 +328,11 @@ for (const delimiter of [".", ")"]) {
             { text, revision: 0, format: "mdx" }, projection,
             transaction!.steps.map((step) => step.toJSON()),
           );
-          // Existing siblings keep their exact numbers. The generated item
-          // follows the list's start number and uses its original delimiter.
+          // The new item takes the next number with the list's delimiter,
+          // and the items after it count on; nothing else changes.
           expect(next.text).toBe(list(
             `12${delimiter} First`, `13${delimiter} ${"Second".slice(0, offset)}`,
-            `14${delimiter} ${"Second".slice(offset)}`, `14${delimiter} Third`,
+            `14${delimiter} ${"Second".slice(offset)}`, `15${delimiter} Third`,
           ));
           expect(next.projection.doc.eq(transaction!.doc)).toBe(true);
           expect(next.nearest).toBeNull();
@@ -482,7 +482,7 @@ test("ordered prose stays editable beside a fenced code sibling in the same item
   expect(next.projection.islands).toHaveLength(1);
 });
 
-test("partial-bold cross-item replacement preserves an unrelated fenced item exactly", async () => {
+test("partial-bold cross-item replacement keeps an unrelated fenced item exactly, counting on", async () => {
   for (const fence of ["", "\n   ```sql\n   SELECT 1\n   ```"]) {
     const sibling = "\n3. Keeper" + fence;
     const text = guard + "1. Alpha omega.\n2. __second__ tail." + sibling + tail;
@@ -500,12 +500,13 @@ test("partial-bold cross-item replacement preserves an unrelated fenced item exa
       projection,
       transaction.steps.map((step) => step.toJSON()),
     );
-    expect(next.text).toBe(guard + "1. AlpX**cond** tail." + sibling + tail);
+    // Two items are one now, so the next one's number counts on from it.
+    expect(next.text).toBe(guard + "1. AlpX**cond** tail." + sibling.replace("3.", "2.") + tail);
     expect(next.projection.doc.eq(transaction.doc)).toBe(true);
     expect(next.projection.islands.map(({ id, from, to }) => [id, next.text.slice(from, to)])).toEqual(
       projection.islands.map(({ id, from, to }) => [id, text.slice(from, to)]),
     );
-    expect(next.patches.every((patch) => patch.to <= text.indexOf(sibling))).toBe(true);
+    expect(next.patches.every((patch) => patch.to <= text.indexOf(sibling) + "\n3".length)).toBe(true);
   }
 });
 

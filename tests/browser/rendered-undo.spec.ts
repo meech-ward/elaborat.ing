@@ -146,7 +146,8 @@ for (const delimiter of [".", ")"]) {
     await page.keyboard.press("Enter")
     await expect(items).toHaveCount(4)
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
-    const added = note.replace(`13${delimiter} second`, `13${delimiter} second\n14${delimiter} `)
+    // The new item takes the next number, and the item after it counts on.
+    const added = note.replace(`13${delimiter} second\n14${delimiter} third`, `13${delimiter} second\n14${delimiter} \n15${delimiter} third`)
     expect(await saved(page, fake, id)).toBe(added)
 
     await item("second").click()
