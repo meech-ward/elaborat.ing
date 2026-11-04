@@ -376,6 +376,35 @@ Preserve drafts through sign-in, omit public email addresses and retain the
 existing renderer isolation. Verify database access boundaries, browser
 journeys, bundle budgets and the hosted flow, including the supplied script.
 
+## T54: rendered typing keeps up in long notes
+
+**Status:** Ready
+
+Each keystroke in a note's Rendered view projects the whole note again on the
+page's main thread, with one full MDX parse (`compileProjection` in
+`src/features/rendered/instrumentation.ts`): in Bun, about 3.5 ms at 2 KB,
+24 ms at 20 KB and 118 ms at 100 KB, and slower in Firefox. A `srcdoc` frame
+shares that thread, so typing in a long note stalls. Measure two options
+against a 60 KB note, in Chromium and Firefox:
+
+- Project only the block that changed. Keep each top-level block's projection
+  by its source, and for an inline edit inside one block that adds or removes
+  no line break and no syntax at the start of a line, parse only that block
+  and splice it in. Markdown reads blocks in context (setext underlines, lazy
+  continuation lines, list interruption, link reference definitions, fences,
+  HTML blocks), so either check the whole document again later, when idle,
+  or take only edits proven not to depend on it, falling back to the full
+  parse.
+- Run `prepareFluidTransaction` and `projectFluidSource` in a Web Worker
+  (prosemirror-model and @mdx-js/mdx need no DOM). The main thread stays free
+  and only the ack waits, which the frame's optimistic editing already allows.
+
+Every edit stays exact: the projection-equality check still decides it, and
+compiled code is never reused across texts, since it holds absolute island
+offsets. Done when the faster option is built, its numbers before and after
+are in the pull request, and the rendered browser specs pass in both
+browsers.
+
 ## Small things
 
 - A large unlisted file currently resolves dependencies and image bytes in
@@ -402,14 +431,36 @@ matters.
   release when an older CI run finishes or a manual run leaves its SHA empty.
   Compare the successful deployment's SHA to the resolved candidate, rather
   than using the workflow run's head, which can name a different checkout.
-- Investigate intermittent browser checks observed during the sharing release:
-  the animated image's reduced-motion Play/Pause check and Split's keyboard-save
-  check each passed on retry. Keep the assertions and use their traces to
-  distinguish readiness races from application regressions.
-- Investigate one unreproduced Bun highlighter mismatch: inline JavaScript
-  comment annotations were tokenized as operators in one full local run, while
-  the isolated check, full rerun and CI all passed. Preserve the annotation
-  assertions and obtain a reproducer before changing Shiki's regex engine or
+- Investigate intermittent browser checks: the animated image's
+  reduced-motion Play/Pause check passed on retry during the sharing release,
+  and `typing-errors.spec.ts`'s press of Canvas right after typing JSON that
+  is not a drawing failed once under parallel load (it passed 16 runs alone).
+  Keep the assertions and use their traces to distinguish readiness races from
+  application regressions.
+- A Save shortcut pressed in a rendered note's frame is dropped when it
+  arrives between an edit's acceptance and its React commit:
+  `activatedDocumentAction` (`src/features/rendered/RenderedEditor.tsx`)
+  checks the authority against the last committed document, and no keydown
+  follows. It is why `rendered-split.spec.ts`'s "Cmd+S pressed inside the
+  rendered note saves it" fails about 1 run in 6 under load. Check the
+  shortcut against the authority, or hold it until the commit.
+- `side-panels.spec.ts`'s "the project panel switches to another project and
+  back to all projects" checks the project's URL before the workbench
+  replaces it with the restored note's (`/projects/<id>/b.md`), so it fails
+  now and then. Accept the opened file in that check, or check the note's URL
+  once its heading shows.
+- Two `workbench-typing.spec.ts` checks race the app. "Format and Export to
+  Notion chosen in an edit's first moments..." must open File actions within
+  the 300 ms before an edit shows as finishing: control that timer
+  (`page.clock`). "A note's Source check is there as soon as its tab comes
+  back" starts sampling at the tab's pointerdown, which in Firefox can come a
+  frame before the click that switches tabs: start at the click.
+- Under Bun 1.3.10 on a Mac, Shiki does not read end-of-line JavaScript
+  comments as comments, so their annotations (`// [!code focus]`) are ignored
+  and `codeHighlight.test.ts`'s "comment annotations highlight ranges, focus
+  and show diffs without changing input" fails every time; under the pinned
+  Bun 1.4.2, as on CI, it passes. If it fails under Bun 1.4, preserve the
+  annotation assertions and find why before changing Shiki's regex engine or
   tokenization budget.
 - The explorer's resize separator sits outside the app's landmarks. A full
   page axe scan reports `region`; checks scoped to the editor pass. Put the
@@ -432,6 +483,12 @@ matters.
   fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
   Monaco binds Source shortcuts to Ctrl, while the app and Playwright's
   `ControlOrMeta` use Cmd, so shortcut checks can miss their intended action.
+  Home, End and Shift+Home also scroll the rendered frame there instead of
+  moving the caret, and Monaco's Ctrl+End is Cmd+Down, so many rendered,
+  workbench, conflict and canvas tests fail on a Mac before any change and
+  pass on Linux. Replace Home and End with clicks and arrow keys, as
+  `tests/browser/rendered-lists-keys.spec.ts` does, so the suite can run on a
+  Mac.
 - In `update_and_show`, an old label written before its short-form shape
   (against the taught order) shows in the live view until the saved card
   replaces it.
@@ -468,8 +525,9 @@ matters.
   Taking it as whitespace Markdown cannot hold (`markdownForm` in
   `src/features/rendered/nearestForm.ts`) would apply it.
 - Enter at the start of a later paragraph of a quote whose earlier paragraph
-  spans several lines is refused: the quote is written again, and that
-  paragraph's source already holds its `> ` markers, so they are doubled.
+  spans several lines now writes the empty paragraph between the two quotes
+  (`> one\n> two\n\n\n\n> three`), but no test covers it. Add one through
+  `prepareFluidTransaction`, in md and mdx.
 - In a note's Rendered view, Enter right before a space inside italics or
   bold writes the space as a reference (`*&#32;two*`), which holds it exactly;
   `*two*` would read better, but the editor would then take a document
@@ -483,6 +541,250 @@ matters.
 - Switching a note from Source or Rendered to Split doesn't carry the caret
   or the text at the top to the pane that appears, as switching between
   Source and Rendered does (WorkspaceSession's `showMode`).
+- In a note's Rendered view, Enter at the end of a list item's first paragraph
+  is refused when the item has another paragraph (`- a\n\n  para two\n- b`):
+  it would leave an empty paragraph before the item's other one, which
+  Markdown cannot hold. Decide what Enter does there, such as a new item after
+  the whole item, in the frame's Enter chain (`src/preview/fluidEditor.ts`).
+- Enter on an empty middle item of a nested list, in a quote or not, is
+  refused: the standard Enter leaves an empty paragraph inside the parent
+  item. Have the frame's Enter outdent the item there instead (`liftItem`),
+  which is written exactly: `- a\n  - b\n  - \n  - d\n- e` becomes
+  `- a\n  - b\n- \n  - d\n- e`. A top-level empty middle item in a quote has
+  no Markdown form either way.
+- An edit that would move a multi-line island (a code block, a component) in
+  a quoted list, or in a list item indented with a tab, is refused:
+  `islandCopy` (`src/features/rendered/fluidProjection.ts`) has no exact copy
+  where the container's prefix is not plain spaces. Make it strip quote
+  markers exactly, and test that the island's bytes and id are unchanged
+  after the move.
+- Tab on an item after one whose text starts with a list on its marker's line
+  (`- - b\n- c`) is refused, since Markdown would merge the item into that
+  list. Write the new nested list with another bullet, so it stays apart.
+- Shift+Tab on a top-level item, and splitting a list around an empty
+  paragraph, write the gaps between the items they rewrite anew: in
+  `- a\n- b\n- c\n\n- d`, Shift+Tab on b writes `- c\n- d`. Keep each item's
+  gap from the source, as `listItemsPatch` does for other list edits.
+- Enter in a loose list inside a quote (`> 1. a\n> 2. b\n>\n> 3. c`) writes
+  the whole quote again and drops its blank `>` line: `listItemsPatch` gives
+  up when a gap holds `>`.
+- Shift+Tab out of a loose list writes the list it joins tight:
+  `- alpha\n\n  - beta\n\n- gamma` becomes `alpha\n\n- beta\n- gamma`, since
+  the style comes from the one-item nested list. Keep it loose when the
+  original list was.
+- A line break inside bold or italics is written by closing the formatting
+  around it (`**alpha**\\\n**bravo**`, `inlineSource` in
+  `fluidProjection.ts`), where `**alpha\\\nbravo**` reads back the same. A
+  line break has no formatting either, so Shift+Enter inside a link that
+  spans a soft line break makes two links.
+- Typing a space at the start of the line after a line break (before `bravo`
+  in `alpha\\\nbravo`) is refused. Markdown drops that space, but
+  `markdownForm` (`src/features/rendered/nearestForm.ts`) drops spaces only at
+  the start of a paragraph or heading: drop spaces and tabs right after a
+  `hard_break` too.
+- Typing anywhere in a paragraph that holds a soft line break (a newline
+  typed in Source) turns the break into a space in the saved note, in both
+  browsers: prosemirror-view reads typed text back with
+  `preserveWhitespace: true`, which reads a newline as a space, and the result
+  is writable. Paragraphs with `whitespace: "pre"` may fix it; check how
+  pasting parses then.
+- Typing right after a soft line break that has a space before it can make
+  it a hard break, and the edit is refused.
+- After a held line break (Shift+Enter at the end of a line), Home, PageUp
+  and the arrow keys with Alt, Ctrl or Meta take the break out, then move from
+  the end of the line above.
+- A join that puts a block island other than a code fence, a heading or a
+  quote (HTML, a table, JSX, math) beside a paragraph in a list item writes a
+  blank line between them, which makes the list loose (`followsTightly` in
+  `fluidProjection.ts`).
+- Bold, italics or strikethrough over a selection that includes an inline
+  island (an image, a component) is refused by the range check on format
+  steps. Decide whether formatting may be written around islands; if so,
+  allow it in `prepareFluidTransaction`, with tests.
+- Pasting text that ends in a space and a `#` at the end of an ATX heading
+  (`x #`) is refused: `encodeProseText` (`src/features/document/index.ts`)
+  escapes a block marker only at the start of an inserted string, so the `#`
+  reads as the heading's closing sequence. Escape a trailing `#` run after a
+  space when an insert ends a heading; the frame's `#` exception in
+  `typedTogether` can then go.
+- Two Ctrl+Z presses with no wait between them in Rendered can drop the
+  second undo (about 1 run in 4): `FluidEditor` posts the second
+  `fluid-history` before the first one's reset render arrives, with the old
+  epoch, and the app ignores it. Hold history requests in the frame until the
+  reset arrives, or let the app take one from the epoch it just replaced.
+- In Chromium, Home or ArrowLeft before an image at the start of a line puts
+  the caret inside the image island's hidden controls, so typing there does
+  nothing. Keep the caret out of an island's inactive controls in the frame.
+- An island edit (a code block, a table cell, a component's prop) renders
+  every island again, though none starts again. Charts get new data arrays,
+  so with Recharts' default animation each runs a 400 to 1500 ms animation
+  that changes nothing on screen, and a `LabelList` hides its labels
+  meanwhile. Reuse an island's element across compiles when its compiled
+  props are equal (which needs `__slot` numbers that do not shift when a
+  component is inserted before it), or keep a chart's data the same object
+  while it is deep-equal (`src/preview/lazyCharts.tsx`).
+- Leaves in islands after the caret rewrite `data-source-text`,
+  `data-authoring-from` and `data-authoring-to` at every keystroke, and
+  controlled inputs in component islands after the caret render again, since
+  their source offsets move. The source-draft store reads its regions from
+  those attributes (`regionOfElement` in `src/preview/sourceDrafts.ts`): keep
+  the regions in a registry in the frame, and give the controls of Counter,
+  Callout and custom components a slot selector that ignores offsets, which
+  they need only to commit.
+- In an island's prose (a table's cells, a component's children), a click
+  beside a leaf selects the island, and typing then shows "crosses computed
+  output" (`objectView` in `src/preview/fluidEditor.ts`,
+  `src/preview/authoring.tsx`).
+- The source-draft store handles table cells (leaves that are not a
+  component's text) only halfway. `captureDraftsBeforeRender` captures them,
+  and rebasing them over the cell's own patch fails, so after every cell edit
+  the frame shows "An edit was interrupted. Recover your retained draft".
+  `restoreSourceDraft` never restores them, so text typed into a second cell
+  before the first cell's edit renders is lost when the table is made again,
+  and a click from one cell to another can lose the caret
+  (`src/preview/sourceDrafts.ts`).
+- Text typed into a table cell stays in the frame until Enter or the caret
+  leaves the cell, with no pending signal to the page: the note reads
+  "Saved", no draft is written, and closing the tab loses it without asking.
+  Send a pending signal for a cell's unsent text, or send it as it is typed
+  (`EditableText` in `src/preview/authoring.tsx`).
+- Pasting text with line breaks into a table cell is refused, as a cell is
+  one line of the note; the frame could turn the line breaks into spaces.
+- Typing straight after leaving a code block's editor or a table cell can lose
+  the first keystroke: the island's edit moves the revision and epoch, the
+  frame's next edit, made in the old epoch, is refused as stale, the reset
+  drops what the frame had waiting, and the next accepted key clears the
+  notice. A fix needs a rebase lease for fluid edits across the app's own
+  direct edit, or an answer to that edit that keeps the frame's epoch and
+  waiting input; both touch the projection-checked path.
+- After an image is inserted, and after a reload straight into Rendered, the
+  workbench reads the pixels after the note's first render, so the picture
+  still pushes the note down when they come: a whole render carries sizes
+  only for pixels the workbench already has. Hand the inserted image's
+  preview over with the edit, keep previews across a reload, or give sizes
+  from the image file's metadata (`WorkspaceSession.tsx`,
+  `RenderedEditor.tsx`).
+- When `WorkspaceSession`'s image effect fails (for example
+  `parseImageReferences` throws on MDX that does not parse while Source is
+  typed in), it gives the rendered view an empty image set, and the frame's
+  pictures go, keeping their boxes, until the note parses again. Keep the
+  last pixels instead.
+- An embedded document's header gets its Open separately and Save document
+  buttons only at the first expansion, which reflows the header row
+  (`src/preview/DocumentEmbed.tsx`).
+- In an embedded document's editor, "Edit not applied" and "Loading
+  components" still show in the flow, since its root is `display: contents`,
+  so they move the layout. Pass them to the embed host (`DocumentEmbedState`
+  in `src/features/rendered/documentEmbeds.ts`), so the parent frame's
+  `DocumentEmbed` shows them over its own box.
+- The sandbox domain's frame is hidden until it says ready, and meanwhile its
+  box shows the page's background, then the panel colour: a small change of
+  shade the first time a note opens there. Give the frame's box the panel
+  colour while it loads, without changing the comment rail's background
+  (`RenderedEditor.tsx`).
+- Each `render-ack` still carries the note's authoring boundaries and block
+  boundaries, about 23 KB a keystroke in a 60 KB note. Send them as changes
+  if acks ever become a measurable cost.
+- Make `scopeKey` required in `fluidRenderSchema`
+  (`src/features/rendered/protocol.ts`): `RenderedEditor` always sends it, and
+  the chat card's `cardEditor.ts`, which hands `FluidEditor` a render
+  directly, would pass the projection's too.
+- Build the preview frame with the React Compiler preset the app and the
+  harness use (`buildFrame` in `vite-plugins/preview-frame.ts` uses only
+  `react()`), so the frame's own components are memoized too. Check the
+  bundle size, and components that read refs during render.
+- Decide whether `compileForPreview`'s authoring markers are still needed:
+  nothing in the app calls it, and only tests (`blocks.test.ts`,
+  `instrumentation.test.ts`, `documentBlocks.integration.test.tsx`) compile
+  with authoring on. Check whether the frame's `SourceBlock` handling
+  (`src/preview/authoring.tsx`, `preview-entry.tsx`) can still be reached,
+  and remove the path and its tests if not.
+- Under JavaScriptCore (Bun, Safari), Source underlines the wrong line for a
+  compiler error that has no place: `placedMessage`
+  (`src/features/rendered/instrumentation.ts`) appends any Error's line and
+  column, and a plain Error there carries its throw site, so "Expected `key`
+  to come before any spread expressions" reads "(344:27)", a line of
+  estree-util-build-jsx. Take a place only from a VFileMessage, or an error
+  with `place` or `position`, and test it under Bun.
+- The React Compiler skips `WorkspaceSession`, `WorkspaceWorkbench` and
+  `RenderedEditor` silently ("Handle Import expressions", "Support
+  ThrowStatement inside of try/catch", "Handle TryStatement with a
+  finalizer"). Move their dynamic imports and try/finally bodies into
+  module-level helpers, then check what they read during render from mutable
+  state outside React (`documentEmbeds`, `store.snapshot()`, refs), which the
+  compiler would memoize and leave stale. Done when the compiler compiles each
+  and the workbench browser specs pass.
+- Typing in Source or Split in an MDX note whose text has a brace or an
+  import line still compiles its component environment at every change, and
+  inspects and compiles each imported module again; typing in Rendered waits
+  for a 500 ms pause. Have the projection return its code inspection (ESM,
+  expressions that are not literals, imports), classified exactly as
+  `inspectComponentModule` does, so `useComponentEnvironment` can skip a
+  compile that would give the same environment, and cache module inspection
+  and compiles by path and text (`componentModules.ts`). Keep the custom-code
+  check exact.
+- `WorkspaceSession` still parses a note with image syntax at every keystroke
+  for its own image loading, while `RenderedEditor` keeps the note's image
+  keys by runtimeKey. Share one parse, such as the rendered view reporting the
+  key set, keeping the parser's allow-list and the modules' ESM scan.
+- Every open tab's `WorkspaceSession` renders again on every workbench render
+  (saves, sync, list refreshes, panel toggles). Wrap it in `memo` with stable
+  per-tab props: the server copy by id and version, `onDuplicate` and
+  `onResolveConflict` per path, `embeddedViews` grouped by path, and
+  navigation.
+- In the app, `RenderedEditor` makes a second React commit of its own at each
+  keystroke (the harness makes one). Find the state it sets in a separate
+  task, such as the frame's height, and fold it into the edit's commit.
+- Typing in a note with comment threads costs about four React commits a
+  keystroke: `useNoteComments`' deferred placement renders the session, and
+  `RenderedEditor` with it, once more after each one. Place the threads in a
+  child that the deferral renders alone, or keep the comments prop the same
+  while the marks are.
+- Library state changes reach an open workspace as `files` changes:
+  `ProjectPage` passes `library.subscribe` as `subscribeSync`, so opening File
+  actions (which refreshes the project list) lists the project three times
+  and renders the workbench six times, and a save's sync about sixteen times.
+  Tell the workspace once per sync that changed this project's files or
+  folders.
+- Once Rendered has shown, its hidden editor keeps projecting every Source
+  keystroke (`RenderedEditor`'s projection effect does not check `active`),
+  so typing in Source compiles the note three times a key. Pause the
+  projection while it is hidden, and project once when it shows.
+- Closing a tab with Discard right after a fast burst of typing can leave its
+  draft: an edit still on its way lands after the discard and the session
+  writes the draft back, or the discard stops with "This project changed
+  while discarding its draft. Try again." (the text is kept). Wait for the
+  session's pending edit, or freeze the session, before discarding
+  (`closeTab` in `WorkspaceWorkbench.tsx`).
+- Closing a tab while a document embedded in it has an edit on its way loses
+  that edit without asking, since `closeTab` checks only the closed file's
+  own session. Wait for each embedded descendant's `whenEditFinished` and
+  `persistDraft` first, walking them as `saveTree` does and as leaving the
+  page does.
+- Keys typed in Rendered while an edit is being checked wait in the frame, as
+  one edit, until the app answers, so a forced reload or a crash loses them
+  (leaving a note with unsaved changes asks first). Flush them on `pagehide`,
+  or find another way to get them into the draft sooner.
+- In Split, typing in Source while rendered keys still wait in the frame
+  refuses those keys ("Edit not applied"), and a rendered patch that lands
+  after the click moves Monaco's selection, so the Source keys can land in the
+  other paragraph. Rebase waiting rendered edits over a Source change, and
+  leave a focused Source editor's selection alone (`applyExternalPatches` in
+  `src/features/source/MonacoSourceEditor.tsx`).
+- An embedded document's unsaved draft has no unsaved marker in the explorer
+  when the document has no tab of its own: `ExplorerTree`'s `isDirty` reads
+  only the tabs. Let it also read the listed file's draft or the published
+  embed state.
+- After sync deletes or moves an open file, its session writes the open text
+  as a new local draft at the old path, since its draft effect runs again
+  when the saved revision leaves the list (`WorkspaceSession.tsx`). Leave such
+  a file to the conflict path, or follow the move.
+- A Split-view click 2 px inside the source pane's right edge once raised an
+  uncaught "Matching panels not found" (`SplitPanes`, next to the resize
+  handle), and it did not happen again. Check the handle's hit area.
+- `ShareFileDialog` and `AgentChangesView` list the project again on every
+  store change, so edits still on their way when one opens make one list
+  each. They could ignore `drafts` changes.
 - A note whose component files pass the app's 2 MiB in all is sent only the
   ones read before the limit (`componentSources` in
   `supabase/functions/mcp-server/tools/componentSources.ts`); where those fit
@@ -515,6 +817,12 @@ matters.
   Retry progress covers queued work, disables duplicate manual retries and
   returns to Synced without refresh. Older request results cannot restore a
   stale error after recovery; saved files and newer drafts remain intact.
+- The rendered view edits lists in many more shapes with the standard keys
+  (Enter, Tab, Shift+Tab, Backspace, Delete, Shift+Enter), keeps numbered
+  lists counting, keeps each island's state across edits, answers each
+  keystroke with a small ack, and no longer moves or flashes the note while
+  typing or when its fonts, palette or a notice arrive. Every edit stays
+  exact; unit and Chromium/Firefox regressions pass.
 - T1: find out whether MCP Apps hosts allow runtime-compiled components (#2)
 - T2: ship license notices for bundled third-party code (#3)
 - T3: extract searchable passages from notes and diagrams (#4)

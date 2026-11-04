@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type ComponentProps } from "react";
 import type { OperationSession } from "./operationSession";
 import type { DocumentEmbedSessions, EmbeddedDocumentView } from "./documentEmbeds";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
@@ -56,6 +56,28 @@ type Mode = EditorView;
 function preloadViews() {
   preloadSourceEditor();
   preloadRenderedEditor();
+}
+
+/**
+ * How long a rendered edit waits before it shows as finishing (the status a
+ * screen reader hears, the menus that wait for it): an ordinary keystroke's
+ * edit finishes well within it, and so shows nothing.
+ */
+const PENDING_SHOWN_MS = 300;
+const NO_IMAGES: Record<string, ImagePreview> = {};
+const noSubscription = () => () => {};
+const noCursor = () => {};
+
+/**
+ * Whether text can reference an image: every image reference needs "![" or
+ * an img tag. Typing into a note with neither parses nothing for images.
+ */
+const mayReferenceImages = (text: string) => /!\[|img/i.test(text);
+
+/** The same images under the same keys: nothing for the note frame to load again. */
+function sameImages(a: Record<string, ImagePreview>, b: Record<string, ImagePreview>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
 
 /**
@@ -128,6 +150,9 @@ export function WorkspaceSession({
     return store;
   });
   const [snapshot, setSnapshot] = useState<StoreState>(() => store.snapshot());
+  // The document as the rendered view's last typing left it: that view shows
+  // it already, without a new component environment.
+  const [renderedEdit, setRenderedEdit] = useState<StoreState | null>(null);
   const [openFile, setOpenFile] = useState<OpenFile>(() =>
     opening.revision
       ? openWorkspaceFile(initial.path, opening.revision)
@@ -166,8 +191,12 @@ export function WorkspaceSession({
     return savedComponentSource({ ...file, revision: file.revision ?? "" });
   }, [client]);
   // A module saved in another tab, or brought in by sync, rebuilds the components.
-  const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId);
+  // Unsaved edits (a draft's text, or a draft that starts or ends) never change a saved module.
+  const subscribeToStore = useCallback((listener: () => void) => client.subscribe((change) => { if (change === "files") listener(); }), [client]);
+  // Typing in the rendered view compiles the note's components once it
+  // pauses. An embedded copy of the note would wait for them to show the edit.
+  const shownByRendered = renderedEdit === snapshot && embeddedViews.length === 0;
+  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId, shownByRendered);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
   const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId);
@@ -175,12 +204,18 @@ export function WorkspaceSession({
   const [imageRequest, setImageRequest] = useState<{ files?: readonly File[]; initialAlt?: string; commit: (images: readonly { path: string; alt: string }[]) => Promise<boolean> } | null>(null);
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
   const [imageEntries, setImageEntries] = useState<Awaited<ReturnType<WorkspaceStore["listEntries"]>>["files"]>([]);
-  const [imageResources, setImageResources] = useState<Record<string, ImagePreview>>({});
+  const [imageResources, setImageResources] = useState<Record<string, ImagePreview>>(NO_IMAGES);
   // Assets are immutable. Reuse their pixels while typing instead of decoding
   // and base64-encoding every full-size image for each source revision.
   const documentImageCache = useRef(new Map<string, ImagePreview>());
+  // The images last shown, and the references and store change they were
+  // read for: typing that keeps the note's references reads nothing again,
+  // and the same pixels are not handed to the note again.
+  const shownImages = useRef(NO_IMAGES);
+  const imagesRead = useRef<{ client: WorkspaceStore; key: string; generation: number } | null>(null);
   const [imageGeneration, setImageGeneration] = useState(0);
-  useEffect(() => client.subscribe(() => setImageGeneration(value => value + 1)), [client]);
+  // Unsaved edits change no image: not a draft's text, nor a draft that starts or ends.
+  useEffect(() => client.subscribe((change) => { if (change === "files") setImageGeneration(value => value + 1); }), [client]);
   useEffect(() => {
     if (!imageRequest) return;
     let live = true;
@@ -192,9 +227,18 @@ export function WorkspaceSession({
     if (!documentActive || !client.readImage || kindForPath(initial.path) !== "note") return;
     let live = true;
     const controller = new AbortController();
+    const show = (pixels: Record<string, ImagePreview>) => {
+      if (sameImages(shownImages.current, pixels)) return;
+      shownImages.current = pixels;
+      setImageResources(pixels);
+    };
     void (async () => {
       const [{ parseImageReferences }, { documentImage }] = await Promise.all([import("../images/references"), import("../images/documentImage")]);
-      const refs = await parseImageReferences(snapshot.text, snapshot.format, initial.path, JSON.parse(imageModuleSources));
+      const own = mayReferenceImages(snapshot.text) ? snapshot.text : "";
+      const refs = await parseImageReferences(own, snapshot.format, initial.path, JSON.parse(imageModuleSources));
+      const key = JSON.stringify(refs.map((ref) => [ref.key, ref.path]));
+      const read = imagesRead.current;
+      if (!live || (read?.client === client && read.key === key && read.generation === imageGeneration)) return;
       const pixels: Record<string, ImagePreview> = {};
       const loaded = new Map<string, ImagePreview>();
       const nextCache = new Map<string, ImagePreview>();
@@ -225,8 +269,16 @@ export function WorkspaceSession({
           pixels[ref.key] = image;
         } catch { /* Missing or incomplete images show the frame's placeholder. */ }
       }
-      if (live) { documentImageCache.current = nextCache; setImageResources(pixels); }
-    })().catch(() => { if (live) setImageResources({}); });
+      if (live) {
+        documentImageCache.current = nextCache;
+        imagesRead.current = { client, key, generation: imageGeneration };
+        show(pixels);
+      }
+    })().catch(() => {
+      if (!live) return;
+      imagesRead.current = null;
+      show(NO_IMAGES);
+    });
     return () => { live = false; controller.abort(); };
   }, [documentActive, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
   const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
@@ -307,8 +359,27 @@ export function WorkspaceSession({
   }, [client, initial.path, notAnEdit, openFile.baseRevision, readOnly, snapshot.dirty, snapshot.text]);
   const editorApi = useRef<SourceEditorApi | null>(null);
   const renderedApi = useRef<RenderedEditorApi | null>(null);
-  const [renderedPending, setRenderedPending] = useState(false);
+  // Whether a rendered edit is on its way to the source: at once, for every
+  // guard (Save, Duplicate, Reload, Export, a view switch, operations).
   const renderedPendingRef = useRef(false);
+  // What shows of it (the menus, the status a screen reader hears, embedded
+  // copies): only an edit still waiting after PENDING_SHOWN_MS, so typing
+  // sets no state here.
+  const [pendingShown, setPendingShown] = useState(false);
+  const pendingShownTimer = useRef({ timer: 0, shown: false });
+  // Leaving the page asks first from the moment an edit is on its way: until
+  // it lands it is neither in the source nor in the draft, and the shown
+  // state (with the unsaved guard below) comes later. No state is set.
+  const holdUnload = useCallback((event: BeforeUnloadEvent) => event.preventDefault(), []);
+  const unloadHeld = useRef(false);
+  useEffect(() => {
+    const shown = pendingShownTimer.current;
+    return () => {
+      window.clearTimeout(shown.timer);
+      shown.timer = 0;
+      window.removeEventListener("beforeunload", holdUnload);
+    };
+  }, [holdUnload]);
   const pendingViews = useRef(new Set<string>());
   // Whatever waits for a rendered edit to finish (a duplicate), let go once it has.
   const editWaiters = useRef<Array<() => void>>([]);
@@ -359,7 +430,26 @@ export function WorkspaceSession({
     if (value) pendingViews.current.add(id); else pendingViews.current.delete(id);
     const pending = pendingViews.current.size > 0;
     renderedPendingRef.current = pending;
-    setRenderedPending(pending);
+    if (pending !== unloadHeld.current) {
+      unloadHeld.current = pending;
+      if (pending) window.addEventListener("beforeunload", holdUnload);
+      else window.removeEventListener("beforeunload", holdUnload);
+    }
+    const shown = pendingShownTimer.current;
+    if (pending && !shown.shown && !shown.timer) {
+      shown.timer = window.setTimeout(() => {
+        shown.timer = 0;
+        shown.shown = true;
+        setPendingShown(true);
+      }, PENDING_SHOWN_MS);
+    } else if (!pending) {
+      window.clearTimeout(shown.timer);
+      shown.timer = 0;
+      if (shown.shown) {
+        shown.shown = false;
+        setPendingShown(false);
+      }
+    }
     if (!pending) for (const resolve of editWaiters.current.splice(0)) resolve();
     if (!pending && pendingMode.current !== null) {
       const next = pendingMode.current;
@@ -367,7 +457,7 @@ export function WorkspaceSession({
       showMode(next);
       setNotice(current => current === 'Finishing edit…' ? null : current);
     }
-  }, [showMode]);
+  }, [holdUnload, showMode]);
   const handleRenderedPending = useCallback((pending: boolean) => handleViewPending("standalone", pending), [handleViewPending]);
   const savingRef = useRef(false);
   const pendingOperation = useRef(0);
@@ -399,8 +489,23 @@ export function WorkspaceSession({
     () => refs.filter((ref) => ref.path !== openFile.path),
     [refs, openFile.path],
   );
-  const ownDirty = snapshot.dirty || renderedPending;
-  const overallDirty = ownDirty || Boolean(documentEmbeds?.descendantsDirty(initial.path));
+  // The paths the rendered views offer and allow, the same arrays while the
+  // paths are the same: a new array posts them to the note frame again.
+  const allowedPathsKey = JSON.stringify(refs.map((ref) => ref.path));
+  const allowedResourcePaths = useMemo<readonly string[]>(() => JSON.parse(allowedPathsKey), [allowedPathsKey]);
+  const availableResourcePaths = useMemo(
+    () => workspacePaths.filter((path) => /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path))),
+    [initial.path, workspacePaths],
+  );
+  const otherPaths = useMemo(() => workspacePaths.filter((path) => path !== initial.path), [initial.path, workspacePaths]);
+  const ownDirty = snapshot.dirty || pendingShown;
+  // Embedded documents publish their state without rendering the workbench:
+  // this renders again only when the answer changes.
+  const descendantsDirty = useSyncExternalStore(
+    documentEmbeds?.subscribeStates ?? noSubscription,
+    () => Boolean(documentEmbeds?.descendantsDirty(initial.path)),
+  );
+  const overallDirty = ownDirty || descendantsDirty;
 
   useEffect(() => {
     if (!active) return;
@@ -498,6 +603,9 @@ export function WorkspaceSession({
         editorApi.current.applyExternalPatches(patches, options);
         setPatchError(null);
         setSnapshot(next);
+        // Typing in the rendered view (a transaction, in an undo group) is
+        // shown by that view already; its other edits show once projected.
+        if (options?.group !== undefined) setRenderedEdit(next);
         return true;
       } catch (error) {
         setPatchError(error instanceof Error ? error.message : String(error));
@@ -542,23 +650,47 @@ export function WorkspaceSession({
     [initial.path, workspacePaths, openPath],
   );
 
-  // Notes compile-check in Source mode (same pipeline as Rendered).
+  // Notes compile-check while Source shows (same pipeline as Rendered): its
+  // banner and marks are all that show the result, and Rendered reports its
+  // own errors. Hidden, nothing is compiled here. The result Source showed
+  // stays until the text changes while it is hidden, so a tab comes back
+  // with its banner instead of being pushed down by it a moment later.
+  const checkedSource = isNote && active && view !== "rendered" ? snapshot.text : null;
+  // The text and format the last check finished for (null once its result
+  // is dropped), and the text Source hid with.
+  const sourceCheck = useRef<{ text: string | null; format: string; hidden: string | null }>({ text: null, format: "", hidden: null });
   useEffect(() => {
+    const check = sourceCheck.current;
     if (!isNote) {
+      check.text = check.hidden = null;
       setSourceError(null);
       return;
     }
+    if (checkedSource === null) {
+      if (check.hidden === null) check.hidden = snapshot.text;
+      else if (check.text !== null && check.hidden !== snapshot.text) {
+        check.text = null;
+        setSourceError(null);
+      }
+      return;
+    }
+    check.hidden = null;
+    if (check.text === checkedSource && check.format === snapshot.format) return;
+    const format = snapshot.format;
     let alive = true;
     const timer = window.setTimeout(() => {
-      void diagnoseSource(snapshot.text, snapshot.format).then((message) => {
-        if (alive) setSourceError(message === null ? null : { text: snapshot.text, message });
+      void diagnoseSource(checkedSource, format).then((message) => {
+        if (!alive) return;
+        check.text = checkedSource;
+        check.format = format;
+        setSourceError(message === null ? null : { text: checkedSource, message });
       });
     }, 400);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [snapshot.text, snapshot.format, isNote]);
+  }, [checkedSource, isNote, snapshot.format, snapshot.text]);
 
   const switchMode = useCallback((next: Mode) => {
     settle();
@@ -599,19 +731,22 @@ export function WorkspaceSession({
       if (isNote && view !== "source") renderedApi.current?.revealRange(mark.from, mark.to, focus && !sourceShown);
     },
   });
-  const commentProps = {
-    marks: noteComments.marks,
-    source: noteComments.marksSource,
-    canComment: noteComments.canComment,
-    offline: noteComments.offline,
-    attaching: noteComments.attaching,
+  const { marks: commentMarks, marksSource: commentSource, canComment, offline: commentsOffline, attaching: commentAttaching, open: openComment, comment } = noteComments;
+  const onComment = useCallback((request: NoteCommentRequest, source: string) => {
+    const problem = comment(request, source);
+    if (problem) setNotice(problem);
+  }, [comment]);
+  const commentProps = useMemo(() => ({
+    marks: commentMarks,
+    source: commentSource,
+    canComment,
+    offline: commentsOffline,
+    attaching: commentAttaching,
     shortcut: apple ? { label: "⌘⌥M", aria: "Meta+Alt+M" } : { label: "Ctrl+Alt+M", aria: "Control+Alt+M" },
-    onOpen: noteComments.open,
-    onComment: (request: NoteCommentRequest, source: string) => {
-      const problem = noteComments.comment(request, source);
-      if (problem) setNotice(problem);
-    },
-  };
+    onOpen: openComment,
+    onComment,
+  }), [apple, canComment, commentAttaching, commentMarks, commentSource, commentsOffline, onComment, openComment]);
+  const sourceComments = useMemo(() => ({ ...commentProps, sections: isNote }), [commentProps, isNote]);
   // A phone has no room to split.
   const views = useMemo<EditorView[]>(() => (compact ? ["source", "rendered"] : ["source", "split", "rendered"]), [compact]);
   useEffect(() => {
@@ -750,24 +885,35 @@ export function WorkspaceSession({
     sourceSnapshot: () => ({text: store.snapshot().text, pending: renderedPendingRef.current}),
     exportSnapshot: () => renderedApi.current?.exportSnapshot() ?? null,
   }), [documentEmbeds, initial.path, openFile, readOnly, doWrite, componentGate, store]);
+  // What embedded copies show. A save of the tree also asks each session
+  // whether an edit has just begun (sourceSnapshot), so none is skipped.
   useEffect(() => {
     documentEmbeds?.publish(initial.path, {
       dirty: ownDirty,
-      pending: renderedPending || openFile.save.stage === "saving",
+      pending: pendingShown || openFile.save.stage === "saving",
       readOnly: Boolean(readOnly) || blocked,
       needsCodeConsent: asking,
       error: shownRenderError ?? patchError ?? (conflictMessage(openFile, notice)),
     });
-  }, [documentEmbeds, initial.path, ownDirty, renderedPending, openFile, readOnly, blocked, asking, shownRenderError, patchError, notice]);
+  }, [documentEmbeds, initial.path, ownDirty, pendingShown, openFile, readOnly, blocked, asking, shownRenderError, patchError, notice]);
+
+  // An action chosen while a rendered edit is on its way waits for the edit,
+  // as Save does, then runs with it: the menu offers the action in an edit's
+  // first moments. False when another document was opened meanwhile.
+  const editLanded = useCallback(async (identity: number): Promise<boolean> => {
+    if (renderedPendingRef.current) {
+      setNotice("Finishing edit…");
+      while (renderedPendingRef.current) await new Promise<void>((resolve) => editWaiters.current.push(resolve));
+      setNotice((current) => (current === "Finishing edit…" ? null : current));
+    }
+    return store.snapshot().docId === identity;
+  }, [store]);
 
   const doReload = useCallback(
     async (file: OpenFile) => {
       const identity = store.snapshot().docId;
       if (frozen.current) return;
-      if (renderedPendingRef.current) {
-        setNotice("Finishing edit…");
-        return;
-      }
+      if (!(await editLanded(identity)) || frozen.current) return;
       if (!file.path) return;
       if (
         store.snapshot().dirty &&
@@ -816,7 +962,7 @@ export function WorkspaceSession({
         pendingOperation.current--;
       }
     },
-    [client, resetEditorMessages, store],
+    [client, editLanded, resetEditorMessages, store],
   );
 
   const adoptServerText = useCallback(
@@ -919,10 +1065,7 @@ export function WorkspaceSession({
 
   const handleExport = useCallback(async () => {
     settle();
-    if (renderedPendingRef.current) {
-      setNotice("Finishing edit…");
-      return;
-    }
+    if (!(await editLanded(store.snapshot().docId))) return;
     const text = store.snapshot().text;
     setNotice(null);
     try {
@@ -939,7 +1082,7 @@ export function WorkspaceSession({
         `Export failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-  }, [displayName, settle, store]);
+  }, [displayName, editLanded, settle, store]);
 
   const captureNotionSources = useCallback(async () => {
     settle();
@@ -962,6 +1105,8 @@ export function WorkspaceSession({
   const handleFormat = useCallback(async () => {
     settle();
     if (frozen.current) return;
+    // Formatting rewrites the source, which an edit still on its way would not fit.
+    if (!(await editLanded(store.snapshot().docId)) || frozen.current) return;
     pendingOperation.current++;
     setNotice(null);
     try {
@@ -972,7 +1117,7 @@ export function WorkspaceSession({
     } finally {
       pendingOperation.current--;
     }
-  }, [settle]);
+  }, [editLanded, settle, store]);
 
   useEffect(() => {
     if (!active) return;
@@ -992,22 +1137,36 @@ export function WorkspaceSession({
   const inRendered = isNote && view !== "source";
   const conflict = openFile.save.stage === "conflict" ? openFile.save : null;
 
-  const save = () => { void saveDocument(); };
-  const saveDisabled = renderedPending || !hasFile || openFile.save.stage === "saving";
+  const save = useCallback(() => { void saveDocument(); }, [saveDocument]);
+  const sourceSave = useCallback(() => {
+    if (readOnly) {
+      setNotice(readOnly);
+      return;
+    }
+    void saveDocument();
+  }, [readOnly, saveDocument]);
+  const openNotionExport = async () => {
+    settle();
+    // Its capture refuses an edit still on its way: it opens once that has landed.
+    if (await editLanded(store.snapshot().docId)) setNotionExportOpen(true);
+  };
+  const saveDisabled = pendingShown || !hasFile || openFile.save.stage === "saving";
   // The header's Save stays on while a rendered edit finishes, so it doesn't
   // blink at each keystroke; a save pressed then waits for the edit (doWrite).
   const headerSaveDisabled = !hasFile || openFile.save.stage === "saving";
   const duplicateKey = commandShortcut("D", apple);
   // The file's actions: its tab's menu on a desktop, "..." on a phone.
+  // A menu opened in an edit's first moments shows them on: each action that
+  // needs the edit waits for it when chosen (editLanded, doWrite).
   const fileActions: MenuEntry[] = [
     ...(readOnly ? [] : [{ label: "Save", disabled: saveDisabled, onSelect: save }]),
     // Off while a rendered edit is finishing, as Save is, so the copy has it.
-    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: renderedPending, onSelect: onDuplicate }] : []),
+    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: pendingShown, onSelect: onDuplicate }] : []),
     // Read-only, the file follows its saved copy by itself.
-    ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
-    { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },
-    ...(isNote ? [{ label: "Export to Notion", disabled: renderedPending, onSelect: () => {settle(); setNotionExportOpen(true);} }] : []),
-    ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending, onSelect: () => void handleFormat() }] : []),
+    ...(readOnly ? [] : [{ label: "Reload", disabled: pendingShown || !openFile.path, onSelect: () => void doReload(openFile) }]),
+    { label: "Export", disabled: pendingShown, onSelect: () => void handleExport() },
+    ...(isNote ? [{ label: "Export to Notion", disabled: pendingShown, onSelect: () => void openNotionExport() }] : []),
+    ...(isNote && !readOnly ? [{ label: "Format", disabled: pendingShown, onSelect: () => void handleFormat() }] : []),
     ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
   ];
 
@@ -1023,12 +1182,17 @@ export function WorkspaceSession({
         actions={fileActions}
       />
       {/* The saved state and the last notice, for screen readers: Save and
-          the tab's unsaved dot show it on screen. */}
+          the tab's unsaved dot show it on screen. Each says only its own
+          changes: the state when it changes, a notice once. */}
       {active && (
-        <div className="sr-only" aria-live="polite">
-          <span>{renderedPending ? "Finishing edit…" : overallDirty ? "Unsaved changes" : "Saved"}</span>
-          {notice && <span>{notice}</span>}
-        </div>
+        <>
+          <div className="sr-only" aria-live="polite">
+            <span>{pendingShown ? "Finishing edit…" : overallDirty ? "Unsaved changes" : "Saved"}</span>
+          </div>
+          <div className="sr-only" aria-live="polite">
+            {notice && <span>{notice}</span>}
+          </div>
+        </>
       )}
       {/* The note's error, in every view. The rendered view reports its errors
           here instead of in a banner of its own (errorBanner), so each shows once. */}
@@ -1137,7 +1301,7 @@ export function WorkspaceSession({
               documentText={snapshot.text}
               format={snapshot.format}
               documentId={snapshot.docId}
-              workspacePaths={workspacePaths.filter(path => path !== initial.path)}
+              workspacePaths={otherPaths}
               componentCatalog={componentState.environment?.catalog}
               editorLanguage={
                 isNote ? undefined : editorLanguageForPath(displayName)
@@ -1145,18 +1309,12 @@ export function WorkspaceSession({
               visible={active && inSource}
               renderError={shownRenderError ?? shownSourceError}
               onChange={handleSourceChange}
-              onCursor={() => {}}
+              onCursor={noCursor}
               readOnly={readOnly}
-              comments={{ ...commentProps, sections: isNote }}
+              comments={sourceComments}
               writeIn={isNote ? arrived : null}
               onShown={embedded ? sourceShown : undefined}
-              onSave={() => {
-                if (readOnly) {
-                  setNotice(readOnly);
-                  return;
-                }
-                void saveDocument();
-              }}
+              onSave={sourceSave}
               apiRef={editorApi}
             />
           </div>
@@ -1187,10 +1345,8 @@ export function WorkspaceSession({
                 errorBanner={false}
                 typing={typing}
                 resources={resourcePixels}
-                allowedResourcePaths={refs.map((ref) => ref.path)}
-                availableResourcePaths={workspacePaths.filter((path) =>
-                  /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)),
-                )}
+                allowedResourcePaths={allowedResourcePaths}
+                availableResourcePaths={availableResourcePaths}
                 onEditResource={handleEditResource}
                 onOpenLink={handleOpenLink}
                 readOnly={Boolean(readOnly)}
@@ -1244,8 +1400,8 @@ export function WorkspaceSession({
       errorBanner={false}
       typing={typing}
       resources={resourcePixels}
-      allowedResourcePaths={refs.map(ref => ref.path)}
-      availableResourcePaths={workspacePaths.filter(path => /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)))}
+      allowedResourcePaths={allowedResourcePaths}
+      availableResourcePaths={availableResourcePaths}
       onEditResource={handleEditResource}
       onOpenLink={handleOpenLink}
       readOnly={Boolean(readOnly) || blocked}

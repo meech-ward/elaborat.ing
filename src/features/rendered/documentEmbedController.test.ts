@@ -123,6 +123,54 @@ describe('document embed capabilities', () => {
     f.controller.reconcile();
     expect(f.detached()).toBe(2);
   });
+  test('with no document open, a change of the note is not read for references', () => {
+    let reads = 0;
+    const context = {session:'session-1234',revision:3,format:'mdx' as const,owner:{} as Window,path:'parent.mdx',ancestors:['parent.mdx'],
+      get text() { reads++; return '<Document src="child.mdx" />\n\nTyping here.'; }};
+    const controller = new DocumentEmbedController({context:() => context, send:() => {}, nonce:() => '0'.repeat(32), bootstrap:() => Promise.resolve('')});
+    controllers.push(controller);
+    controller.reconcile();
+    controller.reconcile();
+    expect(reads).toBe(0);
+  });
+  test('with a document open, typing that keeps the references key reads nothing, and a new key reads the note again', () => {
+    const f = fixture();
+    let text = f.context.text, reads = 0;
+    Object.defineProperty(f.context, 'text', {get: () => { reads++; return text; }});
+    Object.assign(f.context, {referencesKey: 'islands-1'});
+    f.open(); f.ready();
+    expect(f.attaches).toHaveLength(1);
+    f.controller.reconcile();
+    const read = reads;
+    // Prose typed after it: the same islands, so the same key.
+    text = `${text}\n\nTyping here.`;
+    f.controller.reconcile();
+    f.controller.reconcile();
+    expect(reads).toBe(read);
+    expect(f.detached()).toBe(0);
+    // The reference goes, and the islands' key with it: the note is read, and the view released.
+    text = 'Typing here.';
+    Object.assign(f.context, {referencesKey: 'islands-2'});
+    f.controller.reconcile();
+    expect(reads).toBeGreaterThan(read);
+    expect(f.detached()).toBe(1);
+  });
+  test('a new view of an embedded document starts at the height it last reported', () => {
+    const first = fixture();
+    first.context.text = '<Document src="tall.mdx" />';
+    first.open('one', 'tall.mdx');
+    first.ready();
+    first.attaches[0].onState({pending:false,height:612});
+    // Another note (another controller) showing the same document, and one never shown here.
+    const second = fixture();
+    second.context.text = '<Document src="tall.mdx" />\n\n<Document src="never-shown.mdx" />';
+    second.open('two', 'tall.mdx');
+    second.open('three', 'never-shown.mdx', 29);
+    const states = second.sent.filter(message => message.kind === 'document-embed-state');
+    expect(states[0]).toMatchObject({id:'two',state:{pending:true,error:null,height:612}});
+    expect(states[1]).toMatchObject({id:'three',state:{pending:true,error:null}});
+    expect((states[1].state as Record<string, unknown>).height).toBeUndefined();
+  });
   test('prose moving a reference keeps the mounted child and removing it cancels queued bootstrap', async () => {
     const f = fixture();
     f.open(); f.ready();

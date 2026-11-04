@@ -169,6 +169,12 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     editorRef.current = editor;
     let renderedGroup: string | undefined;
     let applyingRendered = false;
+    // Where each rendered edit's group of patches started and ended (their
+    // RenderedPatchOptions), by the model's alternative version id after it,
+    // which undo and redo return to. Undo from Rendered puts the caret where
+    // the undone group started, and redo where it ended, as the source
+    // buffer does: Monaco restores an edit's cursor only with focus.
+    const recorded = new Map<number, { before?: SourceSelection; after?: SourceSelection }>();
     // Replaying the shell's steps: the parent already has their text.
     let replaying = false;
     const selectionAt = (selection: SourceSelection) => {
@@ -428,6 +434,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     );
 
     disposables.push(
+      model.onDidChangeContent((event) => {
+        // Another text in place of this one (`setValue`): a new history.
+        if (event.isFlush) recorded.clear();
+      }),
       editor.onDidChangeModelContent(() => {
         if (!applyingRendered) renderedGroup = undefined;
         if (replaying) return;
@@ -499,9 +509,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         // stop, so one Ctrl+Z reverts exactly that commit and typing stays
         // in separate stops. onDidChangeModelContent notifies the parent,
         // whose store already holds the same text, so it stays in sync.
-        if (!options?.group || options.group !== renderedGroup)
-          editor.pushUndoStop();
+        const continued = Boolean(options?.group) && options?.group === renderedGroup;
+        if (!continued) editor.pushUndoStop();
         if (options?.before) editor.setSelection(selectionAt(options.before));
+        const start = model.getAlternativeVersionId();
         applyingRendered = true;
         try {
           editor.executeEdits(
@@ -512,6 +523,13 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         } finally {
           applyingRendered = false;
         }
+        // A group's later patches join its undo step: it ends here now.
+        const group = continued ? recorded.get(start) : undefined;
+        if (continued) recorded.delete(start);
+        recorded.set(model.getAlternativeVersionId(), {
+          before: continued ? group?.before : options?.before,
+          after: options?.after,
+        });
         renderedGroup = options?.group;
         if (!renderedGroup) editor.pushUndoStop();
       },
@@ -525,6 +543,9 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
         const heard = model.onDidChangeContent((event) => {
           changes = event.changes;
         });
+        // The edit undone is the one that ended at this version; the one
+        // redone ends at the version redo returns to.
+        const from = model.getAlternativeVersionId();
         try {
           if (!editor.getOption(monaco.editor.EditorOption.readOnly))
             void (direction === "undo" ? model.undo() : model.redo());
@@ -532,11 +553,16 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
           heard.dispose();
         }
         // The editor moves its cursor to the undone edit only when it has
-        // focus. Without it (undo from Rendered), the cursor goes after the
-        // first changed text, where the edit was.
+        // focus. Without it (undo from Rendered), the cursor goes where a
+        // rendered edit recorded it was before it (or after it, for redo);
+        // else after the first changed text, where the edit was.
         if (changes.length > 0 && !editor.hasTextFocus()) {
-          const first = changes.reduce((a, b) => (b.rangeOffset < a.rangeOffset ? b : a));
-          editor.setPosition(model.getPositionAt(first.rangeOffset + first.text.length));
+          const place = direction === "undo" ? recorded.get(from)?.before : recorded.get(model.getAlternativeVersionId())?.after;
+          if (place) editor.setSelection(selectionAt(place));
+          else {
+            const first = changes.reduce((a, b) => (b.rangeOffset < a.rangeOffset ? b : a));
+            editor.setPosition(model.getPositionAt(first.rangeOffset + first.text.length));
+          }
         }
         const selection = editor.getSelection();
         return {

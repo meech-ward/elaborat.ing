@@ -15,6 +15,7 @@ export interface EmbeddedDocumentView {
 export interface EmbeddedDocumentSession {
   save: () => Promise<boolean>;
   run: () => void;
+  /** The buffer now; `pending` is true from the moment a rendered edit starts. */
   sourceSnapshot?: () => {text: string; pending: boolean};
   exportSnapshot?: () => Promise<Array<{from: number; to: number; html: string}>> | null;
 }
@@ -42,6 +43,7 @@ export class DocumentEmbedSessions {
   private loading = new Map<string, Promise<void>>();
   private epochs = new Map<string, number>();
   private listeners = new Set<() => void>();
+  private stateListeners = new Set<() => void>();
   private current: EmbedSnapshot = { files: [], views: [] };
 
   constructor(
@@ -59,6 +61,21 @@ export class DocumentEmbedSessions {
   private changed(): void {
     this.current = { files: [...this.files.values()], views: [...this.views.values()] };
     for (const listener of this.listeners) listener();
+    this.statesChanged();
+  }
+
+  /**
+   * Called when a file's published state, or which views embed which file,
+   * changes. Read what you need with `dirty` or `descendantsDirty` through
+   * useSyncExternalStore, so only a change in that answer renders again: the
+   * files and views snapshot stays the same, and nothing that renders it does.
+   */
+  subscribeStates = (listener: () => void): (() => void) => {
+    this.stateListeners.add(listener);
+    return () => this.stateListeners.delete(listener);
+  };
+  private statesChanged(): void {
+    for (const listener of this.stateListeners) listener();
   }
 
   /** Open tabs join the pool without replacing an existing draft or history. */
@@ -182,7 +199,13 @@ export class DocumentEmbedSessions {
     if (previous && JSON.stringify(previous) === JSON.stringify(state)) return;
     this.states.set(path, state);
     for (const view of this.views.values()) if (view.path === path) view.onState(state);
-    this.changed();
+    this.statesChanged();
+  }
+
+  /** Unsaved, or an edit or save under way, including an edit just begun that its published state does not show yet. */
+  private busy(path: string): boolean {
+    const state = this.states.get(path);
+    return Boolean(state?.dirty || state?.pending || this.sessions.get(path)?.sourceSnapshot?.().pending);
   }
 
   replacementEpoch(path: string): number { return this.files.get(path)?.replacementEpoch ?? 0; }
@@ -212,8 +235,7 @@ export class DocumentEmbedSessions {
   reconcilePaths(paths: readonly string[]): void {
     const available = new Set(paths);
     for (const file of this.files.values()) {
-      const state = this.states.get(file.path);
-      if (file.revision !== null && !available.has(file.path) && !state?.dirty && !state?.pending) this.forget(file.path);
+      if (file.revision !== null && !available.has(file.path) && !this.busy(file.path)) this.forget(file.path);
     }
   }
 
@@ -250,8 +272,7 @@ export class DocumentEmbedSessions {
     visit(path);
     const failures: string[] = [];
     for (const current of ordered) {
-      const state = this.states.get(current);
-      if (!state?.dirty && !state?.pending) continue;
+      if (!this.busy(current)) continue;
       try {
         const session = this.sessions.get(current);
         if (!session || !await session.save()) failures.push(`Could not save ${current}. Open it separately to review its changes.`);

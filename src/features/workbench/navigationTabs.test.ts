@@ -48,3 +48,15 @@ test("open pushes; close, rename and move replace; restored identities deduplica
   state = transition(state, {type:"close",path:"folder/renamed.mdx",discard:true});
   expect(state.locationCommand).toMatchObject({replace:true,path:"first.mdx"});
 });
+test("an action that changes nothing returns the same state, so the workbench does not render for it", () => {
+  const state = transition(emptyNavigationTabs, { type: "restored", files: [file("a.md")], activePath: "a.md", fromLocation: true });
+  expect(transition(state, { type: "dirty", path: "a.md", dirty: false })).toBe(state);
+  expect(transition(state, { type: "dirty", path: "a.md", dirty: false, fromLocation: true })).toBe(state);
+  const dirty = transition(state, { type: "dirty", path: "a.md", dirty: true });
+  expect(dirty).not.toBe(state);
+  expect(dirty.tabs[0].dirty).toBe(true);
+  // A location read still clears a command waiting to be applied.
+  const selected = transition(transition(state, { type: "restored", files: [file("b.md")], activePath: "a.md", fromLocation: true }), { type: "select", path: "b.md" });
+  expect(selected.locationCommand).not.toBeNull();
+  expect(transition(selected, { type: "dirty", path: "b.md", dirty: false, fromLocation: true }).locationCommand).toBeNull();
+});

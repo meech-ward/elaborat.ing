@@ -5,7 +5,8 @@
 .document-embed-path{font-family:var(--code-font);font-size:.75rem;color:var(--muted);overflow-wrap:anywhere}
 .document-embed-status{font-size:.75rem;color:var(--muted)}
 .document-embed-body>p,.document-embed-consent{padding:.5rem 1rem}
-.document-embed-body>iframe{border:0;width:100%;min-width:0;background:var(--panel)}
+/* Its page is see-through until it has its appearance, so this panel colour shows; it starts with no colour scheme, and so does this element, or the browser would paint the page opaque. */
+.document-embed-body>iframe{border:0;width:100%;min-width:0;background:var(--panel);color-scheme:normal}
 .document-embed-error{color:var(--danger-text,var(--text))}
 html[data-embedded-document] body{padding:12px 20px;overflow-y:hidden}
 html[data-embedded-document]{overflow-y:hidden}

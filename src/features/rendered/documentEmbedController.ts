@@ -10,6 +10,12 @@ type Context = {
   owner: Window | null; path: string; ancestors: readonly string[];
   host?: DocumentEmbedHost;
   frameScriptUrl?: string;
+  /**
+   * The rendered note's key for its islands' source (the projection's
+   * runtimeKey). Every reference is an island, so while the key holds, no
+   * reference came or went, whatever else of the text changed.
+   */
+  referencesKey?: string;
 };
 type Entry = {
   id: string; path: string; nonce: string; label: string; owner: Window;
@@ -19,11 +25,25 @@ type Entry = {
 type Request = Extract<ChildMessage, {kind:'document-embed-open'|'document-embed-release'|'document-embed-action'}>;
 /** Assigned at instance creation, never during render or HTML generation. */
 let documentView = 0;
+/**
+ * The height each embedded document last reported, by path, while this page
+ * is open: a new view of it (its note opened again, or it expanded) starts at
+ * that height instead of growing from a placeholder once it has loaded.
+ */
+const reportedHeights = new Map<string, number>();
+const MAX_REPORTED_HEIGHTS = 64;
+function rememberHeight(path: string, height: number) {
+  reportedHeights.delete(path);
+  reportedHeights.set(path, height);
+  if (reportedHeights.size > MAX_REPORTED_HEIGHTS) reportedHeights.delete(reportedHeights.keys().next().value as string);
+}
 
 /** Every capability comes from literal references in app-owned source. */
 export class DocumentEmbedController {
   private entries = new Map<string, Entry>();
   private parsed: {text:string;format:'md'|'mdx';refs:DocumentReference[]} | null = null;
+  /** The references key (with the format) the open views were last checked against the note's references for. */
+  private reconciled: string | null = null;
   constructor(private readonly options: {
     context: () => Context;
     send: (message: unknown) => void;
@@ -53,10 +73,16 @@ export class DocumentEmbedController {
   }
   dispose() { for (const id of this.entries.keys()) this.release(id); }
   reconcile() {
+    // Nothing open, nothing to release: the note is not read for references
+    // on every change (an open request reads them when it comes).
+    if (!this.entries.size) return;
     const context = this.options.context();
-    const refs = this.references(context);
+    // Typing that keeps the references key reads nothing.
+    const key = context.referencesKey === undefined ? null : `${context.format}:${context.referencesKey}`;
+    const refs = key !== null && key === this.reconciled ? null : this.references(context);
+    this.reconciled = key;
     for (const [id, entry] of this.entries) {
-      if (entry.owner !== context.owner || entry.host !== context.host || !refs.some(ref => ref.path === entry.path)) this.release(id);
+      if (entry.owner !== context.owner || entry.host !== context.host || (refs && !refs.some(ref => ref.path === entry.path))) this.release(id);
     }
   }
 
@@ -92,7 +118,7 @@ export class DocumentEmbedController {
     const entry: Entry = {
       id:message.id, path:message.path, nonce:this.options.nonce(), owner:context.owner, host:context.host,
       label:`Embedded document ${message.path}, view ${++documentView}`,
-      state:{pending:true,error:null},
+      state:{pending:true,error:null,...(reportedHeights.has(message.path) ? {height:reportedHeights.get(message.path)} : {})},
       timer:setTimeout(() => {
         if (this.entries.get(message.id) !== entry || entry.cleanup) return;
         this.release(message.id);
@@ -129,6 +155,7 @@ export class DocumentEmbedController {
       ancestors:[...context.ancestors, entry.path],frame,frameScriptUrl:context.frameScriptUrl,
       onState:state => {
         if (this.entries.get(entry.id) !== entry) return;
+        if (typeof state.height === 'number') rememberHeight(entry.path, state.height);
         entry.state = {...entry.state, ...state};
         this.state(entry.id, entry.state);
       }});

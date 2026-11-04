@@ -74,6 +74,16 @@ export type LocalChange =
 type FileChange = Extract<LocalChange, { kind: "write" | "asset" | "move" | "delete" }>
 const isFileChange = (change: LocalChange): change is FileChange => change.kind !== "mkdir" && change.kind !== "rmdir"
 
+/**
+ * What a committed local change touched. "drafts": only the unsaved text of
+ * files that already had unsaved edits, so no file, folder, saved copy or
+ * draft marker a file list shows changed. "unsaved": only unsaved text too,
+ * but a file started or stopped having unsaved edits, or is new: a file list
+ * shows that, and still no saved copy and no image changed. "files":
+ * anything else.
+ */
+export type FileStoreChange = "files" | "unsaved" | "drafts"
+
 export class LocalConflictError extends Error {
   constructor(readonly path: string, readonly currentRevision: string, readonly currentContent: string | null) {
     super(`${path} changed on this device since it was opened.`)
@@ -118,7 +128,7 @@ function checkFree(folders: ReadonlySet<string>, live: ReadonlyMap<string, strin
 }
 
 export class ProjectFileStore {
-  private listeners = new Set<() => void>()
+  private listeners = new Set<(change: FileStoreChange) => void>()
   private draftQueue: Promise<void> = Promise.resolve()
   /** Drafts waiting for the next write, by path (the latest text wins). */
   private queuedDrafts = new Map<string, { path: string; content: string; baseRevision: string | null }>()
@@ -132,14 +142,14 @@ export class ProjectFileStore {
     readonly projectId: string,
   ) {}
 
-  /** Called after every committed local change. */
-  subscribe(listener: () => void): () => void {
+  /** Called after every committed local change, with what it touched. */
+  subscribe(listener: (change: FileStoreChange) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
-  private emit() {
-    for (const listener of this.listeners) listener()
+  private emit(change: FileStoreChange = "files") {
+    for (const listener of this.listeners) listener(change)
   }
 
   private async project(tx: StorageTransaction): Promise<LocalProject> {
@@ -667,18 +677,26 @@ export class ProjectFileStore {
       checkPath(entry.path)
       checkSize(entry.path, entry.content)
     }
+    // Typing replaces a draft's text many times; only a draft that starts or
+    // ends, or a new file, changes what a file list shows.
+    let textOnly = true
     await this.db.transaction(this.partition, "readwrite", async (tx) => {
       await this.project(tx)
       for (const entry of entries) {
         const file = await tx.getFile(this.projectId, entry.path)
         if (file?.kind === "image") throw new FileStoreError(`${entry.path} is an image and cannot be edited as text.`)
         if (file && file.content === entry.content) {
-          if (file.draft) await tx.putFile({ ...file, draft: null })
+          if (file.draft) {
+            await tx.putFile({ ...file, draft: null })
+            textOnly = false
+          }
           continue
         }
         if (file) {
+          if (!file.draft) textOnly = false
           await tx.putFile({ ...file, draft: { content: entry.content, token: entry.baseRevision } })
         } else {
+          textOnly = false
           await tx.putFile({
             partition: this.partition,
             projectId: this.projectId,
@@ -693,7 +711,7 @@ export class ProjectFileStore {
         }
       }
     })
-    this.emit()
+    this.emit(textOnly ? "drafts" : "unsaved")
   }
 }
 

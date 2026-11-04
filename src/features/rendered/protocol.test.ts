@@ -320,6 +320,7 @@ describe('staleChildMessage', () => {
       ready: 'drop',
       'load-module': 'drop',
       rendered: 'drop',
+      'render-request': 'drop',
       'export-snapshot-result': 'drop',
       activity: 'drop',
       'render-error': 'drop',
@@ -381,6 +382,90 @@ describe('checkParentMessage', () => {
     expect(checkParentMessage({ data: render(undefined), source: {}, activeSession: 'session-1a' }).ok).toBe(true);
     for (const invalid of [-1, 1.5, '12', null])
       expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
+  });
+  test("a render can name the note's code outside its islands, so the frame keeps the islands an edit did not change", () => {
+    const fluid = { epoch: 3, operation: 0, reset: false, runtimeKey: 'k', islands: [], doc: { type: 'doc' } };
+    const render = (scopeKey: unknown) => ({ kind: 'render', session: 'session-1a', revision: 8, code: 'x', slots: [], fluid: { ...fluid, scopeKey } });
+    const checked = checkParentMessage({ data: render('1x2y3z'), source: {}, activeSession: 'session-1a' });
+    expect(checked.ok && checked.message.kind === 'render' ? checked.message.fluid?.scopeKey : null).toBe('1x2y3z');
+    expect(checkParentMessage({ data: render(undefined), source: {}, activeSession: 'session-1a' }).ok).toBe(true);
+    for (const invalid of [3, null, 'k'.repeat(65)])
+      expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
+  });
+
+  test("a render can carry the size of each picture whose pixels follow it: a key and a whole width and height, bounded", () => {
+    const render = (imageSizes: unknown) => ({ kind: 'render', session: 'session-1a', revision: 8, code: 'x', slots: [], imageSizes });
+    const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
+    const sizes = [{ key: 'images/red.png', width: 400, height: 300 }];
+    const checked = check(render(sizes), null);
+    expect(checked.ok && checked.message.kind === 'render' ? checked.message.imageSizes : null).toEqual(sizes);
+    expect(check(render(undefined)).ok).toBe(true);
+    for (const invalid of [
+      [{ key: '', width: 400, height: 300 }],
+      [{ key: 'k'.repeat(2049), width: 400, height: 300 }],
+      [{ key: 'a.png', width: 0, height: 300 }],
+      [{ key: 'a.png', width: 1.5, height: 300 }],
+      [{ key: 'a.png', width: 400 }],
+      [{ key: 'a.png', width: 400, height: 300, dataURL: 'data:image/png;base64,AA==' }],
+      Array.from({ length: 1025 }, (_, index) => ({ key: `${index}.png`, width: 1, height: 1 })),
+    ]) expect(check(render(invalid)).ok).toBe(false);
+  });
+
+  test("an edit's ack is the render moved on by the edit: no document, code, modules or catalog, and never a session's first", () => {
+    const ack = {
+      kind: 'render-ack', session: 'session-1a', revision: 9,
+      slots: [{ index: 0, element: 'Counter', supported: true, props: [{ name: 'initial', kind: 'number', syntax: 'braced', from: 30, to: 31, expected: '1', value: 1 }] }],
+      fluid: { epoch: 3, operation: 4, runtimeKey: 'k', islands: [{ id: 'island:1', from: 22 }] },
+      authoring: { format: 'mdx', boundaries: [{ id: 'b0', offset: 0 }], blockBoundaries: [{ position: 0, boundary: 'b0' }], availableResourcePaths: [], focus: 12, editAck: { fromRevision: 8, patches: [{ from: 2, to: 2, insertLength: 1 }] } },
+    };
+    const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
+    expect(check(ack).ok).toBe(true);
+    expect(check({ ...ack, readOnly: true }).ok).toBe(true);
+    expect(check({ ...ack, authoring: undefined }).ok).toBe(true);
+    // The first render of a session, and another session's ack, are refused.
+    expect(check(ack, null).ok).toBe(false);
+    expect(check(ack, 'session-other').ok).toBe(false);
+    // What only a whole render carries is no part of an ack.
+    for (const invalid of [
+      { ...ack, code: 'x' },
+      { ...ack, modules: [] },
+      { ...ack, fluid: { ...ack.fluid, doc: { type: 'doc' } } },
+      { ...ack, fluid: { ...ack.fluid, reset: false } },
+      { ...ack, fluid: { ...ack.fluid, nearest: true } },
+      { ...ack, fluid: { ...ack.fluid, selection: { anchor: 1, head: 1 } } },
+      { ...ack, authoring: { ...ack.authoring, components: [] } },
+      { ...ack, fluid: { ...ack.fluid, runtimeKey: undefined } },
+      { ...ack, fluid: { ...ack.fluid, operation: -1 } },
+    ]) expect(check(invalid).ok).toBe(false);
+  });
+
+  test('the answer to a text edit that changed nothing or was refused names the text as the edit named it', () => {
+    const settled = { kind: 'edit-settled', session: 'session-1a', revision: 7, target: { from: 40, to: 41 }, outcome: 'rejected' };
+    const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
+    expect(check(settled).ok).toBe(true);
+    expect(check({ ...settled, outcome: 'noop' }).ok).toBe(true);
+    expect(check({ ...settled, target: { block: 'block-3' } }).ok).toBe(true);
+    expect(check(settled, null).ok).toBe(false);
+    expect(check(settled, 'session-other').ok).toBe(false);
+    for (const invalid of [
+      { ...settled, outcome: 'accepted' },
+      { ...settled, target: { from: 40 } },
+      { ...settled, target: { from: 40, to: 41, block: 'b' } },
+      { ...settled, target: { block: 'b'.repeat(101) } },
+      { ...settled, value: 'x' },
+      { ...settled, revision: -1 },
+    ]) expect(check(invalid).ok).toBe(false);
+  });
+
+  test('the frame asks for the whole render for its session, and an old request is dropped', () => {
+    const request = { kind: 'render-request', session: 'session-1a', revision: 4 };
+    const check = (data: unknown, revision = 4) => checkChildMessage({ data, source: FRAME, expectedSource: FRAME, session: 'session-1a', revision });
+    expect(check(request).ok).toBe(true);
+    expect(check({ ...request, session: 'session-other' }).ok).toBe(false);
+    expect(check({ ...request, epoch: 1 }).ok).toBe(false);
+    const stale = check(request, 5);
+    expect(stale.ok).toBe(false);
+    expect(staleChildMessage('render-request')).toBe('drop');
   });
 
   test('accepts a well-formed render for a fresh child', () => {
