@@ -1696,24 +1696,28 @@ function listItemsPatch(
       .map((item, i) => text.slice(items[i].to, item.from));
     if (gaps.some((gap) => !/^\s*$/.test(gap))) return null;
     // A nested list's lines start at its column ("- - a" opens one on its
-    // parent's line, so the column is spaces).
-    const indent = text
-      .slice(text.lastIndexOf("\n", items[0].from - 1) + 1, items[0].from)
-      .replace(/\S/g, " ");
+    // parent's line, so the column is spaces). A byte order mark before the
+    // note's first line takes no column.
+    const columns = (from: number) =>
+      text
+        .slice(text.lastIndexOf("\n", from - 1) + 1, from)
+        .replace(/^﻿/, "")
+        .replace(/\S/g, " ");
+    const indent = columns(items[0].from);
     // New items are spaced like the items next to the edit.
     const near: string | undefined =
       gaps[Math.min(Math.max(first - (oldLast > first ? 0 : 1), 0), gaps.length - 1)];
     const style = listStyle(projection, previous, context, near);
     const gap = near ?? (style.loose ? "\n\n" : "\n") + indent;
-    const reindent = (source: string) =>
+    const reindent = (source: string, by = indent) =>
       source
         .split("\n")
-        .map((line, j) => (j && line ? indent + line : line))
+        .map((line, j) => (j && line ? by + line : line))
         .join("\n");
     // In a list numbered 1, 2, 3, the items after the change count on: each
     // is written again on its own, changing only its number (and the indent
     // of its later lines when the number's width changes), so the gaps
-    // between them stay as written.
+    // between them, and the indent of its own line, stay as written.
     const counted: SourcePatch[] = [];
     if (next.type === fluidSchema.nodes.ordered_list && style.numbering === "sequential")
       for (let i = newLast; i < next.childCount; i++) {
@@ -1722,7 +1726,7 @@ function listItemsPatch(
         counted.push({
           from: entry.from,
           to: entry.to,
-          insert: reindent(itemSource(next, i, projection, hint, style, stays)),
+          insert: reindent(itemSource(next, i, projection, hint, style, stays), columns(entry.from)),
           expected: text.slice(entry.from, entry.to),
         });
       }

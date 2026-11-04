@@ -267,6 +267,12 @@ for (const format of ["md", "mdx"] as const) {
     expect((await press(caret(await note("1. a\n\n2. b\n3. c\n4. d", format), "a"), enter)).text).toBe("1. a\n\n2. \n\n3. b\n4. c\n5. d");
     expect((await press(caret(await note("1. a\n2. b\n3. c\n\n4. d", format), "b"), tab)).text).toBe("1. a\n   1. b\n2. c\n\n3. d");
     expect((await press(caret(await note("8. a\n9. b\n   - x\n\n10. c", format), "a"), enter)).text).toBe("8. a\n9. \n10. b\n    - x\n\n11. c");
+    // An item set in further than the first keeps its own indent on its later lines.
+    expect((await press(caret(await note("1. a\n2. b\n 3. c\n    - d", format), "a"), enter)).text).toBe("1. a\n2. \n3. b\n 4. c\n    - d");
+    expect((await press(caret(await note("1. a\n 2. b\n    - x\n3. c", format), "a"), enter)).text).toBe("1. a\n 2. \n 3. b\n    - x\n4. c");
+    // A byte order mark before the list takes no column.
+    expect((await press(caret(await note("﻿1. a\n2. b\n   - x\n3. c", format), "a"), enter)).text).toBe("﻿1. a\n2. \n3. b\n   - x\n4. c");
+    expect((await press(caret(await note("﻿- a\n- b\n- c", format), "b"), tab)).text).toBe("﻿- a\n  - b\n- c");
   });
 
   test(`${format}: "1. " typed at the start of a bullet item makes it a numbered list under the item before`, async () => {
