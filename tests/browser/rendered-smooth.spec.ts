@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "./fixtures.ts"
-import { fakeSupabase } from "./fake-supabase.ts"
-import { clickAt, frameOf, load, openHarness, paragraph, recordFrameMessages, revision, settled, source } from "./rendered-support.ts"
+import { textAnchor } from "../../src/features/comments/placement.ts"
+import { FakeProjectServer } from "../../src/features/project-storage/fakeServer.ts"
+import { fakeSupabase, person, signedIn } from "./fake-supabase.ts"
+import { clickAt, frameOf, load, openHarness, paragraph, press, recordFrameMessages, revision, settled, source } from "./rendered-support.ts"
 import { APP_URL, SANDBOX_URL } from "./urls.ts"
 
 // The rendered note stays still while it is edited: an edit renders again
@@ -11,6 +13,29 @@ import { APP_URL, SANDBOX_URL } from "./urls.ts"
 const mark = (target: Locator) => target.evaluate((element) => ((element as Element & { __kept?: boolean }).__kept = true))
 /** Whether the element is the one marked before, still on screen. */
 const kept = (target: Locator) => target.evaluate((element) => (element as Element & { __kept?: boolean }).__kept === true && element.isConnected)
+
+type PagePost = { kind: string; size: number; doc: boolean; code: boolean; modules: boolean; components: boolean }
+/** From the next page load on, record in each note frame what the page sends it, and how big each message is. */
+const recordPagePosts = (page: Page) =>
+  page.addInitScript(() => {
+    if (window === window.top) return
+    const posts: PagePost[] = []
+    Object.assign(window, { __pagePosts: posts })
+    window.addEventListener("message", (event) => {
+      if (event.data?.kind !== "connect") return
+      event.ports[0]?.addEventListener("message", ({ data }) => {
+        posts.push({
+          kind: String(data?.kind),
+          size: JSON.stringify(data).length,
+          doc: data?.fluid?.doc !== undefined,
+          code: data?.code !== undefined,
+          modules: data?.modules !== undefined,
+          components: data?.authoring?.components !== undefined,
+        })
+      })
+    })
+  })
+const pagePosts = (page: Page) => frameOf(page).locator("body").evaluate(() => (window as unknown as { __pagePosts: PagePost[] }).__pagePosts)
 
 /** Each distinct top the paragraph starting with `text` has had, from now until `stop` resolves, sampled every frame. */
 async function tops(page: Page, text: string, stop: () => Promise<unknown>) {
@@ -348,44 +373,238 @@ After paragraph.
     await openHarness(page)
     await load(page, "# Pictures\n\nAnchor paragraph.\n\n![A picture](pic.png)\n\nAfter paragraph.\n", "md", "After paragraph.")
     const frame = frameOf(page)
-    // The revisions the page has sent the frame pixels for (none: the
-    // harness has no images of its own), and pixels to send as the app would.
-    await frame.locator("body").evaluate(() => {
+    // A 400 by 300 picture's pixels, given to the editor as the workbench does.
+    const dataURL = await page.evaluate(() => {
       const canvas = document.createElement("canvas")
       canvas.width = 400
       canvas.height = 300
       const context = canvas.getContext("2d")!
       context.fillStyle = "#c33"
       context.fillRect(0, 0, 400, 300)
-      const state = {
-        revisions: [] as number[],
-        send: (session: string, revision: number) =>
-          window.pagePort!.dispatchEvent(new MessageEvent("message", { data: { kind: "images", session, revision, reset: true, images: [{ key: "pic.png", dataURL: canvas.toDataURL("image/png"), width: 400, height: 300 }] } })),
-      }
-      ;(window as Window & { __pixels?: typeof state }).__pixels = state
-      window.pagePort!.addEventListener("message", (event) => {
-        if (event.data?.kind === "images") state.revisions.push(event.data.revision)
-      })
+      return canvas.toDataURL("image/png")
     })
-    const imagesFor = (revision: number) =>
-      expect.poll(() => frame.locator("body").evaluate((body, revision) => (window as Window & { __pixels?: { revisions: number[] } }).__pixels!.revisions.includes(revision), revision)).toBe(true)
-    await clickAt(page, "Anchor paragraph.", 0)
-    await page.keyboard.type("A")
-    await expect.poll(() => source(page)).toContain("AAnchor paragraph.")
-    await settled(page)
-    const shown = await revision(page)
-    await imagesFor(shown.revision)
-    await frame.locator("body").evaluate((body, shown) => (window as Window & { __pixels?: { send: (session: string, revision: number) => void } }).__pixels!.send(shown.session, shown.revision), shown)
+    await page.evaluate((dataURL) => window.renderedHarness.setImages({ "pic.png": { dataURL, width: 400, height: 300 } }), dataURL)
     const image = frame.getByRole("img", { name: "A picture" })
     await expect(image).toHaveJSProperty("naturalWidth", 400)
     const before = await paragraph(page, "After paragraph.").evaluate((element) => element.getBoundingClientRect().top)
-    // The harness sends the next revision without pixels: the image's box stays.
-    await page.keyboard.type("B")
-    await expect.poll(() => source(page)).toContain("ABAnchor paragraph.")
-    await settled(page)
-    await imagesFor(shown.revision + 1)
+    // Its pixels go for a moment (the page has none for it): the image's box stays.
+    await page.evaluate(() => window.renderedHarness.setImages({}))
     await expect(frame.locator(".project-image-missing")).toBeVisible()
     expect(Math.abs((await paragraph(page, "After paragraph.").evaluate((element) => element.getBoundingClientRect().top)) - before)).toBeLessThanOrEqual(1)
+  })
+
+  for (const [scheme, mode] of [["light", "srcdoc"], ["dark", "srcdoc"], ["light", "sandbox domain"]] as const) {
+    test(`a new note's frame shows the page's own panel colour until its ${scheme} palette has come, then the note in it (${mode} frame)`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme })
+      // In each frame, at each paint: its page's background and scheme, and
+      // whether the note is there; and what the page said, in order.
+      await page.addInitScript(() => {
+        if (window === window.top) return
+        const paints: { background: string; scheme?: string; text: boolean }[] = []
+        const said: string[] = []
+        Object.assign(window, { __paints: paints, __said: said })
+        const sample = () => {
+          paints.push({
+            background: document.body ? getComputedStyle(document.body).backgroundColor : "none",
+            scheme: document.documentElement.dataset.scheme,
+            text: Boolean(document.getElementById("root")?.textContent),
+          })
+          if (paints.length < 600) requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+        window.addEventListener("message", (event) => {
+          if (event.data?.kind === "connect") event.ports[0]?.addEventListener("message", (message) => said.push(String(message.data?.kind)))
+        })
+      })
+      await openHarness(page, mode === "sandbox domain" ? `?sandbox=${encodeURIComponent(new URL(SANDBOX_URL).origin)}` : "")
+      await page.evaluate((scheme) => window.renderedHarness.appearance("supabase-green", scheme), scheme)
+      // A note in a new frame (each note gets its own).
+      await load(page, `# Pictures\n\n${Array.from({ length: 30 }, (_, index) => `Paragraph ${index + 1} of the note.`).join("\n\n")}\n`, "md", "Paragraph 1 of the note.")
+      const frame = frameOf(page)
+      await expect(frame.locator("html")).toHaveAttribute("data-scheme", scheme)
+      const { paints, said } = await frame.locator("body").evaluate(() => {
+        const seen = window as unknown as { __paints: { background: string; scheme?: string; text: boolean }[]; __said: string[] }
+        return { paints: seen.__paints, said: seen.__said }
+      })
+      const panel = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement("div"))
+        probe.style.background = "var(--panel)"
+        const colour = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return colour
+      })
+      // The frame's page is see-through, with nothing on it, until the palette
+      // comes; from then on it is the page's panel colour, in that palette.
+      const until = paints.findIndex((paint) => paint.scheme !== undefined)
+      expect(until).toBeGreaterThanOrEqual(0)
+      expect(paints.slice(0, until).filter((paint) => paint.background !== "rgba(0, 0, 0, 0)" || paint.text)).toEqual([])
+      expect(paints.slice(until).filter((paint) => paint.scheme !== scheme || paint.background !== panel)).toEqual([])
+      // Behind it, the frame's element is that colour, with no scheme of its
+      // own: one that differs from the page's makes the browser paint it opaque.
+      expect(await page.locator('iframe[title="Isolated document preview"]').evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, scheme: getComputedStyle(element).colorScheme }))).toEqual({ background: panel, scheme: "normal" })
+      // The palette and the reading preferences came before the note.
+      expect(said.indexOf("appearance")).toBeGreaterThanOrEqual(0)
+      expect(said.indexOf("appearance")).toBeLessThan(said.indexOf("render"))
+      expect(said.indexOf("reading-preferences")).toBeLessThan(said.indexOf("render"))
+    })
+  }
+
+  test("an edit's answer is a small ack, without the note's document, code or components, and nothing else is sent again", async ({ page }) => {
+    await recordPagePosts(page)
+    await openHarness(page)
+    const paragraphs = Array.from({ length: 120 }, (_, index) => `Paragraph ${index + 1} has enough words in it to make the note a long one to send.`).join("\n\n")
+    await load(page, `Lead paragraph here.\n\n<Counter initial={1} />\n\n\`\`\`js\nconst total = 40 + 35\n\`\`\`\n\n${paragraphs}\n`, "mdx", "Lead paragraph here.")
+    const frame = frameOf(page)
+    await frame.getByRole("button", { name: "Increment" }).click()
+    await expect(frame.locator('[data-component="Counter"] output')).toHaveText("2")
+    await clickAt(page, "Lead paragraph here.", 19)
+    await settled(page)
+    const from = (await pagePosts(page)).length
+    for (const key of "abcde") {
+      await page.keyboard.type(key)
+      await page.waitForTimeout(100)
+    }
+    await expect.poll(() => source(page)).toContain("Lead paragraph hereabcde.")
+    await settled(page)
+    await expect(paragraph(page, "Lead paragraph hereabcde.")).toBeVisible()
+    await expect(frame.locator('[data-component="Counter"] output')).toHaveText("2")
+    const posts = await pagePosts(page)
+    const whole = posts.findLast((post, index) => index < from && post.kind === "render")!
+    const typing = posts.slice(from)
+    expect(typing.length).toBeGreaterThan(0)
+    expect(typing.length).toBeLessThanOrEqual(5)
+    for (const post of typing) {
+      expect(post).toMatchObject({ kind: "render-ack", doc: false, code: false, modules: false, components: false })
+      expect(post.size).toBeLessThan(whole.size / 3)
+    }
+  })
+
+  test("a frame sent an ack it cannot place asks for the whole render, and typing goes on", async ({ page }) => {
+    await recordPagePosts(page)
+    await openHarness(page)
+    await load(page, "Lead paragraph here.\n\nTail paragraph here.\n", "mdx", "Tail paragraph here.")
+    const shown = await revision(page)
+    const from = (await pagePosts(page)).length
+    // An ack for code the frame was never sent, as a page with a mistake in it would send.
+    await frameOf(page).locator("body").evaluate((body, shown) => window.pagePort!.dispatchEvent(new MessageEvent("message", {
+      data: { kind: "render-ack", session: shown.session, revision: shown.revision, slots: [], fluid: { epoch: 0, operation: 0, runtimeKey: "not-this-note", islands: [] } },
+    })), shown)
+    await expect.poll(() => page.evaluate(() => window.frameMessages.some((message) => message.kind === "render-request"))).toBe(true)
+    await expect.poll(async () => (await pagePosts(page)).slice(from).some((post) => post.kind === "render" && post.doc && post.code)).toBe(true)
+    await clickAt(page, "Tail paragraph here.", 19)
+    await page.keyboard.type("xy")
+    await expect.poll(() => source(page)).toBe("Lead paragraph here.\n\nTail paragraph herexy.\n")
+    expect(await page.evaluate(() => window.renderedHarness.state().error)).toBeNull()
+  })
+
+  test("a frame that loads again gets the whole render on its new port, and typing goes on", async ({ page }) => {
+    await openHarness(page)
+    await load(page, "Lead paragraph here.\n\nTail paragraph here.\n", "mdx", "Tail paragraph here.")
+    await clickAt(page, "Tail paragraph here.", 19)
+    await page.keyboard.type("a")
+    await expect.poll(() => source(page)).toBe("Lead paragraph here.\n\nTail paragraph herea.\n")
+    await settled(page)
+    // The frame's page loads again (as when a note's code navigates it): the
+    // editor puts a new frame in its place, which has nothing yet.
+    const before = await page.locator('iframe[title="Isolated document preview"]').elementHandle()
+    await frameOf(page).locator("body").evaluate(() => location.reload())
+    await expect.poll(() => page.locator('iframe[title="Isolated document preview"]').evaluate((element, before) => element !== before, before)).toBe(true)
+    await expect(paragraph(page, "Tail paragraph herea.")).toBeVisible()
+    await clickAt(page, "Tail paragraph herea.", 20)
+    await page.keyboard.type("b")
+    await expect.poll(() => source(page)).toBe("Lead paragraph here.\n\nTail paragraph hereab.\n")
+    expect(await page.evaluate(() => window.frameMessages.filter((message) => message.kind === "render-request").length)).toBe(0)
+  })
+
+  test("a refused edit's notice shows over the bottom of the note, and showing it or taking it away moves nothing", async ({ page }) => {
+    await openHarness(page)
+    await load(page, "Before paragraph here.\n\n<Counter initial={3} />\n\nAfter paragraph here.\n", "mdx", "After paragraph here.")
+    const editor = page.locator('iframe[title="Isolated document preview"]')
+    const frameBox = await editor.boundingBox()
+    const top = () => paragraph(page, "After paragraph here.").evaluate((element) => element.getBoundingClientRect().top)
+    const first = await top()
+    await clickAt(page, "Before paragraph here.", 3)
+    await press(page, "ControlOrMeta+a")
+    await press(page, "Backspace")
+    const notice = page.getByRole("status").filter({ hasText: /^Edit not applied:/ })
+    await expect(notice).toBeVisible()
+    await expect(notice).toContainText("This selection crosses computed output")
+    expect(await editor.boundingBox()).toEqual(frameBox)
+    expect(await top()).toBe(first)
+    // It sits at the bottom of the editor, over the note, and lets clicks through.
+    const box = (await notice.boundingBox())!
+    expect(Math.abs(box.y + box.height - (frameBox!.y + frameBox!.height))).toBeLessThanOrEqual(1)
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.matches('iframe[title="Isolated document preview"]'), { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true)
+    // The next edit the note takes clears it, as before.
+    await clickAt(page, "Before paragraph here.", 3)
+    await page.keyboard.type("x")
+    await expect.poll(() => source(page)).toBe("Befxore paragraph here.\n\n<Counter initial={3} />\n\nAfter paragraph here.\n")
+    await expect(notice).toHaveCount(0)
+    expect(await editor.boundingBox()).toEqual(frameBox)
+    expect(await top()).toBe(first)
+  })
+
+  test("Enter in a table cell keeps what was typed: it leaves the cell, and the note has it", async ({ page }) => {
+    await openHarness(page)
+    await load(page, "Intro.\n\n| A | B |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n\nMore text.\n", "mdx", "More text.")
+    const cell = (row: number) => frameOf(page).locator("tbody tr").nth(row).locator("td").first().locator('[role="textbox"]')
+    const end = async (row: number) => {
+      const box = (await cell(row).boundingBox())!
+      await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+    }
+    await end(0)
+    await page.keyboard.type("x")
+    await page.keyboard.press("Enter")
+    await expect.poll(() => source(page)).toContain("| ax | 1 |")
+    await expect(cell(0)).not.toBeFocused()
+    // Enter with nothing typed only leaves the cell; what is typed after still counts.
+    await end(1)
+    await page.keyboard.press("Enter")
+    await end(1)
+    await page.keyboard.type("yz")
+    await clickAt(page, "More text.", 2)
+    await expect.poll(() => source(page)).toBe("Intro.\n\n| A | B |\n| --- | --- |\n| ax | 1 |\n| byz | 2 |\n\nMore text.\n")
+    await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
+  test("a cell edit the note refuses shows the note's text again, and the cell can be edited again", async ({ page }) => {
+    await openHarness(page)
+    const note = (intro: string, cell: string) => `${intro}\n\n| A | B |\n| --- | --- |\n| ${cell} | 1 |\n\nMore text.\n`
+    await load(page, note("Intro.", "a"), "mdx", "More text.")
+    // The cell's edit is held back in the frame while the note changes.
+    await frameOf(page).locator("body").evaluate(() => {
+      const port = window.pagePort!
+      const send = port.postMessage.bind(port)
+      const held: unknown[] = []
+      Object.assign(window, { __release: () => { for (const message of held.splice(0)) send(message) } })
+      port.postMessage = (message: unknown) => {
+        if ((message as { kind?: string } | null)?.kind === "prose-edit") held.push(message)
+        else send(message)
+      }
+    })
+    const cell = frameOf(page).locator("tbody tr").first().locator("td").first().locator('[role="textbox"]')
+    const end = async () => {
+      const box = (await cell.boundingBox())!
+      await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+    }
+    await end()
+    await page.keyboard.type("x")
+    await clickAt(page, "More text.", 2)
+    await page.evaluate((text) => window.renderedHarness.edit(text), note("Intro text.", "a"))
+    await expect(paragraph(page, "Intro text.")).toBeVisible()
+    await frameOf(page).locator("body").evaluate(() => (window as unknown as { __release: () => void }).__release())
+    // Refused: the note changed under it. The cell shows the note's text again.
+    await expect(page.getByRole("status").filter({ hasText: /^Edit not applied:/ })).toBeVisible()
+    await expect(cell).toHaveText("a")
+    expect(await source(page)).toBe(note("Intro text.", "a"))
+    // And it sends its next edit, which the note takes.
+    await frameOf(page).locator("body").evaluate(() => {
+      delete (window.pagePort as { postMessage?: unknown }).postMessage
+    })
+    await end()
+    await page.keyboard.type("y")
+    await clickAt(page, "More text.", 2)
+    await expect.poll(() => source(page)).toBe(note("Intro text.", "ay"))
   })
 })
 
@@ -395,9 +614,28 @@ test.describe("in the app", () => {
   const FRAME = 'iframe[title="Isolated document preview"]:visible'
   const frame = (page: Page) => page.frameLocator(FRAME)
   const lines = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
+  /** From the next load on, count by kind what the page sends its frames. */
+  const countPosts = (page: Page) =>
+    page.addInitScript(() => {
+      if (window !== window.top) return
+      const posts: Record<string, number> = {}
+      Object.assign(window, { __posts: posts })
+      const post = MessagePort.prototype.postMessage
+      MessagePort.prototype.postMessage = function (this: MessagePort, ...args: Parameters<MessagePort["postMessage"]>) {
+        const kind = (args[0] as { kind?: unknown } | null)?.kind
+        if (typeof kind === "string") posts[kind] = (posts[kind] ?? 0) + 1
+        return post.apply(this, args)
+      } as MessagePort["postMessage"]
+    })
+  const posts = (page: Page) => page.evaluate(() => ({ ...(window as unknown as { __posts: Record<string, number> }).__posts }))
+  const forgetPosts = (page: Page) => page.evaluate(() => {
+    const counts = (window as unknown as { __posts: Record<string, number> }).__posts
+    for (const kind of Object.keys(counts)) delete counts[kind]
+  })
 
   test("typing after an image keeps the same picture on screen, and nothing below it moves", async ({ page }) => {
     await recordFrameMessages(page)
+    await countPosts(page)
     await fakeSupabase(page)
     await page.goto(APP_URL)
     await page.getByRole("banner").getByRole("link", { name: "Start writing" }).click()
@@ -450,15 +688,62 @@ test.describe("in the app", () => {
         }
       }).observe(document.body, { childList: true, subtree: true })
     })
+    await forgetPosts(page)
     for (const key of "typed") {
       await page.keyboard.type(key)
       await page.waitForTimeout(60)
     }
     await expect(after).toContainText("typed")
     await page.waitForTimeout(500)
+    // Each keystroke's answer is all the frame was sent: its pixels were not sent again.
+    expect(Object.keys(await posts(page))).toEqual(["render-ack"])
 
     expect(await kept(image)).toBe(true)
     expect(await frame(page).locator("body").evaluate(() => (window as Window & { __imageChanges?: object }).__imageChanges)).toEqual({ placeholders: 0, removed: 0 })
     expect(Math.abs((await after.evaluate((element) => element.getBoundingClientRect().top)) - before)).toBeLessThanOrEqual(1)
+  })
+
+  test("typing in a note with a commented phrase sends the frame each edit's answer only, and the phrase stays marked", async ({ page }) => {
+    await countPosts(page)
+    await recordFrameMessages(page)
+    const note = "# Customer model\n\nHow a customer moves from sign-up to their first project, and where agents help.\n\nLast paragraph here.\n"
+    const server = new FakeProjectServer()
+    const id = crypto.randomUUID()
+    await server.remote(person.id).createProject(id, "Notes")
+    // Files the note can embed, which the frame lists for Insert block.
+    await server.remote(person.id).saveFiles(id, crypto.randomUUID(), [
+      { op: "put", path: "a.md", content: note },
+      { op: "put", path: "sketch.excalidraw", content: '{"type":"excalidraw","version":2,"elements":[]}' },
+      { op: "put", path: "flow.d2", content: "a -> b" },
+    ])
+    const fake = await fakeSupabase(page, { server })
+    const fileId = [...fake.server.projects.get(id)!.files.values()].find((file) => file.path === "a.md")!.id
+    const quote = note.indexOf("where agents help")
+    fake.comments.call(person.id, "add_comment", { project_id: id, thread_id: crypto.randomUUID(), file_id: fileId, file_version: 1, anchor: textAnchor(note, quote, quote + "where agents help".length), body: "Which agents?" })
+    await signedIn(page)
+    await page.goto(new URL(`projects/${id}/a.md`, APP_URL).href)
+    await expect(page.getByRole("tabpanel", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Rendered", exact: true }).click()
+    const marked = frame(page).locator(".comment-highlight")
+    await expect(marked).toHaveText(["where agents help"])
+    await frame(page).getByText("Last paragraph here.", { exact: true }).click()
+    await page.keyboard.press("End")
+    await page.keyboard.type(" ")
+    await expect(frame(page).getByText("Last paragraph here.", { exact: false })).toBeVisible()
+    await page.waitForTimeout(500)
+    await forgetPosts(page)
+    await page.keyboard.type("abcdefgh", { delay: 100 })
+    await expect(frame(page).getByText("Last paragraph here. abcdefgh", { exact: true })).toBeVisible()
+    await page.waitForTimeout(800)
+    // The palette, the reading preferences, the paths and the marks were not sent again.
+    const sent = await posts(page)
+    expect(Object.keys(sent)).toEqual(["render-ack"])
+    expect(sent["render-ack"]).toBeLessThanOrEqual(8)
+    await expect(marked).toHaveText(["where agents help"])
+    // Words typed before the phrase move its mark: the marks go, and it stays on its words.
+    await frame(page).getByText(/^How a customer moves/).click({ position: { x: 1, y: 8 } })
+    await page.keyboard.type("Today, ")
+    await expect(frame(page).getByText(/^Today, How a customer moves/)).toBeVisible()
+    await expect(marked).toHaveText(["where agents help"])
   })
 })
