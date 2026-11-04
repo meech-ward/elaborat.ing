@@ -1940,11 +1940,17 @@ allowlist.
 
 [Anthropic's public issue tracker](https://github.com/anthropics/claude-ai-mcp/issues/40)
 reports that Claude restricts nested iframes despite declared `frameDomains`.
-This is a reported host limitation, not proof of the exact fallback branch
-in this check: the view also falls back when its frame has not reported ready
-within ten seconds. Our Worker allowlist cannot override the host's
+The fallback branch was later identified by reading only two iframe DOM
+booleans: `iframe#app` had no `src` attribute and was hidden. `load()` assigns
+`src` to a replacement iframe before starting the ten-second readiness timer,
+and the fallback does not remove it. This establishes that this instance
+stopped at the view's check of the host's `sandbox.csp.frameDomains`, before
+loading the iframe. The actual host capability array was not captured.
+Our Worker allowlist cannot override the host's
 `frame-src` policy. Setting `ui.domain` stabilizes an origin; it does not
-establish that nested frames are permitted. Functioning Claude panel rendering
+establish that nested frames are permitted. Commit `d7c40fc` deployed neutral
+tool-result and fallback wording with `panel-v7.html`; a live protocol check
+confirmed that text and resource metadata. Functioning Claude panel rendering
 remains unverified.
 
 **Decision: the app in a panel also needs a pass only this site's server

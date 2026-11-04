@@ -22,7 +22,7 @@ the reviewer's account needs no codes or links.
 
 | Prompt | Expected |
 | --- | --- |
-| **Submit.** Show me the welcome note from my elaborat.ing project. | `list_projects`, then `show_file` on `welcome.mdx`. The card shows the note with its drawing and diagram, and Open in elaborat.ing. |
+| **Submit.** Show me the welcome note from my elaborat.ing project as a file card in this chat. | `list_projects`, then `show_file` on `welcome.mdx`. The card shows the note with its drawing and diagram, and Open in elaborat.ing. |
 | **Submit.** In elaborat.ing, add `meeting.mdx` to the project containing `welcome.mdx` with these sample standup action items: draft the test plan, review the diagram, and update the README. Then show the note. | Start with no `meeting.mdx`. `list_projects` and `list_files` locate the sample project; `create_and_show`, or `write_file` (no `base_version`) followed by `show_file`, saves and shows the new note with all three supplied items and no invented meeting details. |
 | **Submit.** Draw a simple drawing in elaborat.ing of three boxes, Browser, Worker and Database, joined by arrows, and show it to me. | `create_and_show` with a new `.excalidraw` scene, or `write_file` with it and then `show_file`; either passes. The card draws it. |
 | What's in my elaborat.ing projects? | `list_projects`, then `list_files` for one or more. No card. |
