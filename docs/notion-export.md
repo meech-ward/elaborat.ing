@@ -48,6 +48,11 @@ and textarea values are omitted. Scripts, authoring controls, comments,
 dialogs, application styling and edit history are excluded. Built-in tabs
 become readable sections when converted from source.
 
+Whole custom HTML components do not yet have a visual image fallback. A form
+can lose its CSS layout and field boxes while retaining labels. The
+[component export proposal](component-exports.md) researches bounded captures
+and links back to the interactive document; that follow-up is not implemented.
+
 Missing assets, invalid source, unsupported markup and unavailable component
 snapshots produce visible placeholders or source and conversion notes. The
 dialog lets the person review these before downloading. It never silently

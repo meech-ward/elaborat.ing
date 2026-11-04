@@ -1577,6 +1577,16 @@ consent, document network isolation and first-paint budgets stay intact.
 Unsupported content is explicit, with source fallback and conversion notes.
 See [Notion export](notion-export.md) for behavior and bounds.
 
+**Open: preserve custom component appearance in portable exports.** Current
+snapshots retain semantic content but flatten CSS layouts and omit form
+controls. [Custom component exports and links](component-exports.md) proposes
+editable conversion for supported structures, bounded PNG fallback for visual
+components, and links that reveal a component within its authorized document.
+The capture library, raster reply contract and target/reveal behavior require
+the T60 through T62 feasibility and implementation work. This is a research
+proposal; whole-component PNG capture and published component targets are not
+implemented. Preserve the current opaque sandbox and share authority.
+
 ## Component isolation
 
 MDX compiles to JavaScript, and user components run in the browser. They must

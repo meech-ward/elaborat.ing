@@ -31,6 +31,10 @@ can run together when their layout came only from CSS. Unsupported content
 produces visible source or placeholders and conversion notes for review.
 Google Docs may change formatting on import.
 
+The [component export proposal](component-exports.md) covers an image fallback
+for visual custom components and links back to their document location.
+Whole-component PNG capture and these link targets are not implemented yet.
+
 In a project, current root and retained child drafts are included. In an
 unlisted reader, one saved shared bundle is frozen for the operation; reads
 cannot go outside its already authorized files and images. Known revocation

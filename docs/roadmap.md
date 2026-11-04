@@ -192,6 +192,13 @@ Project note menus and unlisted readers offer the format without connecting
 a Google account. Import into Drive remains explicit; direct publishing is
 not included. See [Google Docs export](google-docs-export.md).
 
+**Proposed export follow-up, not implemented:** preserve the layout of visual
+custom components as bounded images, retain editable conversions for supported
+document structures, and link captures back to their place in the interactive
+document. [Research and verification](component-exports.md) cover browser
+capture candidates, the existing sandbox, form-value omission and component
+targets. T60 through T62 remain Waiting for implementation authorization.
+
 Unlisted Markdown and MDX readers also offer the Notion ZIP from their compact
 floating controls. Export uses only the already authorized shared bundle,
 requires no sign-in, and cancels on a changed bundle or known revocation.

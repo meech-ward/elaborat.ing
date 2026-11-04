@@ -553,6 +553,67 @@ the affected journeys. Record results without document contents, account
 credentials or unlisted tokens. Keep implementation status and observed
 limits true in the architecture, roadmap and feature docs.
 
+## T60: prove custom component capture inside the existing sandbox
+
+**Status:** Waiting (maintainer authorization to implement the feasibility check)
+
+Follow [custom component exports and links](component-exports.md). Compare
+the exact published browser capture candidates against the production opaque
+preview and current CSP. Start with html-to-image 1.11.13 as a candidate,
+without treating its upstream browser claims as proof. Do not add network,
+same-origin permission, a proxy, or capture code to initial preview bundles.
+
+Prove a scrubbed detached clone, empty visual form controls, current-state
+capture, fonts, data-only assets, modern CSS and origin-clean canvas output.
+Define raster transport, byte/pixel/DOM/deadline bounds, failure diagnostics
+and cancellation before increasing any protocol limit. Measure Chromium,
+Firefox and real Safari, including phone widths, tall components, autofill,
+passwords and offline repeats. Record supported behavior and choose a pinned
+implementation only when the checks pass. This task changes no share access.
+
+## T61: preserve visual custom components in Notion and Google Docs exports
+
+**Status:** Waiting (T60 and maintainer authorization to implement)
+
+Implement the proved path from [the proposal](component-exports.md) in common
+export preparation. Keep supported content editable and drawing/image exports
+native. Unknown visual components get bounded PNGs with an authored label or
+caption; unrepresentable components retain explicit fallback and diagnostics.
+Preserve source, asset and module authority, input-value omission, code consent,
+live focus/scroll/state, revision invalidation, isolation and complete-package
+checks. Add no automatic model calls, account connection or sharing changes.
+
+Done when Chromium and Firefox journeys verify both formats, image bounds and
+detail, original assets, cached offline use, cancellation and stale replies.
+Inspect every page of the reference DOCX and perform actual Notion/Google Docs
+imports before claiming their fidelity. Record real Safari capture results and
+any supported-browser limitation explicitly. Keep all first-paint budgets.
+
+## T62: link exported components to their place in the original document
+
+**Status:** Waiting (maintainer authorization to settle and implement target behavior)
+
+Define the bounded, versioned target and safe fallback in
+[the proposal](component-exports.md). Reuse the current unlisted link or the
+private document's authenticated URL. Resolve only against files and instances
+already authorized for that reader; never enable a share or add generic file
+reads. Published targets cannot rely on raw render IDs or assume prose-only
+reveal handles component islands.
+
+Add checked object reveal and collapsed-ancestor expansion, layout readiness,
+correct nested scrolling, accessible announcement and navigation cancellation.
+Activate Rendered for private targets while preserving drafts and code consent.
+Handle path-based root renames and hidden tabs without triggering arbitrary
+component actions. Make interactive links an explicit export option because an
+unlisted URL grants access to the latest whole shared document, not just its
+captured component.
+Test exact and changed revisions, duplicate instances, moved/deleted targets,
+draft-only components, invalid fragments, revoked shares, private access,
+back/forward and mobile use. If matching is absent or ambiguous, show the
+document with a clear notice and do not select a different component.
+Standalone public component routes and persistent source IDs are separate
+decisions; source and sharing remain unchanged by exporting.
+
 ## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it
