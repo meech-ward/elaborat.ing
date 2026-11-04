@@ -406,9 +406,23 @@ test("a code block set in further than its item's text keeps that indent, and it
 });
 
 test("a code block in a quoted list is not moved out of its item", async () => {
-  // Its lines carry the quote's markers, which the island cannot be rewritten with exactly.
-  await refused(caret(await note("> - a\n>   ```js\n>   x()\n>   ```\n> - b"), "a"), untab, /protected/);
+  // Its lines carry the quote's markers: moved out of the item they would
+  // change, and with them the island, so the edit is refused.
+  await refused(caret(await note("> - a\n>   ```js\n>   x()\n>   ```\n> - b"), "a"), untab, "Source projection differs");
 });
+
+for (const format of ["md", "mdx"] as const) {
+  test(`${format}: a list in a quote moves around a block on more than one line that stays where it is`, async () => {
+    const fenced = "> - a\n> - b\n>\n> ```js\n> x\n> ```";
+    const entered = await press(caret(await note(fenced, format), "a"), enter);
+    expect(entered.text).toBe("> - a\n> - \n> - b\n> \n> ```js\n> x\n> ```");
+    expect(islandSources(entered)).toEqual(islandSources(await note(fenced, format)));
+    expect((await press(caret(await note(fenced, format), "b"), tab)).text).toBe("> - a\n>   - b\n> \n> ```js\n> x\n> ```");
+    expect((await press(caret(await note("> ```js\n> x\n> ```\n>\n> - a\n> - b", format), "a"), enter)).text).toBe("> ```js\n> x\n> ```\n> \n> - a\n> - \n> - b");
+    if (format === "mdx")
+      expect((await press(caret(await note("> - a\n> - b\n>\n> <Counter\n>   initial={1}\n> />", format), "a"), enter)).text).toBe("> - a\n> - \n> - b\n> \n> <Counter\n>   initial={1}\n> />");
+  });
+}
 
 test("components in a list move with their items", async () => {
   const text = "- a\n  <Counter initial={1} />\n- b";

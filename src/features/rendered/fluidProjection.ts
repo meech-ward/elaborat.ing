@@ -1560,8 +1560,13 @@ function blockSource(
   style: ListStyle = TIGHT,
   avoid: readonly string[] = [],
 ): string {
-  if (node.type === fluidSchema.nodes.object)
-    return islandSource(islandEntry(projection, node));
+  if (node.type === fluidSchema.nodes.object) {
+    // An island with no copy for another place (its lines carry a quote's
+    // markers) is written as its quote holds it. Its name is that source, so
+    // one moved where its lines would change is refused by the check.
+    const entry = islandEntry(projection, node);
+    return entry.copy ?? detached(projection.text, entry.from, entry.to);
+  }
   const old = reuse && !avoid.length ? sourceOf(projection, node, stays) : undefined;
   if (old) return detached(projection.text, old.from, old.to);
   // Markdown drops spaces and tabs at the start of a paragraph or heading, so
