@@ -544,27 +544,63 @@ After paragraph.
     expect(await top()).toBe(first)
   })
 
-  test("Enter in a table cell keeps what was typed: it leaves the cell, and the note has it", async ({ page }) => {
+  test("Enter in a table cell keeps what was typed: the note has it, and typing goes on in the cell", async ({ page }) => {
     await openHarness(page)
-    await load(page, "Intro.\n\n| A | B |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n\nMore text.\n", "mdx", "More text.")
-    const cell = (row: number) => frameOf(page).locator("tbody tr").nth(row).locator("td").first().locator('[role="textbox"]')
-    const end = async (row: number) => {
-      const box = (await cell(row).boundingBox())!
+    const note = "Intro.\n\n| A | B |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n\nMore text.\n"
+    await load(page, note, "mdx", "More text.")
+    const cell = (row: number, column = 0) => frameOf(page).locator("tbody tr").nth(row).locator("td").nth(column).locator('[role="textbox"]')
+    const end = async (row: number, column = 0) => {
+      const box = (await cell(row, column).boundingBox())!
       await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
     }
+    /** The frame shows the note's latest revision. */
+    const shown = async () => expect.poll(async () => (await revision(page)).revision).toBe(await page.evaluate(() => window.renderedHarness.state().revision))
     await end(0)
     await page.keyboard.type("x")
     await page.keyboard.press("Enter")
+    // Typed straight on, before the note has the cell: it goes on in the cell.
+    await page.keyboard.type("y")
     await expect.poll(() => source(page)).toContain("| ax | 1 |")
-    await expect(cell(0)).not.toBeFocused()
-    // Enter with nothing typed only leaves the cell; what is typed after still counts.
-    await end(1)
+    await expect(cell(0)).toBeFocused()
+    await expect(cell(0)).toHaveText("axy")
+    await page.keyboard.type("z")
     await page.keyboard.press("Enter")
-    await end(1)
-    await page.keyboard.type("yz")
-    await clickAt(page, "More text.", 2)
-    await expect.poll(() => source(page)).toBe("Intro.\n\n| A | B |\n| --- | --- |\n| ax | 1 |\n| byz | 2 |\n\nMore text.\n")
+    await expect.poll(() => source(page)).toBe(note.replace("| a |", "| axyz |"))
+    await shown()
+    // Enter with nothing new typed sends nothing, and the caret stays.
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("w")
+    await expect(cell(0)).toHaveText("axyzw")
+    await page.keyboard.press("Enter")
+    await expect.poll(() => source(page)).toBe(note.replace("| a |", "| axyzw |"))
+    await shown()
+    // Shift+Enter sends the cell as Enter does: a line break would end the
+    // table's row, so the cell has none, and the table keeps its rows.
+    await end(1, 1)
+    await page.keyboard.type("9")
+    await page.keyboard.press("Shift+Enter")
+    await page.keyboard.type("8")
+    await expect.poll(() => source(page)).toContain("| b | 29 |")
+    await expect(cell(1, 1)).toHaveText("298")
+    await page.keyboard.press("Enter")
+    await expect.poll(() => source(page)).toBe(note.replace("| a |", "| axyzw |").replace("| b | 2 |", "| b | 298 |"))
+    await expect(frameOf(page).locator("tbody tr")).toHaveCount(2)
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
+  })
+
+  test("a line break a frame sends for a table cell is refused, and the note keeps its rows", async ({ page }) => {
+    await openHarness(page)
+    const note = "Intro.\n\n| A | B |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n\nMore text.\n"
+    await load(page, note, "mdx", "More text.")
+    const shown = await revision(page)
+    // Pasted, or sent by the note's own code: either way the page checks it.
+    await frameOf(page).locator("tbody tr").first().locator("td").first().locator('[role="textbox"]').evaluate((element, shown) => {
+      const { authoringFrom, authoringTo, authoringExpected } = (element as HTMLElement).dataset
+      window.pagePort!.postMessage({ kind: "prose-edit", session: shown.session, revision: shown.revision, from: Number(authoringFrom), to: Number(authoringTo), expected: authoringExpected, value: "a\n| c | 3", shortcut: false, caret: 0 })
+    }, shown)
+    await expect(page.getByRole("status").filter({ hasText: /^Edit not applied:/ })).toBeVisible()
+    expect(await source(page)).toBe(note)
+    await expect(frameOf(page).locator("tbody tr")).toHaveCount(2)
   })
 
   test("equal islands start again when another like them comes before them, and none takes the count of another", async ({ page }) => {

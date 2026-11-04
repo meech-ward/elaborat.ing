@@ -1778,6 +1778,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           (entry) => entry.from === message.from && entry.to === message.to,
         );
         if (!leaf) throw new Error('The editable source region is no longer available.');
+        // A text of the note's own Markdown in an island, such as a table's
+        // cell, that is one line of the note stays one: a line break written
+        // into it would end its line, and the table's row with it.
+        if (!leaf.literal && !leaf.code && /[\r\n]/.test(message.value) && !/[\r\n]/.test(leaf.expected))
+          throw new Error('Rejected a line break in text that is one line of the source.');
         const insert = message.shortcut && !leaf.code
           ? encodeInlineInput(message.value, document.format)
           : encodeTextLeaf(leaf, message.value, document.format);

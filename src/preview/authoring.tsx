@@ -54,6 +54,13 @@ export function settleDirectEdit(settled: DirectEditSettled) {
 }
 const sameTarget = (a: DirectEditTarget, b: DirectEditTarget) =>
   "block" in a ? "block" in b && a.block === b.block : "from" in b && a.from === b.from && a.to === b.to;
+/**
+ * A text in an island (a table's cell) whose edit Enter sent: the caret
+ * stays in it. Its island is made again for the note's new text, so the
+ * caret goes to the new text at the same place in the note, with what was
+ * typed in the old one meanwhile (`typed`, its text when it went).
+ */
+let enterCommit: { session: string; revision: number; from: number; value: string; typed?: string } | null = null;
 export function setAuthoringPaths(paths: readonly string[]) {
   resourcePaths = paths;
   for (const listener of listeners) listener();
@@ -209,6 +216,8 @@ function EditableText(props: {
       if (!edit || !element || answer.revision !== edit.revision || !sameTarget(answer.target, edit.target)) return;
       sent.current = null;
       waiting.current = false;
+      // No new text comes for it: the caret is still here.
+      if (enterCommit?.session === session && enterCommit.from === props.from) enterCommit = null;
       // A refused edit is not in the note, as the page's notice says: the
       // text shows the note's own again, unless the person has typed on.
       if (answer.outcome === "rejected" && (element.textContent ?? "") === edit.value) element.textContent = props.value;
@@ -217,10 +226,33 @@ function EditableText(props: {
     return () => {
       settledListeners.delete(settled);
     };
-  }, [props.value]);
+  }, [props.value, props.from, session]);
   useLayoutEffect(() => {
     if (props.literal && ref.current) restoreSourceDraft(ref.current);
   }, [revision, props.from, props.leaf?.expected, props.literal]);
+  // The text a cell left with Enter became, in the note's new revision: the
+  // caret comes back, unless the person has put it somewhere else meanwhile.
+  useLayoutEffect(() => {
+    const element = ref.current, left = enterCommit;
+    if (!element || !left || left.session !== session || left.revision >= revision || left.from !== props.from) return;
+    enterCommit = null;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const typed = left.typed?.startsWith(left.value) ? left.typed.slice(left.value.length) : "";
+    if (typed) element.textContent = props.value + typed;
+    element.focus();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, [revision, session, props.from, props.value]);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    return () => {
+      if (element && enterCommit?.session === session && enterCommit.from === props.from) enterCommit.typed = element.textContent ?? "";
+    };
+  }, [session, props.from]);
   const clear = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
@@ -231,12 +263,13 @@ function EditableText(props: {
     },
     [],
   );
+  /** Send what was typed; false when there is nothing to send, or an edit is still waiting. */
   const submit = (action: "commit" | "enter" | "shortcut") => {
     clear();
     const element = ref.current;
-    if (!element || composing.current || waiting.current) return;
+    if (!element || composing.current || waiting.current) return false;
     const value = element.textContent ?? "";
-    if (action === "commit" && value === props.value) return;
+    if (action === "commit" && value === props.value) return false;
     const caret = caretOffset(element);
     waiting.current = true;
     sent.current = { revision, target: props.block ? { block: props.block } : { from: props.from, to: props.leaf?.to ?? props.from }, value };
@@ -265,6 +298,7 @@ function EditableText(props: {
       if (props.literal && action === 'commit') queueRangeEdit({ kind: 'prose-edit', ...message });
       else post({ kind: 'prose-edit', ...message });
     }
+    return true;
   };
   if (readOnly)
     return <span data-source-text={`${props.from}:${props.leaf?.to ?? props.from + props.value.length}`}>{props.value}</span>;
@@ -317,7 +351,7 @@ function EditableText(props: {
       }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing || composing.current) return;
-        if (event.key === "Enter" && (!event.shiftKey || props.literal)) {
+        if (event.key === "Enter" && (!event.shiftKey || !props.block)) {
           event.preventDefault();
           if (props.literal) {
             const selection = window.getSelection();
@@ -334,13 +368,15 @@ function EditableText(props: {
             }
           } else if (props.block) submit("enter");
           // A leaf of an island, such as a table's cell, is one line of the
-          // note with no line of its own to make: Enter leaves it, and so
-          // sends what was typed in it.
-          else ref.current?.blur();
+          // note, with no line of its own to make and no line break to hold:
+          // Enter and Shift+Enter send what was typed in it, and the caret
+          // stays in it.
+          else if (submit("commit")) enterCommit = { session, revision, from: props.from, value: ref.current?.textContent ?? "" };
         }
         if (event.key === "Escape") {
           event.preventDefault();
           clear();
+          if (enterCommit?.session === session && enterCommit.from === props.from) enterCommit = null;
           if (ref.current) {
             ref.current.textContent = props.value;
             if (props.literal) captureSourceDraft(ref.current);
