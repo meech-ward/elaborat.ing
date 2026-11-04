@@ -365,7 +365,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPlaceShown,
     apiRef,
   } = props;
-  const availableResourcePaths = useMemo(() => availableResourcePathsProp?.filter(path => path !== documentPath), [availableResourcePathsProp,documentPath]);
+  // The paths by what they are: a host can pass a new array of the same
+  // paths on every render, and the frame is sent them only when they change.
+  const availablePathsKey = availableResourcePathsProp ? JSON.stringify(availableResourcePathsProp.filter(path => path !== documentPath)) : null;
+  const availableResourcePaths = useMemo(() => availablePathsKey === null ? undefined : JSON.parse(availablePathsKey) as string[], [availablePathsKey]);
   const pendingOwners = useRef({ fluid: false, draft: false });
   const onPendingChange = useCallback((pending: boolean) => {
     pendingOwners.current.fluid = pending;
@@ -862,14 +865,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components };
   }, [exposed, readOnly, readyTick, renderRequests, session]);
 
+  // The paths the note may embed, once the frame has a render (it takes
+  // them only after one), and again only when they change.
   useEffect(() => {
-    if (exposed)
+    if (hasExposed)
       portRef.current?.postMessage({
         kind: "authoring-paths",
         session,
         paths: availableResourcePaths ?? [],
       });
-  }, [availableResourcePaths, exposed, readyTick, session]);
+  }, [availableResourcePaths, hasExposed, readyTick, session]);
 
   // Resources follow the render (and every repost): the child keeps the
   // latest pixels for the current session/revision. The parent passes a
@@ -925,14 +930,25 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const commentSource = comments?.source;
   // The frame reports selections and headings while Comment shows, on or off.
   const commentReports = Boolean(comments?.canComment || comments?.offline);
+  // The marks the frame was last sent, on which port and in which epoch. The
+  // frame moves its marks with its own edits, so the same marks go again only
+  // to a new document there: a reset (a new epoch), the nearest form of an
+  // edit (which it takes in place of its own), or a new frame.
+  const marksSent = useRef<{ port: MessagePort; readyTick: number; epoch: number; marks: string } | null>(null);
   useEffect(() => {
     if (!exposed || commentMarks === undefined || commentSource !== exposed.text) return;
+    const port = portRef.current;
+    if (!port) return;
     const marks = commentMarks.flatMap((mark) => {
       const range = fluidRangeForSource(exposed, mark.from, mark.to);
       return range ? [{ id: mark.id, from: range.from, to: range.to, active: mark.active }] : [];
-    });
-    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks: marks.slice(0, 1000) };
-    portRef.current?.postMessage(message);
+    }).slice(0, 1000);
+    const key = JSON.stringify([commentReports, marks]);
+    const sent = marksSent.current;
+    if (!exposed.nearest && sent?.port === port && sent.readyTick === readyTick && sent.epoch === exposed.epoch && sent.marks === key) return;
+    marksSent.current = { port, readyTick, epoch: exposed.epoch, marks: key };
+    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks };
+    port.postMessage(message);
   }, [commentReports, commentMarks, commentSource, exposed, readyTick, session]);
 
   // Where the person was in Source (`place`): sent after the render of the
@@ -1041,21 +1057,40 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
   }, [apiRef, session]);
 
+  // What the port handler below checks the frame's messages against and acts
+  // with, as of the latest render: the document with the projection on screen
+  // for it, and the props. One object, written in one layout effect, so a
+  // message never meets a document from one render and a projection from
+  // another, and the handler stays the same across renders.
+  const handlerProps = {
+    document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+    onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
+    onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+  };
+  const latest = useRef(handlerProps);
+  useLayoutEffect(() => {
+    latest.current = handlerProps;
+  });
   useEffect(() => {
-    const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
-      // Keep a rebase lease only for the exact source result of this local
-      // rendered edit. External Source/Undo/Reload receives no such lease.
-      const next = applySourcePatches(document, revision, patches);
-      pendingLocalEdit.current = {
-        identity: documentId, revision: next.revision, text: next.text,
-        ack: { fromRevision: revision, draftId, patches: patches.map(({ from, to, insert }) => ({ from, to, insertLength: insert.length })) },
-      };
-      if (onPatch(revision, patches) === false) {
-        pendingLocalEdit.current = null;
-        throw new Error('Source rejected the rendered edit.');
-      }
-    };
     const onMessage = (event: MessageEvent) => {
+      const {
+        document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+        onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
+        onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+      } = latest.current;
+      const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
+        // Keep a rebase lease only for the exact source result of this local
+        // rendered edit. External Source/Undo/Reload receives no such lease.
+        const next = applySourcePatches(document, revision, patches);
+        pendingLocalEdit.current = {
+          identity: documentId, revision: next.revision, text: next.text,
+          ack: { fromRevision: revision, draftId, patches: patches.map(({ from, to, insert }) => ({ from, to, insertLength: insert.length })) },
+        };
+        if (onPatch(revision, patches) === false) {
+          pendingLocalEdit.current = null;
+          throw new Error('Source rejected the rendered edit.');
+        }
+      };
       // Only the current frame's port: anything still arriving on a replaced
       // frame's port is dropped silently. Forged edits from the KNOWN frame
       // still fail the checks below and are rejected visibly.
@@ -1735,33 +1770,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     return () => {
       onPortMessage.current = null;
     };
-  }, [
-    allowedResourcePaths,
-    availableResourcePaths,
-    closeViewer,
-    document,
-    documentId,
-    documentPath,
-    document.format,
-    exposed,
-    onEditResource,
-    onInsertImage,
-    onReadImage,
-    onError,
-    onPatch,
-    onHistory,
-    onPendingChange,
-    onPendingChangeProp,
-    onShown,
-    onActivity,
-    resources,
-    readOnly,
-    session,
-    embedController,
-    externalFrame,
-    onContentHeight,
-    onSave,
-  ]);
+  }, [session]);
 
   // While the person types in the source, the frame keeps its last good render.
   const displayedError = useSettledError(
