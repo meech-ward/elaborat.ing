@@ -336,6 +336,9 @@ type Note = {
 };
 
 const caption = "A **red** pixel with a [caption](https://example.com) and {literal braces}.";
+const duplicateLayout = "export default function A() {}\n\nexport default function B() {}\n";
+/** A line the projection's own transform refuses: the parser reads its NUL as U+FFFD. */
+const unmappable = "\na\u0000b\n";
 const NOTES: Note[] = [
   ...Object.entries({ prose, lists, tables, code, images, frontmatter, footnotes }).flatMap(([name, text]) =>
     (["md", "mdx"] as const).map((format) => ({ name, format, text })),
@@ -389,7 +392,8 @@ const NOTES: Note[] = [
   { name: "default import", format: "mdx", text: "import x from 'y'\n\nText.\n" },
   // An error of the projection's own and a later one of the compiler.
   { name: "default import and duplicate layout", format: "mdx", text: "import x from 'y'\n\nexport default function A() {}\n\nexport default function B() {}\n" },
-  { name: "unmappable line and duplicate layout", format: "mdx", text: "export default function A() {}\n\nexport default function B() {}\n\na \nb\n" },
+  // The parser reads a NUL as U+FFFD, which the projection cannot map back.
+  { name: "unmappable character and duplicate layout", format: "mdx", text: `${duplicateLayout}${unmappable}` },
 ];
 
 /** The environment the chat card and every edit attempt pass: ready, with the built-in components. */
@@ -474,16 +478,16 @@ test("the compiler's errors read as the instrumentation's, with their place, and
     expect(parseErrorPosition(message!)).toEqual(place);
   }
   // A later stage of the compiler still names the note invalid.
-  expect(await refused("export default function A() {}\n\nexport default function B() {}\n")).toStartWith(
-    "Invalid MDX: Unexpected duplicate layout",
-  );
-  // The preview's own import check keeps its message.
+  expect(await refused(duplicateLayout)).toStartWith("Invalid MDX: Unexpected duplicate layout");
+  // The preview's own import check and the projection's own mapping keep
+  // their messages. If the projection learns to map this line, choose
+  // another it cannot, or the note below stops testing its error.
   expect(await refused("import x from 'y'\n\nText.\n")).toBe("Only named workspace: MDX component imports are supported");
+  expect(await refused(unmappable)).toBe("Cannot map decoded source text exactly");
   // With both, the compiler's error comes first, as it did when the
   // instrumentation compiled the note by itself.
-  expect(await refused("import x from 'y'\n\nexport default function A() {}\n\nexport default function B() {}\n")).toStartWith(
-    "Invalid MDX: Unexpected duplicate layout",
-  );
+  expect(await refused(`import x from 'y'\n\n${duplicateLayout}`)).toStartWith("Invalid MDX: Unexpected duplicate layout");
+  expect(await refused(`${duplicateLayout}${unmappable}`)).toStartWith("Invalid MDX: Unexpected duplicate layout");
 });
 
 test("a keystroke parses the note once", async () => {
