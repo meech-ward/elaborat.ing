@@ -381,6 +381,8 @@ const authoringFields = {
 };
 
 /** Parent -> child: render this compiled document. */
+const savedFocusHandoffSchema = z.strictObject({id:whole,capture:z.boolean()});
+
 export const renderMessageSchema = z.object({
   kind: z.literal("render"),
   session: z.string().check(z.minLength(8)),
@@ -392,6 +394,8 @@ export const renderMessageSchema = z.object({
   fluid: z.optional(fluidRenderSchema),
   /** The person can read the document but not change it (a viewer, or an archived project). */
   readOnly: z.optional(z.boolean()),
+  /** Presentation-only focus continuity for an exact saved-copy handoff. */
+  focusHandoff: z.optional(savedFocusHandoffSchema),
   /**
    * The size of each picture of the note whose pixels follow (`images`,
    * which a frame takes only after a render): the note's first paint keeps
@@ -436,6 +440,7 @@ export const renderAckMessageSchema = z.strictObject({
     ),
   }),
   readOnly: z.optional(z.boolean()),
+  focusHandoff: z.optional(savedFocusHandoffSchema),
   authoring: z.optional(z.strictObject(authoringFields)),
 });
 

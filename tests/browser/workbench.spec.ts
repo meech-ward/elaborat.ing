@@ -1,7 +1,7 @@
 import AxeBuilder from "./axe.ts"
 import { expect, test, type Locator, type Page } from "./fixtures.ts"
 import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
-import { recordFrameMessages, releaseTransactions } from "./rendered-support.ts"
+import { clickAt, press, recordFrameMessages, releaseTransactions } from "./rendered-support.ts"
 import { APP_URL } from "./urls.ts"
 import { showView } from "./views.ts"
 
@@ -476,10 +476,10 @@ test("a note scrolled up to read stays where it is when an agent adds a section,
 const PLAN = "# Launch plan\n\nWhat ships on day one.\n"
 const sourceLine = (page: Page, text: string) => page.locator(".monaco-editor:visible .view-line").filter({ hasText: text })
 
-/** Click the line, then put the caret after its first two words with the keys. */
+/** Put Source's caret after its first two words with the platform's line-start key. */
 async function caretAfterWhatShips(page: Page, line: Locator) {
   await line.click()
-  await page.keyboard.press("Home")
+  await press(page, "Home")
   for (let step = 0; step < "What ships".length; step++) await page.keyboard.press("ArrowRight")
 }
 
@@ -496,24 +496,52 @@ test("a rendered note behind another tab takes an agent's save, and shows it whe
   await page.getByRole("tab", { name: "notes/launch.md" }).click()
   await page.getByRole("button", { name: "Rendered" }).click()
   // The note's frame, also while its tab is hidden.
-  const note = page.getByRole("tabpanel", { name: "notes/launch.md", includeHidden: true }).frameLocator('iframe[title="Isolated document preview"]')
+  const panel = page.getByRole("tabpanel", { name: "notes/launch.md", includeHidden: true })
+  const frame = panel.locator('iframe[title="Isolated document preview"]')
+  const note = panel.frameLocator('iframe[title="Isolated document preview"]')
   // The caret goes into the note, then the other tab hides its frame with
   // its text focused, where Firefox gives the frame no selection.
   await note.getByText("What ships on day one.").click()
+  const retainedFrame = await frame.elementHandle()
+  expect(retainedFrame).not.toBeNull()
   await other.click()
   await expect(other).toHaveAttribute("aria-selected", "true")
-  await agentSaves(fake, id, `${PLAN}\n## Risks\n\nThe import is slow.\n`)
-  await expect(note.getByText("The import is slow.")).toBeAttached()
+  const saved = `${PLAN}\n## Risks\n\nThe import is slow.\n`
+  await agentSaves(fake, id, saved)
+  const version = fake.server.projects.get(id)!.files.get("notes/launch.md")!.version
+  // Sync adopts the saved file while its preview is hidden. The durable
+  // version is the event boundary for checking that no hidden projection ran.
+  await expect.poll(() => page.evaluate(async ({id, saved, version}) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open("elaborating", 3)
+      open.onsuccess = () => resolve(open.result)
+      open.onerror = () => reject(open.error)
+    })
+    try {
+      const files = await new Promise<Array<{projectId: string; path: string; content: string | null; base: {version: number; content: string} | null}>>((resolve, reject) => {
+        const read = db.transaction("files").objectStore("files").getAll()
+        read.onsuccess = () => resolve(read.result)
+        read.onerror = () => reject(read.error)
+      })
+      const file = files.find(file => file.projectId === id && file.path === "notes/launch.md")
+      return file?.base?.version === version && file.base.content === saved && file.content === saved
+    } finally {db.close()}
+  }, {id, saved, version})).toBe(true)
+  expect(await retainedFrame!.evaluate(element => element.isConnected)).toBe(true)
+  await expect(note.getByText("What ships on day one.")).toBeAttached()
+  await expect(note.getByRole("heading", {name: "Risks"})).toHaveCount(0)
+  await expect(note.getByText("The import is slow.")).toHaveCount(0)
   await page.getByRole("tab", { name: "notes/launch.md" }).click()
   await expect(note.getByRole("heading", { name: "Risks" })).toBeVisible()
   await expect(note.getByText("The import is slow.")).toBeVisible()
+  expect(await retainedFrame!.evaluate(element => element.isConnected)).toBe(true)
   await expect(page.getByText(/Preview failed/)).toHaveCount(0)
 })
 
 test("the caret in a rendered note stays where it was when an agent adds a section, and what the person types goes there", async ({ page }) => {
   const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
   await page.getByRole("button", { name: "Rendered" }).click()
-  await caretAfterWhatShips(page, noteFrame(page).getByText("What ships on day one."))
+  await clickAt(page, "What ships on day one.", "What ships".length)
   await agentSaves(fake, id, `${PLAN}\n## Risks\n\nThe import is slow.\n`)
   await expect(noteFrame(page).getByRole("heading", { name: "Risks" })).toBeVisible()
   await page.keyboard.type("X")
@@ -537,7 +565,7 @@ test("a paragraph an agent adds above the caret leaves it after the same word, i
   const { fake, id } = await openProject(page, { "notes/launch.md": PLAN }, "notes/launch.md")
   await page.getByRole("button", { name: "Split", exact: true }).click()
   // In Rendered, above a paragraph that starts with the same words.
-  await caretAfterWhatShips(page, noteFrame(page).getByText("What ships on day one."))
+  await clickAt(page, "What ships on day one.", "What ships".length)
   await agentSaves(fake, id, "# Launch plan\n\nWhat ships first is the import.\n\nWhat ships on day one.\n")
   await expect(noteFrame(page).getByText("What ships first is the import.")).toBeVisible()
   await page.keyboard.type("X")

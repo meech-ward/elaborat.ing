@@ -486,6 +486,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const componentFailure = componentError ?? componentRuntimeFailure?.message;
   const retainedSavedBuiltinPresentation = !componentFailure &&
     canRetainSavedBuiltinPresentation(exposed,document,documentId,documentPath,writeIn);
+  const savedFocusHandoffId = documentId !== undefined && writeIn?.documentId === documentId && writeIn.text === document.text &&
+    (retainedSavedBuiltinPresentation || exposed && !exposed.provisional && exposed.identity === documentId &&
+      exposed.path === documentPath && exposed.format === document.format && exposed.text === document.text && exposed.revision === document.revision)
+    ? documentId : undefined;
   const [editNotice, setEditNotice] = useState<string | null>(null);
   // An edit was lost to a change of the note whose projection is still on its
   // way: when that lands, the notice saying so stays.
@@ -911,6 +915,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         revision: exposed.revision,
         slots,
         readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
+        focusHandoff: savedFocusHandoffId === undefined ? undefined : {id:savedFocusHandoffId,capture:retainedSavedBuiltinPresentation},
         fluid: { epoch: exposed.epoch, operation: exposed.operation, runtimeKey: exposed.runtimeKey, islands },
         authoring,
       };
@@ -936,6 +941,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
       readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
+      focusHandoff: savedFocusHandoffId === undefined ? undefined : {id:savedFocusHandoffId,capture:retainedSavedBuiltinPresentation},
       slots,
       authoring: {
         ...authoring,
@@ -953,7 +959,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         ? [{ key, width: image.width, height: image.height }] : []).slice(0, 1024);
     port.postMessage(imageSizes.length ? { ...message, imageSizes } : message);
     frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components, exposed };
-  }, [exposed, readOnly, componentPending, componentFailure, readyTick, renderRequests, session, retainedSavedBuiltinPresentation]);
+  }, [exposed, readOnly, componentPending, componentFailure, readyTick, renderRequests, session, retainedSavedBuiltinPresentation, savedFocusHandoffId]);
 
   // The paths the note may embed, once the frame has a render (it takes
   // them only after one), and again only when they change.

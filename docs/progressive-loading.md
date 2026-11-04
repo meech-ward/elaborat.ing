@@ -213,15 +213,17 @@ Local verification completed on 2026-11-04:
   and ESLint passed. Rebuilding the committed chat card produces identical
   artifacts. All seven first-paint budgets and heavy-library boundaries pass
   without raising a budget.
-- App tests: 1,669 passed, 13 skipped and two existing TODOs across 195 files.
+- App tests: 1,673 passed, 13 skipped and two existing TODOs across 196 files.
   The two script-test files passed all four tests.
 - All nine Edge Functions passed frozen Deno checks and tests: 302 tests.
-- Combined browser coverage checked 798 selected Chromium/Firefox cases:
-  796 passed and two existing touch checks were skipped. The broad run and
+- Combined browser coverage checked 866 selected Chromium/Firefox cases:
+  864 passed and two existing touch checks were skipped. The broad run and
   green focused reruns cover the same final behavior; the final affected
   loading, approval, embeds and rendering suite passed 146 of 146, and the
-  corrected component suite passed 30 of 30. Interrupted offline recovery
-  also passed three consecutive runs in each browser.
+  corrected component suite passed 30 of 30. The final workbench, rendering,
+  loading and approval confirmation passed 186 of 186, including saved-copy
+  caret/focus, type-in and deferred hidden-tab adoption. Interrupted offline
+  recovery also passed three consecutive runs in each browser.
 
 This verifies local production fixtures and source contracts. The hosted
 numbers above measure the earlier deployment, so they do not establish hosted

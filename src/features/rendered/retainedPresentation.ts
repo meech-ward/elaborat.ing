@@ -19,7 +19,7 @@ export function canRetainSavedBuiltinPresentation(
   arrival: WriteIn | null | undefined,
 ): boolean {
   return exposed !== null && !exposed.provisional && exposed.path === path &&
-    exposed.format === 'mdx' && document.format === exposed.format &&
+    document.format === exposed.format &&
     exposed.components.code.length === 0 && exposed.components.modules.length === 0 &&
     arrival != null && arrival.documentId === identity &&
     arrival.text === document.text && arrival.before === exposed.text;

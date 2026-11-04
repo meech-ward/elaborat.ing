@@ -42,6 +42,7 @@ import { mapThroughDoc } from "../features/document/writeIn";
 import { Note, Warning, Important, Instruction, SideBySide, SideBySideBlock, ExampleCard, Tabs, Tab, type SideBySideProps } from '../features/rendered/documentBlocks';
 import { InlineLiteral } from './InlineLiteral';
 import { isReadOnly, setReadOnly, subscribeReadOnly, useReadOnly } from './readOnly';
+import {SavedFocusLease} from './savedFocusHandoff';
 import { CodeFence } from '../features/rendered/codeFence';
 import { LAZY_CHART_COMPONENTS } from './lazyCharts';
 import { loadModuleFiles, receiveFrameModule, setFrameModuleRequest } from './frameModules';
@@ -107,11 +108,18 @@ type PendingRender = {
   /** A whole render's (with its document), or an ack's (`render-ack`), which has none. */
   fluid?: RenderMessage["fluid"] | (RenderAckMessage["fluid"] & { scopeKey?: string });
   readOnly?: boolean;
+  focusHandoff?: RenderMessage['focusHandoff'];
   imageSizes?: RenderMessage["imageSizes"];
 };
 
 let activeSession: string | null = null;
 let activeRevision = -1;
+const savedFocusLease = new SavedFocusLease();
+window.addEventListener('blur', () => savedFocusLease.cancel());
+for (const kind of ['pointerdown','keydown'] as const)
+  window.addEventListener(kind, event => {if (event.isTrusted) savedFocusLease.cancel();}, true);
+for (const kind of ['wheel','touchstart'] as const)
+  window.addEventListener(kind, event => {if (event.isTrusted) savedFocusLease.cancel();}, {capture:true,passive:true});
 /**
  * The last whole render the page sent: what a `render-ack` leaves out (the
  * code, modules and component catalog) comes from it, and an ack must name
@@ -936,6 +944,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   activeRevision = pending.revision;
   setDocumentEmbedContext(pending.session, pending.revision);
   setSlotTable(pending.slots);
+  savedFocusLease.prepare(pending.session,pending.focusHandoff,pending.readOnly === true && fluidEditor?.view.hasFocus() === true);
   setReadOnly(pending.readOnly === true);
   try {
     if (pending.fluid) {
@@ -1026,6 +1035,11 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         </StrictMode>,
       );
       });
+      if (!pending.readOnly) {
+        const restoreFocus = savedFocusLease.take(pending.session,pending.focusHandoff);
+        if (restoreFocus && document.hasFocus() && (document.activeElement === document.body || document.activeElement === document.documentElement))
+          editor.view.focus();
+      } else if (!pending.focusHandoff?.capture) savedFocusLease.cancel();
       finishSourceDraftRender(pending.slots.flatMap(slot => [...slot.props, ...(slot.titleInsertion ? [slot.titleInsertion] : [])]));
       // Writing in stops with the document it was writing into.
       if (editor.view.state.doc !== shown.doc) {
@@ -1322,6 +1336,7 @@ function onParentMessage(event: MessageEvent): void {
       authoring: message.authoring && { ...message.authoring, components: base.components },
       fluid: { ...message.fluid, scopeKey: base.fluid.scopeKey },
       readOnly: message.readOnly,
+      focusHandoff: message.focusHandoff,
     });
     return;
   }
@@ -1341,6 +1356,7 @@ function onParentMessage(event: MessageEvent): void {
     authoring: render.authoring,
     fluid: render.fluid,
     readOnly: render.readOnly,
+    focusHandoff: render.focusHandoff,
     imageSizes: render.imageSizes,
   });
 }

@@ -27,10 +27,17 @@ prepared environment has no custom code or imported modules, and the
 path and format match, the handoff's previous source exactly matches that tree,
 and its new source and identity exactly match the current document. Imported
 modules and custom code in that parent environment cannot use this exception.
+This applies to both Markdown and MDX; changing between those formats cannot
+retain the old projection.
 Retained child document sessions keep their own access and code-approval scopes.
 The old parent tree stays read-only
 and receives no editing or export authority while the current projection is
 prepared, preserving unchanged builtin component state without a blank frame.
+If temporarily making that retained view read-only blurs its prose editor, the
+matching ready projection can restore its mapped caret and focus. This lease
+starts only when that exact saved-copy handoff owned focus; another source,
+session, saved copy, user key or pointer action, or frame blur cancels it. It
+does not restore focus to an inactive frame or take focus from Source.
 
 When preparation succeeds, the existing frame and ProseMirror update protocol
 retain independent prose and its selection while the component islands update.

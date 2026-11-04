@@ -465,6 +465,19 @@ describe('checkParentMessage', () => {
     ]) expect(check(invalid).ok).toBe(false);
   });
 
+  test('saved-copy focus handoffs carry only a bounded identity and capture flag in the current session', () => {
+    const render = {kind:'render',session:'session-1a',revision:8,code:'x',slots:[]};
+    const ack = {kind:'render-ack',session:'session-1a',revision:8,slots:[],fluid:{epoch:3,operation:0,runtimeKey:'k',islands:[]}};
+    for (const message of [render,ack]) {
+      const check = (focusHandoff:unknown,activeSession='session-1a') => checkParentMessage({data:{...message,focusHandoff},source:{},activeSession});
+      expect(check({id:2,capture:true}).ok).toBe(true);
+      expect(check({id:2,capture:false}).ok).toBe(true);
+      expect(check({id:2,capture:false},'other-session').ok).toBe(false);
+      for (const invalid of [{id:-1,capture:true},{id:1.5,capture:true},{id:2,capture:'true'},{id:2},{id:2,capture:true,focus:true},null])
+        expect(check(invalid).ok).toBe(false);
+    }
+  });
+
   test('the answer to a text edit that changed nothing or was refused names the text as the edit named it', () => {
     const settled = { kind: 'edit-settled', session: 'session-1a', revision: 7, target: { from: 40, to: 41 }, outcome: 'rejected' };
     const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
