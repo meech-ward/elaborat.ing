@@ -1,7 +1,7 @@
 // A test-only page: the real rendered editor over an in-memory document, the
 // way the workbench will mount it, but with no storage. `window.renderedHarness`
-// loads a note, reads back its source, delivers diagram pixels and sets the
-// appearance; edits go through the frame's own UI.
+// loads a note, reads back its source, delivers diagram and image pixels and
+// sets the appearance; edits go through the frame's own UI.
 import "../../../src/index.css"
 import { StrictMode, useEffect, useState, useSyncExternalStore } from "react"
 import { createRoot } from "react-dom/client"
@@ -11,11 +11,16 @@ import type { DocumentSnapshot } from "../../../src/features/document/index.ts"
 import { RenderedEditor } from "../../../src/features/rendered/index.ts"
 import { createDocumentStore } from "../../../src/lib/documentStore.ts"
 import type { DocumentEmbedHost } from '../../../src/features/rendered/documentEmbeds.ts'
+import type { ImagePreview } from "../../../src/features/images/transport.ts"
 
 // `?sandbox=<origin>` loads the frame's page from that origin (tests/browser/sandbox-server.ts).
 const sandboxOrigin = new URLSearchParams(location.search).get("sandbox")
 const store = createDocumentStore("", "md")
-let state = { snapshot: store.snapshot(), resources: undefined as Record<string, string> | undefined }
+let state = {
+  snapshot: store.snapshot(),
+  resources: undefined as Record<string, string> | undefined,
+  images: undefined as Record<string, ImagePreview> | undefined,
+}
 let pending = false
 let lastError: string | null = null
 let appearance: { setTheme: (theme: ThemeName) => void; setScheme: (scheme: ColorScheme) => void } | null = null
@@ -76,7 +81,7 @@ function AppearanceBridge() {
 }
 
 function App() {
-  const { snapshot, resources } = useSyncExternalStore(subscribe, () => state)
+  const { snapshot, resources, images } = useSyncExternalStore(subscribe, () => state)
   const [, setError] = useState<string | null>(null)
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -89,6 +94,7 @@ function App() {
         documentPath="root.mdx"
         documentEmbedHost={embedHost}
         resources={resources}
+        imageResources={images}
         sandboxOrigin={sandboxOrigin}
         onPatch={(revision, patches) => {
           try {
@@ -112,12 +118,14 @@ function App() {
 }
 
 const harness = {
-  load: (text: string, format: DocumentSnapshot["format"]) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined }),
+  load: (text: string, format: DocumentSnapshot["format"]) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined, images: undefined }),
   /** The person's edit in the Source view: the same note, so the same editor and frame. */
   edit: (text: string) => publish({ snapshot: store.setText(text) }),
   source: () => state.snapshot.text,
   state: () => ({ revision: state.snapshot.revision, pending, error: lastError }),
   setResources: (resources: Record<string, string>) => publish({ resources }),
+  /** Image pixels by the key a note's image reference resolves to, as the workbench passes them. */
+  setImages: (images: Record<string, ImagePreview>) => publish({ images }),
   setEmbeddedDocuments: (documents: Record<string, string>) => {
     embeddedStores.clear()
     for (const [path,text] of Object.entries(documents)) embeddedStores.set(path,createDocumentStore(text,/\.mdx$/i.test(path) ? 'mdx' : 'md'))

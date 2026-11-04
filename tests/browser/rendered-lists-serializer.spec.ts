@@ -15,7 +15,7 @@ test.use({ serviceWorkers: "allow" })
 test.use({ viewport: { width: 1280, height: 900 } })
 
 const NOTICE = /^Edit not applied:/
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#36c"/></svg>'
+const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
 
 let errors: string[] = []
 test.beforeEach(async ({ page }) => {
@@ -91,13 +91,16 @@ for (const format of ["md", "mdx"] as const) {
   })
 
   test(`${format}: text typed after an image at the end of a line is kept`, async ({ page }) => {
-    await page.evaluate((svg) => window.renderedHarness.setResources({ "a.svg": svg }), SVG)
-    await load(page, "Hello ![x](a.svg)\n\nAfter.", format, /^After\.$/)
+    await load(page, "Hello ![x](a.png)\n\nAfter.", format, /^After\.$/)
+    // Loading a note clears its images, so the pixels come after it, and the
+    // caret is placed beside the loaded image, not its placeholder.
+    await page.evaluate((dataURL) => window.renderedHarness.setImages({ "a.png": { dataURL, width: 40, height: 20 } }), PNG)
+    await expect(frameOf(page).locator(".ProseMirror > p .project-image-open img")).toBeVisible()
     // Past the image's right edge, on its line: the caret goes after it.
     const image = frameOf(page).locator(".ProseMirror > p [data-fluid-object]").first()
     const box = (await image.boundingBox())!
     await page.mouse.click(box.x + box.width + 40, box.y + box.height / 2)
-    await typed(page, "z", "Hello ![x](a.svg)z\n\nAfter.")
+    await typed(page, "z", "Hello ![x](a.png)z\n\nAfter.")
   })
 
   test(`${format}: Tab on an item after a code block in a list nests it, and the code block stays as written`, async ({ page }) => {
