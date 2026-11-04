@@ -350,6 +350,21 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("Enter at the start of the line after a line break makes that line a paragraph, with no empty line left above it", async ({ page }) => {
+    let mark = await load(page, "alpha\\\nbravo\n", "md", /^alphabravo$/)
+    await clickAt(page, "alphabravo", 5)
+    await press(page, "Enter")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alpha\n\nbravo\n")
+    await expect(lineBreaks(page)).toHaveCount(0)
+    expect((await selection(page)).focus).toEqual({ paragraph: "bravo", offset: 0 })
+    // Backspace then joins the two paragraphs, as it would any two.
+    mark = await revision(page)
+    await press(page, "Backspace")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alphabravo\n")
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

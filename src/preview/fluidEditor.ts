@@ -479,11 +479,11 @@ export class FluidEditor {
         if (held) {
           const { selection } = view.state;
           const after = selection.empty && selection.head === afterBreak(held.step);
-          // Backspace takes a held break out, as it would a sent one. Keys
-          // that move the caret or split text take it out, then act as
-          // usual, except a move back: taking the break out has already put
-          // the caret at the end of the line above.
-          if (event.key === "Backspace") {
+          // Backspace just after a held break takes it out, as it would a
+          // sent one. Keys that move the caret or split text take it out,
+          // then act as usual, except a move back: taking the break out has
+          // already put the caret at the end of the line above.
+          if (event.key === "Backspace" && after) {
             this.dropBreak();
             return true;
           }
@@ -736,8 +736,10 @@ export class FluidEditor {
     let before = selectionOf(this.view.state);
     let steps: readonly Step[] = tr.steps;
     // A sent line break the edit leaves at the end of its paragraph: the
-    // parent gets the edit without it, and the editor holds it.
+    // parent gets the edit without it, and the editor holds it while the
+    // caret is just after it (`holds`).
     let left: ReturnType<typeof leftBreak> = null;
+    let holds = false;
     const held = this.heldBreak();
     if (held) {
       const next = afterHeldBreak(held.step, tr.steps);
@@ -780,9 +782,11 @@ export class FluidEditor {
         return;
       }
       left = leftBreak(tr.before, tr.doc);
+      holds = left !== null && tr.selection.empty && tr.selection.head === afterBreak(left.hold);
       if (left && !left.steps.length) {
         this.view.updateState(this.view.state.apply(tr));
-        this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold) };
+        if (holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold) };
+        else this.showBase(left);
         return;
       }
       if (left) steps = left.steps;
@@ -802,10 +806,11 @@ export class FluidEditor {
     );
     if (structural) this.group++;
     this.view.updateState(this.view.state.apply(tr));
+    if (left && !holds) this.showBase(left);
     // What the parent will have once this edit is written.
     const doc = left ? left.base : this.view.state.doc;
-    const after = left ? atBreak(left.hold) : selectionOf(this.view.state);
-    if (left) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after };
+    const after = left && holds ? atBreak(left.hold) : selectionOf(this.view.state);
+    if (left && holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after };
     const group = `${this.epoch}:${this.group}`;
     const syntax: FluidSyntaxHint | undefined = tr.getMeta("fluidSyntax");
     // Typing while an earlier edit is being checked waits as one edit, so
@@ -840,6 +845,16 @@ export class FluidEditor {
     this.held = null;
     const { state } = this.view;
     this.view.updateState(state.apply(state.tr.step(held.step.invert(held.base))));
+  }
+
+  /**
+   * Take out of the document on screen the line break an edit left at the
+   * end of its paragraph (`leftBreak`) with the caret away from it, where no
+   * text typed can follow it: the screen shows what the note will have.
+   */
+  private showBase(left: NonNullable<ReturnType<typeof leftBreak>>) {
+    const { state } = this.view;
+    this.view.updateState(state.apply(state.tr.step(left.hold.invert(left.base))));
   }
 
   /** `tr`, made on the document showing the held break, made again without it; null when it cannot be. */
