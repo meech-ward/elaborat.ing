@@ -1,13 +1,14 @@
-import { expect, test } from './fixtures.ts';
+import { expect, test, type Page } from './fixtures.ts';
 import { APP_URL, HARNESS_URL } from './urls.ts';
 import { fakeSupabase, person, signedIn } from './fake-supabase.ts';
 import { showView } from './views.ts';
-import { point, selection } from './rendered-support.ts';
+import { clickAt, point, selection } from './rendered-support.ts';
 import { imageDigest, imageObjectKeys } from '../../src/features/images/types.ts';
 
 const PREVIEW = 'iframe[title="Isolated document preview"]';
 const SOURCE = 'import { Slow } from "workspace:slow.mdx"\n\n# Read while loading\n\nIndependent prose remains readable.\n\n<Slow />\n';
 const MODULE = 'export const Slow = () => <p className="loaded-component">Component finished.</p>\n';
+const REPLACEMENT_MODULE = MODULE.replace('Component finished.','Replacement component.');
 
 test.describe.configure({timeout:60_000});
 
@@ -50,6 +51,61 @@ for (const failure of [false, true]) {
     }
   });
 }
+
+async function preparedModuleNote(page: Page) {
+  await page.goto(new URL('rendered.html',HARNESS_URL).href);
+  await page.evaluate(({source,module}) => {
+    window.renderedHarness.prepareModules({'slow.mdx':module},false);
+    window.renderedHarness.load(source,'mdx');
+  },{source:SOURCE,module:MODULE});
+  const frame = page.frameLocator(PREVIEW);
+  await expect(frame.locator('.loaded-component')).toHaveText('Component finished.');
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','true');
+  await clickAt(page,'Independent prose remains readable.','Independent'.length);
+  await expect.poll(async () => (await selection(page)).focus?.offset).toBe('Independent'.length);
+  return frame;
+}
+
+for (const changed of [false,true]) {
+  test(`focused prose keeps its caret and keyboard focus through a ${changed ? 'changed' : 'matching'} module rebuild`, async ({page}) => {
+    const frame = await preparedModuleNote(page);
+    await page.evaluate(module => window.renderedHarness.prepareModules({'slow.mdx':module}),changed ? REPLACEMENT_MODULE : MODULE);
+    await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','false');
+    await expect(frame.locator('.loaded-component')).toHaveText('Component finished.');
+    expect(await page.evaluate(() => window.renderedHarness.source())).toBe(SOURCE);
+    await page.evaluate(() => window.renderedHarness.releaseModules());
+    await expect(frame.locator('.loaded-component')).toHaveText(changed ? 'Replacement component.' : 'Component finished.');
+    await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','true');
+    await expect.poll(async () => (await selection(page)).focus?.offset).toBe('Independent'.length);
+    await page.keyboard.type('X');
+    await expect(frame.getByText('IndependentX prose remains readable.',{exact:true})).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.renderedHarness.source())).toBe(SOURCE.replace('Independent prose','IndependentX prose'));
+  });
+}
+
+test('moving focus outside a pending module rebuild leaves it with that editor after preparation', async ({page}) => {
+  const frame = await preparedModuleNote(page);
+  await page.evaluate(module => window.renderedHarness.prepareModules({'slow.mdx':module}),REPLACEMENT_MODULE);
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','false');
+  // A real outside input stands in for Source taking the person's focus.
+  // It stays outside the React root so preparation cannot recreate it.
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.setAttribute('aria-label','Outside source field');
+    input.style.cssText='position:fixed;top:0;left:0;z-index:10;width:220px;height:32px';
+    document.body.appendChild(input);
+  });
+  const outside = page.getByRole('textbox',{name:'Outside source field',exact:true});
+  await outside.fill('Outside');
+  await expect(outside).toBeFocused();
+  await page.evaluate(() => window.renderedHarness.releaseModules());
+  await expect(frame.locator('.loaded-component')).toHaveText('Replacement component.');
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','true');
+  await expect(outside).toBeFocused();
+  await page.keyboard.type('X');
+  await expect(outside).toHaveValue('OutsideX');
+  expect(await page.evaluate(() => window.renderedHarness.source())).toBe(SOURCE);
+});
 
 test('late module results cannot overwrite navigation to another document', async ({page}) => {
   await page.goto(new URL('rendered.html', HARNESS_URL).href);
@@ -311,6 +367,44 @@ test('a current provisional image can inspect its validated original without gai
   expect(await page.evaluate(() => window.renderedHarness.source())).toContain('![Original vector](image.svg)');
   await page.evaluate(() => window.renderedHarness.releaseModules());
   await expect(frame.locator('.loaded-component')).toHaveText('Component finished.');
+});
+
+test('an approved current image can inspect its original while its module rebuild is pending', async ({page}) => {
+  await page.goto(new URL('rendered.html',HARNESS_URL).href);
+  const source = 'import { Slow } from "workspace:slow.mdx"\n\n# Approved image\n\n![Original vector](image.svg)\n\n<Slow />\n';
+  const {original,preview} = await page.evaluate(({source,module}) => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="red"/></svg>';
+    const original = {dataURL:`data:image/svg+xml;base64,${btoa(svg)}`,width:640,height:480};
+    const canvas = document.createElement('canvas');canvas.width=96;canvas.height=64;
+    const context = canvas.getContext('2d')!;context.fillStyle='red';context.fillRect(0,0,96,64);
+    const preview = {dataURL:canvas.toDataURL('image/png'),width:96,height:64};
+    window.renderedHarness.setImageOriginals({'image.svg':original});
+    window.renderedHarness.prepareModules({'slow.mdx':module},false);
+    window.renderedHarness.load(source,'mdx');
+    return {original:original.dataURL,preview};
+  },{source,module:MODULE});
+  const frame = page.frameLocator(PREVIEW);
+  await expect(frame.locator('.loaded-component')).toHaveText('Component finished.');
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','true');
+  await expect(frame.locator('.ProseMirror img[alt="Original vector"]')).toHaveCount(0);
+  await page.evaluate(module => window.renderedHarness.prepareModules({'slow.mdx':module}),REPLACEMENT_MODULE);
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','false');
+  await expect(frame.locator('.loaded-component')).toHaveText('Component finished.');
+  await page.evaluate(preview => window.renderedHarness.setImages({'image.svg':preview}),preview);
+  const imageButton = frame.getByRole('button',{name:'View image: Original vector',exact:true});
+  await expect(imageButton.getByRole('img')).toHaveAttribute('src',preview.dataURL);
+  await expect(imageButton.getByRole('img')).toBeVisible();
+  await imageButton.click();
+  const dialog = frame.getByRole('dialog',{name:'Original vector',exact:true});
+  await expect(dialog.getByRole('img')).toHaveAttribute('src',original);
+  await expect.poll(() => page.evaluate(() => window.renderedHarness.imageOriginalReads())).toBe(1);
+  await dialog.getByRole('button',{name:'Close image',exact:true}).click();
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','false');
+  expect(await page.evaluate(() => window.renderedHarness.source())).toBe(source);
+  await page.evaluate(() => window.renderedHarness.releaseModules());
+  await expect(frame.locator('.loaded-component')).toHaveText('Replacement component.');
+  await expect(frame.locator('.ProseMirror')).toHaveAttribute('contenteditable','true');
+  expect(await page.evaluate(() => window.renderedHarness.source())).toBe(source);
 });
 
 test('a blocked old original read neither blocks a newer source nor clears its in-flight read', async ({page}) => {

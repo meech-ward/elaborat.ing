@@ -142,9 +142,26 @@ include repeated instances and are not unique-asset counts.
 
 These single samples isolate client milestones, not an end-user performance
 target. Concurrent local work and warmed backend caches limit comparison.
-Post-deployment measurements of the new protocol must use the same conditions
+Post-deployment performance measurements of the new protocol must use the same conditions
 and distinguish first prose, first asset and complete assets. No reference
 token, source, credentials, trace or screenshot was saved in the repository.
+
+### Hosted progressive-stream smoke check
+
+After deployment of `1f40b6f` on 2026-11-04, fresh Chromium and Firefox contexts
+checked the same reference with service workers blocked. Both received an HTTP
+200 NDJSON stream containing all 35 files and 18 images, followed by completion
+and EOF, with no protocol, file, image or transport errors. The root file
+arrived in physical response chunk 13 of 114 in Chromium and chunk 5 of 223 in
+Firefox. Both showed substantial rendered prose before the stream completed,
+and decoded image pixels were present. This verifies root-first transport and
+useful progressive display through the hosted gateway, rather than only local
+fixtures. No source, token, screenshot or trace was persisted.
+
+This functional check did not record milestone durations or simulate constrained
+devices or networks. Chromium reported one unclassified failed-request event;
+Firefox reported none. Neither browser reported a page error, and the manifest
+finished successfully in both. These samples do not establish a latency target.
 
 ## Contracts that the follow-ups must preserve
 
@@ -213,22 +230,26 @@ Local verification completed on 2026-11-04:
   and ESLint passed. Rebuilding the committed chat card produces identical
   artifacts. All seven first-paint budgets and heavy-library boundaries pass
   without raising a budget.
-- App tests: 1,673 passed, 13 skipped and two existing TODOs across 196 files.
+- App tests: 1,674 passed, 13 skipped and two existing TODOs across 196 files.
   The two script-test files passed all four tests.
 - All nine Edge Functions passed frozen Deno checks and tests: 302 tests.
-- Combined browser coverage checked 866 selected Chromium/Firefox cases:
-  864 passed and two existing touch checks were skipped. The broad run and
+- Combined browser coverage checked 874 selected Chromium/Firefox cases:
+  872 passed and two existing touch checks were skipped. The broad run and
   green focused reruns cover the same final behavior; the final affected
   loading, approval, embeds and rendering suite passed 146 of 146, and the
   corrected component suite passed 30 of 30. The final workbench, rendering,
-  loading and approval confirmation passed 186 of 186, including saved-copy
-  caret/focus, type-in and deferred hidden-tab adoption. Interrupted offline
+  loading and approval confirmation passed 194 of 194, including saved-copy
+  caret/focus, module-rebuild focus and ready pixels, code-block drafts during
+  unrelated source changes, type-in and deferred hidden-tab adoption. Interrupted offline
   recovery also passed three consecutive runs in each browser.
 
 This verifies local production fixtures and source contracts. The hosted
-numbers above measure the earlier deployment, so they do not establish hosted
-performance for this implementation. Post-deployment reference measurements
-and representative network contention remain operational follow-up.
+timings above measure the earlier deployment; the new deployment's functional
+stream check establishes progressive display without a timing comparison.
+Repeated post-deployment measurements and representative device/network targets
+remain operational follow-up. The 20-second Source guard is deliberately
+generous relative to the observed 1.065 to 2.106 seconds below; it catches a
+hung CI view rather than defining an end-user latency target.
 
 ### Local fixture observations
 

@@ -944,7 +944,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
   activeRevision = pending.revision;
   setDocumentEmbedContext(pending.session, pending.revision);
   setSlotTable(pending.slots);
-  savedFocusLease.prepare(pending.session,pending.focusHandoff,pending.readOnly === true && fluidEditor?.view.hasFocus() === true);
+  savedFocusLease.prepare(pending.session,pending.focusHandoff,pending.readOnly === true && document.hasFocus() && fluidEditor?.view.hasFocus() === true);
   setReadOnly(pending.readOnly === true);
   try {
     if (pending.fluid) {

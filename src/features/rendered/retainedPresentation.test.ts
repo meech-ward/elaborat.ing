@@ -1,5 +1,5 @@
 import {describe, expect, test} from 'bun:test';
-import {canRetainSavedBuiltinPresentation} from './retainedPresentation';
+import {canRetainPreparingPresentation,canRetainSavedBuiltinPresentation,matchesApprovedPresentation,matchesPresentationScope} from './retainedPresentation';
 
 const before = '# Note\n\n<Counter initial={1} />\n';
 const after = `${before}\nA saved paragraph.\n`;
@@ -37,4 +37,24 @@ describe('saved builtin presentation handoff', () => {
     expect(canRetainSavedBuiltinPresentation(exposed,{...document,format:'md'},2,'note.mdx',arrival)).toBe(false);
     expect(canRetainSavedBuiltinPresentation(null,document,2,'note.mdx',arrival)).toBe(false);
   });
+});
+
+test('module preparation retention requires exact current source and its available approved environment', () => {
+  const scope = {identity:2,path:'note.mdx',format:'mdx' as const,text:before,revision:7};
+  const exposed = {...scope,components:{key:'approved:1'}};
+  expect(canRetainPreparingPresentation(exposed,scope,'approved:1')).toBe(true);
+  expect(matchesApprovedPresentation(exposed,scope,'approved:1')).toBe(true);
+  expect(canRetainPreparingPresentation(exposed,scope,undefined)).toBe(false);
+  expect(canRetainPreparingPresentation(exposed,scope,'approved:2')).toBe(false);
+  expect(matchesApprovedPresentation(exposed,scope,'approved:2')).toBe(false);
+  expect(matchesApprovedPresentation(exposed,scope,undefined)).toBe(false);
+  expect(matchesApprovedPresentation({...exposed,components:{key:''}},scope,undefined)).toBe(true);
+  expect(canRetainPreparingPresentation({...exposed,provisional:true},scope,'approved:1')).toBe(false);
+  for (const different of [
+    {...scope,identity:3}, {...scope,path:'other.mdx'}, {...scope,text:`${before}edit`},
+    {...scope,revision:8}, {...scope,format:'md' as const},
+  ]) {
+    expect(canRetainPreparingPresentation(exposed,different,'approved:1')).toBe(false);
+    expect(matchesPresentationScope(exposed,different)).toBe(false);
+  }
 });

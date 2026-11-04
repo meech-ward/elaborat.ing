@@ -394,7 +394,7 @@ export const renderMessageSchema = z.object({
   fluid: z.optional(fluidRenderSchema),
   /** The person can read the document but not change it (a viewer, or an archived project). */
   readOnly: z.optional(z.boolean()),
-  /** Presentation-only focus continuity for an exact saved-copy handoff. */
+  /** Presentation-only focus continuity for an exact preparation handoff. */
   focusHandoff: z.optional(savedFocusHandoffSchema),
   /**
    * The size of each picture of the note whose pixels follow (`images`,

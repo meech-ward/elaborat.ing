@@ -112,7 +112,7 @@ import { appendedFrom, type WriteIn } from '../document/writeIn';
 import { REFUSAL, refusalNotice } from './refusal';
 import { DocumentEmbedController } from './documentEmbedController';
 import type { DocumentEmbedHost } from './documentEmbeds';
-import { canRetainSavedBuiltinPresentation } from './retainedPresentation';
+import { canRetainPreparingPresentation, canRetainSavedBuiltinPresentation, matchesApprovedPresentation, matchesPresentationScope, type PresentationScope } from './retainedPresentation';
 
 export type RenderedEditorProps = {
   document: DocumentSnapshot;
@@ -474,6 +474,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     }, FRAME_READY_AFTER_LOAD);
   };
   const [exposed, setExposed] = useState<Exposed | null>(null);
+  // Preparation revoked this projection's epoch. Even an unchanged module
+  // key must receive a fresh full projection before writes resume.
+  const [preparationInvalidated, setPreparationInvalidated] = useState<Exposed | null>(null);
   // The error the note's text gave, with the text it was found in.
   const [compileError, setCompileError] = useState<{ text: string; message: string } | null>(null);
   const [runtimeFailure, setRuntimeFailure] = useState<ComponentRuntimeFailure | null>(null);
@@ -484,12 +487,26 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     runtimeFailure.text === document.text && runtimeFailure.revision === document.revision &&
     runtimeFailure.environmentKey === (componentEnvironment?.key ?? runtimeFailure.environmentKey) ? runtimeFailure : null;
   const componentFailure = componentError ?? componentRuntimeFailure?.message;
+  if (componentPending || componentFailure) {
+    if (exposed !== preparationInvalidated) setPreparationInvalidated(exposed);
+  } else if (preparationInvalidated && exposed !== preparationInvalidated) setPreparationInvalidated(null);
   const retainedSavedBuiltinPresentation = !componentFailure &&
     canRetainSavedBuiltinPresentation(exposed,document,documentId,documentPath,writeIn);
-  const savedFocusHandoffId = documentId !== undefined && writeIn?.documentId === documentId && writeIn.text === document.text &&
-    (retainedSavedBuiltinPresentation || exposed && !exposed.provisional && exposed.identity === documentId &&
-      exposed.path === documentPath && exposed.format === document.format && exposed.text === document.text && exposed.revision === document.revision)
-    ? documentId : undefined;
+  const presentationScope = useMemo(() => ({identity:documentId,path:documentPath,text:document.text,format:document.format,revision:document.revision}),
+    [documentId,documentPath,document.text,document.format,document.revision]);
+  const exactCurrentPresentation = matchesPresentationScope(exposed,presentationScope);
+  const approvedEnvironmentKey = componentEnvironment?.key;
+  const approvedPreparingPresentation = canRetainPreparingPresentation(exposed,presentationScope,approvedEnvironmentKey);
+  const currentProjectionReady = !componentPending && !componentFailure && exposed !== preparationInvalidated &&
+    matchesApprovedPresentation(exposed,presentationScope,approvedEnvironmentKey);
+  // An ordinary Source change keeps the existing controls and their local
+  // drafts mounted. Its stale mapping still has no parent write authority.
+  // Preparation separately freezes the retained display until its approved
+  // current projection is ready.
+  const displayReadOnly = Boolean(readOnly || componentPending || componentFailure || exposed?.provisional || retainedSavedBuiltinPresentation ||
+    exactCurrentPresentation && !currentProjectionReady || exposed && exposed.components.key !== (approvedEnvironmentKey ?? ''));
+  const currentPresentationRevision = exactCurrentPresentation && exposed !== null &&
+    (exposed.provisional || !componentFailure && (document.format === 'md' || componentEnvironment !== undefined)) ? exposed.revision : undefined;
   const [editNotice, setEditNotice] = useState<string | null>(null);
   // An edit was lost to a change of the note whose projection is still on its
   // way: when that lands, the notice saying so stays.
@@ -736,8 +753,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         current.revision !== document.revision ||
         current.format !== document.format ||
         current.components.key !== (componentEnvironment?.key ?? ''))
-    )
+    ) {
+      authority.current = null;
       ++epoch.current;
+    }
   }, [document.text, document.revision, document.format, documentId, documentPath, componentEnvironment, componentPending, componentFailure]);
 
   // Decide whether source needs a new projection in the same commit phase as
@@ -866,6 +885,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // port. While that render's epoch, code and components hold, the answer to
   // an edit goes as a `render-ack`, without what the frame keeps from it.
   const frameHas = useRef<{ port: MessagePort; readyTick: number; epoch: number; runtimeKey: string; components: Exposed["components"]; exposed: Exposed } | null>(null);
+  const preparationFocus = useRef<(PresentationScope & {port:MessagePort;id:number;kind:'saved' | 'module'}) | null>(null);
+  const preparationFocusSequence = useRef(0);
   // The frame asked for the whole render again (`render-request`).
   const [renderRequests, setRenderRequests] = useState(0);
   // Post compiled code to the child frame. The render message carries the
@@ -876,6 +897,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (!exposed) return;
     const port = portRef.current;
     if (!port) return;
+    let focusTarget = preparationFocus.current;
+    if (focusTarget && (focusTarget.port !== port || !matchesPresentationScope(focusTarget,presentationScope) || readOnly || componentFailure ||
+      focusTarget.kind === 'module' && approvedEnvironmentKey === undefined)) focusTarget = null;
+    if (!focusTarget && !readOnly && !componentFailure &&
+      (retainedSavedBuiltinPresentation || componentPending && approvedPreparingPresentation))
+      focusTarget = {...presentationScope,port,id:++preparationFocusSequence.current,kind:retainedSavedBuiltinPresentation ? 'saved' : 'module'};
+    const focusHandoff = focusTarget ? {id:focusTarget.id,capture:!currentProjectionReady} : undefined;
+    preparationFocus.current = currentProjectionReady ? null : focusTarget;
     const slots: RenderMessage["slots"] = exposed.slots.map((slot) => ({
       index: slot.index,
       element: slot.element,
@@ -914,8 +943,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         session,
         revision: exposed.revision,
         slots,
-        readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
-        focusHandoff: savedFocusHandoffId === undefined ? undefined : {id:savedFocusHandoffId,capture:retainedSavedBuiltinPresentation},
+        readOnly: displayReadOnly || undefined,
+        ...(focusHandoff ? {focusHandoff} : {}),
         fluid: { epoch: exposed.epoch, operation: exposed.operation, runtimeKey: exposed.runtimeKey, islands },
         authoring,
       };
@@ -940,8 +969,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         islands,
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
-      readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
-      focusHandoff: savedFocusHandoffId === undefined ? undefined : {id:savedFocusHandoffId,capture:retainedSavedBuiltinPresentation},
+      readOnly: displayReadOnly || undefined,
+      ...(focusHandoff ? {focusHandoff} : {}),
       slots,
       authoring: {
         ...authoring,
@@ -959,7 +988,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         ? [{ key, width: image.width, height: image.height }] : []).slice(0, 1024);
     port.postMessage(imageSizes.length ? { ...message, imageSizes } : message);
     frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components, exposed };
-  }, [exposed, readOnly, componentPending, componentFailure, readyTick, renderRequests, session, retainedSavedBuiltinPresentation, savedFocusHandoffId]);
+  }, [exposed, readOnly, componentPending, componentFailure, approvedEnvironmentKey, readyTick, renderRequests, session, retainedSavedBuiltinPresentation, presentationScope, approvedPreparingPresentation, currentProjectionReady, displayReadOnly]);
 
   // The paths the note may embed, once the frame has a render (it takes
   // them only after one), and again only when they change.
@@ -1021,8 +1050,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     const keys = known.keys;
     keys.then(allowed => {
       const port = portRef.current;
-      const currentDisplay = exposed.identity === documentId && exposed.path === documentPath && exposed.text === document.text && exposed.revision === document.revision;
-      if (cancelled || !port || !currentDisplay || (!exposed.provisional && authority.current !== exposed)) return;
+      const currentDisplay = exposed.identity === documentId && exposed.path === documentPath && exposed.text === document.text && exposed.revision === document.revision && exposed.format === document.format;
+      if (cancelled || !port || !currentDisplay || (currentPresentationRevision !== exposed.revision && authority.current !== exposed)) return;
       const referencedKeys = [...allowed].sort().slice(0,1024);
       const sizes = referencedKeys.flatMap(key => {
         const size = imageDimensions?.[key] ?? imageResources?.[key];
@@ -1061,7 +1090,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (!cancelled) console.warn('Image references could not be resolved:',error);
     });
     return () => { cancelled = true; };
-  }, [renderingNeeded,exposed,documentId,documentPath,document.text,document.revision,imageResources,imageDimensions,readyTick,session]);
+  }, [renderingNeeded,exposed,documentId,documentPath,document.text,document.revision,document.format,imageResources,imageDimensions,readyTick,session,currentPresentationRevision]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
   // other text wait for the next; meanwhile the frame's marks move with edits.
@@ -1205,7 +1234,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const handlerProps = {
     document, exposed, componentEnvironment, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
     onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
-    onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly: readOnly || Boolean(componentPending || componentFailure || exposed?.provisional || retainedSavedBuiltinPresentation), resources,
+    onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly: readOnly || !currentProjectionReady, currentPresentationRevision, resources,
   };
   const latest = useRef(handlerProps);
   useLayoutEffect(() => {
@@ -1216,7 +1245,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       const {
         document, exposed, componentEnvironment, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
         onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
-        onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly, resources,
+        onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly, currentPresentationRevision, resources,
       } = latest.current;
       const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
         // Keep a rebase lease only for the exact source result of this local
@@ -1255,15 +1284,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         else if (edit.kind === 'block-edit')
           port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { block: edit.block }, outcome });
       };
-      const presentationRevision = exposed?.provisional && exposed.identity === documentId && exposed.path === documentPath &&
-        exposed.text === document.text && exposed.revision === document.revision ? exposed.revision : undefined;
       const checked = checkChildMessage({
         data: event.data,
         source: event.currentTarget,
         expectedSource: port,
         session,
         revision: authority.current?.revision ?? -1,
-        presentationRevision,
+        presentationRevision: currentPresentationRevision,
       });
       if (!checked.ok) {
         if ((event.data as {kind?:unknown}|null)?.kind === 'export-snapshot-result') {

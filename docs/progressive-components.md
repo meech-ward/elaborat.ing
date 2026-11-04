@@ -39,6 +39,19 @@ starts only when that exact saved-copy handoff owned focus; another source,
 session, saved copy, user key or pointer action, or frame blur cancels it. It
 does not restore focus to an inactive frame or take focus from Source.
 
+The same focus continuity applies while an already approved module environment
+is rebuilt for the exact same document identity, path, format, source and
+revision. The retained view stays read-only until a full projection matches
+the current approved environment key. A source change, preparation error or
+withheld approval ends that lease. Parent messages carry its bounded token
+only during the handoff and its matching completion, so ordinary edit answers
+do not reopen a focus lease.
+An ordinary Source change whose approved code environment is already available
+keeps the existing controls mounted while its new mapping is projected. Local
+drafts in unchanged islands therefore survive. The parent revokes the old
+mapping's write authority immediately and accepts commits only against the
+matching current projection.
+
 When preparation succeeds, the existing frame and ProseMirror update protocol
 retain independent prose and its selection while the component islands update.
 Asset pixels continue to arrive over resource messages and do not trigger
@@ -80,8 +93,9 @@ pixels or metadata are temporarily absent. Removed references drop their old
 metadata. Identical keys and sizes do not produce another metadata message merely
 because prose receives a new revision.
 
-An exact current provisional display can report its bounded content height and
-inspect a source-authorized original image. These presentation-only messages
+An exact current provisional display, or a healthy approved display retained
+during module preparation, can report its bounded content height and inspect a
+source-authorized original image. These presentation-only messages
 retain sender, session and revision checks; image reads also recheck document
 identity, path, source and port before publishing. They grant no rendered edits,
 new document access or export authority. Expanded pending children can therefore

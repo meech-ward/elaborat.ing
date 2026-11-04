@@ -593,6 +593,15 @@ decisions; source and sharing remain unchanged by exporting.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Recheck rendered image chooser authority when insertion or replacement
+  finishes. In `RenderedEditor`, a chooser opened before a same-source module
+  rebuild or code-approval revocation can outlive its captured projection.
+  Require that exact projection to remain authoritative and preparation to be
+  current before committing. Reproduce by opening the chooser, rebuilding
+  modules or withholding approval, then completing the image choice. Cover
+  both insertion and replacement; refused completion must preserve source and
+  staged drafts.
+
 - Pin private-note original-image inspection to one immutable asset identity.
   `WorkspaceSession.readImageOriginal` reads file metadata and then reads bytes
   by path in a separate transaction. Replacing an image at that path between

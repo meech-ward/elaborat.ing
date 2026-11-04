@@ -1,6 +1,6 @@
 export type SavedFocusHandoff = {id: number; capture: boolean};
 
-/** A temporary read-only saved-copy handoff may blur contenteditable. Only
+/** A temporary read-only preparation handoff may blur contenteditable. Only
  * its matching ready render can return focus; any user action cancels it. */
 export class SavedFocusLease {
   private lease: {session: string; id: number} | null = null;
