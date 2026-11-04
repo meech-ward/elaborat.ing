@@ -1702,6 +1702,13 @@ an agent's draft is its own, so only the saved files it imports ask. The card
 does not remember the choice, since its storage belongs to the host. The
 notice is a mitigation: the frame is the boundary.
 
+Typing never skips that question. A note's component environment is reused
+without a compile only while the last one compiled for it, without an error,
+has no custom code and no modules, and the new text has no brace and no line
+that could start an import or export, the first line after a byte order mark
+included (`useComponentEnvironment` in `src/features/document/`). That check
+must stay a superset of what MDX reads as code.
+
 **Open:** per-document subdomains of the sandbox domain, and adding it to the
 Public Suffix List, so each document's frame is a site of its own. Today one
 page serves every note: its origin is opaque, so notes share no storage, but
@@ -1722,12 +1729,22 @@ reuse the parent's permitted versioned bootstrap script and inherit its
 policy. No network or same-origin capability is added. The implementation
 plan and release status are in [embedded documents](embedded-documents.md).
 
+An embed's loading status and its frame share one box, so nothing below it
+moves until the document reports its height. The box is as tall as the
+document last reported, or for a new view as the height remembered for its
+path (in the frame, and in the app for up to 64 paths while the page is
+open), else 160 px. A document shown for the first time still grows once,
+from 160 px to its height, which nothing knows before it renders.
+
 **Decision: displayed code keeps the browser's text selection.** Code blocks
 are object islands outside the prose editor, so code pointer and keyboard
 events do not focus prose or select its containing atom. Dragging or
 double-clicking code preserves the selected text and reading position in
 editable and read-only notes. Editing starts with **Edit code**; selecting
 the displayed code never replaces it with an autofocus textarea or saves it.
+The code editor has a row for each line, in the highlighted block's font,
+line height and padding, and grows and shrinks with the lines typed, so
+opening and committing it move nothing.
 
 **Decision: right-clicking an editable rendered note offers its block picker
 at the pointer.** Ordinary blocks and components insert after the clicked
@@ -1738,7 +1755,9 @@ The frame uses a manual native popover with menu keyboard navigation and
 outside-click dismissal, alongside the existing Insert block dialog. Auto
 popovers close on the right-button release that opens the menu in Chromium
 and Firefox. The menu waits for typed edits to reach the source before using
-its boundary map. Read-only notes offer neither control.
+its boundary map. Read-only notes offer neither control. The Insert block
+dialog lists the note's positions only while it is open, since they change
+with every keystroke.
 
 **Decision: the rendered view's editor takes the browser's caret before it acts
 on a key.** The frame edits prose with ProseMirror. In Chromium, a caret moved
@@ -1776,10 +1795,6 @@ a space writes the new paragraph without it (`One.\n\nTwo.`), and a delete
 or a format change that leaves italics or bold ending in a space before a
 letter writes the space just outside them (`*a* b`).
 
-Rendered Enter preserves the `.` or `)` delimiter of an ordered list when it
-generates an item. Neighbouring items keep their original source numbering
-and spacing, including in nested and loose lists.
-
 The editor then takes the document the source makes in place of its own. The
 app's acknowledgement of that edit carries the document and `nearest`; the
 frame moves to it through the normalization's own steps, so the caret keeps
@@ -1790,6 +1805,197 @@ would drop those keys. Ignoring whitespace altogether would accept a lost
 space between words; and only the app can say what the source holds (a space
 kept as `&#32;` reads back exactly), so the frame does not normalize its own
 document.
+
+**Decision: list keys run ProseMirror's own commands, and the app makes their
+results writable.** Enter, Tab, Shift+Tab, Backspace and Delete in a list do
+what they do in ProseMirror and Google Docs, and the serializer
+(`fluidProjection.ts`) writes the documents they make. An item whose marker
+line holds nothing else is an empty paragraph followed by its blocks, so
+Enter at the end of an item moves the nested list or code block after the
+caret into the new item (`- \n  - b`). A block that starts on the marker's
+line (`- - b`, `- # Title`, `- <Counter />`, a code fence) is an island inside
+its item, and the rest of the list stays editable. An item written into
+another list takes that list's bullet, or its number and delimiter (Enter
+keeps an ordered list's `.` or `)`), and its later lines move by the change in
+the marker's width. In a list numbered 1, 2, 3, an edit that adds, moves or
+joins items renumbers the items after it in the same patch, each changing
+only its number, and the indent of its later lines when the number's width
+changes; a list numbered all `1.` stays so, and one whose numbers follow no
+rule keeps each item's number. Two lists of one kind side by side, which
+Markdown would read as one, are written with different bullets (`-` then `*`)
+or delimiters (`.` then `)`): Enter on an empty middle item of a top-level
+list splits it that way around an empty paragraph, and joining the two again
+writes one list with the first one's marker. A nested list whose first item
+is empty is written after a blank line, since Markdown would read a bare
+marker under the parent's text as a heading underline or as more text; the
+blank line goes once the item has text.
+
+**Decision: an island moves with the blocks around it, unchanged.** Enter,
+Tab, Shift+Tab and joins may move islands, and the serializer writes each from
+the app's own copy of its source, relative to its container: its own
+indentation, then its lines without the container's prefix. An island's id
+hashes that copy, so the island keeps its id wherever it moves, and any change
+to what it holds changes the id. A step that moves blocks must keep every
+island, in the same order and with the same formatting, and no source change
+may cover part of an island's source; anything else is refused ("Selection
+crosses a protected object"). A multi-line island in a quote, or in an item
+indented with a tab, has no such copy: the list around it may change while it
+stays, but an edit that moves it is refused. Text typed or deleted beside an
+inline island at a line's edge, such as an image, is written at the island's
+source edge, inside its formatting.
+
+**Decision: Tab and Shift+Tab keep the keyboard in the text.** While the
+rendered text has focus they move a list item in or out a level where they
+can, and otherwise do nothing, so the keys typed next are never lost. Escape,
+then Tab or Shift+Tab within two seconds, moves focus on as the browser would
+(CodeMirror's convention), so the text is not a keyboard trap; a pointer
+press ends that window, and from a control inside an island, such as a
+table's scroll region, Tab moves on at once. Mod-Enter in a task item ticks or
+unticks its box with the edit a click on the box makes, as Notion's shortcut
+does.
+
+**Decision: Shift+Enter makes a line break, and a break at the end of a
+paragraph waits for text.** The break takes the place of the selection and of
+the spaces after it, which Markdown cannot start a line with; it has no
+formatting, and the caret goes after it. Just before a line break typed in
+Source, that one becomes a break too, with the caret between them; in a
+heading the key does nothing. A break at the end of a paragraph has no
+Markdown form, so the frame shows it but sends nothing until text is typed
+after it, then sends the break and the text as one step. Backspace, undo, a
+key that moves the caret or splits, a click elsewhere or leaving the editor
+takes it out again, locally. An edit that leaves a sent break at the end of
+its paragraph, such as deleting the text after it, goes without the break,
+which the frame keeps showing while the caret is just after it.
+
+**Decision: Backspace, Delete and Shift+Tab join and lift list items, and a
+lift goes as one step.** Delete at the end of an item's text joins the text
+after it, as Backspace at the start of that text does, rather than making two
+paragraphs of one item. Backspace at the start of a nested list's first item
+moves it out a level, as Shift+Tab does, in any kind of list. Backspace on the
+empty first line that Enter leaves at the end of an item with a nested list or
+code block joins it back into the item above when that item ends in a
+paragraph, and otherwise lifts it out of the list. Every key the base keymap
+binds to Backspace or Delete (with Shift or Mod, and Ctrl+H or Ctrl+D on
+macOS) does the same. A lifted item's nested list joins the items after it,
+which would otherwise be two lists of one kind side by side. The app checks
+each step of an edit on its own, and a lift's first steps can pass through
+documents it cannot write, so a lift of more than one step goes as one step
+from the document before to the one after (`changeTo` in `nearestForm.ts`).
+
+**Decision: keys typed while an edit is being checked wait as one edit.** The
+frame sends one edit at a time. It merges the last waiting edit with the next
+when `ReplaceStep.merge` makes one step of them, in the same undo group and
+with no syntax hint, so a burst of typing costs the app one projection. An
+edit already sent never changes, and one that inserts or removes a `#` is
+never merged, since the app escapes `#` only at the start of what an edit
+inserts. A rendered edit is an undo step of its own when it inserts no text
+and changes the block tree (the kinds of blocks and how they nest,
+`blockShape` in `src/features/source/renderedHistory.ts`), or has a step that
+is not a replace, so list Enter, joins and lifts undo on their own. Undo and
+redo asked from Rendered put the code editor's caret where the rendered edit
+recorded it was before its group, or after it for redo.
+
+**Decision: the rendered view parses a note once per projection.**
+`compileProjection` (`src/features/rendered/instrumentation.ts`) runs one
+`@mdx-js/mdx` compile. It reads the instrumentation (leaves, component slots,
+blocks, boundaries) right after the shared remark plugins, and figure
+normalization for `.md`, before any preview transform changes the tree; the
+preview transforms, the projection's hooks and the island code then run on
+that same tree. A parser or compiler error reads
+`Invalid MDX: <message> (line:column)` or `Invalid Markdown: ...`, as Source's
+own check (`diagnoseSource`, which keeps its separate compile) gives it, so
+Source can underline it. An error from one of the app's own transforms, such
+as a note the projection cannot map, keeps its message, unless the compiler
+refuses the note too: then the compiler's error comes first. Within one step
+of `prepareFluidTransaction`, each text an attempt writes is projected once,
+keyed by the text alone. Compiled code is never reused across texts, since it
+holds absolute source offsets. A keystroke still parses the whole note (T54).
+
+**Decision: the frame keeps every island an edit did not change.** It renders
+the note through one component for its life (`DocumentBody` in
+`src/preview/preview-entry.tsx`), which calls the latest compiled content,
+and each island carries its id as its React key, so new code keeps the
+islands whose source did not change, with their state: a counter's count, a
+chart's drawing, an embedded document's frame. Islands with the same source
+also carry how many there are in their key, so when that number changes they
+all start again rather than take each other's state. The body renders again
+only for new code; an island reads its offsets from context, and what changes
+per revision (slots, read-only) by subscription. The body starts again when
+the note's scope changes (`scopeKey`: its format, workspace modules, imports,
+exports and frontmatter), or when the note's own text called a React hook in
+its last render. Workspace modules run once per set of module code, so
+imported components keep their identity and a module's state lasts while its
+code stays the same. A note's own expressions run only when its code changes,
+and components a note defines itself are new with each new code, so they
+start again on any island edit. A picture keeps its pixels for the frame's
+session, and while they are missing it keeps the box they had.
+
+**Decision: after a whole render, the answer to each edit is a small ack.**
+While the epoch, runtimeKey and components of the last whole render on a
+frame's port still hold, the app answers an edit that is neither a reset nor
+a nearest form with `render-ack` (`protocol.ts`): the revision, island
+offsets, slots and authoring boundaries, without the document, code,
+workspace modules or component catalog, which the frame keeps from that
+render. The frame never parses a document from an ack, and asks for the whole
+render (`render-request`) when an ack does not follow the render it has.
+Everything else goes once and again only when it changes: the appearance and
+reading preferences as soon as a frame has its port (the only messages a
+frame takes before its first render, still checked by shape), the paths a
+note may embed, the comment marks (and again for a new document in the frame:
+a reset, a nearest form, a new frame), and the image pixels. The image keys
+are kept by runtimeKey and note path, since every image syntax is an island
+or a block the projection keeps aside, whose source the runtimeKey hashes
+(`imageReferenceKeys.test.ts` checks this edit by edit), so typing prose
+parses nothing for images. A whole render carries the size of each picture
+whose pixels the workbench has, so a new frame's first paint keeps its box.
+
+**Decision: a new frame's first paint is in the page's colours and the note's
+fonts.** Until its appearance has come (`data-scheme` set), the frame's page
+is see-through, and the iframe element behind it shows the editor's panel
+colour. The element has `color-scheme: normal`: Chromium and Firefox paint an
+embedded page opaque, white behind a dark page, when its colour scheme
+differs from its element's. The `srcdoc` never depends on the live
+appearance, since a new `srcdoc` reloads the frame. The frame asks for its
+fonts as its script starts and holds its first render until they have
+loaded, for at most 500 ms. An embedded document's frame does the same.
+
+**Decision: notices over the rendered note move nothing.** "Edit not applied"
+shows over the bottom of the editor, above controls floating there; it lets
+clicks through to the note, keeps its status role and clears on the next
+accepted edit. "Loading components" shows over the top, and a note on screen
+stays while its components are made again (a newer saved version came, or a
+module changed) until its next render takes its place. An embedded
+document's editor has no box of its own (`display: contents`), so there both
+stay in the flow.
+
+**Decision: a table cell is one line of the note.** Enter and Shift+Enter in
+a cell (an island's text that is not a component's) send what was typed and
+keep the caret there: it goes back into the cell when the table is made again
+for the new text. The app refuses a line break in text that is one line of
+the source, so a cell edit can never add rows. When an edit a text sent
+itself changes nothing or is refused, the app answers with `edit-settled`,
+naming its revision and its range or block, so the text can send again; a
+refused one shows the note's own text again unless more was typed.
+
+**Decision: typing in a note renders and stores only that note's session.**
+Each change the file store reports says what it touched (`fileStore.ts`):
+`drafts` when it only replaced the text of drafts that already existed,
+`unsaved` when a draft started or ended or a new unsaved file appeared, and
+`files` for anything else, every sync included. The file list ignores
+`drafts`, and a session's image reload and the component module watcher
+follow only `files`. Unsaved text is still written to IndexedDB at every
+keystroke the app has, which costs well under a millisecond. A rendered
+edit's pending state is a ref, set at once and read by every guard (save,
+duplicate, reload, export, format, the view switch, operations, the tree
+save, leaving the page), and a shown state that turns on only after 300 ms of
+pending, which the menus, the screen reader status and embedded copies
+follow; an action chosen while an edit is on its way waits for it. A note
+whose text may hold code compiles its components once rendered typing pauses
+for 500 ms, Source's compile check runs only while Source shows, and a
+session reads a note's images again only when its image references or the
+stored files change. The React Compiler skips `WorkspaceSession`,
+`WorkspaceWorkbench` and `RenderedEditor` (their dynamic `import()`, a throw
+inside try/catch, try/finally), so their props are memoized by hand.
 
 **Decision: the code editor and the rendered note load when they first show.**
 Monaco (about 1 MB gzip) loads with the first Source, Split or Code view, and
