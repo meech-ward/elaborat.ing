@@ -854,7 +854,8 @@ export async function compileForPreview(
  * No authoring markers. The compiler's errors read as those functions' do
  * ("Invalid MDX: ... (line:column)"), so Source can underline them, while an
  * error from a transform this file adds (a projection that cannot map the
- * note) keeps its own message, as compileForPreview's always have.
+ * note) keeps its own message, as compileForPreview's always have. When the
+ * compiler would refuse that note too, its error is the one given, as before.
  */
 export async function compileProjection(
   source: string,
@@ -902,8 +903,11 @@ export async function compileProjection(
       ),
     );
   } catch (error) {
-    if (ownError) throw error;
-    throw new Error(`${invalid}: ${placedMessage(error)}`);
+    if (!ownError) throw new Error(`${invalid}: ${placedMessage(error)}`);
+    // Before, the instrumentation had a compile of its own, which ran first,
+    // so the compiler's error came first even from a later stage: look for one.
+    await (format === "md" ? instrumentMarkdownSource(source) : instrumentMdxSource(source, catalog));
+    throw error;
   }
   return { code: String(file.value), instrumentation: captured() };
 }
