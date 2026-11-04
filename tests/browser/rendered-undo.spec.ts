@@ -146,7 +146,8 @@ for (const delimiter of [".", ")"]) {
     await page.keyboard.press("Enter")
     await expect(items).toHaveCount(4)
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
-    const added = note.replace(`13${delimiter} second`, `13${delimiter} second\n14${delimiter} `)
+    // The new item takes the next number, and the item after it counts on.
+    const added = note.replace(`13${delimiter} second\n14${delimiter} third`, `13${delimiter} second\n14${delimiter} \n15${delimiter} third`)
     expect(await saved(page, fake, id)).toBe(added)
 
     await item("second").click()
@@ -248,10 +249,12 @@ test("a task's box ticks in Rendered, by click or Space: Source shows [x], it sa
   const ticked = TASKS.replace("- [ ] Pack", "- [x] Pack")
   expect(await saved(page, fake, id)).toBe(ticked)
 
-  // From the heading, Tab reaches the first box, and Space unticks it.
+  // From the heading, Escape then Tab reaches the first box (Tab alone stays
+  // in the text), and Space unticks it.
   await toRendered(page)
   await expect(pack).toBeChecked()
   await frameOf(page).getByRole("heading", { name: "Packing" }).click()
+  await page.keyboard.press("Escape")
   await page.keyboard.press("Tab")
   await expect(pack).toBeFocused()
   await page.keyboard.press("Space")

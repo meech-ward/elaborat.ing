@@ -100,7 +100,7 @@ first project open waits for all image originals and previews, active
 Source-only notes can prepare image/drawing previews, and ready inline images
 wait for the rest of their preparation batch before being published.
 
-T55, T56 and T58 in the [task queue](tasks.md) track separating visible content
+T56, T57 and T59 in the [task queue](tasks.md) track separating visible content
 from offline completion, preparing resources only for the view that needs
 them, and publishing each ready asset independently. These tasks wait for
 implementation approval. Preserve original resolution, immutable asset

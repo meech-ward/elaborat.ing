@@ -8,10 +8,10 @@ import {
 } from "react";
 import { COMPONENT_CATALOG } from "../features/document/componentCatalog";
 import { isDocumentPath } from '../features/document/documentPaths';
-import type { RenderMessage } from "../features/rendered/protocol";
+import type { ParentMessage, RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
-import { isReadOnly } from './readOnly';
+import { useReadOnly } from './readOnly';
 import { postToParent as post } from './parentPort';
 import { imageFilePayloads } from '../features/images/transport';
 
@@ -44,6 +44,23 @@ let codeBlockHooks = { typed: () => "", undo: () => {} };
 export function setCodeBlockHooks(hooks: typeof codeBlockHooks) {
   codeBlockHooks = hooks;
 }
+/** The page's answer to an edit a text sent itself (not through the draft store) that changed nothing or was refused. */
+type DirectEditSettled = Extract<ParentMessage, { kind: "edit-settled" }>;
+type DirectEditTarget = DirectEditSettled["target"];
+const settledListeners = new Set<(settled: DirectEditSettled) => void>();
+/** An edit a text in the note sent changed nothing or was refused: that text may send again. */
+export function settleDirectEdit(settled: DirectEditSettled) {
+  for (const listener of settledListeners) listener(settled);
+}
+const sameTarget = (a: DirectEditTarget, b: DirectEditTarget) =>
+  "block" in a ? "block" in b && a.block === b.block : "from" in b && a.from === b.from && a.to === b.to;
+/**
+ * A text in an island (a table's cell) whose edit Enter sent: the caret
+ * stays in it. Its island is made again for the note's new text, so the
+ * caret goes to the new text at the same place in the note, with what was
+ * typed in the old one meanwhile (`typed`, its text when it went).
+ */
+let enterCommit: { session: string; revision: number; from: number; value: string; typed?: string } | null = null;
 export function setAuthoringPaths(paths: readonly string[]) {
   resourcePaths = paths;
   for (const listener of listeners) listener();
@@ -156,6 +173,7 @@ export function SourceLeaf(props: {
 /** Compiler-only component: source ownership is revalidated in the parent. */
 export function SourceCode(props: { from: number; to: number; expected: string; value: string; language: string }): ReactNode {
   const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
+  const readOnly = useReadOnly();
   // An empty code block the parent put the caret in was just made from a
   // typed fence: it opens for typing, with anything typed meanwhile, and
   // Ctrl+Z before anything else undoes making it.
@@ -165,7 +183,7 @@ export function SourceCode(props: { from: number; to: number; expected: string; 
     startSourceDraft(props, codeBlockHooks.typed(), props.value);
     return true;
   });
-  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={isReadOnly()}
+  return <EditableCodeFence value={props.value} language={props.language} sourceRegion={props} readOnly={readOnly}
     onUndo={made ? codeBlockHooks.undo : undefined}
     draft={getSourceDraft(props)} onEditorInput={captureSourceDraft} onEditorMount={restoreSourceDraft} onCommit={value => {
     if (value === props.value) return;
@@ -181,13 +199,62 @@ function EditableText(props: {
 }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null);
   const composing = useRef(false);
-  const sent = useRef(false);
+  // While an edit this text sent waits for the page's answer, it sends no
+  // other. The answer is a new revision, or (for an edit that changed
+  // nothing or was refused) a message naming the edit.
+  const waiting = useRef(false);
+  // The edit this text sent last. Its refusal can come after a new revision
+  // (another change of the note made it stale), and still finds it.
+  const sent = useRef<{ revision: number; target: DirectEditTarget; value: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { session, revision } = useSyncExternalStore(subscribe, getAuthoringContext);
-  useEffect(() => { sent.current = false; }, [revision, props.from, props.leaf?.expected]);
+  const readOnly = useReadOnly();
+  useEffect(() => { waiting.current = false; }, [revision, props.from, props.leaf?.expected]);
+  useEffect(() => {
+    const settled = (answer: DirectEditSettled) => {
+      const edit = sent.current, element = ref.current;
+      if (!edit || !element || answer.revision !== edit.revision || !sameTarget(answer.target, edit.target)) return;
+      sent.current = null;
+      waiting.current = false;
+      // No new text comes for it: the caret is still here.
+      if (enterCommit?.session === session && enterCommit.from === props.from) enterCommit = null;
+      // A refused edit is not in the note, as the page's notice says: the
+      // text shows the note's own again, unless the person has typed on. A
+      // component's text keeps what was typed, which its draft holds
+      // (sourceDrafts.ts), to send again.
+      if (answer.outcome === "rejected" && !props.literal && (element.textContent ?? "") === edit.value) element.textContent = props.value;
+    };
+    settledListeners.add(settled);
+    return () => {
+      settledListeners.delete(settled);
+    };
+  }, [props.value, props.literal, props.from, session]);
   useLayoutEffect(() => {
     if (props.literal && ref.current) restoreSourceDraft(ref.current);
   }, [revision, props.from, props.leaf?.expected, props.literal]);
+  // The text a cell left with Enter became, in the note's new revision: the
+  // caret comes back, unless the person has put it somewhere else meanwhile.
+  useLayoutEffect(() => {
+    const element = ref.current, left = enterCommit;
+    if (!element || !left || left.session !== session || left.revision >= revision || left.from !== props.from) return;
+    enterCommit = null;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const typed = left.typed?.startsWith(left.value) ? left.typed.slice(left.value.length) : "";
+    if (typed) element.textContent = props.value + typed;
+    element.focus();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, [revision, session, props.from, props.value]);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    return () => {
+      if (element && enterCommit?.session === session && enterCommit.from === props.from) enterCommit.typed = element.textContent ?? "";
+    };
+  }, [session, props.from]);
   const clear = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
@@ -198,14 +265,16 @@ function EditableText(props: {
     },
     [],
   );
+  /** Send what was typed; false when there is nothing to send, or an edit is still waiting. */
   const submit = (action: "commit" | "enter" | "shortcut") => {
     clear();
     const element = ref.current;
-    if (!element || composing.current || sent.current) return;
+    if (!element || composing.current || waiting.current) return false;
     const value = element.textContent ?? "";
-    if (action === "commit" && value === props.value) return;
+    if (action === "commit" && value === props.value) return false;
     const caret = caretOffset(element);
-    sent.current = true;
+    waiting.current = true;
+    sent.current = { revision, target: props.block ? { block: props.block } : { from: props.from, to: props.leaf?.to ?? props.from }, value };
     pendingDraft = { element, value, revision };
     if (props.block)
       post({
@@ -229,10 +298,11 @@ function EditableText(props: {
         caret,
       };
       if (props.literal && action === 'commit') queueRangeEdit({ kind: 'prose-edit', ...message });
-      else post({ kind: action === 'enter' ? 'prose-enter' : 'prose-edit', ...message });
+      else post({ kind: 'prose-edit', ...message });
     }
+    return true;
   };
-  if (isReadOnly())
+  if (readOnly)
     return <span data-source-text={`${props.from}:${props.leaf?.to ?? props.from + props.value.length}`}>{props.value}</span>;
   return (
     <span
@@ -283,7 +353,7 @@ function EditableText(props: {
       }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing || composing.current) return;
-        if (event.key === "Enter" && (!event.shiftKey || props.literal)) {
+        if (event.key === "Enter" && (!event.shiftKey || !props.block)) {
           event.preventDefault();
           if (props.literal) {
             const selection = window.getSelection();
@@ -298,11 +368,17 @@ function EditableText(props: {
               selection.addRange(range);
               captureSourceDraft(event.currentTarget);
             }
-          } else submit("enter");
+          } else if (props.block) submit("enter");
+          // A leaf of an island, such as a table's cell, is one line of the
+          // note, with no line of its own to make and no line break to hold:
+          // Enter and Shift+Enter send what was typed in it, and the caret
+          // stays in it.
+          else if (submit("commit")) enterCommit = { session, revision, from: props.from, value: ref.current?.textContent ?? "" };
         }
         if (event.key === "Escape") {
           event.preventDefault();
           clear();
+          if (enterCommit?.session === session && enterCommit.from === props.from) enterCommit = null;
           if (ref.current) {
             ref.current.textContent = props.value;
             if (props.literal) captureSourceDraft(ref.current);
@@ -358,9 +434,13 @@ export function BlockPicker({ blockPositionAt }: {
   const [boundary, setBoundary] = useState(
     context.metadata?.boundaries.at(-1)?.id ?? "start",
   );
+  // The dialog lists every position in the note only while it is open: the
+  // positions change with every keystroke, and a closed dialog would make
+  // them again each time.
+  const [open, setOpen] = useState(false);
   const paths = useSyncExternalStore(subscribe, getPaths);
   const { session, revision, metadata } = useSyncExternalStore(subscribe, getAuthoringContext);
-  const readOnly = isReadOnly();
+  const readOnly = useReadOnly();
   useEffect(() => {
     const ingest = (event: ClipboardEvent | DragEvent) => {
       const files = [...(event instanceof ClipboardEvent ? event.clipboardData?.files ?? [] : event.dataTransfer?.files ?? [])];
@@ -500,6 +580,7 @@ export function BlockPicker({ blockPositionAt }: {
                 setElement(name);
                 setPath("");
                 setBoundary(menuBoundary.current);
+                setOpen(true);
                 dialog.current?.showModal();
               } else insert(name, menuBoundary.current);
             }}
@@ -513,6 +594,7 @@ export function BlockPicker({ blockPositionAt }: {
         type="button"
         onClick={() => {
           returnFocus.current = trigger.current;
+          setOpen(true);
           dialog.current?.showModal();
         }}
       >
@@ -521,7 +603,10 @@ export function BlockPicker({ blockPositionAt }: {
       <dialog
         ref={dialog}
         aria-label="Insert block"
-        onClose={() => returnFocus.current?.focus({ preventScroll: true })}
+        onClose={() => {
+          setOpen(false);
+          returnFocus.current?.focus({ preventScroll: true });
+        }}
       >
         <div>
           <h2>Insert block</h2>
@@ -558,11 +643,13 @@ export function BlockPicker({ blockPositionAt }: {
               value={selectedBoundary}
               onChange={(event) => setBoundary(event.target.value)}
             >
-              {metadata?.boundaries.map((entry, index) => (
-                <option key={entry.id} value={entry.id}>
-                  {index === 0 ? "Document start" : `After block ${index}`}
-                </option>
-              ))}
+              {open
+                ? metadata?.boundaries.map((entry, index) => (
+                    <option key={entry.id} value={entry.id}>
+                      {index === 0 ? "Document start" : `After block ${index}`}
+                    </option>
+                  ))
+                : null}
             </select>
           </label>
           {resource ? (

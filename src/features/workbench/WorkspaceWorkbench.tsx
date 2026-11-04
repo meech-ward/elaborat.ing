@@ -212,6 +212,10 @@ export function WorkspaceWorkbench({
     stateRef.current = state;
   });
   const [files, setFiles] = useState<WorkspaceFileRef[]>([]);
+  // Every session takes the project's paths: the same array while they are
+  // the same, so a list refresh that only changes a file's state changes none.
+  const workspacePathsKey = JSON.stringify(files.map((file) => file.path));
+  const workspacePaths = useMemo<readonly string[]>(() => JSON.parse(workspacePathsKey), [workspacePathsKey]);
   const [directories, setDirectories] = useState<string[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -345,7 +349,8 @@ export function WorkspaceWorkbench({
     }
   }, [client, documentEmbeds]);
   // Saves on this device and changes sync brings in both refresh the list.
-  useEffect(() => client.subscribe(() => void refreshList()), [client, refreshList]);
+  // Typing into a file that already has a draft changes nothing it shows.
+  useEffect(() => client.subscribe((change) => { if (change !== "drafts") void refreshList(); }), [client, refreshList]);
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -1365,7 +1370,7 @@ export function WorkspaceWorkbench({
                             client={client}
                             initial={embedSnapshot.files.find(file => file.path === tab.path) ?? tab}
                             replacementEpoch={documentEmbeds.replacementEpoch(tab.path)}
-                            workspacePaths={files.map((file) => file.path)}
+                            workspacePaths={workspacePaths}
                             active={!hideSessions && state.active === tab.path}
                             onOpen={openPath}
                             refreshList={refreshFiles}

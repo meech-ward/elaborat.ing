@@ -2,7 +2,7 @@
 
 **Status: requirements recorded; implementation pending.** The 2026-11-04
 request authorizes documentation only. The follow-ups are
-[T54 through T58](tasks.md#t54-show-unlisted-content-before-independent-assets),
+[T55 through T59](tasks.md#t55-show-unlisted-content-before-independent-assets),
 waiting for implementation approval. This document does not mark the current
 loading paths as fixed.
 
@@ -43,14 +43,14 @@ before implementing. These are loading follow-ups to functioning features.
 
 | Area | Current behavior | Follow-up |
 |---|---|---|
-| Unlisted file | The server resolves the whole authorized dependency graph and original/preview image bytes in sequence. The browser consumes and validates the whole JSON response before starting the lazy viewer import. | T54 |
-| Unlisted refresh | Visible-page polling and focus refresh rebuild and download the whole bundle. The unchanged-revision comparison happens after the response arrives. | T54 |
-| First authenticated project open | The workbench waits for the full project pull, including every image original and preview, before any pulled files are applied locally. A missing catalog entry can also await catalog refresh and other project pulls. | T55 |
-| Cached project open | The local project opens first and synchronization runs in the background. Retain this useful fast path. | T55 |
-| Note preview assets | Active Source-only notes can prepare images and the first eight drawing/diagram previews. Images and drawings are processed serially and each resource map is published only after its entire loop completes. | T56 |
-| MDX first display | Component preparation and whole-source projection gate the initial rendered view. Ordinary prose does not wait directly for the image/drawing loops, but there is no independent prose display while component preparation is pending. | T57 |
-| Existing lazy behavior | Monaco and the rendered editor load with their views; drawing/diagram views have separate modules; initially collapsed document embeds defer attachment. Preserve these boundaries and address the preview side effects above. | T56, T57 |
-| Performance checks | Bundle checks protect first-paint bytes and heavy-library boundaries. They do not enforce readiness of useful document content under delayed data or assets. | T58 |
+| Unlisted file | The server resolves the whole authorized dependency graph and original/preview image bytes in sequence. The browser consumes and validates the whole JSON response before starting the lazy viewer import. | T55 |
+| Unlisted refresh | Visible-page polling and focus refresh rebuild and download the whole bundle. The unchanged-revision comparison happens after the response arrives. | T55 |
+| First authenticated project open | The workbench waits for the full project pull, including every image original and preview, before any pulled files are applied locally. A missing catalog entry can also await catalog refresh and other project pulls. | T56 |
+| Cached project open | The local project opens first and synchronization runs in the background. Retain this useful fast path. | T56 |
+| Note preview assets | Active Source-only notes can prepare images and the first eight drawing/diagram previews. Images and drawings are processed serially and each resource map is published only after its entire loop completes. | T57 |
+| MDX first display | Component preparation and whole-source projection gate the initial rendered view. Ordinary prose does not wait directly for the image/drawing loops, but there is no independent prose display while component preparation is pending. | T58 |
+| Existing lazy behavior | Monaco and the rendered editor load with their views; drawing/diagram views have separate modules; initially collapsed document embeds defer attachment. Preserve these boundaries and address the preview side effects above. | T57, T58 |
+| Performance checks | Bundle checks protect first-paint bytes and heavy-library boundaries. They do not enforce readiness of useful document content under delayed data or assets. | T59 |
 
 Entry points for the audit:
 
@@ -79,7 +79,7 @@ including about 3.13 MB of original and preview image data URLs.
 These are observations from one client, not service-level targets or a full
 browser trace. They show a long wait before the bundle response begins; they
 do not isolate each database, Storage, CPU or startup cost. The earlier
-12.8-second hosted reference remains recorded in T54. Future measurements
+12.8-second hosted reference remains recorded in T55. Future measurements
 must distinguish data wait, transfer, module loading and useful display.
 Do not put share tokens, document contents or account credentials in traces
 or committed fixtures.
@@ -120,7 +120,7 @@ precache inventory or offline guarantee needs its own recorded decision.
 
 ## Verification required before calling this implemented
 
-T58 must cover cold first visits, cached revisits and offline reopening, and
+T59 must cover cold first visits, cached revisits and offline reopening, and
 record time to readable requested content separately from shell paint and
 time to all assets. Agree realistic budgets from measurements on representative
 devices and networks; the observations above are not acceptable targets.

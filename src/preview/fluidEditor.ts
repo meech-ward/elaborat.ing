@@ -18,26 +18,34 @@ import {
 } from "prosemirror-commands";
 import {
   splitListItem,
-  liftListItem,
   sinkListItem,
   wrapInList,
 } from "prosemirror-schema-list";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
-import { Step, type Mapping } from "prosemirror-transform";
+import { ReplaceStep, Step, type Mapping } from "prosemirror-transform";
 import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
+  afterHeldBreak,
   codeFenceOpener,
   emptyListBackspace,
+  hardBreak,
+  leftBreak,
+  liftItem,
   listItemBackspace,
+  listItemDelete,
   keepingEmptyParagraphs,
   quoteStartEnter,
+  toggleTask,
+  trailingBreak,
+  typedTogether,
 } from "../features/rendered/fluidCommands";
 import { changeTo, rebaseSteps } from "../features/rendered/nearestForm";
 import type {
+  RenderAckMessage,
   RenderMessage,
   FluidSyntaxHint,
 } from "../features/rendered/protocol";
-import { isStructuralHistoryBoundary } from "../features/source/renderedHistory";
+import { blockShape, isStructuralHistoryBoundary } from "../features/source/renderedHistory";
 import { isReadOnly } from "./readOnly";
 
 type Selection = { anchor: number; head: number };
@@ -54,6 +62,32 @@ const selectionOf = (state: EditorState): Selection => ({
   anchor: state.selection.anchor,
   head: state.selection.head,
 });
+/**
+ * A line break at the end of a paragraph, shown but held back: `step`, made
+ * from `base`, puts it in. Markdown cannot write a break there, so the editor
+ * shows it (in `doc`) but sends nothing until text is typed after it, then
+ * sends the break and the text as one step. Anything else takes it out
+ * again. `sent`: the break was in the note until the edit just sent, which
+ * took out the text after it (`leftBreak`); one typed with Shift+Enter
+ * (`hardBreak`) the parent never had.
+ */
+type HeldBreak = { step: ReplaceStep; base: PMNode; doc: PMNode; before: Selection; sent: boolean };
+/** Keys that move the caret or split text: they take a held break out first. */
+const LEAVING_KEYS = new Set(["Enter", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** Keys whose move, from the line a held break made, ends where taking the break out leaves the caret. */
+const BACK_KEYS = new Set(["ArrowLeft", "ArrowUp"]);
+/** The caret where a held break (the step that puts it in) goes. */
+const atBreak = (step: ReplaceStep): Selection => ({ anchor: step.from, head: step.from });
+/** Where the caret is just after a held break. */
+const afterBreak = (step: ReplaceStep) => step.from + step.slice.size;
+const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
+const shapes = new WeakMap<PMNode, string>();
+/** `blockShape`, once per document. */
+function shapeOf(doc: PMNode): string {
+  let shape = shapes.get(doc);
+  if (shape === undefined) shapes.set(doc, (shape = blockShape(doc)));
+  return shape;
+}
 const mapSelection = ({ anchor, head }: Selection, mapping: Mapping): Selection => ({
   anchor: mapping.map(anchor),
   head: mapping.map(head),
@@ -271,6 +305,9 @@ export class FluidEditor {
   private lastInput = 0;
   private historyPending: "undo" | "redo" | null = null;
   private keysSinceFocus = false;
+  /** Until when Tab and Shift+Tab leave the text, after Escape (see `indenting`). */
+  private tabLeaves = 0;
+  private held: HeldBreak | null = null;
   private flashTimer = 0;
   /**
    * A typed code fence opening the parent is making a code block of (`pos`
@@ -305,6 +342,20 @@ export class FluidEditor {
         return true;
       };
     const nodes = fluidSchema.nodes;
+    const backspace = chainCommands(emptyListBackspace, listItemBackspace, baseKeymap.Backspace);
+    const del = chainCommands(listItemDelete, baseKeymap.Delete);
+    // Tab and Shift+Tab move a list item in and out a level, and otherwise
+    // do nothing: the keyboard stays in the text, where taking it away would
+    // lose what is typed next. Escape, then Tab or Shift+Tab, takes it out as
+    // the browser would (CodeMirror's convention), so it is never trapped.
+    // From a control inside the note (a table's scroll region), Tab moves on.
+    const indenting =
+      (command: Command): Command =>
+      (state, dispatch, view) => {
+        if (performance.now() < this.tabLeaves || !view?.hasFocus()) return false;
+        command(state, dispatch, view);
+        return true;
+      };
     this.view = new EditorView(mount, {
       state: EditorState.create({
         schema: fluidSchema,
@@ -386,12 +437,18 @@ export class FluidEditor {
               },
               baseKeymap.Enter,
             )),
-            Tab: sinkListItem(nodes.list_item),
-            "Shift-Tab": liftListItem(nodes.list_item),
+            Tab: indenting(sinkListItem(nodes.list_item)),
+            "Shift-Tab": indenting(liftItem),
+            "Shift-Enter": hardBreak,
+            // Every key the base keymap binds to Backspace or Delete (with
+            // Shift or Mod, and Ctrl+H or Ctrl+D on macOS) joins and lifts
+            // list items as those keys do.
             ...Object.fromEntries(
-              Object.entries(baseKeymap).filter(([key]) => key !== "Enter"),
+              Object.entries(baseKeymap)
+                .filter(([key]) => key !== "Enter")
+                .map(([key, command]) => [key, command === baseKeymap.Backspace ? backspace : command === baseKeymap.Delete ? del : command]),
             ),
-            Backspace: chainCommands(emptyListBackspace, listItemBackspace, baseKeymap.Backspace),
+            "Mod-Enter": chainCommands(toggleTask, baseKeymap["Mod-Enter"]),
           }),
         ],
       }),
@@ -424,6 +481,25 @@ export class FluidEditor {
         }
         this.keysSinceFocus = true;
         adoptDOMCaret(view);
+        if (event.key === "Escape") this.tabLeaves = performance.now() + 2000;
+        else if (event.key !== "Tab" && !MODIFIER_KEYS.has(event.key)) this.tabLeaves = 0;
+        const held = this.heldBreak();
+        if (held) {
+          const { selection } = view.state;
+          const after = selection.empty && selection.head === afterBreak(held.step);
+          // Backspace just after a held break takes it out, as it would a
+          // sent one. Keys that move the caret or split text take it out,
+          // then act as usual, except a move back: taking the break out has
+          // already put the caret at the end of the line above.
+          if (event.key === "Backspace" && after) {
+            this.dropBreak();
+            return true;
+          }
+          if (LEAVING_KEYS.has(event.key) && !(event.key === "Enter" && event.shiftKey)) {
+            this.dropBreak();
+            return after && BACK_KEYS.has(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey;
+          }
+        }
         return false;
       },
       handleDOMEvents: {
@@ -442,6 +518,8 @@ export class FluidEditor {
           // pointers, then let the trusted pointer default place/extend
           // the actual selection. Code has its own native selection inside
           // an object island; focusing prose would restore its old caret.
+          // A click after Escape puts Tab back to moving items.
+          this.tabLeaves = 0;
           if (event.pointerType === "touch") return false;
           if (
             !(event.target instanceof Element) ||
@@ -469,6 +547,8 @@ export class FluidEditor {
         },
         blur: () => {
           this.group++;
+          this.tabLeaves = 0;
+          this.dropBreak();
           return false;
         },
       },
@@ -483,7 +563,8 @@ export class FluidEditor {
         const at = view.state.doc.resolve(from);
         if (at.marks().some((mark) => mark.type === fluidSchema.marks.code))
           return false;
-        const prefix = at.parent.textBetween(0, at.parentOffset);
+        // A line break or an inline island counts one character, as it takes one position.
+        const prefix = at.parent.textBetween(0, at.parentOffset, undefined, "\n");
         const marked = prefix + text;
         for (const [delimiter, name] of [
           ["**", "strong"],
@@ -628,6 +709,11 @@ export class FluidEditor {
     if (!tr.docChanged) {
       if (tr.selectionSet) this.group++;
       this.view.updateState(this.view.state.apply(tr));
+      // A caret moved away from a held break takes the break out.
+      const held = this.heldBreak();
+      const { selection } = this.view.state;
+      if (held && tr.selectionSet && !(selection.empty && selection.head === afterBreak(held.step)))
+        this.dropBreak();
       return;
     }
     if (this.fence) {
@@ -655,6 +741,65 @@ export class FluidEditor {
       });
       return;
     }
+    let before = selectionOf(this.view.state);
+    let steps: readonly Step[] = tr.steps;
+    // A sent line break the edit leaves at the end of its paragraph: the
+    // parent gets the edit without it, and the editor holds it while the
+    // caret is just after it (`holds`).
+    let left: ReturnType<typeof leftBreak> = null;
+    let holds = false;
+    const held = this.heldBreak();
+    if (held) {
+      const next = afterHeldBreak(held.step, tr.steps);
+      if (next === "spaces") {
+        // Markdown cannot write spaces at the start of a line.
+        this.view.updateState(this.view.state);
+        return;
+      }
+      if (next && trailingBreak([next], tr.doc, held.base)) {
+        this.view.updateState(this.view.state.apply(tr));
+        // Another break typed after it: the note has neither.
+        this.held = { ...held, step: next, doc: this.view.state.doc, sent: false };
+        return;
+      }
+      // Where the held break is once the edit is made.
+      const $break = tr.doc.resolve(tr.mapping.map(afterBreak(held.step), -1));
+      if (next) {
+        // The break and the text typed after it, as one step.
+        this.held = null;
+        steps = [next];
+        before = held.before;
+      } else if ($break.nodeBefore?.type === fluidSchema.nodes.hard_break && $break.parentOffset < $break.parent.content.size) {
+        // Text the edit brought after the break (Delete joins the next
+        // line's): the break can be written with it, as one step.
+        this.held = null;
+        steps = changeTo(held.base, tr.doc).steps;
+        before = held.before;
+      } else {
+        // Any other edit takes the break out first, and is made without it.
+        const redone = this.withoutBreak(held, tr);
+        if (!redone) return;
+        tr = redone;
+        steps = tr.steps;
+        before = selectionOf(this.view.state);
+      }
+    } else {
+      const step = trailingBreak(tr.steps, tr.doc, tr.before);
+      if (step) {
+        this.view.updateState(this.view.state.apply(tr));
+        this.held = { step, base: tr.before, doc: this.view.state.doc, before, sent: false };
+        return;
+      }
+      left = leftBreak(tr.before, tr.doc);
+      holds = left !== null && tr.selection.empty && tr.selection.head === afterBreak(left.hold);
+      if (left && !left.steps.length) {
+        this.view.updateState(this.view.state.apply(tr));
+        if (holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold), sent: false };
+        else this.showBase(left);
+        return;
+      }
+      if (left) steps = left.steps;
+    }
     const now = performance.now();
     if (now - this.lastInput > 750 || tr.getMeta("uiEvent") === "paste")
       this.group++;
@@ -662,29 +807,91 @@ export class FluidEditor {
     // Replacing a multi-paragraph selection starts a typing burst; its first
     // character must share the subsequent characters' one Monaco undo group.
     // Empty split/join and formatting commands remain explicit boundaries.
+    const json = steps.map((step) => step.toJSON());
     const structural = isStructuralHistoryBoundary(
-      this.view.state.doc.childCount,
-      tr.doc.childCount,
-      tr.steps.map((step) => step.toJSON()),
+      shapeOf(this.view.state.doc),
+      shapeOf(tr.doc),
+      json,
     );
     if (structural) this.group++;
-    const before = selectionOf(this.view.state);
     this.view.updateState(this.view.state.apply(tr));
-    this.queue.push({
-      steps: tr.steps.map((step) => step.toJSON()),
-      before,
-      after: selectionOf(this.view.state),
-      group: `${this.epoch}:${this.group}`,
-      syntax: tr.getMeta("fluidSyntax"),
-      doc: this.view.state.doc,
-    });
+    if (left && !holds) this.showBase(left);
+    // What the parent will have once this edit is written.
+    const doc = left ? left.base : this.view.state.doc;
+    const after = left && holds ? atBreak(left.hold) : selectionOf(this.view.state);
+    if (left && holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after, sent: true };
+    const group = `${this.epoch}:${this.group}`;
+    const syntax: FluidSyntaxHint | undefined = tr.getMeta("fluidSyntax");
+    // Typing while an earlier edit is being checked waits as one edit, so
+    // the parent checks a burst once, not once a key. An edit already sent
+    // is never changed: only the last one waiting is.
+    const last = this.queue.at(-1);
+    const merged =
+      last && last.group === group && !structural && !last.syntax && !syntax
+        ? typedTogether(last.steps.map((step) => Step.fromJSON(fluidSchema, step)), steps)
+        : null;
+    if (last && merged) {
+      last.steps = [merged.toJSON()];
+      last.after = after;
+      last.doc = doc;
+    } else this.queue.push({ steps: json, before, after, group, syntax, doc });
     if (!this.inFlight && this.queue.length === 1)
       this.post({ kind: "fluid-pending", pending: true });
     if (structural) this.group++;
     this.flush();
   }
 
+  /** The held line break, while the document on screen still shows it. */
+  private heldBreak(): HeldBreak | null {
+    if (this.held && this.held.doc !== this.view.state.doc) this.held = null;
+    return this.held;
+  }
+
+  /** Take the held line break out of the document on screen, and the spaces it replaced back. */
+  private dropBreak() {
+    const held = this.heldBreak();
+    if (!held) return;
+    this.held = null;
+    const { state } = this.view;
+    this.view.updateState(state.apply(state.tr.step(held.step.invert(held.base))));
+  }
+
+  /**
+   * Take out of the document on screen the line break an edit left at the
+   * end of its paragraph (`leftBreak`) with the caret away from it, where no
+   * text typed can follow it: the screen shows what the note will have.
+   */
+  private showBase(left: NonNullable<ReturnType<typeof leftBreak>>) {
+    const { state } = this.view;
+    this.view.updateState(state.apply(state.tr.step(left.hold.invert(left.base))));
+  }
+
+  /** `tr`, made on the document showing the held break, made again without it; null when it cannot be. */
+  private withoutBreak(held: HeldBreak, tr: Transaction): Transaction | null {
+    this.dropBreak();
+    const { state } = this.view;
+    const redone = rebaseSteps(tr.steps, held.doc, state.doc);
+    if (!redone) {
+      this.view.updateState(state);
+      return null;
+    }
+    const next = state.tr;
+    for (const step of redone.steps) next.step(step);
+    next.setSelection(tr.selection.map(next.doc, redone.mapping(redone.steps.length)));
+    for (const key of ["uiEvent", "fluidSyntax"])
+      if (tr.getMeta(key) !== undefined) next.setMeta(key, tr.getMeta(key));
+    return next;
+  }
+
   private history(direction: "undo" | "redo") {
+    // Undo takes a held line break out. One typed with Shift+Enter is all it
+    // takes back, as the parent never had it; one the edit just sent left on
+    // screen goes with that edit, which the note's history takes back.
+    const held = this.heldBreak();
+    if (held) {
+      this.dropBreak();
+      if (direction === "undo" && !held.sent) return;
+    }
     this.group++;
     this.historyPending = direction;
     this.flush();
@@ -703,6 +910,10 @@ export class FluidEditor {
    * parent has not been sent yet, so none is lost.
    */
   private takeNearest(doc: PMNode, sent: PMNode) {
+    // The edits the parent has do not include a held line break: it goes on
+    // the new document again, after the edits it has not been sent yet.
+    const held = this.heldBreak();
+    this.dropBreak();
     const { state } = this.view;
     const queued = this.queue.flatMap((op) => op.steps.map((json) => Step.fromJSON(fluidSchema, json)));
     const redone = rebaseSteps(queued, sent, doc);
@@ -728,7 +939,16 @@ export class FluidEditor {
     const tr = state.tr;
     for (const step of changeTo(state.doc, next).steps) tr.step(step);
     if (this.fence) this.fence.pos = mapping.map(this.fence.pos);
-    this.view.updateState(state.apply(tr.setSelection(state.selection.map(tr.doc, mapping))));
+    tr.setSelection(state.selection.map(tr.doc, mapping));
+    const kept = held?.step.map(mapping);
+    const shown = kept?.apply(next).doc;
+    if (held && kept instanceof ReplaceStep && shown && trailingBreak([kept], shown, next)) {
+      tr.step(kept);
+      this.view.updateState(state.apply(tr));
+      this.held = { ...held, step: kept, base: next, doc: this.view.state.doc, before: mapSelection(held.before, mapping) };
+      return;
+    }
+    this.view.updateState(state.apply(tr));
   }
 
   /** What was typed while the code block now shown was being made. */
@@ -764,10 +984,15 @@ export class FluidEditor {
     }
   }
 
-  receive(message: RenderMessage) {
+  /**
+   * A render from the parent: a whole one (with its document), or the ack of
+   * an edit (`render-ack`), which has none and is never a reset: it answers
+   * an edit made in the document on screen.
+   */
+  receive(message: RenderMessage | { session: string; revision: number; fluid: RenderMessage["fluid"] | RenderAckMessage["fluid"] }) {
     const fluid = message.fluid;
     if (!fluid) return;
-    const reset = fluid.reset || fluid.epoch !== this.epoch;
+    const reset = "doc" in fluid && (fluid.reset || fluid.epoch !== this.epoch);
     this.session = message.session;
     this.revision = message.revision;
     // The new document has the code block, if the parent made one.
@@ -797,11 +1022,11 @@ export class FluidEditor {
       }
       this.view.updateState(state);
       if (fluid.selection) this.view.focus();
-    } else if (fluid.operation === this.operation) {
+    } else if (fluid.operation === this.operation && fluid.epoch === this.epoch) {
       // The optimistic document and selection are already ahead during a
       // burst. An ack only advances authority; it never overwrites that view,
       // except with the nearest form Markdown can store of the edit in flight.
-      if (fluid.nearest && this.inFlight && this.sent)
+      if ("doc" in fluid && fluid.nearest && this.inFlight && this.sent)
         this.takeNearest(fluidSchema.nodeFromJSON(fluid.doc), this.sent);
       this.inFlight = false;
       this.sent = null;
@@ -823,7 +1048,7 @@ export class FluidEditor {
 
   /** Source boundary metadata describes only edits the parent has confirmed. */
   get hasPendingEdits(): boolean {
-    return this.inFlight || this.queue.length > 0 || this.fence !== null;
+    return this.inFlight || this.queue.length > 0 || this.fence !== null || this.heldBreak() !== null;
   }
 
   /** Mark commented text: every mark is replaced. */
@@ -855,6 +1080,7 @@ export class FluidEditor {
   destroy() {
     window.clearTimeout(this.flashTimer);
     this.queue = [];
+    this.held = null;
     this.view.destroy();
   }
 }

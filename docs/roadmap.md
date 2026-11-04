@@ -11,7 +11,7 @@ original prototype.
 ## Cross-app requirement: progressive loading
 
 **Status:** requirements documented; implementation follow-ups are pending.
-The maintainer has requested documentation only, so T54 through T58 remain
+The maintainer has requested documentation only, so T55 through T59 remain
 Waiting until implementation is authorized.
 
 Every app surface should prioritize the requested content, display each safe
@@ -24,7 +24,7 @@ Source-view preview preparation and batch asset publication still need work.
 
 See [progressive loading](progressive-loading.md) for the verified current
 behavior, required changes and compatibility boundaries, and
-[T54 through T58](tasks.md#t54-show-unlisted-content-before-independent-assets)
+[T55 through T59](tasks.md#t55-show-unlisted-content-before-independent-assets)
 for self-contained follow-ups. Completed features below describe their
 existing functionality; they do not imply that this loading pass is complete.
 
@@ -117,7 +117,7 @@ this repository once the steps before them have landed.
    files without changing them or keeping drafts, and nothing offers to
    create, import, rename, move or delete files. Selected-file-first opening
    with separate background offline preparation is a pending
-   [T55 follow-up](tasks.md#t55-open-the-requested-project-file-before-offline-preparation).
+   [T56 follow-up](tasks.md#t56-open-the-requested-project-file-before-offline-preparation).
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both, after
     comparing the two versions: a diff for text and D2 code, pictures and
@@ -253,7 +253,7 @@ requires no sign-in, and cancels on a changed bundle or known revocation.
   [unlisted file sharing](file-sharing.md) for release scope and checks.
   Loading still waits for its complete dependency bundle; progressive reading
   and revision-aware refresh are pending in
-  [T54](tasks.md#t54-show-unlisted-content-before-independent-assets).
+  [T55](tasks.md#t55-show-unlisted-content-before-independent-assets).
 
 - Share by email, including people without an account yet (done: the owner
   invites any email from the members dialog, through the `share` Edge

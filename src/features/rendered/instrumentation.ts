@@ -9,7 +9,7 @@
  * `{ from, to, insert, expected }` patches. Unrelated bytes (imports,
  * comments, formatting, other content) are never touched.
  */
-import { compile } from "@mdx-js/mdx";
+import { compile, type CompileOptions } from "@mdx-js/mdx";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import { visit } from "unist-util-visit";
@@ -488,15 +488,18 @@ const expressionLiteral = (raw: string): Record<string, unknown> => ({
 
 function markPlugin(
   source: string,
-  slots: ComponentSlot[],
+  // Read when the plugin runs: the projection's slots come from the same compile.
+  readSlots: () => ComponentSlot[],
   authoring: boolean,
 ) {
-  const unsupportedRanges = slots
-    .filter((slot) => !slot.supported && !slot.editableChildren)
-    .map((slot) => ({ from: slot.from, to: slot.to }));
   return () => (tree: unknown) => {
-    const map = collectBlocks(tree, source);
-    const blocks = authoring ? map.blocks : [];
+    const slots = readSlots();
+    const unsupportedRanges = slots
+      .filter((slot) => !slot.supported && !slot.editableChildren)
+      .map((slot) => ({ from: slot.from, to: slot.to }));
+    // Only authoring markers use the blocks, so only they walk the tree for them.
+    const map = authoring ? collectBlocks(tree, source) : undefined;
+    const blocks = map?.blocks ?? [];
     const blockNode = (block: (typeof blocks)[number]) => ({
       type: "mdxJsxTextElement",
       name: "SourceBlock",
@@ -534,7 +537,7 @@ function markPlugin(
     const root = tree as {
       children: Array<{ position?: { start: { offset?: number } } }>;
     };
-    if (authoring)
+    if (map)
       for (const leaf of map.richLeaves.filter(
         (entry) => entry.from === entry.to,
       )) {
@@ -705,6 +708,117 @@ function markPlugin(
   };
 }
 
+type Transform = (tree: unknown) => void;
+
+/**
+ * The preview compile's options. `capture` reads the parsed note where the
+ * instrumentation compiles read theirs: after the shared plugins (and, for
+ * `.md`, figure normalization), before a transform this file adds changes
+ * it. `own` wraps each of those transforms, so their errors can be told from
+ * the compiler's.
+ */
+function previewOptions(
+  source: string,
+  readSlots: () => ComponentSlot[],
+  format: DocumentFormat,
+  authoring: boolean,
+  projectAst: { before: Transform; after: Transform } | undefined,
+  catalog: readonly ComponentDefinition[],
+  capture?: Transform,
+  own: (transform: Transform) => Transform = (transform) => transform,
+): CompileOptions {
+  // The transforms this file adds, after the parser's own plugins.
+  const added: Array<() => Transform> = [
+    ...format === 'md' ? [(() => (tree: unknown) => {
+      const convert = (node: Record<string,unknown>, parent?: Record<string,unknown>) => {
+        if (node.type === 'html' && typeof node.value === 'string') {
+          const image = literalHtmlImage(node.value);
+          if (image) {
+            node.type = parent?.type === 'paragraph' ? 'mdxJsxTextElement' : 'mdxJsxFlowElement';
+            node.name = 'ProjectImage';
+            node.attributes = [
+              {type:'mdxJsxAttribute',name:'src',value:image.src},
+              {type:'mdxJsxAttribute',name:'alt',value:image.alt},
+            ];
+            node.children = [];
+            delete node.value;
+          }
+        }
+        for (const child of (node.children as Record<string,unknown>[] | undefined) ?? []) convert(child,node);
+      };
+      convert(tree as Record<string,unknown>);
+    })] : [],
+    (() => (tree: unknown) => {
+      visit(tree as never,(value:unknown) => {
+        const figure = value as Record<string,unknown>;
+        if (figure.name !== 'figure') return;
+        const children = figure.children as Record<string,unknown>[] | undefined;
+        const caption = children?.find(child => child.name === 'figcaption');
+        const content = caption?.children as Array<{position?:{start:{offset?:number};end:{offset?:number}}}> | undefined;
+        const from = content?.[0]?.position?.start.offset,to = content?.at(-1)?.position?.end.offset;
+        if (from === undefined || to === undefined) return;
+        const text = source.slice(from,to);
+        visit(figure as never,(value:unknown) => {
+          const image = value as Record<string,unknown>;
+          if (image.type === 'image' || image.type === 'imageReference') {
+            const data = (image.data ??= {}) as Record<string,unknown>;
+            data.hProperties = {...data.hProperties as object,'data-image-caption':text};
+          }
+          if (image.name === 'img' || image.name === 'ProjectImage')
+            (image.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageCaption',value:text});
+        });
+      });
+      visit(tree as never,(value: unknown) => {
+        const node = value as Record<string,unknown>;
+        const position = node.position as {start:{offset?:number}} | undefined;
+        const from = position?.start.offset;
+        if (from === undefined) return;
+        if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && node.name === 'Document') {
+          node.attributes = (node.attributes as Array<{name?:string}>).filter(attribute => attribute.name !== '__documentFrom');
+          (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__documentFrom',value:expressionLiteral(String(from))});
+        }
+        if (node.type === 'image' || node.type === 'imageReference') {
+          const data = (node.data ??= {}) as Record<string,unknown>;
+          data.hProperties = {...data.hProperties as object,'data-image-from':from};
+        }
+        if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && ['img','ProjectImage'].includes(String(node.name))) {
+          (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageFrom',value:expressionLiteral(String(from))});
+        }
+      });
+    }),
+    ...(projectAst ? [() => projectAst.before] : []),
+    markPlugin(source, readSlots, authoring),
+    (() => (tree: unknown) => {
+      const custom = new Set(catalog.filter(c => c.editableProps && !COMPONENT_CATALOG.some(b => b.name === c.name)).map(c => c.name));
+      const wrapped = new WeakSet<object>();
+      visit(tree as never, (value: unknown) => {
+        const n = value as Record<string, unknown>;
+        if (wrapped.has(n) || !custom.has(String(n.name))) return;
+        const child = {...n};
+        wrapped.add(child);
+        const attributes = n.attributes as Array<{name?: string}>;
+        n.name = 'CustomControls';
+        n.attributes = attributes.filter(a => a.name === '__slot');
+        if (n.type === 'mdxJsxTextElement') (n.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'inline',value:null});
+        n.children = [child];
+      });
+    }),
+    ...(projectAst ? [() => projectAst.after] : []),
+    workspaceImportPlugin,
+  ];
+  return {
+    outputFormat: "function-body",
+    format,
+    recmaPlugins: [() => own(projectImagesPlugin())],
+    remarkPlugins: [
+      ...SHARED_REMARK_PLUGINS,
+      ...format === 'md' ? [(() => normalizeImageFigures)] : [],
+      ...capture ? [() => capture] : [],
+      ...added.map((attach) => () => own(attach())),
+    ],
+  };
+}
+
 /**
  * Compile a document for the sandboxed preview. Parser and compiler run in
  * the parent; the emitted code is only ever evaluated inside the opaque-origin
@@ -725,90 +839,75 @@ export async function compileForPreview(
   },
   catalog: readonly ComponentDefinition[] = COMPONENT_CATALOG,
 ): Promise<string> {
-  const file = await compile(source, {
-    outputFormat: "function-body",
-    format,
-    recmaPlugins: [projectImagesPlugin],
-    remarkPlugins: [
-      ...SHARED_REMARK_PLUGINS,
-      ...format === 'md' ? [(() => normalizeImageFigures)] : [],
-      ...format === 'md' ? [(() => (tree: unknown) => {
-        const convert = (node: Record<string,unknown>, parent?: Record<string,unknown>) => {
-          if (node.type === 'html' && typeof node.value === 'string') {
-            const image = literalHtmlImage(node.value);
-            if (image) {
-              node.type = parent?.type === 'paragraph' ? 'mdxJsxTextElement' : 'mdxJsxFlowElement';
-              node.name = 'ProjectImage';
-              node.attributes = [
-                {type:'mdxJsxAttribute',name:'src',value:image.src},
-                {type:'mdxJsxAttribute',name:'alt',value:image.alt},
-              ];
-              node.children = [];
-              delete node.value;
-            }
-          }
-          for (const child of (node.children as Record<string,unknown>[] | undefined) ?? []) convert(child,node);
-        };
-        convert(tree as Record<string,unknown>);
-      })] : [],
-      (() => (tree: unknown) => {
-        visit(tree as never,(value:unknown) => {
-          const figure = value as Record<string,unknown>;
-          if (figure.name !== 'figure') return;
-          const children = figure.children as Record<string,unknown>[] | undefined;
-          const caption = children?.find(child => child.name === 'figcaption');
-          const content = caption?.children as Array<{position?:{start:{offset?:number};end:{offset?:number}}}> | undefined;
-          const from = content?.[0]?.position?.start.offset,to = content?.at(-1)?.position?.end.offset;
-          if (from === undefined || to === undefined) return;
-          const text = source.slice(from,to);
-          visit(figure as never,(value:unknown) => {
-            const image = value as Record<string,unknown>;
-            if (image.type === 'image' || image.type === 'imageReference') {
-              const data = (image.data ??= {}) as Record<string,unknown>;
-              data.hProperties = {...data.hProperties as object,'data-image-caption':text};
-            }
-            if (image.name === 'img' || image.name === 'ProjectImage')
-              (image.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageCaption',value:text});
-          });
-        });
-        visit(tree as never,(value: unknown) => {
-          const node = value as Record<string,unknown>;
-          const position = node.position as {start:{offset?:number}} | undefined;
-          const from = position?.start.offset;
-          if (from === undefined) return;
-          if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && node.name === 'Document') {
-            node.attributes = (node.attributes as Array<{name?:string}>).filter(attribute => attribute.name !== '__documentFrom');
-            (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__documentFrom',value:expressionLiteral(String(from))});
-          }
-          if (node.type === 'image' || node.type === 'imageReference') {
-            const data = (node.data ??= {}) as Record<string,unknown>;
-            data.hProperties = {...data.hProperties as object,'data-image-from':from};
-          }
-          if ((node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') && ['img','ProjectImage'].includes(String(node.name))) {
-            (node.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'__imageFrom',value:expressionLiteral(String(from))});
-          }
-        });
-      }),
-      ...(projectAst ? [(() => projectAst.before) as never] : []),
-      markPlugin(source, slots, authoring) as never,
-      (() => (tree: unknown) => {
-        const custom = new Set(catalog.filter(c => c.editableProps && !COMPONENT_CATALOG.some(b => b.name === c.name)).map(c => c.name));
-        const wrapped = new WeakSet<object>();
-        visit(tree as never, (value: unknown) => {
-          const n = value as Record<string, unknown>;
-          if (wrapped.has(n) || !custom.has(String(n.name))) return;
-          const child = {...n};
-          wrapped.add(child);
-          const attributes = n.attributes as Array<{name?: string}>;
-          n.name = 'CustomControls';
-          n.attributes = attributes.filter(a => a.name === '__slot');
-          if (n.type === 'mdxJsxTextElement') (n.attributes as unknown[]).push({type:'mdxJsxAttribute',name:'inline',value:null});
-          n.children = [child];
-        });
-      }) as never,
-      ...(projectAst ? [(() => projectAst.after) as never] : []),
-      workspaceImportPlugin,
-    ],
-  });
+  const file = await compile(
+    source,
+    previewOptions(source, () => slots, format, authoring, projectAst, catalog),
+  );
   return String(file.value);
+}
+
+/**
+ * The rendered editor's one compile of a note: its instrumentation and its
+ * preview code from a single parse. The instrumentation is read where
+ * instrumentMdxSource and instrumentMarkdownSource read theirs, so it is the
+ * same, and `hooks.before` gets it with the tree; the slots come from it.
+ * No authoring markers. The compiler's errors read as those functions' do
+ * ("Invalid MDX: ... (line:column)"), so Source can underline them, while an
+ * error from a transform this file adds (a projection that cannot map the
+ * note) keeps its own message, as compileForPreview's always have. When the
+ * compiler would refuse that note too, its error is the one given, as before.
+ */
+export async function compileProjection(
+  source: string,
+  format: DocumentFormat,
+  hooks: {
+    before: (tree: unknown, instrumentation: Instrumentation) => void;
+    after: (tree: unknown) => void;
+  },
+  catalog: readonly ComponentDefinition[] = COMPONENT_CATALOG,
+): Promise<{ code: string; instrumentation: Instrumentation }> {
+  const invalid = format === "md" ? "Invalid Markdown" : "Invalid MDX";
+  let instrumentation: Instrumentation | undefined;
+  let ownError = false;
+  const own = (transform: Transform): Transform => (tree) => {
+    try {
+      transform(tree);
+    } catch (error) {
+      ownError = true;
+      throw error;
+    }
+  };
+  const captured = (): Instrumentation => {
+    if (!instrumentation)
+      throw new Error(`${invalid}: the parser produced no document.`);
+    return instrumentation;
+  };
+  // Plain Markdown has no components: its leaves read the built-in catalog,
+  // as instrumentMarkdownSource's do.
+  const capture = own((tree) => {
+    instrumentation = collectMdx(tree, source, format === "md" ? COMPONENT_CATALOG : catalog);
+  });
+  let file: Awaited<ReturnType<typeof compile>>;
+  try {
+    file = await compile(
+      source,
+      previewOptions(
+        source,
+        () => captured().components,
+        format,
+        false,
+        { before: (tree) => hooks.before(tree, captured()), after: hooks.after },
+        catalog,
+        capture,
+        own,
+      ),
+    );
+  } catch (error) {
+    if (!ownError) throw new Error(`${invalid}: ${placedMessage(error)}`);
+    // Before, the instrumentation had a compile of its own, which ran first,
+    // so the compiler's error came first even from a later stage: look for one.
+    await (format === "md" ? instrumentMarkdownSource(source) : instrumentMdxSource(source, catalog));
+    throw error;
+  }
+  return { code: String(file.value), instrumentation: captured() };
 }

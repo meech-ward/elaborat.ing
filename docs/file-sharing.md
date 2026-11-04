@@ -59,7 +59,7 @@ bundle before loading its viewer. Dependency reads and image original/preview
 downloads are serial, and refresh rebuilds the bundle even when its revision
 has not changed. Drawing and image preparation also publishes results in batches.
 
-T54, T56, T57 and T58 in the [task queue](tasks.md) track this follow-up, waiting for
+T55, T57, T58 and T59 in the [task queue](tasks.md) track this follow-up, waiting for
 implementation approval. Prioritize readable content and independently ready
 assets while retaining token validation, revocation, source-authorized reads,
 full-resolution images, response limits and document network isolation.

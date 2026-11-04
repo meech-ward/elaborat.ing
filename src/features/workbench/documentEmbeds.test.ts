@@ -253,6 +253,46 @@ describe("shared embedded document sessions", () => {
     expect(pool.snapshot().files.map(file => file.path)).toEqual(["draft.md"]);
   });
 
+  test("a published state reaches its views and state readers, not the files and views snapshot", async () => {
+    const pool = new DocumentEmbedSessions(async path => file(path), () => {});
+    const view = attach(pool, "child.md");
+    await tick();
+    let snapshots = 0, states = 0;
+    pool.subscribe(() => snapshots++);
+    pool.subscribeStates(() => states++);
+    const before = pool.snapshot();
+    pool.publish("child.md", { dirty: false, pending: true });
+    pool.publish("child.md", { dirty: false, pending: true });
+    pool.publish("child.md", { dirty: true, pending: false });
+    expect(snapshots).toBe(0);
+    expect(pool.snapshot()).toBe(before);
+    expect(states).toBe(2);
+    expect(view.states.slice(-2)).toEqual([{ dirty: false, pending: true }, { dirty: true, pending: false }]);
+    expect(pool.descendantsDirty("parent.mdx")).toBe(true);
+    // Which views embed which file is part of the answer too.
+    view.detach();
+    expect(snapshots).toBe(1);
+    expect(states).toBe(3);
+    expect(pool.descendantsDirty("parent.mdx")).toBe(false);
+  });
+
+  test("a save of the tree and a move check include an edit just begun that the published state does not show yet", async () => {
+    const pool = new DocumentEmbedSessions(async path => file(path), () => {});
+    attach(pool, "child.md");
+    await tick();
+    const saved: string[] = [];
+    let pending = true;
+    pool.register("child.md", { run: () => {}, save: async () => { saved.push("child.md"); return true; }, sourceSnapshot: () => ({ text: "Draft", pending }) });
+    pool.publish("child.md", { dirty: false, pending: false });
+    pool.reconcilePaths([]);
+    expect(pool.snapshot().files.map(entry => entry.path)).toEqual(["child.md"]);
+    expect(await pool.saveTree("parent.mdx", false)).toEqual([]);
+    expect(saved).toEqual(["child.md"]);
+    pending = false;
+    pool.reconcilePaths([]);
+    expect(pool.snapshot().files).toEqual([]);
+  });
+
   test("forgetting a deleted file disables surviving references without deleting references", async () => {
     const pool = new DocumentEmbedSessions(async path => file(path), () => {});
     const view = attach(pool, "child.md");

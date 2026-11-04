@@ -78,11 +78,13 @@ test('pending covers the serialized queue and explicit rejection retains input w
   store.beginRender('session-test', 1); store.finishRender([region]);
   store.queue(body());
   expect(states.at(-1)).toBe(true);
-  store.settle(99, 'rejected', 'Unrelated reply.');
+  expect(store.settle(99, 'rejected', 'Unrelated reply.')).toBeNull();
   expect(states.at(-1)).toBe(true);
-  store.settle(1, 'rejected', 'Source refused the edit.');
+  // The settled edit comes back, so the text that sent it can send again.
+  expect(store.settle(1, 'rejected', 'Source refused the edit.')).toMatchObject({ ...body(), draftId: 1 });
   expect(states.at(-1)).toBe(false);
   expect(store.recovery[0].value).toBe('Body edited');
+  expect(store.settle(1, 'rejected', 'Source refused the edit.')).toBeNull();
 });
 
 test('a body acknowledgement releases an omitted title only when its fresh supported component matches', () => {

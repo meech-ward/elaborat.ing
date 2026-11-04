@@ -84,9 +84,11 @@ import {
   MAX_NOTION_SNAPSHOT_ENTRIES,
   matchNotionSnapshotEntries,
   staleChildMessage,
+  type ChildMessage,
   type CommentMarksMessage,
   type ConnectMessage,
   type FrameRect,
+  type RenderAckMessage,
   type RenderMessage,
   type ResourcesMessage,
   type ImagesMessage,
@@ -101,6 +103,7 @@ import {
 } from "../document/structural";
 import { insertBlock, insertImages } from "./insertBlock";
 import { imageFilesFromPayloads, type ImagePreview } from '../images/transport';
+import { MAX_IMAGE_PIXELS } from '../images/types';
 import type { ComponentEnvironment } from '../document/componentModules';
 import { encodeTextLeaf } from './instrumentation';
 import { componentValuePatch } from './componentValueEdit';
@@ -364,7 +367,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     onPlaceShown,
     apiRef,
   } = props;
-  const availableResourcePaths = useMemo(() => availableResourcePathsProp?.filter(path => path !== documentPath), [availableResourcePathsProp,documentPath]);
+  // The paths by what they are: a host can pass a new array of the same
+  // paths on every render, and the frame is sent them only when they change.
+  const availablePathsKey = availableResourcePathsProp ? JSON.stringify(availableResourcePathsProp.filter(path => path !== documentPath)) : null;
+  const availableResourcePaths = useMemo(() => availablePathsKey === null ? undefined : JSON.parse(availablePathsKey) as string[], [availablePathsKey]);
   const pendingOwners = useRef({ fluid: false, draft: false });
   const onPendingChange = useCallback((pending: boolean) => {
     pendingOwners.current.fluid = pending;
@@ -377,6 +383,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const snapshotAcknowledged = useRef<{port: MessagePort; projection: Exposed} | null>(null);
   const onPortMessage = useRef<((event: MessageEvent) => void) | null>(null);
   const session = useMemo(() => newSessionToken(), []);
+  // The frame's palette and reading preferences, as of the latest render,
+  // and what the frame on a port was last sent of them. A frame gets them
+  // the moment it has its port, before anything about the note, so the
+  // note's first paint is in them whenever its render comes.
+  const presentation = useRef({ appearance, reading, bottomInset });
+  useLayoutEffect(() => {
+    presentation.current = { appearance, reading, bottomInset };
+  });
+  const presented = useRef<{ port: MessagePort } & typeof presentation.current | null>(null);
+  const present = useCallback((port: MessagePort) => {
+    const { appearance, reading, bottomInset } = presentation.current;
+    const sent = presented.current?.port === port ? presented.current : null;
+    if (sent?.appearance !== appearance) port.postMessage({ kind: "appearance", session, ...appearance });
+    if (sent?.reading !== reading || sent.bottomInset !== bottomInset)
+      port.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
+    presented.current = { port, appearance, reading, bottomInset };
+  }, [session]);
   // The frame's document: the sandbox domain's page, or the `srcdoc`. Each
   // loads once and every render arrives on its port (sent again when the
   // frame says ready and gets one). A new key is a new iframe.
@@ -462,11 +485,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const latestDocument = useRef(document);
   const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,
     owner:externalFrame ?? null as Window | null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
-    host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl});
+    host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl,referencesKey:undefined as string | undefined});
   useLayoutEffect(() => {
     embedContext.current = {session,revision:document.revision,text:document.text,format:document.format,
       owner:externalFrame ?? frameRef.current?.contentWindow ?? null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
-      host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined};
+      host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined,
+      referencesKey:exposed?.text === document.text ? exposed.runtimeKey : undefined};
   });
   const embedController = useRef<DocumentEmbedController | null>(null);
   useEffect(() => {
@@ -543,6 +567,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       const channel = new MessageChannel();
       channel.port1.onmessage = (portEvent) => onPortMessage.current?.(portEvent);
       portRef.current = channel.port1;
+      // First on the port, before a render can go on it: the port is made
+      // here, outside React, and a render committed earlier can post on it
+      // before the next commit's effects run.
+      present(channel.port1);
       const connect: ConnectMessage = { kind: "connect" };
       frame.postMessage(connect, "*", [channel.port2]);
       frameReady.current = true;
@@ -575,7 +603,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       portRef.current?.close();
       portRef.current = null;
     };
-  }, [session,externalFrame]);
+  }, [session,externalFrame,present]);
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
   const [viewer, setViewer] = useState<{ path: string; svg: string } | null>(
@@ -762,6 +790,27 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
   }, [document.text, document.revision, document.format, documentId, componentEnvironment, componentError, componentPending, onError, onPendingChange, rejectPendingDraft]);
 
+  // Presentation updates do not re-evaluate MDX or replace in-progress edits.
+  // Each goes to a frame as soon as it has its port, and again only when it
+  // changes.
+  useEffect(() => {
+    const port = portRef.current;
+    if (port) present(port);
+  }, [appearance, reading, bottomInset, readyTick, present]);
+
+  // The note's image pixels as of the latest render, whose sizes a whole
+  // render carries (below).
+  const latestImages = useRef(imageResources);
+  useLayoutEffect(() => {
+    latestImages.current = imageResources;
+  });
+
+  // What the frame has of the note: the last whole render posted on its
+  // port. While that render's epoch, code and components hold, the answer to
+  // an edit goes as a `render-ack`, without what the frame keeps from it.
+  const frameHas = useRef<{ port: MessagePort; readyTick: number; epoch: number; runtimeKey: string; components: Exposed["components"] } | null>(null);
+  // The frame asked for the whole render again (`render-request`).
+  const [renderRequests, setRenderRequests] = useState(0);
   // Post compiled code to the child frame. The render message carries the
   // revision it was built from; the child echoes it back so stale output
   // can never overwrite a newer document. Reposted whenever the frame
@@ -770,6 +819,51 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (!exposed) return;
     const port = portRef.current;
     if (!port) return;
+    const slots: RenderMessage["slots"] = exposed.slots.map((slot) => ({
+      index: slot.index,
+      element: slot.element,
+      supported: slot.supported,
+      reason: slot.reason,
+      titleInsertion: slot.supported && ['Note', 'Warning', 'Important', 'ExampleCard'].includes(slot.element) && !slot.props.some(prop => prop.name === 'title')
+        ? { from: slot.from + slot.element.length + 1, to: slot.from + slot.element.length + 1, expected: '' as const } : undefined,
+      props: slot.props.map((prop) => ({
+        name: prop.name,
+        kind: prop.kind,
+        syntax: prop.syntax,
+        from: prop.from,
+        to: prop.to,
+        expected: prop.expected,
+        value: prop.value,
+        choices: exposed.components.catalog.find(c => c.name === slot.element)?.props.find(p => p.name === prop.name)?.choices?.slice(),
+      })),
+    }));
+    const islands = exposed.islands.map(({ id, from }) => ({ id, from }));
+    const authoring = {
+      format: exposed.format,
+      boundaries: exposed.instrumentation.boundaries,
+      blockBoundaries: blockBoundariesFor(exposed.mapping.roots, exposed.instrumentation.boundaries),
+      availableResourcePaths: [],
+      focus: exposed.focus,
+      editAck: exposed.editAck,
+    };
+    const has = frameHas.current;
+    if (
+      !exposed.reset && !exposed.nearest &&
+      has?.port === port && has.readyTick === readyTick && has.epoch === exposed.epoch &&
+      has.runtimeKey === exposed.runtimeKey && has.components === exposed.components
+    ) {
+      const ack: RenderAckMessage = {
+        kind: "render-ack",
+        session,
+        revision: exposed.revision,
+        slots,
+        readOnly: readOnly || undefined,
+        fluid: { epoch: exposed.epoch, operation: exposed.operation, runtimeKey: exposed.runtimeKey, islands },
+        authoring,
+      };
+      port.postMessage(ack);
+      return;
+    }
     const message: RenderMessage = {
       kind: "render",
       session,
@@ -781,52 +875,43 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         operation: exposed.operation,
         reset: exposed.reset,
         runtimeKey: exposed.runtimeKey,
+        scopeKey: exposed.scopeKey,
         doc: exposed.doc.toJSON(),
         selection: exposed.selection,
         nearest: !exposed.reset && exposed.nearest ? true : undefined,
-        islands: exposed.islands.map(({ id, from }) => ({ id, from })),
+        islands,
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
       readOnly: readOnly || undefined,
-      slots: exposed.slots.map((slot) => ({
-        index: slot.index,
-        element: slot.element,
-        supported: slot.supported,
-        reason: slot.reason,
-        titleInsertion: slot.supported && ['Note', 'Warning', 'Important', 'ExampleCard'].includes(slot.element) && !slot.props.some(prop => prop.name === 'title')
-          ? { from: slot.from + slot.element.length + 1, to: slot.from + slot.element.length + 1, expected: '' as const } : undefined,
-        props: slot.props.map((prop) => ({
-          name: prop.name,
-          kind: prop.kind,
-          syntax: prop.syntax,
-          from: prop.from,
-          to: prop.to,
-          expected: prop.expected,
-          value: prop.value,
-          choices: exposed.components.catalog.find(c => c.name === slot.element)?.props.find(p => p.name === prop.name)?.choices?.slice(),
-        })),
-      })),
+      slots,
       authoring: {
-        format: exposed.format,
-        boundaries: exposed.instrumentation.boundaries,
-        blockBoundaries: blockBoundariesFor(exposed.mapping.roots, exposed.instrumentation.boundaries),
-        availableResourcePaths: [],
+        ...authoring,
         components: exposed.components.catalog.map(({name,description}) => ({name,description})),
-        focus: exposed.focus,
-        editAck: exposed.editAck,
       },
     };
-    port.postMessage(message);
-  }, [exposed, readOnly, readyTick, session]);
+    // The size of each picture the workbench has pixels for (it read them for
+    // this note's images): a frame takes pixels only after a render, so its
+    // first paint keeps each picture's box from these, and nothing below a
+    // picture moves when its pixels come. The pixels themselves go only for
+    // the images the parser finds in the note (below).
+    const imageSizes = Object.entries(latestImages.current ?? {}).flatMap(([key, image]) =>
+      key.length > 0 && key.length <= 2048 && Number.isSafeInteger(image.width) && Number.isSafeInteger(image.height) &&
+      image.width > 0 && image.height > 0 && image.width <= MAX_IMAGE_PIXELS && image.height <= MAX_IMAGE_PIXELS
+        ? [{ key, width: image.width, height: image.height }] : []).slice(0, 1024);
+    port.postMessage(imageSizes.length ? { ...message, imageSizes } : message);
+    frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components };
+  }, [exposed, readOnly, readyTick, renderRequests, session]);
 
+  // The paths the note may embed, once the frame has a render (it takes
+  // them only after one), and again only when they change.
   useEffect(() => {
-    if (exposed)
+    if (hasExposed)
       portRef.current?.postMessage({
         kind: "authoring-paths",
         session,
         paths: availableResourcePaths ?? [],
       });
-  }, [availableResourcePaths, exposed, readyTick, session]);
+  }, [availableResourcePaths, hasExposed, readyTick, session]);
 
   // Resources follow the render (and every repost): the child keeps the
   // latest pixels for the current session/revision. The parent passes a
@@ -848,41 +933,59 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     port.postMessage(message);
   }, [hasExposed, readyTick, session, resources]);
 
+  // The image keys the note references, as the parser reads them: only these
+  // get pixels. They are kept by runtimeKey and path. Every image syntax (an
+  // image, an image reference and its definition, an HTML or JSX image) is
+  // an island or a block the projection keeps aside, whose source the
+  // runtimeKey hashes, and the modules' code is in its environment key, so
+  // the keys change only with it: typing prose parses nothing.
+  const imageKeys = useRef<{ runtimeKey: string; path: string; keys: Promise<ReadonlySet<string>> } | null>(null);
+  // The pixels the frame was last sent, and on which port: they go again
+  // only when a key or its pixels change.
+  const imagesSent = useRef<{ port: MessagePort; readyTick: number; images: ReadonlyMap<string, ImagePreview> } | null>(null);
   useEffect(() => {
     if (!exposed) return;
     let cancelled = false;
-    void import('../images/references').then(async ({parseImageReferences}) => {
-      const refs = await parseImageReferences(exposed.text,exposed.format,documentPath,
-        exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]));
-      if (cancelled || authority.current !== exposed) return;
-      const allowed = new Set(refs.map(ref => ref.key));
-      const entries = Object.entries(imageResources ?? {}).filter(([key]) => allowed.has(key));
+    let known = imageKeys.current;
+    if (known?.runtimeKey !== exposed.runtimeKey || known.path !== documentPath) {
+      const modules = exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]);
+      known = {
+        runtimeKey: exposed.runtimeKey,
+        path: documentPath,
+        keys: import('../images/references')
+          .then(({parseImageReferences}) => parseImageReferences(exposed.text,exposed.format,documentPath,modules))
+          .then(refs => new Set(refs.map(ref => ref.key))),
+      };
+      imageKeys.current = known;
+    }
+    const keys = known.keys;
+    keys.then(allowed => {
+      const port = portRef.current;
+      if (cancelled || authority.current !== exposed || !port) return;
+      const images = new Map(Object.entries(imageResources ?? {}).filter(([key,image]) => allowed.has(key) && image.dataURL.length <= 8 * 1024 * 1024));
+      const sent = imagesSent.current;
+      if (sent?.port === port && sent.readyTick === readyTick && sent.images.size === images.size &&
+        [...images].every(([key,image]) => sent.images.get(key) === image)) return;
+      imagesSent.current = {port,readyTick,images};
       let message:ImagesMessage = {kind:'images',session,revision:exposed.revision,reset:true,images:[]};
       let bytes = 0;
-      for (const [key,image] of entries) {
+      for (const [key,image] of images) {
         if (message.images.length && (bytes + image.dataURL.length > 8 * 1024 * 1024 || message.images.length >= 32)) {
-          portRef.current?.postMessage(message);
+          port.postMessage(message);
           message = {...message,reset:false,images:[]};
           bytes = 0;
         }
-        if (image.dataURL.length > 8 * 1024 * 1024) continue;
         message.images.push({key,...image});
         bytes += image.dataURL.length;
       }
-      portRef.current?.postMessage(message);
-    }).catch(error => {
+      port.postMessage(message);
+    }, error => {
+      // A note the parser could not read is read again next time.
+      if (imageKeys.current?.keys === keys) imageKeys.current = null;
       if (!cancelled) console.warn('Image references could not be resolved:',error);
     });
     return () => { cancelled = true; };
   }, [exposed,documentPath,imageResources,readyTick,session]);
-
-  // Presentation updates do not re-evaluate MDX or replace in-progress edits.
-  useEffect(() => {
-    if (exposed) portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
-  }, [appearance, exposed, readyTick, session]);
-  useEffect(() => {
-    if (exposed) portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
-  }, [reading, bottomInset, exposed, readyTick, session]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
   // other text wait for the next; meanwhile the frame's marks move with edits.
@@ -890,14 +993,25 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const commentSource = comments?.source;
   // The frame reports selections and headings while Comment shows, on or off.
   const commentReports = Boolean(comments?.canComment || comments?.offline);
+  // The marks the frame was last sent, on which port and in which epoch. The
+  // frame moves its marks with its own edits, so the same marks go again only
+  // to a new document there: a reset (a new epoch), the nearest form of an
+  // edit (which it takes in place of its own), or a new frame.
+  const marksSent = useRef<{ port: MessagePort; readyTick: number; epoch: number; marks: string } | null>(null);
   useEffect(() => {
     if (!exposed || commentMarks === undefined || commentSource !== exposed.text) return;
+    const port = portRef.current;
+    if (!port) return;
     const marks = commentMarks.flatMap((mark) => {
       const range = fluidRangeForSource(exposed, mark.from, mark.to);
       return range ? [{ id: mark.id, from: range.from, to: range.to, active: mark.active }] : [];
-    });
-    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks: marks.slice(0, 1000) };
-    portRef.current?.postMessage(message);
+    }).slice(0, 1000);
+    const key = JSON.stringify([commentReports, marks]);
+    const sent = marksSent.current;
+    if (!exposed.nearest && sent?.port === port && sent.readyTick === readyTick && sent.epoch === exposed.epoch && sent.marks === key) return;
+    marksSent.current = { port, readyTick, epoch: exposed.epoch, marks: key };
+    const message: CommentMarksMessage = { kind: "comments", session, revision: exposed.revision, canComment: commentReports, marks };
+    port.postMessage(message);
   }, [commentReports, commentMarks, commentSource, exposed, readyTick, session]);
 
   // Where the person was in Source (`place`): sent after the render of the
@@ -1006,21 +1120,40 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
   }, [apiRef, session]);
 
+  // What the port handler below checks the frame's messages against and acts
+  // with, as of the latest render: the document with the projection on screen
+  // for it, and the props. One object, written in one layout effect, so a
+  // message never meets a document from one render and a projection from
+  // another, and the handler stays the same across renders.
+  const handlerProps = {
+    document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+    onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
+    onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+  };
+  const latest = useRef(handlerProps);
+  useLayoutEffect(() => {
+    latest.current = handlerProps;
+  });
   useEffect(() => {
-    const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
-      // Keep a rebase lease only for the exact source result of this local
-      // rendered edit. External Source/Undo/Reload receives no such lease.
-      const next = applySourcePatches(document, revision, patches);
-      pendingLocalEdit.current = {
-        identity: documentId, revision: next.revision, text: next.text,
-        ack: { fromRevision: revision, draftId, patches: patches.map(({ from, to, insert }) => ({ from, to, insertLength: insert.length })) },
-      };
-      if (onPatch(revision, patches) === false) {
-        pendingLocalEdit.current = null;
-        throw new Error('Source rejected the rendered edit.');
-      }
-    };
     const onMessage = (event: MessageEvent) => {
+      const {
+        document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+        onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
+        onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+      } = latest.current;
+      const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
+        // Keep a rebase lease only for the exact source result of this local
+        // rendered edit. External Source/Undo/Reload receives no such lease.
+        const next = applySourcePatches(document, revision, patches);
+        pendingLocalEdit.current = {
+          identity: documentId, revision: next.revision, text: next.text,
+          ack: { fromRevision: revision, draftId, patches: patches.map(({ from, to, insert }) => ({ from, to, insertLength: insert.length })) },
+        };
+        if (onPatch(revision, patches) === false) {
+          pendingLocalEdit.current = null;
+          throw new Error('Source rejected the rendered edit.');
+        }
+      };
       // Only the current frame's port: anything still arriving on a replaced
       // frame's port is dropped silently. Forged edits from the KNOWN frame
       // still fail the checks below and are rejected visibly.
@@ -1031,9 +1164,19 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') return;
       if ((event.data as {kind?:unknown}|null)?.kind === 'document-embed-action') return;
       if ((event.data as {kind?:unknown;key?:unknown}|null)?.kind === 'shortcut' && (event.data as {key?:unknown}).key === 's') return;
-      const settle = (draftId: number | undefined, outcome: 'noop' | 'rejected', reason?: string) => {
-        if (draftId === undefined) return;
-        port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason });
+      // The answer to an edit that changed nothing or was refused: a draft
+      // hears of it by its id, and a text that sent its edit itself (a leaf
+      // or a block of the note) by the range or block the edit named, so it
+      // can send again. An accepted edit is answered by the next render.
+      const settle = (edit: ChildMessage, outcome: 'noop' | 'rejected', reason?: string) => {
+        if ('draftId' in edit && edit.draftId !== undefined) {
+          port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId: edit.draftId, outcome, reason });
+          return;
+        }
+        if (edit.kind === 'prose-edit' || edit.kind === 'prose-enter')
+          port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { from: edit.from, to: edit.to }, outcome });
+        else if (edit.kind === 'block-edit')
+          port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { block: edit.block }, outcome });
       };
       const checked = checkChildMessage({
         data: event.data,
@@ -1068,7 +1211,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         }
         if (parsed.success && parsed.data.session === session && 'draftId' in parsed.data) {
           const notice = notApplied(checked.error);
-          settle(parsed.data.draftId, 'rejected', notice);
+          settle(parsed.data, 'rejected', notice);
           setEditNotice(notice);
           return;
         }
@@ -1084,6 +1227,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (outcome === "lost-edit") {
             setEditNotice(REFUSAL.stale);
             if (message.kind === "fluid-transaction") resetFrame();
+            else settle(message, "rejected", REFUSAL.stale);
           }
           return;
         }
@@ -1141,6 +1285,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         onShown?.();
         return;
       }
+      if (message.kind === "render-request") {
+        // The frame could not place an ack: it is sent the whole render again.
+        frameHas.current = null;
+        setRenderRequests((count) => count + 1);
+        return;
+      }
       if (message.kind === "activity") {
         onActivity?.();
         return;
@@ -1183,12 +1333,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         }
         if (message.kind === "comment-markers") {
           const known = new Set(commenting?.marks.map((mark) => mark.id));
-          setCommentMarkers(
-            message.markers.flatMap((marker) => {
-              const ids = marker.ids.filter((id) => known.has(id));
-              return ids.length > 0 ? [{ ...marker, ids }] : [];
-            }),
-          );
+          const markers = message.markers.flatMap((marker) => {
+            const ids = marker.ids.filter((id) => known.has(id));
+            return ids.length > 0 ? [{ ...marker, ids }] : [];
+          });
+          // The frame says where the markers are for each revision of the
+          // note: while typing moves none of them, nothing here renders again.
+          setCommentMarkers((shown) => (JSON.stringify(shown) === JSON.stringify(markers) ? shown : markers));
           return;
         }
         if (message.kind === "comment-shortcut") {
@@ -1469,7 +1620,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       const refuse = (reason: string) => {
         const notice = notApplied(reason);
         setEditNotice(notice);
-        settle("draftId" in message ? message.draftId : undefined, "rejected", notice);
+        settle(message, "rejected", notice);
       };
       if (!exposed) {
         refuse("Rejected frame edit with no rendered document.");
@@ -1600,7 +1751,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
                     availableResourcePaths ?? [],
                     exposed.components.catalog,
                   );
-          if (result.patch.insert === result.patch.expected) return;
+          if (result.patch.insert === result.patch.expected) { settle(message, 'noop'); return; }
           pendingFocus.current =
             message.kind === "block-edit" && message.action === "commit"
               ? null
@@ -1624,11 +1775,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           const patch = componentValuePatch(document.text, exposed.slots, message);
           setEditNotice(null);
           if (patch) commitLocalEdit(message.revision, [patch], message.draftId);
-          else settle(message.draftId, 'noop');
+          else settle(message, 'noop');
         } catch (error) {
           const notice = notApplied(error instanceof Error ? error.message : String(error));
           setEditNotice(notice);
-          settle(message.draftId, 'rejected', notice);
+          settle(message, 'rejected', notice);
         }
         return;
       }
@@ -1645,10 +1796,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           (entry) => entry.from === message.from && entry.to === message.to,
         );
         if (!leaf) throw new Error('The editable source region is no longer available.');
+        // A text of the note's own Markdown in an island, such as a table's
+        // cell, that is one line of the note stays one: a line break written
+        // into it would end its line, and the table's row with it.
+        if (!leaf.literal && !leaf.code && /[\r\n]/.test(message.value) && !/[\r\n]/.test(leaf.expected))
+          throw new Error('Rejected a line break in text that is one line of the source.');
         const insert = message.shortcut && !leaf.code
           ? encodeInlineInput(message.value, document.format)
           : encodeTextLeaf(leaf, message.value, document.format);
-        if (insert === leaf.expected) { settle(message.draftId, 'noop'); return; }
+        if (insert === leaf.expected) { settle(message, 'noop'); return; }
         if (message.shortcut)
           pendingFocus.current = {
             revision: document.revision + 1,
@@ -1666,7 +1822,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         } catch (error) {
           const notice = notApplied(error instanceof Error ? error.message : String(error));
           setEditNotice(notice);
-          settle(message.draftId, 'rejected', notice);
+          settle(message, 'rejected', notice);
         }
         return;
       }
@@ -1674,7 +1830,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (!checkPropEdit(exposed.slots, message)) {
         throw new Error("Rejected prop edit outside the exposed literal ranges.");
       }
-      if (message.literal === message.expected) { settle(message.draftId, 'noop'); return; }
+      if (message.literal === message.expected) { settle(message, 'noop'); return; }
       commitLocalEdit(message.revision, [
         {
           from: message.from,
@@ -1687,40 +1843,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       } catch (error) {
         const notice = notApplied(error instanceof Error ? error.message : String(error));
         setEditNotice(notice);
-        settle(message.draftId, 'rejected', notice);
+        settle(message, 'rejected', notice);
       }
     };
     onPortMessage.current = onMessage;
     return () => {
       onPortMessage.current = null;
     };
-  }, [
-    allowedResourcePaths,
-    availableResourcePaths,
-    closeViewer,
-    document,
-    documentId,
-    documentPath,
-    document.format,
-    exposed,
-    onEditResource,
-    onInsertImage,
-    onReadImage,
-    onError,
-    onPatch,
-    onHistory,
-    onPendingChange,
-    onPendingChangeProp,
-    onShown,
-    onActivity,
-    resources,
-    readOnly,
-    session,
-    embedController,
-    externalFrame,
-    onContentHeight,
-    onSave,
-  ]);
+  }, [session]);
 
   // While the person types in the source, the frame keeps its last good render.
   const displayedError = useSettledError(
@@ -1734,8 +1864,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const railShown = Boolean(comments?.marks.some((mark) => mark.id !== "draft"));
   return (
     <div ref={rootRef} data-rendered-editor={document.format} style={externalFrame ? {display:'contents'} : { position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
-      {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
-      {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
+      {editNotice && externalFrame ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
+      {componentPending && externalFrame ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError && errorBanner ? (
         <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
           {displayedError} Source is unchanged and remains editable.
@@ -1752,7 +1882,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       ) : (frameDoc.hosted ? !frameDoc.ready : !srcdoc) ? (
         <LoadingLine label="Loading preview" className="shrink-0" />
       ) : null}
-      <div style={{ display: externalFrame || componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
+      {/* A note on screen stays while its components are made again (another
+      version of it came, or a module it imports changed); its next render
+      takes its place. */}
+      <div style={{ display: externalFrame || (componentPending && !hasExposed) || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
         {!externalFrame && !frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
           key={frameDoc.key}
           ref={frameRef}
@@ -1773,6 +1906,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             display: "block",
             // The sandbox domain's page shows once it says ready, never a browser's error page.
             visibility: frameDoc.hosted && !frameDoc.ready ? "hidden" : undefined,
+            // Until the frame has its appearance, its page is see-through and
+            // this, the editor's own panel colour, shows. The frame's page
+            // starts with no colour scheme, and a frame whose scheme differs
+            // from its element's is painted opaque by the browser, so the
+            // element has none either.
+            background: "var(--panel)",
+            colorScheme: "normal",
           }}
         /> : null}
         {railShown && (
@@ -1799,6 +1939,20 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           </div>
         )}
       </div>
+      {editNotice && !externalFrame ? (
+        // Over the bottom of the note (and above controls floating there), so
+        // showing it and taking it away moves nothing. Clicks go through to
+        // the note. Placed with inline styles, as the editor's own box is.
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: bottomInset, zIndex: 10, pointerEvents: "none" }}>
+          <Banner tone="warn" className="rounded-none">Edit not applied: {editNotice}</Banner>
+        </div>
+      ) : null}
+      {componentPending && !externalFrame ? (
+        // Along the top of the note, over it, so it moves nothing either.
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 10, pointerEvents: "none" }}>
+          <LoadingLine label="Loading components" />
+        </div>
+      ) : null}
       {active && offlineAction && (
         <CommentActionButton
           disabled

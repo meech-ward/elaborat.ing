@@ -49,7 +49,7 @@ parent MDX preparation can delay useful content, and an unlisted bundle
 resolves authorized child dependencies before the reader appears, even when
 their child views start collapsed.
 
-T54, T55, T57 and T58 in the [task queue](tasks.md) record the pending work,
+T55, T56, T58 and T59 in the [task queue](tasks.md) record the pending work,
 waiting for implementation approval. Preserve lazy expansion, retained
 drafts and collapse state, per-file source ownership and undo, custom-code
 consent, authorization, nesting limits and the isolated child protocol.

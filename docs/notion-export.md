@@ -63,7 +63,7 @@ Exporting a note does not package every ordinary linked project file.
 The exporter is implemented and starts from an explicit action. The app-wide
 [progressive loading requirement](progressive-loading.md) also applies to
 editor and temporary-preview preparation used by exports; related work is
-tracked as T56, T57 and T58 in the [task queue](tasks.md), waiting for
+tracked as T57, T58 and T59 in the [task queue](tasks.md), waiting for
 implementation approval. Browsing a note must not prepare an export or load
 its conversion engines in anticipation.
 

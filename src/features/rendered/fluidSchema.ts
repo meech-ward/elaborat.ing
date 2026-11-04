@@ -51,7 +51,9 @@ export const fluidSchema = new Schema({
     list_item: {
       // A task list item's box ("- [ ] step"): true, false, or null for none.
       attrs: { checked: { default: null } },
-      content: "paragraph block*",
+      // An item opens with its text, or with an island when a block such as
+      // a code block starts on the marker's line ("- ```js").
+      content: "(paragraph | object) block*",
       defining: true,
       // The editor draws a task item's box itself (fluidEditor.ts).
       toDOM: (node) =>
