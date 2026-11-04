@@ -1,6 +1,6 @@
-import { Selection, type Command, type Transaction } from "prosemirror-state";
-import type { Node as PMNode } from "prosemirror-model";
-import { canJoin, Mapping, ReplaceStep, type Step } from "prosemirror-transform";
+import { NodeSelection, Selection, type Command, type Transaction } from "prosemirror-state";
+import { Fragment, Slice, type Node as PMNode } from "prosemirror-model";
+import { canJoin, Mapping, ReplaceStep, Transform, type Step } from "prosemirror-transform";
 import { joinTextblockBackward, joinTextblockForward } from "prosemirror-commands";
 import { liftListItem } from "prosemirror-schema-list";
 import { fluidSchema } from "./fluidSchema";
@@ -179,6 +179,8 @@ export const toggleTask: Command = (state, dispatch) => {
  */
 export const hardBreak: Command = (state, dispatch) => {
   const { $from, $to } = state.selection;
+  // A selected island stays: a break in its place would replace it.
+  if (state.selection instanceof NodeSelection) return true;
   if ($from.parent.type !== fluidSchema.nodes.paragraph || !$from.sameParent($to)) return true;
   const after = $to.parent.textBetween($to.parentOffset, $to.parent.content.size, undefined, "\n");
   const spaces = /^[ \t]*/.exec(after)![0].length;
@@ -201,6 +203,34 @@ export function trailingBreak(steps: readonly Step[], doc: PMNode): ReplaceStep 
   if (step.slice.content.lastChild?.type !== fluidSchema.nodes.hard_break) return null;
   const $end = doc.resolve(step.from + step.slice.size);
   return $end.parent.type === fluidSchema.nodes.paragraph && $end.parentOffset === $end.parent.content.size ? step : null;
+}
+
+/**
+ * An edit that leaves a line break ending its paragraph without putting it
+ * there, as taking out the text typed after a break does. Markdown cannot
+ * write that break, so the parent gets the edit with the break taken out
+ * too (`steps`, one step making `base`), and the editor holds the break
+ * (`hold`, the step that puts it back on `base`) as if it was just typed.
+ * Null for any other edit.
+ */
+export function leftBreak(before: PMNode, after: PMNode): { steps: Step[]; base: PMNode; hold: ReplaceStep } | null {
+  const start = before.content.findDiffStart(after.content);
+  if (start === null) return null;
+  const end = before.content.findDiffEnd(after.content)!.b;
+  const breaks: number[] = [];
+  after.nodesBetween(Math.min(start, end), Math.max(start, end), (node, pos) => {
+    if (!node.isTextblock) return true;
+    if (node.lastChild?.type === fluidSchema.nodes.hard_break) breaks.push(pos + node.nodeSize - 2);
+    return false;
+  });
+  if (breaks.length !== 1) return null;
+  const [at] = breaks;
+  const base = new Transform(after).delete(at, at + 1).doc;
+  return {
+    steps: changeTo(before, base).steps,
+    base,
+    hold: new ReplaceStep(at, at, new Slice(Fragment.from(fluidSchema.nodes.hard_break.create()), 0, 0)),
+  };
 }
 
 /**

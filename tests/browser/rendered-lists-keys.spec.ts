@@ -219,6 +219,36 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("Backspace over the text after a line break keeps the break and writes the rest", async ({ page }) => {
+    let mark = await load(page, "- item one\n- item two\n", "md", /^item one$/)
+    await atEnd(page, "item one")
+    await press(page, "Shift+Enter")
+    await page.keyboard.type("x")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("- item one\\\nx\n- item two\n")
+    // The letter goes; the break stays on screen, and the note has neither.
+    mark = await revision(page)
+    await press(page, "Backspace")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("- item one\n- item two\n")
+    await expect(lineBreaks(page)).toHaveCount(1)
+    // Text typed there goes with the break again.
+    mark = await revision(page)
+    await page.keyboard.type("yz")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("- item one\\\nyz\n- item two\n")
+    // Both letters out at once, then the caret leaves: the break goes too.
+    mark = await revision(page)
+    await press(page, "Shift+ArrowLeft", 2)
+    await press(page, "Backspace")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("- item one\n- item two\n")
+    await press(page, "ArrowDown")
+    await expect(lineBreaks(page)).toHaveCount(0)
+    expect(await source(page)).toBe("- item one\n- item two\n")
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

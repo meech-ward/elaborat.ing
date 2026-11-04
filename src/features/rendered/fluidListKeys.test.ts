@@ -8,6 +8,7 @@ import {
   afterHeldBreak,
   emptyListBackspace,
   hardBreak,
+  leftBreak,
   liftItem,
   listItemBackspace,
   listItemDelete,
@@ -240,6 +241,40 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     // A break in the middle of a line is not held.
     const middle = await run("alpha bravo", "alpha", hardBreak, { format });
     expect(trailingBreak(middle!.tr.steps, middle!.tr.doc)).toBeNull();
+  });
+
+  test(`${format}: taking out the text after a line break holds the break and sends the rest, and text typed after it goes with the break`, async () => {
+    for (const [text, word, edit, sent, typed] of [
+      // Backspace over the one letter typed after Shift+Enter.
+      ["- a\\\nx\n- b", "x", (s: EditorState) => s.tr.delete(s.selection.from - 1, s.selection.from), "- a\n- b", "- a\\\ny\n- b"],
+      ["alpha\\\nxy", "xy", (s: EditorState) => s.tr.delete(s.selection.from - 2, s.selection.from), "alpha", "alpha\\\ny"],
+      // A word cut, and another typed over the line after the break.
+      ["> quoted\\\nmore", "more", (s: EditorState) => s.tr.delete(s.selection.from - 4, s.selection.from), "> quoted", "> quoted\\\ny"],
+    ] as const) {
+      const { projection, state } = await at(text, word, word.length, format);
+      const tr = edit(state);
+      // As the keys make it, the edit has no Markdown form.
+      await expect(prepareFluidTransaction({ text, revision: 1, format }, projection, tr.steps.map((step) => step.toJSON()))).rejects.toThrow();
+      const left = leftBreak(tr.before, tr.doc)!;
+      expect(left).not.toBeNull();
+      expect(left.steps).toHaveLength(1);
+      const accepted = await prepareFluidTransaction({ text, revision: 1, format }, projection, left.steps.map((step) => step.toJSON()));
+      expect(accepted.text).toBe(sent);
+      expect(accepted.projection.doc.eq(left.base)).toBe(true);
+      // The held break is the one on screen, and goes with the text typed after it.
+      expect(left.hold.apply(left.base).doc!.eq(tr.doc)).toBe(true);
+      const typing = state.apply(tr).tr.insertText("y");
+      const step = afterHeldBreak(left.hold, typing.steps) as Step;
+      expect(step).toBeInstanceOf(ReplaceStep);
+      const now = await projectFluidSource(accepted.text, format);
+      const next = await prepareFluidTransaction({ text: accepted.text, revision: 2, format }, now, [step.toJSON()]);
+      expect(next.text).toBe(typed);
+      expect(next.projection.doc.eq(typing.doc)).toBe(true);
+    }
+    // Other edits leave no break at the end of a line.
+    const { state } = await at("- a\\\nxy\n- b", "xy", 2, format);
+    const tr = state.tr.delete(state.selection.from - 1, state.selection.from);
+    expect(leftBreak(tr.before, tr.doc)).toBeNull();
   });
 
   test(`${format}: a burst of typing waiting to be sent goes as one step, written as the keys one by one write it`, async () => {

@@ -29,6 +29,7 @@ import {
   codeFenceOpener,
   emptyListBackspace,
   hardBreak,
+  leftBreak,
   liftItem,
   listItemBackspace,
   listItemDelete,
@@ -70,6 +71,8 @@ const selectionOf = (state: EditorState): Selection => ({
 type HeldBreak = { step: ReplaceStep; base: PMNode; doc: PMNode; before: Selection };
 /** Keys that move the caret or split or join text: they take a held break out first. */
 const LEAVING_KEYS = new Set(["Enter", "Delete", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** The caret where a held break (the step that puts it in) goes. */
+const atBreak = (step: ReplaceStep): Selection => ({ anchor: step.from, head: step.from });
 const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
 const shapes = new WeakMap<PMNode, string>();
 /** `blockShape`, once per document. */
@@ -717,6 +720,9 @@ export class FluidEditor {
     }
     let before = selectionOf(this.view.state);
     let steps: readonly Step[] = tr.steps;
+    // A sent line break the edit leaves at the end of its paragraph: the
+    // parent gets the edit without it, and the editor holds it.
+    let left: ReturnType<typeof leftBreak> = null;
     const held = this.heldBreak();
     if (held) {
       const next = afterHeldBreak(held.step, tr.steps);
@@ -750,6 +756,13 @@ export class FluidEditor {
         this.held = { step, base: tr.before, doc: this.view.state.doc, before };
         return;
       }
+      left = leftBreak(tr.before, tr.doc);
+      if (left && !left.steps.length) {
+        this.view.updateState(this.view.state.apply(tr));
+        this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold) };
+        return;
+      }
+      if (left) steps = left.steps;
     }
     const now = performance.now();
     if (now - this.lastInput > 750 || tr.getMeta("uiEvent") === "paste")
@@ -766,6 +779,10 @@ export class FluidEditor {
     );
     if (structural) this.group++;
     this.view.updateState(this.view.state.apply(tr));
+    // What the parent will have once this edit is written.
+    const doc = left ? left.base : this.view.state.doc;
+    const after = left ? atBreak(left.hold) : selectionOf(this.view.state);
+    if (left) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after };
     const group = `${this.epoch}:${this.group}`;
     const syntax: FluidSyntaxHint | undefined = tr.getMeta("fluidSyntax");
     // Typing while an earlier edit is being checked waits as one edit, so
@@ -778,17 +795,9 @@ export class FluidEditor {
         : null;
     if (last && merged) {
       last.steps = [merged.toJSON()];
-      last.after = selectionOf(this.view.state);
-      last.doc = this.view.state.doc;
-    } else
-      this.queue.push({
-        steps: json,
-        before,
-        after: selectionOf(this.view.state),
-        group,
-        syntax,
-        doc: this.view.state.doc,
-      });
+      last.after = after;
+      last.doc = doc;
+    } else this.queue.push({ steps: json, before, after, group, syntax, doc });
     if (!this.inFlight && this.queue.length === 1)
       this.post({ kind: "fluid-pending", pending: true });
     if (structural) this.group++;
