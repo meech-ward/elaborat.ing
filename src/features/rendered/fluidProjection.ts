@@ -1683,24 +1683,30 @@ function listItemsPatch(
       gaps[Math.min(Math.max(first - (oldLast > first ? 0 : 1), 0), gaps.length - 1)];
     const style = listStyle(projection, previous, context, near);
     const gap = near ?? (style.loose ? "\n\n" : "\n") + indent;
-    // In a list numbered 1, 2, 3, the items after the change count on: they
-    // are written too, each changing only its number.
+    const reindent = (source: string) =>
+      source
+        .split("\n")
+        .map((line, j) => (j && line ? indent + line : line))
+        .join("\n");
+    // In a list numbered 1, 2, 3, the items after the change count on: each
+    // is written again on its own, changing only its number (and the indent
+    // of its later lines when the number's width changes), so the gaps
+    // between them stay as written.
+    const counted: SourcePatch[] = [];
     if (next.type === fluidSchema.nodes.ordered_list && style.numbering === "sequential")
       for (let i = newLast; i < next.childCount; i++) {
-        const entry = projection.mapping.nodes.find((candidate) => candidate.node === next.child(i));
-        if (entry && Number(/^\d+/.exec(text.slice(entry.from))?.[0]) === next.attrs.order + i) continue;
-        oldLast = previous.childCount;
-        newLast = next.childCount;
-        break;
+        const entry = items[i - newLast + oldLast];
+        if (Number(/^\d+/.exec(text.slice(entry.from))?.[0]) === next.attrs.order + i) continue;
+        counted.push({
+          from: entry.from,
+          to: entry.to,
+          insert: reindent(itemSource(next, i, projection, hint, style)),
+          expected: text.slice(entry.from, entry.to),
+        });
       }
     const written: string[] = [];
     for (let i = first; i < newLast; i++) {
-      written.push(
-        itemSource(next, i, projection, hint, style)
-          .split("\n")
-          .map((line, j) => (j && line ? indent + line : line))
-          .join("\n"),
-      );
+      written.push(reindent(itemSource(next, i, projection, hint, style)));
     }
     let insert = written.join(gap),
       from: number,
@@ -1721,7 +1727,7 @@ function listItemsPatch(
       from = to = items[0].from;
       insert += gap;
     }
-    return { from, to, insert, expected: text.slice(from, to) };
+    return joined(text, [{ from, to, insert, expected: text.slice(from, to) }, ...counted]);
   }
 }
 

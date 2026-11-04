@@ -227,6 +227,12 @@ for (const format of ["md", "mdx"] as const) {
     })).text).toBe("1. onwo\n2. three\n3. four");
     // Delete at an item's end, as ProseMirror's joinForward makes it (b's paragraph moves into a).
     expect((await press(caret(await note("1. a\n2. b\n3. c", format), "a"), del)).text).toBe("1. a\n\n   b\n2. c");
+    // The items that count on keep the gaps between them as written.
+    expect((await press(caret(await note("1. a\n2. b\n\n3. c", format), "a"), enter)).text).toBe("1. a\n2. \n3. b\n\n4. c");
+    expect((await press(caret(await note("1. a\n2. b\n\n3. c", format), "a"), del)).text).toBe("1. a\n\n   b\n\n2. c");
+    expect((await press(caret(await note("1. a\n\n2. b\n3. c\n4. d", format), "a"), enter)).text).toBe("1. a\n\n2. \n\n3. b\n4. c\n5. d");
+    expect((await press(caret(await note("1. a\n2. b\n3. c\n\n4. d", format), "b"), tab)).text).toBe("1. a\n   1. b\n2. c\n\n3. d");
+    expect((await press(caret(await note("8. a\n9. b\n   - x\n\n10. c", format), "a"), enter)).text).toBe("8. a\n9. \n10. b\n    - x\n\n11. c");
   });
 
   test(`${format}: "1. " typed at the start of a bullet item makes it a numbered list under the item before`, async () => {
