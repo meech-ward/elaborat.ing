@@ -569,6 +569,7 @@ test("a transaction holds one step's projections at a time", async () => {
   // Of the earlier steps' projections, only the one the next step builds on
   // is left, give or take what the collector's stack scan keeps.
   expect(alive).toHaveLength(3);
+  expect(Math.min(...alive)).toBeGreaterThanOrEqual(1);
   expect(Math.max(...alive)).toBeLessThanOrEqual(3);
 });
 
