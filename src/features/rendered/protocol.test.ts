@@ -393,6 +393,24 @@ describe('checkParentMessage', () => {
       expect(checkParentMessage({ data: render(invalid), source: {}, activeSession: 'session-1a' }).ok).toBe(false);
   });
 
+  test("a render can carry the size of each picture whose pixels follow it: a key and a whole width and height, bounded", () => {
+    const render = (imageSizes: unknown) => ({ kind: 'render', session: 'session-1a', revision: 8, code: 'x', slots: [], imageSizes });
+    const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
+    const sizes = [{ key: 'images/red.png', width: 400, height: 300 }];
+    const checked = check(render(sizes), null);
+    expect(checked.ok && checked.message.kind === 'render' ? checked.message.imageSizes : null).toEqual(sizes);
+    expect(check(render(undefined)).ok).toBe(true);
+    for (const invalid of [
+      [{ key: '', width: 400, height: 300 }],
+      [{ key: 'k'.repeat(2049), width: 400, height: 300 }],
+      [{ key: 'a.png', width: 0, height: 300 }],
+      [{ key: 'a.png', width: 1.5, height: 300 }],
+      [{ key: 'a.png', width: 400 }],
+      [{ key: 'a.png', width: 400, height: 300, dataURL: 'data:image/png;base64,AA==' }],
+      Array.from({ length: 1025 }, (_, index) => ({ key: `${index}.png`, width: 1, height: 1 })),
+    ]) expect(check(render(invalid)).ok).toBe(false);
+  });
+
   test("an edit's ack is the render moved on by the edit: no document, code, modules or catalog, and never a session's first", () => {
     const ack = {
       kind: 'render-ack', session: 'session-1a', revision: 9,

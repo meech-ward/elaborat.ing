@@ -107,6 +107,7 @@ type PendingRender = {
   /** A whole render's (with its document), or an ack's (`render-ack`), which has none. */
   fluid?: RenderMessage["fluid"] | (RenderAckMessage["fluid"] & { scopeKey?: string });
   readOnly?: boolean;
+  imageSizes?: RenderMessage["imageSizes"];
 };
 
 let activeSession: string | null = null;
@@ -928,6 +929,9 @@ async function renderDocument(pending: PendingRender): Promise<void> {
     imageSizes.clear();
     for (const listener of imageListeners) listener();
   }
+  // Pictures whose pixels follow this render take their box at once.
+  for (const { key, width, height } of pending.imageSizes ?? [])
+    if (!imageSizes.has(key)) imageSizes.set(key, { width, height });
   activeSession = pending.session;
   activeRevision = pending.revision;
   setDocumentEmbedContext(pending.session, pending.revision);
@@ -1325,6 +1329,7 @@ function onParentMessage(event: MessageEvent): void {
     authoring: render.authoring,
     fluid: render.fluid,
     readOnly: render.readOnly,
+    imageSizes: render.imageSizes,
   });
 }
 

@@ -663,6 +663,57 @@ After paragraph.
     await expect(counts).toHaveText(["1", "1", "1"])
   })
 
+  test("a note's first paint keeps the box of each picture whose pixels are on their way", async ({ page }) => {
+    // In each note frame, what the page sends, in order; and the pixels it
+    // sends are held back until the test lets them through.
+    await page.addInitScript(() => {
+      if (window === window.top) return
+      const held: unknown[] = []
+      const said: string[] = []
+      const state = { holding: true, port: null as MessagePort | null }
+      Object.assign(window, {
+        __said: said,
+        __releaseImages: () => {
+          state.holding = false
+          for (const data of held.splice(0)) state.port?.dispatchEvent(new MessageEvent("message", { data }))
+        },
+      })
+      window.addEventListener("message", (event) => {
+        if (event.data?.kind !== "connect" || !event.ports[0]) return
+        state.port = event.ports[0]
+        state.port.addEventListener("message", (message) => {
+          said.push(String(message.data?.kind))
+          if (!state.holding || message.data?.kind !== "images") return
+          message.stopImmediatePropagation()
+          held.push(message.data)
+        })
+      })
+    })
+    await openHarness(page)
+    // A 400 by 300 picture's pixels, which the editor has as it opens the note.
+    const dataURL = await page.evaluate(() => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 400
+      canvas.height = 300
+      const context = canvas.getContext("2d")!
+      context.fillStyle = "#c33"
+      context.fillRect(0, 0, 400, 300)
+      return canvas.toDataURL("image/png")
+    })
+    await page.evaluate((dataURL) => window.renderedHarness.load("# Pictures\n\nAnchor paragraph.\n\n![A picture](pic.png)\n\nAfter paragraph.\n", "md", { "pic.png": { dataURL, width: 400, height: 300 } }), dataURL)
+    const after = paragraph(page, "After paragraph.")
+    await after.waitFor()
+    const frame = frameOf(page)
+    await expect(frame.locator(".project-image-missing")).toBeVisible()
+    // Nothing about the note came before its render, which the frame would not have taken.
+    const said = await frame.locator("body").evaluate(() => (window as unknown as { __said: string[] }).__said)
+    expect(said.slice(0, said.indexOf("render"))).toEqual(["appearance", "reading-preferences"])
+    const before = await after.evaluate((element) => element.getBoundingClientRect().top)
+    await frame.locator("body").evaluate(() => (window as unknown as { __releaseImages: () => void }).__releaseImages())
+    await expect(frame.locator(".project-image-open img")).toHaveJSProperty("naturalWidth", 400)
+    expect(Math.abs((await after.evaluate((element) => element.getBoundingClientRect().top)) - before)).toBeLessThanOrEqual(1)
+  })
+
   test("a frame that says it is ready in the middle of showing a new revision still has its palette before the note", async ({ page }) => {
     // The note frame's own ready is held back, and the page is given it in
     // the middle of the commit that shows the note's next revision (now and

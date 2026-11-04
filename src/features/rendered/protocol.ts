@@ -392,6 +392,16 @@ export const renderMessageSchema = z.object({
   fluid: z.optional(fluidRenderSchema),
   /** The person can read the document but not change it (a viewer, or an archived project). */
   readOnly: z.optional(z.boolean()),
+  /**
+   * The size of each picture of the note whose pixels follow (`images`,
+   * which a frame takes only after a render): the note's first paint keeps
+   * the picture's box, so nothing below it moves when they come.
+   */
+  imageSizes: z.optional(z.array(z.strictObject({
+    key: z.string().check(z.minLength(1), z.maxLength(2048)),
+    width: z.int().check(z.positive(), z.maximum(MAX_IMAGE_PIXELS)),
+    height: z.int().check(z.positive(), z.maximum(MAX_IMAGE_PIXELS)),
+  })).check(z.maxLength(1024))),
   authoring: z.optional(
     z.object({
       ...authoringFields,

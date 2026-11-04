@@ -103,6 +103,7 @@ import {
 } from "../document/structural";
 import { insertBlock, insertImages } from "./insertBlock";
 import { imageFilesFromPayloads, type ImagePreview } from '../images/transport';
+import { MAX_IMAGE_PIXELS } from '../images/types';
 import type { ComponentEnvironment } from '../document/componentModules';
 import { encodeTextLeaf } from './instrumentation';
 import { componentValuePatch } from './componentValueEdit';
@@ -796,6 +797,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (port) present(port);
   }, [appearance, reading, bottomInset, readyTick, present]);
 
+  // The note's image pixels as of the latest render, whose sizes a whole
+  // render carries (below).
+  const latestImages = useRef(imageResources);
+  useLayoutEffect(() => {
+    latestImages.current = imageResources;
+  });
+
   // What the frame has of the note: the last whole render posted on its
   // port. While that render's epoch, code and components hold, the answer to
   // an edit goes as a `render-ack`, without what the frame keeps from it.
@@ -880,7 +888,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         components: exposed.components.catalog.map(({name,description}) => ({name,description})),
       },
     };
-    port.postMessage(message);
+    // The size of each picture the workbench has pixels for (it read them for
+    // this note's images): a frame takes pixels only after a render, so its
+    // first paint keeps each picture's box from these, and nothing below a
+    // picture moves when its pixels come. The pixels themselves go only for
+    // the images the parser finds in the note (below).
+    const imageSizes = Object.entries(latestImages.current ?? {}).flatMap(([key, image]) =>
+      key.length > 0 && key.length <= 2048 && Number.isSafeInteger(image.width) && Number.isSafeInteger(image.height) &&
+      image.width > 0 && image.height > 0 && image.width <= MAX_IMAGE_PIXELS && image.height <= MAX_IMAGE_PIXELS
+        ? [{ key, width: image.width, height: image.height }] : []).slice(0, 1024);
+    port.postMessage(imageSizes.length ? { ...message, imageSizes } : message);
     frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components };
   }, [exposed, readOnly, readyTick, renderRequests, session]);
 

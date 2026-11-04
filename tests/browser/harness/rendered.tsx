@@ -120,7 +120,8 @@ function App() {
 }
 
 const harness = {
-  load: (text: string, format: DocumentSnapshot["format"]) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined, images: undefined }),
+  /** Open a note in a new editor, with the pixels its images have when it opens, if any. */
+  load: (text: string, format: DocumentSnapshot["format"], images?: Record<string, ImagePreview>) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined, images }),
   /** The person's edit in the Source view: the same note, so the same editor and frame. */
   edit: (text: string) => publish({ snapshot: store.setText(text) }),
   source: () => state.snapshot.text,
