@@ -485,11 +485,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const latestDocument = useRef(document);
   const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,
     owner:externalFrame ?? null as Window | null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
-    host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl});
+    host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl,referencesKey:undefined as string | undefined});
   useLayoutEffect(() => {
     embedContext.current = {session,revision:document.revision,text:document.text,format:document.format,
       owner:externalFrame ?? frameRef.current?.contentWindow ?? null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
-      host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined};
+      host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined,
+      referencesKey:exposed?.text === document.text ? exposed.runtimeKey : undefined};
   });
   const embedController = useRef<DocumentEmbedController | null>(null);
   useEffect(() => {

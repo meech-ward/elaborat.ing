@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { PREVIEW_SANDBOX, type ParentMessage } from '../features/rendered/protocol';
 import type { DocumentEmbedState } from '../features/rendered/documentEmbeds';
 import { postLinkToParent, postToParent } from './parentPort';
@@ -48,10 +48,26 @@ export function DocumentEmbed({src, title, defaultCollapsed = false, from}: {
   // The status and then the document fill one box, so nothing below moves
   // until the document says how tall it is.
   const height = state.height ?? (typeof src === 'string' ? heights.get(src) : undefined) ?? PLACEHOLDER_HEIGHT;
+  // The page drops a request made for a revision it has moved on from, so
+  // until it answers, the request goes again as the document's line moves.
+  // Once it has answered, the document stays open wherever its line goes.
+  const at = useRef(from);
+  useLayoutEffect(() => {
+    at.current = from;
+  });
+  const answered = entry !== EMPTY;
+  const asking = answered ? null : from;
+  const asked = useRef<string | null>(null);
   useEffect(() => {
-    if (!opened || !expanded || !valid) return;
-    postToParent({kind:'document-embed-open', ...context, id, path:src, from});
-  }, [opened, expanded, valid, id, src, from]);
+    if (!opened || !expanded || !valid) {
+      asked.current = null;
+      return;
+    }
+    const request = `${id}\0${src}`;
+    if (asked.current === request && answered) return;
+    asked.current = request;
+    postToParent({kind:'document-embed-open', ...context, id, path:src, from:at.current});
+  }, [opened, expanded, valid, id, src, asking, answered]);
   useEffect(() => () => {
     postToParent({kind:'document-embed-release', ...context, id});
     entries.delete(id);

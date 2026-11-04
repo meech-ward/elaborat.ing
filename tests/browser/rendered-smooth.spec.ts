@@ -714,6 +714,35 @@ After paragraph.
     expect(Math.abs((await after.evaluate((element) => element.getBoundingClientRect().top)) - before)).toBeLessThanOrEqual(1)
   })
 
+  test("typing before an open embedded document sends nothing about it, either way", async ({ page }) => {
+    await openHarness(page)
+    await page.evaluate(() => window.renderedHarness.setEmbeddedDocuments({ "notes/details.md": "# Details\n\nChild paragraph one.\n" }))
+    await load(page, 'Intro paragraph.\n\n<Document src="notes/details.md" title="Details" />\n\nClosing paragraph.\n', "mdx", "Intro paragraph.")
+    const frame = frameOf(page)
+    await expect(frame.frameLocator('iframe[title^="Embedded document"]').getByText("Child paragraph one.")).toBeVisible({ timeout: 20_000 })
+    await clickAt(page, "Intro paragraph.", 15)
+    await settled(page)
+    // From here on, what the page sends the note's frame, and what it sends the page.
+    await frame.locator("body").evaluate(() => {
+      const kinds: string[] = []
+      Object.assign(window, { __toFrame: kinds })
+      window.pagePort!.addEventListener("message", (event) => kinds.push(String(event.data?.kind)))
+    })
+    const from = await page.evaluate(() => window.frameMessages.length)
+    for (const key of "abcdef") {
+      await page.keyboard.type(key)
+      await page.waitForTimeout(80)
+    }
+    await expect.poll(() => source(page)).toContain("Intro paragraphabcdef.")
+    await settled(page)
+    await page.waitForTimeout(300)
+    const toPage = await page.evaluate((from) => window.frameMessages.slice(from).map((message) => message.kind), from)
+    const toFrame = await frame.locator("body").evaluate(() => (window as unknown as { __toFrame: string[] }).__toFrame)
+    expect(toPage.filter((kind) => kind.startsWith("document-embed"))).toEqual([])
+    expect(toFrame.filter((kind) => kind.startsWith("document-embed"))).toEqual([])
+    await expect(frame.frameLocator('iframe[title^="Embedded document"]').getByText("Child paragraph one.")).toBeVisible()
+  })
+
   test("a frame that says it is ready in the middle of showing a new revision still has its palette before the note", async ({ page }) => {
     // The note frame's own ready is held back, and the page is given it in
     // the middle of the commit that shows the note's next revision (now and
