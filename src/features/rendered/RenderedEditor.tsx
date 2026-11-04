@@ -1319,6 +1319,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         if (parsed.success && parsed.data.session === session && 'draftId' in parsed.data) {
           const notice = notApplied(checked.error);
           settle(parsed.data, 'rejected', notice);
+          if (!authority.current) keepNotice.current = true;
           setEditNotice(notice);
           return;
         }
@@ -1332,6 +1333,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (outcome === "status" && message.kind === "fluid-pending") onPendingChange?.(message.pending);
           if (outcome === "refusal" && message.kind === "edit-rejected") setEditNotice(message.message);
           if (outcome === "lost-edit") {
+            // Source invalidates authority before its replacement projection
+            // arrives. That projection must not erase this rejected edit's
+            // notice merely because there was no old tree left to reset.
+            if (!authority.current) keepNotice.current = true;
             setEditNotice(REFUSAL.stale);
             if (message.kind === "fluid-transaction") resetFrame();
             else settle(message, "rejected", REFUSAL.stale);

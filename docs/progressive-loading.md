@@ -238,9 +238,10 @@ Local verification completed on 2026-11-04:
   green focused reruns cover the same final behavior; the final affected
   loading, approval, embeds and rendering suite passed 146 of 146, and the
   corrected component suite passed 30 of 30. The final workbench, rendering,
-  loading and approval confirmation passed 194 of 194, including saved-copy
+  loading, editing and approval confirmation passed 252 of 252, including saved-copy
   caret/focus, module-rebuild focus and ready pixels, code-block drafts during
-  unrelated source changes, type-in and deferred hidden-tab adoption. Interrupted offline
+  unrelated source changes, retained stale-edit refusal notices, type-in and
+  deferred hidden-tab adoption. Interrupted offline
   recovery also passed three consecutive runs in each browser.
 
 This verifies local production fixtures and source contracts. The hosted
