@@ -7,6 +7,7 @@ Instructions for any agent or contributor. Read these first:
 3. [Roadmap](docs/roadmap.md): what is being built now, in order.
 4. [Platform notes](docs/platform-notes.md): Supabase and Cloudflare facts, with sources.
 5. [Task queue](docs/tasks.md): the open work, as self-contained tasks for contributors and agents.
+6. [Progressive loading](docs/progressive-loading.md): the app-wide loading requirement and pending follow-ups.
 
 Implemented behavior lives in code and tests. The docs above also describe
 planned work: never describe something as working until it is built and tested.
@@ -57,6 +58,11 @@ budget on purpose, run `bun run check:bundle --update` after the visualize
 build (it records today's sizes and sets each budget 5% above them) and commit
 `scripts/bundle-budget.json` with the reason.
 
+These budgets measure initial download size, not time until a document is
+readable. The pending loading work and its required verification are in
+[Progressive loading](docs/progressive-loading.md). A quick shell alone does
+not satisfy that requirement.
+
 Edge Functions run on Deno 2. In a function's folder, such as
 `supabase/functions/mcp-server/`, run `deno check .` and `deno test`.
 
@@ -67,6 +73,12 @@ regenerating migrations from `supabase/schemas/` would change
 
 ## Rules
 
+- **Load for the current view and show ready content immediately.** Prioritize
+  the requested file and publish ready assets without waiting for unrelated
+  files or offline preparation. Keep optional work in the background and
+  preserve access, source, revision and offline guarantees. Follow
+  [Progressive loading](docs/progressive-loading.md); its existing gaps remain
+  pending until implemented and tested.
 - **Canonical over clever.** Use the standard, current, documented way for each
   tool: Supabase's guides and library blocks, the official MCP SDK, standard
   OAuth, Cloudflare's documented config. If you think something needs an

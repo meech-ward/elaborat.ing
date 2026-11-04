@@ -92,6 +92,22 @@ insertion and reuse need no server; downloaded images and unsaved drafts
 survive reload. Sync does not advance its complete offline revision before
 current image bytes have been downloaded and checked.
 
+## Loading follow-up (pending)
+
+The image features above are implemented. The app-wide
+[progressive loading requirement](progressive-loading.md) remains pending:
+first project open waits for all image originals and previews, active
+Source-only notes can prepare image/drawing previews, and ready inline images
+wait for the rest of their preparation batch before being published.
+
+T55, T56 and T58 in the [task queue](tasks.md) track separating visible content
+from offline completion, preparing resources only for the view that needs
+them, and publishing each ready asset independently. These tasks wait for
+implementation approval. Preserve original resolution, immutable asset
+identity, decoded-pixel and payload limits, source-owned references and
+network isolation. Any future partial loading must keep offline readiness
+truthful rather than advancing the existing complete revision prematurely.
+
 ## Asset storage and saves
 
 The private bucket is `project-images`. Original and preview objects have

@@ -41,6 +41,20 @@ no-referrer. Unlisted means anyone can forward the link; it is not an
 invitation-only access policy. Disabling a link stops later access, but cannot
 erase copies a visitor already received.
 
+## Loading follow-up (pending)
+
+Sharing is implemented; the app-wide [progressive loading requirement](progressive-loading.md)
+is still pending here. The reader currently waits for the complete server
+bundle before loading its viewer. Dependency reads and image original/preview
+downloads are serial, and refresh rebuilds the bundle even when its revision
+has not changed. Drawing and image preparation also publishes results in batches.
+
+T54, T56, T57 and T58 in the [task queue](tasks.md) track this follow-up, waiting for
+implementation approval. Prioritize readable content and independently ready
+assets while retaining token validation, revocation, source-authorized reads,
+full-resolution images, response limits and document network isolation.
+Unlisted document responses must not become an offline cache as a shortcut.
+
 Regression coverage includes cross-project and dependency authorization,
 revocation/rotation, private-discussion separation, author privacy, comment
 ownership, sign-in draft return, rendering and accessibility in Chromium and

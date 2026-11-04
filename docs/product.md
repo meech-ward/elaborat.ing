@@ -22,10 +22,15 @@ Developer first, friendly for everyone.
   trades what they see against download size or effort, they win: someone who
   asks an agent for a diagram expects to see it in the chat, so the chat card
   lays out D2 diagrams itself, though that downloads about 6 MB the first time.
-- **The shell paints first.** The first download is only the page frame and
-  its loading states; every heavy engine (Monaco, Excalidraw, D2, charts, the
-  MDX compiler) loads when a screen needs it, behind a loading state. There is
-  no server-side rendering. `bun run check:bundle` holds each page to its budget.
+- **Load what is needed and show it as soon as it is ready.** The shell paints
+  first, then requested content and each ready asset should appear without
+  waiting for unrelated files or offline preparation. Heavy editors and
+  engines load for the view or action that needs them. The current app has
+  lazy modules and cached project opening, but first project open, unlisted
+  links and preview preparation still need updates. These are pending in
+  [Progressive loading](progressive-loading.md). There is no server-side
+  rendering; `bun run check:bundle` checks initial download size, not useful
+  content readiness.
 
 ## What it does
 

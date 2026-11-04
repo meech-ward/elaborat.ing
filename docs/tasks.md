@@ -29,6 +29,16 @@ maintainer turns the ones to fix into tasks here.
 
 ## Open
 
+The [app-wide progressive loading requirement](progressive-loading.md) applies
+to every surface, including existing features. Its implementation follow-ups
+are [T54](#t54-show-unlisted-content-before-independent-assets),
+[T55](#t55-open-the-requested-project-file-before-offline-preparation),
+[T56](#t56-prepare-only-visible-assets-and-publish-each-ready-result),
+[T57](#t57-show-safe-document-content-while-mdx-components-prepare), and
+[T58](#t58-check-time-until-useful-content-across-the-app).
+These are documented requirements, not implemented improvements. They remain
+**Waiting** until the maintainer authorizes implementation.
+
 ## T34: check live drawing and writing in Claude and ChatGPT, and answer three host questions
 
 **Status:** Waiting (a person signed in to Claude and to ChatGPT with the elaborat.ing connector)
@@ -376,14 +386,145 @@ Preserve drafts through sign-in, omit public email addresses and retain the
 existing renderer isolation. Verify database access boundaries, browser
 journeys, bundle budgets and the hosted flow, including the supplied script.
 
-## Small things
+## T54: show unlisted content before independent assets
 
-- A large unlisted file currently resolves dependencies and image bytes in
-  sequence, and its periodic refresh builds the whole bundle again. Batch
-  authorized dependency reads and check for an unchanged revision after
-  validating the active link, retaining revocation checks and byte limits.
-  The first hosted script check returned 35 files and 18 images in 12.8
-  seconds without an account; keep that case as the performance reference.
+**Status:** Waiting (maintainer authorization to implement progressive loading)
+
+Apply the [progressive loading requirement](progressive-loading.md) to
+`supabase/functions/file-share/handler.ts`, `dependencies.ts`,
+`src/features/file-sharing/PublicFilePage.tsx`, `publicRemote.ts`, and
+`SharedFileRenderer.tsx`. Today the browser waits for the complete bundle,
+then starts downloading the viewer. Dependency reads and image original and
+preview reads run in sequence; visible-page refresh reconstructs the bundle
+before checking whether its revision changed.
+
+Start the needed viewer code alongside the data request. Batch or use bounded
+concurrency for authorized independent reads, and let readable note content
+appear while unrelated assets prepare. Settle and document the response and
+revision contracts before changing them. Revalidate the active link before
+an unchanged-revision response, so refresh can avoid rebuilding and downloading
+an identical bundle while revocation still takes effect.
+
+Keep server-parsed dependency authorization, revision consistency, size and
+depth limits, full-resolution images, isolated components and private
+discussion boundaries. Do not introduce arbitrary client-selected file reads,
+reusable Storage links, document network access or offline caching of public
+document responses.
+
+Done when Chromium and Firefox tests delay individual authorized assets and
+prove that ready text and assets appear independently; failed or slow embeds
+stay local to their placeholders. Cover revocation and changes during loading,
+unchanged refresh, cancellation and navigation, and retain the existing
+dependency-access tests. Repeat the anonymous hosted script reference: the
+first recorded check returned 35 files and 18 images in 12.8 seconds. Later
+request timings and their limits are in [the loading audit](progressive-loading.md).
+
+## T55: open the requested project file before offline preparation
+
+**Status:** Waiting (maintainer authorization to implement progressive loading)
+
+Update `src/features/projects/ProjectPage.tsx`,
+`src/features/project-storage/library.ts`, `sync.ts`, `remote.ts`, and
+`fileStore.ts` so a first project open prioritizes the requested file and its
+needed metadata. Today `library.open` waits for a whole-project pull, including
+serial caching of every image original and preview, before mounting the
+workbench. A cached project already opens locally and syncs in the background;
+preserve that behavior.
+
+Separate file availability from the checkpoint that means a remote revision
+is complete offline. Document the partial-availability, image-readiness,
+revision and recovery contracts before implementation. Continue unrelated
+project download and offline preparation in the background with meaningful
+progress. A catalog refresh or another project's sync must not unnecessarily
+hold the requested file behind unrelated work.
+
+Done when cold-open tests with many unrelated files and delayed images show
+the selected available note first. Cover fresh and cached opens, offline
+restart during a partial download, interrupted downloads, quota failures,
+sign-out/account changes and lost access. Preserve immutable asset identity,
+complete-offline guarantees, drafts, Undo/Redo, version checks, conflict
+recovery and authoritative save/sync ordering. Do not mark unavailable bytes
+as ready offline to make the screen appear sooner.
+
+## T56: prepare only visible assets and publish each ready result
+
+**Status:** Waiting (maintainer authorization to implement progressive loading)
+
+Update the image and drawing resource effects in
+`src/features/workbench/WorkspaceSession.tsx` and
+`src/features/file-sharing/SharedFileRenderer.tsx`, then audit equivalent
+preview paths in embedded documents and chat cards. Active Source-only notes
+currently prepare preview assets, and serial image/drawing loops publish one
+resource map only after the whole batch finishes. Ordinary note text already
+does not wait for those resource loops.
+
+Gate interactive preview preparation on the surface that actually needs it.
+Keep inactive or initially collapsed content deferred. Publish each bounded,
+validated asset as it becomes ready, preserving other ready assets while an
+individual asset loads or fails. Keep useful placeholders, stable layout and
+scroll/selection positions. Export, insertion and explicit image inspection
+can request the assets their own operation needs.
+
+Done when Chromium and Firefox checks prove that a Source-only note starts no
+unrequested preview decoding or drawing engine, and that one slow asset does
+not hold back other completed assets. Cover switching views/tabs, collapse
+and re-expansion, source changes, replacements, cancellation and stale
+responses. Keep full-resolution image display, per-file and aggregate
+budgets, bounded concurrency, native drawing fidelity, offline behavior and
+document isolation. Add matching card checks if that audit changes the card.
+
+## T57: show safe document content while MDX components prepare
+
+**Status:** Waiting (maintainer authorization to implement progressive loading)
+
+Review `src/features/document/useComponentEnvironment.ts`,
+`src/features/rendered/RenderedEditor.tsx`, and the preview projection and
+component-island protocol. Initial MDX display currently waits for component
+preparation and whole-document projection before showing the frame. Record
+which dependencies truly determine ordinary document content and which can
+remain local placeholders while safe content becomes readable.
+
+Settle a safe preparation and editing contract before implementation. Never
+execute incomplete source, show content from the wrong document or revision,
+or make a pending component editable without authoritative source mapping.
+Preserve protected islands, render/session identity, exact Markdown writes,
+Undo/Redo, consent where required and the opaque frame's existing privileges.
+No account tokens, generic project reads or new network access enter a frame.
+
+Done when delayed or failed component modules leave independent safe content
+readable, with local pending/error states. Browser and protocol checks cover
+editing while preparation is pending, late results, navigation, nested
+documents, retry, invalid MDX and account/document changes. Show clearly when
+content truly cannot be interpreted without its pending dependency.
+
+## T58: check time until useful content across the app
+
+**Status:** Waiting (maintainer authorization to implement progressive loading)
+
+Extend performance verification beyond the initial JS/CSS budgets in
+`scripts/bundle-report.ts`. Those budgets must remain, but a fast shell or
+loading indicator does not prove that a requested note is readable. Add the
+corresponding readiness checks alongside T54 through T57. Define
+and measure useful milestones for project home, first and cached project
+open, Source, Rendered, unlisted reading, expanded embedded documents and
+chat-card views.
+
+Use deterministic browser fixtures with independently delayed data, images,
+drawings and component code. Assert readiness ordering and visible usable
+content, rather than fragile wall-clock sleeps. Add measured hosted baselines
+with request/transfer/render stages and justified budgets; distinguish cold
+and warm caches, online and offline starts, and device/network conditions.
+Do not treat a direct endpoint timing as a complete browser-load measurement.
+
+Done when Chromium and Firefox regressions fail for the former blocking
+patterns, and browser traces or reports explain what still holds each
+milestone. Include quota/error handling, cancellation, stale responses,
+revocation, permission changes, draft/selection preservation and isolation in
+the affected journeys. Record results without document contents, account
+credentials or unlisted tokens. Keep implementation status and observed
+limits true in the architecture, roadmap and feature docs.
+
+## Small things
 
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.

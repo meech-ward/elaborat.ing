@@ -54,6 +54,7 @@ In Claude Code:
 
 - [Product](docs/product.md): what it does and who it is for
 - [Architecture](docs/architecture.md): how it fits together, and the decisions behind it
+- [Progressive loading](docs/progressive-loading.md): required behavior, confirmed gaps and pending work
 - [Roadmap](docs/roadmap.md)
 - [Self-host guide](docs/self-host.md): from a new free Supabase project to a running copy
 - [Platform notes](docs/platform-notes.md): Supabase and Cloudflare details we rely on

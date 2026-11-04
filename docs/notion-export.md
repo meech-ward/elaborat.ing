@@ -45,6 +45,21 @@ Links to other project files keep an Elaborating project URL where one is
 available. Following such a link still requires the file's normal access.
 Exporting a note does not package every ordinary linked project file.
 
+## Loading follow-up (pending)
+
+The exporter is implemented and starts from an explicit action. The app-wide
+[progressive loading requirement](progressive-loading.md) also applies to
+editor and temporary-preview preparation used by exports; related work is
+tracked as T56, T57 and T58 in the [task queue](tasks.md), waiting for
+implementation approval. Browsing a note must not prepare an export or load
+its conversion engines in anticipation.
+
+An explicitly requested export still processes its complete frozen dependency
+graph. **Ready** and **Download ZIP** require a completed package and its
+conversion notes, including any missing or unsupported content. Progressive
+display must not expose a partial ZIP or weaken cancellation, original asset
+copies, custom-code consent, snapshot validation, isolation or quotas.
+
 ## Bounds and isolation
 
 The converter parses source without evaluating it. Captured component HTML

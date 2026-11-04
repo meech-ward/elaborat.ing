@@ -40,6 +40,20 @@ and edit the child, or open it separately from the header.
   Supported references participate in existing rename, move and delete
   planning. Computed paths cannot authorize file reads.
 
+## Loading follow-up (pending)
+
+Initially collapsed children already wait until expansion before attaching
+their editor. The app-wide [progressive loading requirement](progressive-loading.md)
+still needs to be applied around that behavior: first project download and
+parent MDX preparation can delay useful content, and an unlisted bundle
+resolves authorized child dependencies before the reader appears, even when
+their child views start collapsed.
+
+T54, T55, T57 and T58 in the [task queue](tasks.md) record the pending work,
+waiting for implementation approval. Preserve lazy expansion, retained
+drafts and collapse state, per-file source ownership and undo, custom-code
+consent, authorization, nesting limits and the isolated child protocol.
+
 ## Implementation sequence
 
 1. Add the static reference parser, component catalog entry, insertion and

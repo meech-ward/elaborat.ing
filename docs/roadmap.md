@@ -8,6 +8,26 @@ own free Supabase project for anything that touches the database. They need no
 access to the hosted project. Everything else needs the hosted project or the
 original prototype.
 
+## Cross-app requirement: progressive loading
+
+**Status:** requirements documented; implementation follow-ups are pending.
+The maintainer has requested documentation only, so T54 through T58 remain
+Waiting until implementation is authorized.
+
+Every app surface should prioritize the requested content, display each safe
+ready part immediately, and continue unrelated loading and offline preparation
+in the background. This includes the authenticated workbench, unlisted links,
+embedded documents and chat cards. Lazy engine imports and first-paint bundle
+budgets already exist, but they do not establish time until a document is
+readable. Initial project downloads, whole unlisted bundles, unnecessary
+Source-view preview preparation and batch asset publication still need work.
+
+See [progressive loading](progressive-loading.md) for the verified current
+behavior, required changes and compatibility boundaries, and
+[T54 through T58](tasks.md#t54-show-unlisted-content-before-independent-assets)
+for self-contained follow-ups. Completed features below describe their
+existing functionality; they do not imply that this loading pass is complete.
+
 ## Phase 1: agents can work on your projects
 
 Claude and ChatGPT connect to an account over OAuth and read and edit that
@@ -83,9 +103,11 @@ this repository once the steps before them have landed.
    registers one that keeps unsaved edits, step 10), and projects stay on the
    device under their account.
 9. **The app opens a user's projects at real URLs, online or offline (done).**
-   `/projects/<id>/<file path>`; projects download on first open, sync in the
-   background and on Realtime change signals, and wait on the device while
-   offline. Guarding navigation away from unsaved edits comes with the editor
+   `/projects/<id>/<file path>`; the first open currently waits for the whole
+   project download, including image originals and previews. Cached projects
+   open locally, sync in the background and on Realtime change signals, and
+   wait on the device while offline. Guarding navigation away from unsaved
+   edits comes with the editor
    (step 10). On the projects home, owners and editors archive and unarchive
    a project, and archived projects are listed in their own section and refuse
    changes. The owner can delete a project permanently after typing its title,
@@ -93,7 +115,9 @@ this repository once the steps before them have landed.
    commenter, and everyone in an archived project, sees it read-only: the page
    says why (with Unarchive for owners and editors), every editor shows its
    files without changing them or keeping drafts, and nothing offers to
-   create, import, rename, move or delete files.
+   create, import, rename, move or delete files. Selected-file-first opening
+   with separate background offline preparation is a pending
+   [T55 follow-up](tasks.md#t55-open-the-requested-project-file-before-offline-preparation).
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both, after
     comparing the two versions: a diff for text and D2 code, pictures and
@@ -217,6 +241,9 @@ included in this release.
   custom-code prompt, owner enable/copy/replace/disable controls and a
   separate discussion that requires sign-in only to post. See
   [unlisted file sharing](file-sharing.md) for release scope and checks.
+  Loading still waits for its complete dependency bundle; progressive reading
+  and revision-aware refresh are pending in
+  [T54](tasks.md#t54-show-unlisted-content-before-independent-assets).
 
 - Share by email, including people without an account yet (done: the owner
   invites any email from the members dialog, through the `share` Edge

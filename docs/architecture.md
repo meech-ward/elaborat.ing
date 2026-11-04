@@ -38,19 +38,36 @@ exactly the same database functions, as the user.
   throwaway local stack built from the migrations, so they never touch real
   data. Auth and function changes are then checked on the hosted project once
   the deploy workflow has applied them.
-- **An app, not a page; the shell first.** The app is separate from the data:
-  no server-side rendering, and it should feel like a desktop or mobile app.
-  The first download is only the shell: the page frame, its CSS and its
-  loading states, so something appears as fast as possible. Everything heavy
-  (Monaco, the drawing engine, the D2 engine, charts, code highlighting, the
-  MDX compiler) is a dynamic import, fetched only when the screen needs it,
-  behind a placeholder or loading state. A slow download after first paint is
-  fine; a slow first paint is not. `bun run report:bundle` measures it and CI
-  holds each page's first paint to a budget (`bun run check:bundle`). Every
-  change is judged by this.
+- **Load for the current view and show ready content immediately.** The app is
+  separate from the data, with no server-side rendering. The shell paints
+  first; requested content and each ready asset must follow without waiting
+  for unrelated work. Heavy engines belong behind dynamic imports for the
+  view or action that needs them. Background sync and offline preparation
+  must not gate usable content. `bun run check:bundle` protects first-paint
+  bytes; it does not prove useful-content readiness. The pending work and
+  required checks are under [Progressive loading](#progressive-loading).
 - **Source is authoritative.** For notes, the Markdown/MDX text is the
   document; rendered edits are checked, precise source edits. For drawings, the
   native Excalidraw scene is authoritative.
+
+## Progressive loading
+
+**Decision: loading is driven by the current view or explicit action, and
+safe, ready content is displayed immediately.** This is an app-wide
+requirement, including public links, the project workbench, embedded documents
+and chat views. The code already splits heavy modules and has a local fast
+path for cached projects. Other data and rendering gates do not yet meet
+the requirement.
+
+**Implementation status: pending.** First project open waits for complete
+offline data, public reading waits for a complete bundle, Source-only notes
+can prepare unseen previews, and assets are published in batches. Initial
+MDX display also waits for component preparation and projection. The current
+documentation task authorizes no implementation. See
+[Progressive loading](progressive-loading.md) for the dated audit, required
+behavior, storage and isolation constraints, and T54 through T58. Future
+changes must distinguish useful display from complete offline or export
+readiness and keep existing access and source guarantees.
 
 ## Supabase as code
 
@@ -227,6 +244,12 @@ further reads and comment writes, without granting or removing project
 membership. Already delivered content cannot be taken back. See
 [unlisted file sharing](file-sharing.md) for release scope and verification.
 
+**Loading follow-up, pending (T54):** the current route builds the whole
+authorized bundle before starting its viewer, and refresh repeats that work.
+The [progressive loading requirement](progressive-loading.md) calls for
+earlier useful display and bounded, overlapping reads while retaining active
+link checks, revision consistency and the existing public caching policy.
+
 **Decision: project categories are personal organization.** Flat categories
 and project associations belong to an account, and a project may be in several.
 They are separate from project content, revisions and access. Even a viewer
@@ -318,6 +341,12 @@ keeps mine, or keeps both. Two known gaps: swapping two files' paths offline
 cannot sync (the server takes each path once per save), and a pulled file can
 briefly sit under a local file of the same name until the push marks the path
 as taken.
+
+**Loading follow-up, pending (T55):** the first project open currently waits
+for a full pull and image caching before mounting the workbench. Selected-file
+availability must be separated from that complete offline checkpoint before
+the UI gate changes. Do not advance the current fully-ingested revision for a
+partial download. See [Progressive loading](progressive-loading.md).
 
 Stopped sync keeps a bounded, known-safe validation explanation alongside
 its category in the application's project state. The explanation is
@@ -478,8 +507,15 @@ project owner, capped at 256 MiB across projects, with atomic transfer checks.
 The image release refreshes the bundle baselines after measuring first paint.
 The project page grows from 321.9 to about 339 kB gzip for binary asset
 metadata, durable drafts, upload recovery and sync. Image viewers, comparisons,
-pickers and decoders load on demand; no heavy library enters first paint.
+pickers and decoders have separate lazy modules; no heavy library enters first paint.
 The recorded budgets retain the standard five percent margin.
+
+**Loading follow-up, pending (T55, T56):** first project open downloads every
+image original and preview before exposing files. Active Source-only notes
+can also prepare image and drawing previews, and ready note assets wait for
+the whole preparation batch. These gaps are separate from first-paint library
+splitting. Apply [Progressive loading](progressive-loading.md) without reducing
+image resolution, validation or complete offline guarantees.
 
 Crop and resize create new PNG copies and retain originals. Captions use
 portable figure syntax with inline Markdown. Description generation belongs
@@ -1807,6 +1843,13 @@ text with (`src/features/structured/native-font-ttf.json`, 220 kB) with the
 first compile; and the code that pictures a diagram in a note with the first
 such embed. All of it stays precached for offline use.
 
+**Loading follow-up, pending (T56, T57):** the view modules above are lazy,
+but active Source-only note effects can still prepare unseen image and drawing
+previews. MDX preparation gates initial prose display, and preview maps publish
+only after their whole loop finishes. Follow [Progressive loading](progressive-loading.md)
+with safe source-backed placeholders and preserve editing, selection, scroll
+and component state as content arrives.
+
 ## Frontend hosting
 
 **Decision:** Cloudflare Workers with static assets, which Cloudflare now
@@ -1896,6 +1939,12 @@ anywhere in the app shares Zod's core with the first paint, which then carries
 the parts only full Zod uses. Where people see Zod's messages, the code passes
 Zod's English messages itself, since `zod/mini` has none of its own.
 `bun run check:bundle` fails if full Zod reaches a first paint.
+
+**Loading follow-up, pending (T54 through T58):** fast shell paint and lazy
+chunks do not establish that the requested document is usable promptly. Overlap
+viewer loading with its authorized data where safe, prioritize useful content,
+and verify the remaining data and rendering gates described in
+[Progressive loading](progressive-loading.md).
 
 **Decision: the app in a chat's panel is `/embed`, framed only by origins
 the Worker names.** `/embed`, `/embed/` and `/embed/projects/<anything>` (GET
@@ -2049,6 +2098,14 @@ no network**: a reload, a new tab or a browser restart. A service worker from
 [vite-plugin-pwa](https://vite-pwa-org.netlify.app/), using Workbox's
 generated worker (`generateSW`), configured in `vite.config.ts`:
 
+**Loading follow-up, pending (T55, T58):** whole-project offline preparation
+currently gates first project display. Its complete revision guarantee must
+be preserved while selected-file availability is made independent. The
+whole-build precache below is intentional background work; registration after
+the load event alone does not prove it avoids contention with useful content.
+Measure that separately before changing offline policy. See
+[Progressive loading](progressive-loading.md).
+
 - **It precaches every file the build writes** except Cloudflare's `_headers`,
   Excalidraw's CJK drawing font, and Excalidraw's translations other than
   English (the app never sets its language, so they never load): every chunk
@@ -2057,8 +2114,9 @@ generated worker (`generateSW`), configured in `vite.config.ts`:
   preview frame (a chunk of its own, the `srcdoc` fallback: the sandbox
   domain's page is another origin's, which the worker never sees), the D2
   compiler, `.wasm` files and the license texts. That is about 44 MB, about 13 MB over the network. The worker registers once the page
-  has loaded, so this download does not compete with the page's own files,
-  and it finds those in the browser's cache. The largest chunks are over Workbox's 2 MiB default, so
+  has loaded and reuses files already in the browser's cache. Whether this
+  background download competes with still-pending useful content remains to
+  be measured under T58. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
   fails if any other shipped file is missing from the precache list.
   Navigations fall back to the cached `index.html`.
@@ -2138,6 +2196,14 @@ secrets supplied through `env()` from GitHub secrets.)
   them keeps forks from building against the hosted project.
 
 ## Testing
+
+**Required loading coverage, pending (T58):** retain bundle budgets and add
+checks for time to readable requested content. Delayed or failed unrelated
+assets must not hold back text or earlier ready assets, and idle Source-only
+views must not prepare unseen previews. Cover cold, cached and offline opens,
+public link revocation, navigation and stale work, with the storage and editing
+invariants in [Progressive loading](progressive-loading.md). These checks are
+not implemented by this documentation change.
 
 **Decision:** unit tests cover pure logic (the editor, anchoring, sync) and
 run with `bun run test`. Edge Function tests run on Deno with `deno test` in
