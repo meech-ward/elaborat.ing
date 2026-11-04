@@ -34,15 +34,24 @@ jobs:
         run: |
           test "$GITHUB_REF" = refs/heads/staging
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
       - uses: actions/setup-node@v5
         with:
           node-version: 24
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
+      # Supabase's setup action installs its own Bun. Restore the app's
+      # pinned version afterward, before reading this repository's lockfile.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Check the pinned application Bun version
+        run: |
+          bun --version
+          test "$(bun --version)" = 1.4.2 || {
+            echo "::error::Expected Bun 1.4.2 after Supabase CLI setup."
+            exit 1
+          }
       - run: bun install --frozen-lockfile
       # The staging launcher isolates dotenv files and build outputs. These
       # distinct variable names cannot fall back to production's repo values.
