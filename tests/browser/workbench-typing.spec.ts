@@ -313,6 +313,20 @@ test("a note's Source check is there as soon as its tab comes back, without movi
   expect(frames.filter((frame) => frame.source && !frame.banner)).toEqual([])
 })
 
+test("the first keystroke of a saved note, which starts its draft, refreshes the list once and reads no image again", async ({ page }) => {
+  await openProject(page, { "notes/pictures.md": "# Pictures\n\n![One](one.png)\n\n![Two](two.png)\n\n![Three](three.png)\n\nFirst paragraph.\n" }, "notes/pictures.md")
+  await expect(frameOf(page).getByText("First paragraph.", { exact: true })).toBeVisible()
+  await caretAfter(page, "First paragraph.")
+  // The note's images were looked for when it opened.
+  await page.waitForTimeout(800)
+  const counts = await typed(page, "X")
+  await expect(frameOf(page).getByText("First paragraph.X", { exact: true })).toBeVisible()
+  await expect(page.getByRole("tab", { name: /, unsaved changes$/ })).toBeVisible()
+  // One list read for the file's unsaved marker; no image read again.
+  expect(counts.transactions.readonly).toBe(1)
+  expect(counts.getAll).toBe(2)
+})
+
 test("typing beside an image reads it once, and gives the note frame the same pixels", async ({ page }) => {
   // A new project, a note and an upload before the typing.
   test.slow()

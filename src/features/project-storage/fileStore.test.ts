@@ -204,7 +204,7 @@ test("drafts made faster than they are written coalesce, and the latest text is 
   expect([(await store.read("a.md")).content, (await store.read("b.md")).content]).toEqual(["saveddrafts", "other"])
 })
 
-test("typing into a draft says it changed only draft text; a draft starting or ending, a new file and a save do not", async () => {
+test("typing into a draft says it changed only draft text; a draft starting or ending and a new file say they changed only unsaved edits; a save says files", async () => {
   const { store } = await setup()
   const changes: string[] = []
   store.subscribe((change) => changes.push(change))
@@ -216,15 +216,15 @@ test("typing into a draft says it changed only draft text; a draft starting or e
     return changes.join()
   }
   // The first edit gives the file its unsaved marker.
-  expect(await kept("a.md", "saved and", saved.revision)).toBe("files")
+  expect(await kept("a.md", "saved and", saved.revision)).toBe("unsaved")
   // More typing changes only the draft's text.
   expect(await kept("a.md", "saved and more", saved.revision)).toBe("drafts")
   expect(await kept("a.md", "saved and more", saved.revision)).toBe("drafts")
   // Typed back to the saved copy: the draft goes, and so does the marker.
-  expect(await kept("a.md", "saved", saved.revision)).toBe("files")
+  expect(await kept("a.md", "saved", saved.revision)).toBe("unsaved")
   expect(await kept("a.md", "saved", saved.revision)).toBe("drafts")
   // A file that is only a draft is new to the list.
-  expect(await kept("new.md", "brand new", null)).toBe("files")
+  expect(await kept("new.md", "brand new", null)).toBe("unsaved")
   expect(await kept("new.md", "brand new idea", null)).toBe("drafts")
   // Several files at once: one of them starting a draft is enough.
   changes.length = 0
@@ -232,7 +232,7 @@ test("typing into a draft says it changed only draft text; a draft starting or e
     { path: "new.md", content: "brand new ideas", baseRevision: null },
     { path: "a.md", content: "saved again", baseRevision: saved.revision },
   ])
-  expect(changes).toEqual(["files"])
+  expect(changes).toEqual(["unsaved"])
   changes.length = 0
   await store.write("a.md", "saved again", saved.revision)
   expect(changes).toEqual(["files"])

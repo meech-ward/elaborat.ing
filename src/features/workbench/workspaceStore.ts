@@ -35,7 +35,10 @@ export interface WorkspaceStore {
   /**
    * Called after any change on this device, including changes sync brings in.
    * "drafts" says it only replaced the unsaved text of files that already had
-   * unsaved edits (typing), which nothing in the file list shows.
+   * unsaved edits (typing), which nothing in the file list shows. "unsaved"
+   * says it only changed unsaved text too, but a file started or stopped
+   * having unsaved edits, or is new (the list's markers): no saved copy and
+   * no image changed. "files" is anything else.
    */
   subscribe(listener: (change: WorkspaceChange) => void): () => void
 }

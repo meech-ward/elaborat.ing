@@ -77,9 +77,12 @@ const isFileChange = (change: LocalChange): change is FileChange => change.kind 
 /**
  * What a committed local change touched. "drafts": only the unsaved text of
  * files that already had unsaved edits, so no file, folder, saved copy or
- * draft marker a file list shows changed. "files": anything else.
+ * draft marker a file list shows changed. "unsaved": only unsaved text too,
+ * but a file started or stopped having unsaved edits, or is new: a file list
+ * shows that, and still no saved copy and no image changed. "files":
+ * anything else.
  */
-export type FileStoreChange = "files" | "drafts"
+export type FileStoreChange = "files" | "unsaved" | "drafts"
 
 export class LocalConflictError extends Error {
   constructor(readonly path: string, readonly currentRevision: string, readonly currentContent: string | null) {
@@ -708,7 +711,7 @@ export class ProjectFileStore {
         }
       }
     })
-    this.emit(textOnly ? "drafts" : "files")
+    this.emit(textOnly ? "drafts" : "unsaved")
   }
 }
 

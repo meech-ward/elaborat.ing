@@ -191,8 +191,8 @@ export function WorkspaceSession({
     return savedComponentSource({ ...file, revision: file.revision ?? "" });
   }, [client]);
   // A module saved in another tab, or brought in by sync, rebuilds the components.
-  // Typing (a draft's new text) never changes a saved module.
-  const subscribeToStore = useCallback((listener: () => void) => client.subscribe((change) => { if (change !== "drafts") listener(); }), [client]);
+  // Unsaved edits (a draft's text, or a draft that starts or ends) never change a saved module.
+  const subscribeToStore = useCallback((listener: () => void) => client.subscribe((change) => { if (change === "files") listener(); }), [client]);
   // Typing in the rendered view compiles the note's components once it
   // pauses. An embedded copy of the note would wait for them to show the edit.
   const shownByRendered = renderedEdit === snapshot && embeddedViews.length === 0;
@@ -214,8 +214,8 @@ export function WorkspaceSession({
   const shownImages = useRef(NO_IMAGES);
   const imagesRead = useRef<{ client: WorkspaceStore; key: string; generation: number } | null>(null);
   const [imageGeneration, setImageGeneration] = useState(0);
-  // A draft's new text changes no image.
-  useEffect(() => client.subscribe((change) => { if (change !== "drafts") setImageGeneration(value => value + 1); }), [client]);
+  // Unsaved edits change no image: not a draft's text, nor a draft that starts or ends.
+  useEffect(() => client.subscribe((change) => { if (change === "files") setImageGeneration(value => value + 1); }), [client]);
   useEffect(() => {
     if (!imageRequest) return;
     let live = true;
