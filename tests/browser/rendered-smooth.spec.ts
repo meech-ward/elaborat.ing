@@ -567,6 +567,83 @@ After paragraph.
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
   })
 
+  test("a frame that says it is ready in the middle of showing a new revision still has its palette before the note", async ({ page }) => {
+    // The note frame's own ready is held back, and the page is given it in
+    // the middle of the commit that shows the note's next revision (now and
+    // then React commits once more between them): the render that commit
+    // posts is the first thing on the frame's new port unless the palette
+    // went first, when the port was made.
+    await page.addInitScript(() => {
+      if (window !== window.top) {
+        const said: string[] = []
+        Object.assign(window, { __said: said })
+        window.addEventListener("message", (event) => {
+          if (event.data?.kind === "connect") event.ports[0]?.addEventListener("message", (message) => said.push(`${message.data?.kind}:${message.data?.revision ?? ""}`))
+        })
+        return
+      }
+      const ready = { holding: false, held: null as MessageEvent | null, projected: false }
+      Object.assign(window, { __ready: ready })
+      window.addEventListener("rendered-harness-error", (event) => {
+        if (ready.holding && (event as CustomEvent).detail === null) ready.projected = true
+      })
+      window.addEventListener("message", (event) => {
+        if (!ready.holding || event.data?.kind !== "ready" || ready.held) return
+        event.stopImmediatePropagation()
+        ready.held = event
+      }, true)
+    })
+    await openHarness(page)
+    await page.evaluate(() => {
+      ;(window as unknown as { __ready: { holding: boolean } }).__ready.holding = true
+      window.renderedHarness.load("Lead paragraph here.\n\nTail paragraph here.\n", "md")
+    })
+    // The frame has said it is ready, and the editor has the note's first projection.
+    await page.waitForFunction(() => {
+      const ready = (window as unknown as { __ready: { held: unknown; projected: boolean } }).__ready
+      return ready.held !== null && ready.projected
+    })
+    await page.evaluate(() => {
+      const ready = (window as unknown as { __ready: { held: MessageEvent } }).__ready
+      const iframe = document.querySelector<HTMLIFrameElement>('iframe[title="Isolated document preview"]')!
+      const read = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentWindow")!.get!
+      // The editor says its projection of the edit worked just before the
+      // commit that shows it, and reads its frame's window in a layout
+      // effect of every commit.
+      let projected = false
+      window.addEventListener("rendered-harness-error", (event) => {
+        if ((event as CustomEvent).detail === null) projected = true
+      }, { once: true })
+      Object.defineProperty(iframe, "contentWindow", {
+        configurable: true,
+        get() {
+          if (projected) {
+            delete (iframe as { contentWindow?: unknown }).contentWindow
+            // The frame's ready, from the frame's window. Firefox takes no
+            // window of another origin for a new event, and dispatches the
+            // frame's own event again instead (Chromium keeps it stopped).
+            let event: MessageEvent
+            try {
+              event = new MessageEvent("message", { data: ready.held.data, source: ready.held.source })
+            } catch {
+              event = ready.held
+            }
+            window.dispatchEvent(event)
+          }
+          return read.call(this)
+        },
+      })
+      window.renderedHarness.edit("Lead paragraph here, edited.\n\nTail paragraph here.\n")
+    })
+    await paragraph(page, "Lead paragraph here, edited.").waitFor()
+    const edited = await page.evaluate(() => window.renderedHarness.state().revision)
+    const said = await frameOf(page).locator("body").evaluate(() => (window as unknown as { __said: string[] }).__said)
+    // The palette and reading preferences first, then the note: before
+    // them, the render that commit posted was the first thing the frame had.
+    expect(said.slice(0, 2)).toEqual(["appearance:", "reading-preferences:"])
+    expect(said).toContain(`render:${edited}`)
+  })
+
   test("a cell edit the note refuses shows the note's text again, and the cell can be edited again", async ({ page }) => {
     await openHarness(page)
     const note = (intro: string, cell: string) => `${intro}\n\n| A | B |\n| --- | --- |\n| ${cell} | 1 |\n\nMore text.\n`

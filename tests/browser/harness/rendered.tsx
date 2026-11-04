@@ -110,6 +110,8 @@ function App() {
         onError={(message) => {
           lastError = message
           setError(message)
+          // A test can tell when the editor said what its projection gave.
+          window.dispatchEvent(new CustomEvent("rendered-harness-error", { detail: message }))
         }}
       />
       <EmbeddedEditors />

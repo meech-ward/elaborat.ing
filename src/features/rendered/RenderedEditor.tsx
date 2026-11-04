@@ -382,6 +382,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const snapshotAcknowledged = useRef<{port: MessagePort; projection: Exposed} | null>(null);
   const onPortMessage = useRef<((event: MessageEvent) => void) | null>(null);
   const session = useMemo(() => newSessionToken(), []);
+  // The frame's palette and reading preferences, as of the latest render,
+  // and what the frame on a port was last sent of them. A frame gets them
+  // the moment it has its port, before anything about the note, so the
+  // note's first paint is in them whenever its render comes.
+  const presentation = useRef({ appearance, reading, bottomInset });
+  useLayoutEffect(() => {
+    presentation.current = { appearance, reading, bottomInset };
+  });
+  const presented = useRef<{ port: MessagePort } & typeof presentation.current | null>(null);
+  const present = useCallback((port: MessagePort) => {
+    const { appearance, reading, bottomInset } = presentation.current;
+    const sent = presented.current?.port === port ? presented.current : null;
+    if (sent?.appearance !== appearance) port.postMessage({ kind: "appearance", session, ...appearance });
+    if (sent?.reading !== reading || sent.bottomInset !== bottomInset)
+      port.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
+    presented.current = { port, appearance, reading, bottomInset };
+  }, [session]);
   // The frame's document: the sandbox domain's page, or the `srcdoc`. Each
   // loads once and every render arrives on its port (sent again when the
   // frame says ready and gets one). A new key is a new iframe.
@@ -548,6 +565,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       const channel = new MessageChannel();
       channel.port1.onmessage = (portEvent) => onPortMessage.current?.(portEvent);
       portRef.current = channel.port1;
+      // First on the port, before a render can go on it: the port is made
+      // here, outside React, and a render committed earlier can post on it
+      // before the next commit's effects run.
+      present(channel.port1);
       const connect: ConnectMessage = { kind: "connect" };
       frame.postMessage(connect, "*", [channel.port2]);
       frameReady.current = true;
@@ -580,7 +601,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       portRef.current?.close();
       portRef.current = null;
     };
-  }, [session,externalFrame]);
+  }, [session,externalFrame,present]);
   // Reading-only viewer: a snapshot of parent-generated pixels. Opening or
   // closing it never touches the projection, draft, or history above.
   const [viewer, setViewer] = useState<{ path: string; svg: string } | null>(
@@ -769,14 +790,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
 
   // Presentation updates do not re-evaluate MDX or replace in-progress edits.
   // Each goes to a frame as soon as it has its port, and again only when it
-  // changes. These effects come before the render's, so a new frame has them
-  // before its first render, and the note's first paint is already in them.
+  // changes.
   useEffect(() => {
-    portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
-  }, [appearance, readyTick, session]);
-  useEffect(() => {
-    portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
-  }, [reading, bottomInset, readyTick, session]);
+    const port = portRef.current;
+    if (port) present(port);
+  }, [appearance, reading, bottomInset, readyTick, present]);
 
   // What the frame has of the note: the last whole render posted on its
   // port. While that render's epoch, code and components hold, the answer to
