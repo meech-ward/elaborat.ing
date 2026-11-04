@@ -1810,7 +1810,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const railShown = Boolean(comments?.marks.some((mark) => mark.id !== "draft"));
   return (
     <div ref={rootRef} data-rendered-editor={document.format} style={externalFrame ? {display:'contents'} : { position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
-      {editNotice ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
+      {editNotice && externalFrame ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
       {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError && errorBanner ? (
         <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
@@ -1882,6 +1882,14 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           </div>
         )}
       </div>
+      {editNotice && !externalFrame ? (
+        // Over the bottom of the note (and above controls floating there), so
+        // showing it and taking it away moves nothing. Clicks go through to
+        // the note. Placed with inline styles, as the editor's own box is.
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: bottomInset, zIndex: 10, pointerEvents: "none" }}>
+          <Banner tone="warn" className="rounded-none">Edit not applied: {editNotice}</Banner>
+        </div>
+      ) : null}
       {active && offlineAction && (
         <CommentActionButton
           disabled
