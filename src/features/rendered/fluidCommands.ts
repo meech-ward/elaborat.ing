@@ -246,11 +246,14 @@ export function afterHeldBreak(held: ReplaceStep, steps: readonly Step[]): Repla
 }
 
 /** Two edits made one after the other, such as letters typed or deleted in
- * a row, as one step (ReplaceStep.merge); null when they are not one. */
+ * a row, as one step (ReplaceStep.merge); null when they are not one. A "#"
+ * is sent alone: the parent escapes it only at the start of what an edit
+ * inserts, and a heading's last "#" after a space would close the heading. */
 export function typedTogether(first: readonly Step[], next: readonly Step[]): Step | null {
-  return first.length === 1 && next.length === 1 && first[0] instanceof ReplaceStep && next[0] instanceof ReplaceStep
-    ? first[0].merge(next[0])
-    : null;
+  if (first.length !== 1 || next.length !== 1 || !(first[0] instanceof ReplaceStep) || !(next[0] instanceof ReplaceStep))
+    return null;
+  const hash = (step: ReplaceStep) => step.slice.content.textBetween(0, step.slice.content.size, undefined, " ").includes("#");
+  return hash(first[0]) || hash(next[0]) ? null : first[0].merge(next[0]);
 }
 
 /**

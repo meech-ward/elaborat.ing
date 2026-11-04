@@ -294,22 +294,33 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       ["Start **bold** end.\n\nSecond.", "Second", " and more words, typed fast."],
       ["- First item\n- Second item", "First item", " with *stars* and _marks_"],
       ["A paragraph to finish", "finish", ". Then 1. 2. 3. # not a heading"],
+      // A heading's closing "#" is written escaped only when sent alone.
+      ["# Head", "Head", " more #"],
+      ["## Head", "Head", " issue ## a #"],
     ]) {
       const { projection, state } = await at(text, word, word.length, format);
       let current = state;
       let sequential = { text, projection };
-      let merged: Step | null = null;
+      // What the frame sends: each key merged into the one before where it can be.
+      const sends: Step[] = [];
       for (const character of burst) {
         const tr = current.tr.insertText(character);
         const steps = tr.steps;
-        merged = merged ? typedTogether([merged], steps) : steps[0];
-        expect(merged).not.toBeNull();
+        const merged = sends.length ? typedTogether([sends.at(-1)!], steps) : null;
+        if (merged) sends[sends.length - 1] = merged;
+        else sends.push(steps[0]);
         const next = await prepareFluidTransaction({ text: sequential.text, revision: 1, format }, sequential.projection, steps.map((step) => step.toJSON()));
         sequential = { text: next.text, projection: next.projection };
         current = current.apply(tr);
       }
+      // Each "#" goes alone, and the rest in as few steps as that leaves.
+      const typed = sends.map((step) => (step as ReplaceStep).slice.content.textBetween(0, (step as ReplaceStep).slice.content.size));
+      expect(typed.join("")).toBe(burst);
+      expect(typed.filter((part) => part.includes("#") && part !== "#")).toEqual([]);
+      expect(typed.length).toBe(burst.split(/#/).filter(Boolean).length + [...burst].filter((character) => character === "#").length);
       // The same document, every character in order; the source may escape less.
-      const once = await prepareFluidTransaction({ text, revision: 1, format }, projection, [merged!.toJSON()]);
+      let once = { text, projection, nearest: null as unknown };
+      for (const step of sends) once = await prepareFluidTransaction({ text: once.text, revision: 1, format }, once.projection, [step.toJSON()]);
       expect(once.projection.doc.eq(current.doc)).toBe(true);
       expect(once.projection.doc.eq(sequential.projection.doc)).toBe(true);
       expect(once.nearest).toBeNull();
