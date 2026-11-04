@@ -72,6 +72,18 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       expect(lifted.caret.parent.textContent).toBe("alpha");
       expect(lifted.caret.parentOffset).toBe(5);
     }
+    // Another bullet in the nested list, or after a list of another bullet:
+    // the items after it join the nested list and take its bullet.
+    for (const [text, word, expected] of [
+      ["- alpha\n  * beta\n- gamma", "alpha", "alpha\n\n* beta\n* gamma"],
+      ["* alpha\n  - beta\n* gamma", "alpha", "alpha\n\n- beta\n- gamma"],
+      ["- a\n\n* b\n  - c\n* d", "b", "- a\n\nb\n\n- c\n- d"],
+    ] as const) {
+      const lifted = await written(text, word, shiftTab, options);
+      expect(lifted.text).toBe(expected);
+      expect(lifted.steps).toBe(1);
+      expect(lifted.caret.parent.textContent).toBe(word);
+    }
     // A nested item with its own nested list and an item after it: the
     // standard lift's first step has two lists side by side in the item.
     const deeper = await run("- a\n  - b\n    - c\n  - d\n- e", "b", liftListItem(fluidSchema.nodes.list_item), options);
@@ -134,6 +146,19 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     }
     // Three levels: the innermost first item moves out one level.
     expect((await written("- a\n  - b\n    - c\n- d", "c", backspace, options)).text).toBe("- a\n  - b\n  - c\n- d");
+    // Lists of two bullets: the item takes the bullet of the list it moves into.
+    for (const [text, expected] of [
+      ["- a\n  * b\n- c", "- a\n- b\n- c"],
+      ["* a\n  - b\n* c", "* a\n* b\n* c"],
+      ["- a\n  + b\n  + bb\n- c", "- a\n- b\n  + bb\n- c"],
+      ["- [ ] a\n  * [ ] b\n- [ ] c", "- [ ] a\n- [ ] b\n- [ ] c"],
+    ] as const) {
+      const lifted = await written(text, "b", backspace, options);
+      expect(lifted.text).toBe(expected);
+      expect(lifted.steps).toBe(1);
+      expect(lifted.caret.parent.textContent).toBe("b");
+      expect(lifted.caret.parentOffset).toBe(0);
+    }
     // Ordered lists keep the standard Backspace for now: moved out, their
     // items cannot be written yet.
     expect((await written("- a\n  1. b\n- d", "b", backspace, options)).text).toBe("- a\n\n  b\n- d");
