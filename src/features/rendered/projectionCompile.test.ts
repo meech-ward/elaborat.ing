@@ -5,7 +5,8 @@
  * instrumentMarkdownSource) and then compiled again for the preview
  * (compileForPreview). These tests run projectFluidSource both ways, through
  * its own projection hooks, and require the same result: the same document,
- * mapping, slots, blocks, islands, runtime key and code, or the same error.
+ * mapping, slots, blocks, islands, runtime and scope keys and code, or the
+ * same error.
  */
 import { afterAll, expect, spyOn, test } from "bun:test";
 import { unified } from "unified";
@@ -94,6 +95,7 @@ function shape(projection: FluidProjection) {
     islands: projection.islands,
     instrumentation: projection.instrumentation,
     runtimeKey: projection.runtimeKey,
+    scopeKey: projection.scopeKey,
     leaves: projection.mapping.leaves.map((leaf) => ({
       ...leaf,
       frames: leaf.frames.map((frame) => ({ ...frame, mark: frame.mark.toJSON() })),
