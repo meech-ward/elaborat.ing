@@ -365,6 +365,25 @@ test.describe("in the harness", () => {
     await expect.poll(() => source(page)).toBe("alphabravo\n")
   })
 
+  test("a line break held at the end of a line stays when the edit before it is written in another form", async ({ page }) => {
+    await load(page, "alpha\n\nbravo\n", "md", /^alpha$/)
+    await page.evaluate(() => {
+      window.transactionGate.enabled = true
+    })
+    // A space at the start of a paragraph, which Markdown drops: the parent
+    // writes that edit as no change and the frame takes its form.
+    await clickAt(page, "bravo", 0)
+    await page.keyboard.type(" ")
+    await page.waitForFunction(() => window.transactionGate.held.length > 0)
+    await atEnd(page, "alpha")
+    await press(page, "Shift+Enter")
+    expect(await releaseTransactions(page)).toBe(1)
+    await settled(page)
+    await expect(lineBreaks(page)).toHaveCount(1)
+    await page.keyboard.type("x")
+    await expect.poll(() => source(page)).toBe("alpha\\\nx\n\nbravo\n")
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

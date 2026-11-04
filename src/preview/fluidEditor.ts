@@ -22,7 +22,7 @@ import {
   wrapInList,
 } from "prosemirror-schema-list";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
-import { Step, type Mapping, type ReplaceStep } from "prosemirror-transform";
+import { ReplaceStep, Step, type Mapping } from "prosemirror-transform";
 import { fluidSchema } from "../features/rendered/fluidSchema";
 import {
   afterHeldBreak,
@@ -898,7 +898,9 @@ export class FluidEditor {
    * parent has not been sent yet, so none is lost.
    */
   private takeNearest(doc: PMNode, sent: PMNode) {
-    // The edits the parent has do not include a held line break.
+    // The edits the parent has do not include a held line break: it goes on
+    // the new document again, after the edits it has not been sent yet.
+    const held = this.heldBreak();
     this.dropBreak();
     const { state } = this.view;
     const queued = this.queue.flatMap((op) => op.steps.map((json) => Step.fromJSON(fluidSchema, json)));
@@ -925,7 +927,16 @@ export class FluidEditor {
     const tr = state.tr;
     for (const step of changeTo(state.doc, next).steps) tr.step(step);
     if (this.fence) this.fence.pos = mapping.map(this.fence.pos);
-    this.view.updateState(state.apply(tr.setSelection(state.selection.map(tr.doc, mapping))));
+    tr.setSelection(state.selection.map(tr.doc, mapping));
+    const kept = held?.step.map(mapping);
+    const shown = kept?.apply(next).doc;
+    if (held && kept instanceof ReplaceStep && shown && trailingBreak([kept], shown, next)) {
+      tr.step(kept);
+      this.view.updateState(state.apply(tr));
+      this.held = { ...held, step: kept, base: next, doc: this.view.state.doc, before: mapSelection(held.before, mapping) };
+      return;
+    }
+    this.view.updateState(state.apply(tr));
   }
 
   /** What was typed while the code block now shown was being made. */
