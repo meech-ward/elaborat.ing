@@ -80,20 +80,32 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     expect(moved.steps).toBe(1);
   });
 
-  test(`${format}: Shift+Tab keeps the steps it always made where no lists end up side by side`, async () => {
+  test(`${format}: Shift+Tab keeps a one-step lift, and sends a longer one as one step`, async () => {
     const options = { format };
     for (const [text, word, expected] of [
       // A nested item back out, and the last item, and lists of two kinds.
       ["- alpha\n  - beta\n- gamma", "beta", "- alpha\n- beta\n- gamma"],
       ["- alpha\n  - beta\n\nTail.", "alpha", "alpha\n\n- beta\n\nTail."],
       ["- alpha\n  1. beta\n- gamma", "alpha", "alpha\n\n1. beta\n\n- gamma"],
-      ["- a\n  - b\n  - c\n- d", "b", null],
     ] as const) {
       const standard = await run(text, word, liftListItem(fluidSchema.nodes.list_item), options);
+      expect(standard!.tr.steps.length).toBe(1);
       const ours = await written(text, word, shiftTab, options);
-      if (expected) expect(ours.text).toBe(expected);
-      expect(ours.steps).toBe(standard!.tr.steps.length);
+      expect(ours.text).toBe(expected);
+      expect(ours.steps).toBe(1);
       expect(ours.text).toBe((await standard!.write()).text);
+    }
+    for (const [text, word, expected] of [
+      // The standard lift wraps the items after it for a moment.
+      ["- a\n  - b\n  - c\n- d", "b", "- a\n- b\n  - c\n- d"],
+      ["> - a\n>   - b\n>   - c\n> - d", "b", "> - a\n> - b\n>   - c\n> - d"],
+      // A list of another marker just before: as many lists side by side
+      // before as after, and the standard steps are refused.
+      ["* y\n\n- alpha\n  - beta\n- gamma", "alpha", "* y\n\nalpha\n\n- beta\n- gamma"],
+    ] as const) {
+      const ours = await written(text, word, shiftTab, options);
+      expect(ours.text).toBe(expected);
+      expect(ours.steps).toBe(1);
     }
     // Lists the note already has side by side (two markers) are not joined.
     const separate = await written("- alpha\n  - beta\n\n* gamma", "alpha", shiftTab, options);

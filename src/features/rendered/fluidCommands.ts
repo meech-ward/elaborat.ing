@@ -111,24 +111,15 @@ export const listItemDelete: Command = (state, dispatch, view) => {
 const isList = (node: PMNode | null | undefined) =>
   node?.type === fluidSchema.nodes.bullet_list || node?.type === fluidSchema.nodes.ordered_list;
 
-/** Pairs of lists of one kind side by side, which Markdown writes as one list. */
-function sideBySideLists(node: PMNode): number {
-  let pairs = 0;
-  node.forEach((child, _offset, index) => {
-    if (index > 0 && isList(child) && child.type === node.child(index - 1).type) pairs++;
-    if (!child.isTextblock) pairs += sideBySideLists(child);
-  });
-  return pairs;
-}
-
 /**
  * Shift+Tab: the list item around the selection moves out a level
  * (liftListItem). Out of its list, its own nested list and the items after
  * it would be two lists of one kind side by side, which Markdown reads back
  * as one list: they are joined into that one list. The parent checks each
- * step of an edit on its own, so an edit that passes through such lists on
- * its way (as moving an item with a nested list into the list above does) is
- * sent as one step, from the document before it to the one after.
+ * step of an edit on its own, and a lift's first steps can pass through
+ * documents it cannot write (such lists side by side, or an item wrapped
+ * for a moment), so a lift of more than one step is sent as one step, from
+ * the document before it to the one after.
  */
 export const liftItem: Command = (state, dispatch) => {
   const item = fluidSchema.nodes.list_item;
@@ -145,8 +136,7 @@ export const liftItem: Command = (state, dispatch) => {
     if (isList($after.nodeBefore) && $after.nodeAfter?.type === $after.nodeBefore!.type && canJoin(tr.doc, $after.pos))
       tr.join($after.pos);
   }
-  const pairs = sideBySideLists(state.doc);
-  if (!tr.docs.slice(1).some((doc) => sideBySideLists(doc) > pairs)) {
+  if (tr.steps.length === 1) {
     dispatch(tr);
     return true;
   }
