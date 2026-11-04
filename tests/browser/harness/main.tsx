@@ -25,6 +25,15 @@ configureExcalidrawAssets()
 const drawings: Record<string, { source: string; filename: string }> = {
   demo: { source: `${JSON.stringify(demo, null, 2)}\n`, filename: "demo.excalidraw" },
   obsidian: { source: obsidian, filename: "synthetic.excalidraw.md" },
+  'export-scale': {filename: 'export-scale.excalidraw', source: JSON.stringify({
+    type: 'excalidraw', version: 2, appState: {exportBackground: false}, files: {}, elements: [{
+      id: 'export-scale-rectangle', type: 'rectangle', x: 40, y: 80, width: 120, height: 60,
+      angle: 0, strokeColor: '#1d4ed8', backgroundColor: '#1d4ed8', fillStyle: 'solid',
+      strokeWidth: 2, strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [],
+      frameId: null, index: 'a0', roundness: null, seed: 1, version: 1, versionNonce: 1,
+      isDeleted: false, boundElements: [], updated: 1, link: null, locked: false,
+    }],
+  })},
 }
 const choice = new URLSearchParams(location.search).get("drawing") ?? "demo"
 const drawing = drawings[choice]
@@ -142,6 +151,22 @@ const harness = {
     return { element, file: { mimeType: "image/png", id: "test-image-file", dataURL, created: 1 } }
   },
   exportSvg: () => exportDrawingSvg(current),
+  pngBounds: async (options: {scale?: number; maxPixels?: number} = {}) => {
+    const bitmap = await createImageBitmap(await exportDrawingPng(current, options))
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width; canvas.height = bitmap.height
+    const context = canvas.getContext('2d')!
+    context.drawImage(bitmap, 0, 0)
+    bitmap.close()
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+    let left = canvas.width, top = canvas.height, right = -1, bottom = -1
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      if (data[(y * canvas.width + x) * 4 + 3] < 128) continue
+      left = Math.min(left, x); right = Math.max(right, x)
+      top = Math.min(top, y); bottom = Math.max(bottom, y)
+    }
+    return {width: canvas.width, height: canvas.height, left, top, right, bottom}
+  },
   exports: async () => {
     const svg = await exportDrawingSvg(current)
     const png = await exportDrawingPng(current)

@@ -81,6 +81,30 @@ test('frozen assets read immutable IDs and refuse a replacement race when no imm
   expect(ids).toEqual(['new'])
 })
 
+test('metadata-free images need an explicit revision-bound reader and never weaken private asset identity reads', async () => {
+  const image = {...file('a.png'), kind: 'image' as const, revision: 'shared-file-version-3'}
+  const client: NotionWorkspace = {read: async () => image, readImage: async () => {throw new Error('An unbound image read must not run')}}
+  await expect(frozenNotionWorkspace(client, new Map()).readImage!('a.png')).rejects.toThrow('unavailable')
+  const revisions: Array<[string, string | null, boolean | undefined]> = []
+  const bound = {...client, readImageRevision: async (path: string, revision: string | null, preview?: boolean) => {
+    revisions.push([path, revision, preview]); return new Blob([png], {type: 'image/png'})
+  }}
+  const shared = frozenNotionWorkspace(bound, new Map())
+  await shared.readImage!('a.png', true)
+  expect(revisions).toEqual([['a.png', 'shared-file-version-3', true]])
+  const immutable = frozenNotionWorkspace({...bound,
+    read: async () => ({...image, asset: {id: 'private-asset'}} as WorkspaceFile),
+    readImageAsset: async id => {expect(id).toBe('private-asset'); return new Blob([png])},
+  }, new Map())
+  await immutable.readImage!('a.png')
+  expect(revisions).toHaveLength(1)
+  const controller = new AbortController()
+  const canceled = frozenNotionWorkspace({...bound, readImageRevision: async () => {
+    controller.abort(); return new Blob([png])
+  }}, new Map(), controller.signal)
+  await expect(canceled.readImage!('a.png')).rejects.toHaveProperty('name', 'AbortError')
+})
+
 test('unsafe names, oversized sources and cancellation are bounded before doing export work', async () => {
   expect(notionExportName('folder/.odd:name.mdx')).toBe('odd-name')
   const client = {read: async (path: string) => file(path)}

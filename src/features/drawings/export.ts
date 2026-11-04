@@ -26,7 +26,7 @@ interface NativeExporters {
     files: unknown;
     mimeType?: string;
     exportPadding?: number;
-    getDimensions?: (width: number, height: number) => { width: number; height: number };
+    getDimensions?: (width: number, height: number) => { width: number; height: number; scale: number };
   }) => Promise<Blob>;
 }
 
@@ -128,11 +128,13 @@ export async function exportDrawingPng(
 
 /** The native export calls this with its exact bounds, before allocating a canvas. */
 export function drawingPngDimensions(width: number, height: number, scale: number, maxPixels?: number) {
-  if (maxPixels === undefined) return {width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale))};
+  if (maxPixels === undefined) return {width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), scale};
   if (![width, height, scale].every(value => Number.isFinite(value) && value > 0) || !Number.isSafeInteger(maxPixels) || maxPixels < 1)
     throw new Error('invalid bounded PNG dimensions');
   // The per-axis bounds also cover very thin scenes, whose other dimension
   // must still occupy one pixel after rounding.
-  const bounded = Math.min(scale, Math.sqrt(maxPixels / width / height), maxPixels / width, maxPixels / height);
-  return {width: Math.max(1, Math.floor(width * bounded)), height: Math.max(1, Math.floor(height * bounded))};
+  const bounded = Math.min(scale, Math.sqrt(maxPixels) / Math.sqrt(width) / Math.sqrt(height), maxPixels / width, maxPixels / height);
+  // Native export uses this scale for the drawing transform separately from
+  // the canvas dimensions. Omitting it leaves a small drawing in a large PNG.
+  return {width: Math.max(1, Math.floor(width * bounded)), height: Math.max(1, Math.floor(height * bounded)), scale: bounded};
 }

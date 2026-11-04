@@ -148,6 +148,7 @@ const HEAVY: Array<{ name: string; modules: RegExp }> = [
   // The parser and compiler; not the small micromark-util-* helpers, such as the one that decodes a link's destination.
   { name: "the MDX compiler", modules: /node_modules\/(@mdx-js\/mdx|micromark|micromark-core-commonmark|micromark-extension-[\w-]+|mdast-util-[\w-]+|remark-[\w-]+|unified)\// },
   { name: "prettier", modules: /node_modules\/prettier\// },
+  { name: "DOCX export", modules: /node_modules\/(docx|jszip)\// },
   { name: "the preview frame", modules: /^virtual:preview-frame/ },
   // Full Zod: code in a first paint imports zod/mini, which keeps only what it uses.
   { name: "full Zod (import zod/mini instead)", modules: /node_modules\/zod\/(v4\/)?(index\.js$|classic\/)/ },

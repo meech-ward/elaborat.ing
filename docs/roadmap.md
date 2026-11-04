@@ -186,6 +186,16 @@ review before download. This needs no account connection. See
 [Notion export](notion-export.md). PDF and direct Notion publishing are not
 included in this release.
 
+Google Docs export uses a browser-generated DOCX with editable text and
+embedded images, sharing the Notion conversion and isolation contracts.
+Project note menus and unlisted readers offer the format without connecting
+a Google account. Import into Drive remains explicit; direct publishing is
+not included. See [Google Docs export](google-docs-export.md).
+
+Unlisted Markdown and MDX readers also offer the Notion ZIP from their compact
+floating controls. Export uses only the already authorized shared bundle,
+requires no sign-in, and cancels on a changed bundle or known revocation.
+
 - **All sign-in methods** that exist today: email and password, magic link and
   one-time code (custom SMTP), passkeys, GitHub, Google, and phone codes with
   Turnstile. (Done in the app: the one-time code; passkeys, added in

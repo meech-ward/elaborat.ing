@@ -1,5 +1,9 @@
+import {readFileSync} from 'node:fs'
+import {join} from 'node:path'
+import {strFromU8, unzipSync} from 'fflate'
+import {DOMParser} from '@xmldom/xmldom'
 import AxeBuilder from './axe.ts'
-import { expect, test, type Page, type Route } from './fixtures.ts'
+import { expect, test, type Locator, type Page, type Route } from './fixtures.ts'
 import { fakeSupabase, person, signedIn, SUPABASE } from './fake-supabase.ts'
 import { APP_URL } from './urls.ts'
 import type { RemoteThread } from '../../src/features/comments/remote.ts'
@@ -20,6 +24,61 @@ const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS'}
 const now = () => new Date().toISOString()
 const author = () => ({user_id: person.id, email: null, name: 'Visitor'})
+const EXPORT_DRAWING = JSON.stringify({type: 'excalidraw', version: 2, appState: {}, files: {}, elements: [{
+  id: 'export-box', type: 'rectangle', x: 0, y: 0, width: 120, height: 60, angle: 0,
+  strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 2,
+  strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: 'a0',
+  roundness: null, seed: 1, version: 1, versionNonce: 1, isDeleted: false, boundElements: [], updated: 1, link: null, locked: false,
+}]})
+
+async function sharedExportDialog(page: Page, format: 'Notion' | 'Google Docs' = 'Notion') {
+  await page.getByRole('button', {name: 'Export', exact: true}).click()
+  await page.getByRole('menuitem', {name: `Export to ${format}`, exact: true}).click()
+  const dialog = page.getByRole('dialog', {name: `Export to ${format}`, exact: true})
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText(/saved/i)
+  await expect(dialog).not.toContainText(/unsaved/i)
+  return dialog
+}
+
+async function downloadNotion(page: Page, dialog: Locator) {
+  await expect(dialog.getByRole('status').filter({hasText: /^Ready:/})).toBeVisible({timeout: 45_000})
+  const pending = page.waitForEvent('download')
+  await dialog.getByRole('button', {name: 'Download ZIP', exact: true}).click()
+  const download = await pending
+  const entries = unzipSync(new Uint8Array(readFileSync((await download.path())!)))
+  expect(download.suggestedFilename()).toMatch(/-notion\.zip$/)
+  const pages = Object.keys(entries).filter(path => path.endsWith('.html'))
+  expect(pages).toHaveLength(1)
+  expect(Object.keys(entries).every(path => path === pages[0] || /^assets\/[a-f0-9]{64}\.(png|jpg|webp|gif)$/.test(path))).toBe(true)
+  return {entries, html: strFromU8(entries[pages[0]])}
+}
+
+async function downloadGoogleDocs(page: Page, dialog: Locator) {
+  await expect(dialog.getByRole('status').filter({hasText: /^Ready:/})).toBeVisible({timeout: 45_000})
+  const pending = page.waitForEvent('download')
+  await dialog.getByRole('button', {name: 'Download DOCX', exact: true}).click()
+  const download = await pending
+  expect(download.suggestedFilename()).toMatch(/\.docx$/)
+  const entries = unzipSync(new Uint8Array(readFileSync((await download.path())!)))
+  expect(strFromU8(entries['[Content_Types].xml'])).toContain('application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')
+  const xml = strFromU8(entries['word/document.xml'])
+  const parsed = new DOMParser().parseFromString(xml, 'text/xml')
+  const text = Array.from(parsed.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 't')).map(node => node.textContent).join('')
+  expect(xml).not.toContain('altChunk')
+  const media = Object.keys(entries).filter(path => path.startsWith('word/media/'))
+  const relationBytes = entries['word/_rels/document.xml.rels']
+  if (media.length) expect(relationBytes).toBeDefined()
+  const relationships = relationBytes ? new DOMParser().parseFromString(strFromU8(relationBytes), 'text/xml') : null
+  for (const relationship of Array.from(relationships?.getElementsByTagNameNS('http://schemas.openxmlformats.org/package/2006/relationships', 'Relationship') ?? [])) {
+    if (!relationship.getAttribute('Type')?.endsWith('/image')) continue
+    expect(relationship.getAttribute('TargetMode')).not.toBe('External')
+    const target = relationship.getAttribute('Target')!
+    expect(target).not.toMatch(/^(?:https?:|data:|blob:)/)
+    expect(entries[new URL(target, 'https://docx.invalid/word/document.xml').pathname.slice(1)]).toBeDefined()
+  }
+  return {entries, xml, text, media}
+}
 
 async function expectNoCodePrompt(page: Page) {
   for (const surface of page.frames()) {
@@ -101,6 +160,231 @@ test('anyone can read a complete long rendered file without project or source co
   expect(fake.requests.some(r => /project_files|list_projects|list_members|list_comments/.test(r.url()))).toBe(false)
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow, noarchive')
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer')
+})
+
+test('anonymous visitors export Notion and Google Docs with editable text, original assets and current components from the authorized share only', async ({page}) => {
+  test.setTimeout(90_000)
+  const pictures = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1600; canvas.height = 900
+    const context = canvas.getContext('2d')!
+    context.fillStyle = 'white'; context.fillRect(0, 0, 1600, 900)
+    context.fillStyle = 'black'
+    for (let x = 0; x < 1600; x += 4) context.fillRect(x, 0, 1, 900)
+    const preview = document.createElement('canvas')
+    preview.width = 480; preview.height = 270
+    preview.getContext('2d')!.drawImage(canvas, 0, 0, 480, 270)
+    return {original: canvas.toDataURL('image/png'), preview: preview.toDataURL('image/png')}
+  })
+  const source = `import {useState} from 'react'
+
+export function PublicExportCounter() {
+  const [count, setCount] = useState(0)
+  return <section><h2>Live shared component</h2><p>Visible count: {count}</p><button type="button" onClick={() => setCount(count + 1)}>Increase public counter</button><form><label>Private input<input aria-label="Private input" defaultValue="private-default-value" /></label><input aria-label="Private password" type="password" defaultValue="password-export-secret" /><button type="button">Keep this label</button></form></section>
+}
+
+# Shared export
+
+An **editable** paragraph.
+
+\`\`\`cpp
+int main() { return 0; }
+\`\`\`
+
+<PublicExportCounter />
+
+![Detailed shared screenshot](images/detail.png)
+
+<Drawing src="art/board.excalidraw" />
+
+<Diagram src="art/flow.d2" />
+
+<Document src="notes/live.mdx" title="Live export detail" defaultCollapsed />
+
+<Document src="notes/child.mdx" title="Unopened export detail" defaultCollapsed />
+
+[Private planning](private/plan.md)
+
+![Remote illustration](https://public-export-probe.example/image.png)`
+  const shared = bundle(source)
+  const saved = JSON.parse(readFileSync(join(import.meta.dirname, 'chat-card-diagram.json'), 'utf8')) as {source: string; canvas: string; layout: string}
+  const files = {
+    'images/detail.png': '',
+    'art/board.excalidraw': EXPORT_DRAWING,
+    'art/flow.d2': saved.source,
+    'art/flow.excalidraw': saved.canvas,
+    'art/flow.d2.json': saved.layout,
+    'notes/live.mdx': "import {useState} from 'react'\n\nexport function ChildExportCounter() {const [count, setCount] = useState(0); return <section><p>Child visible count: {count}</p><button type=\"button\" onClick={() => setCount(count + 1)}>Increase child counter</button></section>}\n\n# Live child detail\n\n<ChildExportCounter />",
+    'notes/child.mdx': 'import {ExportDetail} from "workspace:components/export-detail.mdx"\n\n# Child export detail\n\nA child that was never expanded.\n\n<ExportDetail />',
+    'components/export-detail.mdx': 'export const ExportDetail = () => <strong>Fresh child component content.</strong>',
+  }
+  shared.files.push(...Object.entries(files).map(([path, content]) => ({id: crypto.randomUUID(), path, content, version: 7})))
+  shared.images.push({path: 'images/detail.png', dataURL: pictures.original, width: 1600, height: 900,
+    preview: {dataURL: pictures.preview, width: 480, height: 270}})
+  const reached: string[] = []
+  await page.route('https://public-export-probe.example/**', route => {reached.push(route.request().url()); return route.fulfill({body: 'Unexpected external request'})})
+  const {state, fake} = await setup(page, {bundle: shared})
+  const privateId = crypto.randomUUID()
+  const remote = fake.server.remote(person.id)
+  await remote.createProject(privateId, 'Unshared project')
+  await remote.saveFiles(privateId, crypto.randomUUID(), [{op: 'put', path: 'private/plan.md', content: 'UNSHARED_PRIVATE_CONTENT_MUST_NOT_LEAVE'}])
+  await page.goto(href)
+  await expect(frame(page).getByRole('button', {name: 'Increase public counter', exact: true})).toBeVisible({timeout: 20_000})
+  await expectNoCodePrompt(page)
+  await frame(page).getByRole('button', {name: 'Increase public counter', exact: true}).click()
+  await frame(page).getByRole('button', {name: 'Increase public counter', exact: true}).click()
+  await expect(frame(page).getByText('Visible count: 2', {exact: true})).toBeVisible()
+  await frame(page).getByLabel('Private input', {exact: true}).fill('private-live-value')
+  const child = frame(page).locator('[data-document-embed="notes/child.mdx"]')
+  await expect(child.locator('iframe')).toHaveCount(0)
+  const live = frame(page).locator('[data-document-embed="notes/live.mdx"]')
+  await live.getByRole('button', {name: 'Live export detail', exact: true}).click()
+  const childPreview = live.frameLocator('iframe')
+  await childPreview.getByRole('button', {name: 'Increase child counter', exact: true}).click()
+  await expect(childPreview.getByText('Child visible count: 1', {exact: true})).toBeVisible()
+  const requestStart = fake.requests.length
+  const dialog = await sharedExportDialog(page)
+  await dialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  const {entries, html} = await downloadNotion(page, dialog)
+  await expect(dialog.getByRole('status').filter({hasText: /^Ready:/})).toHaveText('Ready: 3 documents and 3 images.')
+  expect(html).toContain('<h1>Shared export</h1>')
+  expect(html).toContain('<strong>editable</strong>')
+  expect(html).toContain('<pre><code class="language-cpp">int main() { return 0; }')
+  expect(html).toContain('Visible count: 2')
+  expect(html).toContain('Child visible count: 1')
+  expect(html).toContain('A child that was never expanded.')
+  expect(html).toContain('Fresh child component content.')
+  expect(html).toContain('Keep this label')
+  expect(html).toContain('Remote illustration unavailable')
+  expect(html).not.toMatch(/UNSHARED_PRIVATE_CONTENT|private-default-value|private-live-value|password-export-secret|<form|<input|<button|<script|<iframe|contenteditable|data:|https:\/\/public-export-probe|\/projects\//)
+  const refs = [...html.matchAll(/<img src="([^"]+)"/g)].map(match => match[1])
+  expect(refs).toHaveLength(3)
+  expect(Buffer.from(entries[refs[0]]).equals(Buffer.from(pictures.original.split(',')[1], 'base64'))).toBe(true)
+  expect(inspectImage(entries[refs[0]])).toMatchObject({width: 1600, height: 900})
+  for (const path of refs.slice(1)) {
+    const image = inspectImage(entries[path], 'image/png')
+    expect(image.width * image.height).toBeLessThanOrEqual(8_000_000)
+    expect(entries[path].length).toBeLessThanOrEqual(5 * 1024 * 1024)
+  }
+  await dialog.locator('[data-slot="dialog-footer"]').getByRole('button', {name: 'Close', exact: true}).click()
+  const googleDialog = await sharedExportDialog(page, 'Google Docs')
+  await googleDialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  const docx = await downloadGoogleDocs(page, googleDialog)
+  await expect(googleDialog.getByRole('status').filter({hasText: /^Ready:/})).toHaveText('Ready: 3 documents and 3 images.')
+  for (const text of ['Shared export', 'An editable paragraph.', 'Visible count: 2', 'Child visible count: 1', 'A child that was never expanded.', 'Fresh child component content.', 'Keep this label'])
+    expect(docx.text).toContain(text)
+  expect(docx.media).toHaveLength(3)
+  const original = Buffer.from(pictures.original.split(',')[1], 'base64')
+  expect(docx.media.some(path => Buffer.from(docx.entries[path]).equals(original))).toBe(true)
+  const documentXml = Object.entries(docx.entries).filter(([path]) => /\.(?:xml|rels)$/.test(path)).map(([, bytes]) => strFromU8(bytes)).join('\n')
+  expect(documentXml).not.toMatch(/UNSHARED_PRIVATE_CONTENT|private-default-value|private-live-value|password-export-secret|<form|<input|<script|<iframe|https:\/\/public-export-probe|\/projects\//)
+  await googleDialog.locator('[data-slot="dialog-footer"]').getByRole('button', {name: 'Close', exact: true}).click()
+  await expect(child.locator('iframe')).toHaveCount(0)
+  await expect(childPreview.getByText('Child visible count: 1', {exact: true})).toBeVisible()
+  await expect(frame(page).getByText('Visible count: 2', {exact: true})).toBeVisible()
+  await expect(page).toHaveURL(href)
+  expect(reached).toEqual([])
+  expect(fake.requests.slice(requestStart).some(request => /\/auth\/v1|\/storage\/v1|project_files|list_projects|list_members|save_files|save_file/.test(request.url()))).toBe(false)
+  expect(state.calls.every(call => call.name === 'read' || call.name === 'list_file_share_comments')).toBe(true)
+  expect(state.calls.filter(call => call.name === 'read').every(call => JSON.stringify(call.args) === JSON.stringify({token: TOKEN}))).toBe(true)
+  expect(fake.server.content(privateId, 'private/plan.md')).toBe('UNSHARED_PRIVATE_CONTENT_MUST_NOT_LEAVE')
+  expect(state.bundle.files[0].content).toBe(source)
+})
+
+for (const format of ['Notion', 'Google Docs'] as const) for (const change of ['revision', 'revocation'] as const) test(`a known share ${change} cancels an in-progress ${format} export and never restores its stale download`, async ({page, appErrors}) => {
+  if (change === 'revocation') appErrors.expect('This link is unavailable.')
+  const shared = bundle('# Original shared version\n\n<Drawing src="board.excalidraw" />')
+  shared.files.push({id: crypto.randomUUID(), path: 'board.excalidraw', content: EXPORT_DRAWING, version: 7})
+  const {state} = await setup(page, {bundle: shared})
+  await page.goto(href)
+  await expect(frame(page).locator('figure[data-src="board.excalidraw"]')).toHaveAttribute('data-pixels', 'true', {timeout: 45_000})
+  let downloads = 0
+  page.on('download', () => {downloads++})
+  const dialog = await sharedExportDialog(page, format)
+  // Hold the native PNG callback, rather than relying on conversion taking
+  // long enough for the share refresh to win a timing race.
+  await page.evaluate(() => {
+    type Gate = {held: number; completed: number; release: () => void}
+    const gate: Gate = {held: 0, completed: 0, release: () => {}}
+    const original = HTMLCanvasElement.prototype.toBlob
+    const pending: Array<() => void> = []
+    HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+      gate.held++
+      pending.push(() => original.call(this, blob => {gate.completed++; callback(blob)}, type, quality))
+    }
+    gate.release = () => {HTMLCanvasElement.prototype.toBlob = original; for (const resume of pending.splice(0)) resume()}
+    ;(window as unknown as {exportRasterGate: Gate}).exportRasterGate = gate
+  })
+  await dialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as {exportRasterGate: {held: number}}).exportRasterGate.held), {timeout: 30_000}).toBeGreaterThan(0)
+  await expect(dialog.getByRole('button', {name: 'Preparing…', exact: true})).toBeDisabled()
+  if (change === 'revocation') state.revoked = true
+  else {
+    state.bundle = bundle('# Updated shared version\n\nThe latest saved content.')
+    state.bundle.share.version = 8; state.bundle.share.revision = 8
+    state.bundle.files[0].version = 8
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(dialog).toHaveCount(0)
+  if (change === 'revocation') await expect(page.getByRole('heading', {name: 'Shared file unavailable', exact: true})).toBeVisible()
+  else await expect(frame(page).getByRole('heading', {name: 'Updated shared version', exact: true})).toBeVisible()
+  await page.evaluate(() => (window as unknown as {exportRasterGate: {release: () => void}}).exportRasterGate.release())
+  await expect.poll(() => page.evaluate(() => (window as unknown as {exportRasterGate: {completed: number}}).exportRasterGate.completed)).toBeGreaterThan(0)
+  await expect(page.getByRole('button', {name: 'Download ZIP', exact: true})).toHaveCount(0)
+  await expect(page.getByRole('button', {name: 'Download DOCX', exact: true})).toHaveCount(0)
+  expect(downloads).toBe(0)
+  if (change === 'revocation') await expect(page.getByRole('button', {name: 'Export', exact: true})).toHaveCount(0)
+  else {
+    const current = await sharedExportDialog(page, format)
+    await current.getByRole('button', {name: 'Prepare export', exact: true}).click()
+    const output = format === 'Notion' ? (await downloadNotion(page, current)).html : (await downloadGoogleDocs(page, current)).text
+    expect(output).toContain('The latest saved content.')
+    expect(output).not.toContain('Original shared version')
+    expect(downloads).toBe(1)
+  }
+})
+
+test('anonymous phone readers can discover, cancel and download accessible export formats without signing in', async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844})
+  const {state, fake} = await setup(page, {bundle: bundle('# Phone export\n\nA **portable** saved paragraph.', 'phone.md')})
+  await page.goto(href)
+  const exportButton = page.getByRole('button', {name: 'Export', exact: true})
+  await expect(exportButton).toBeVisible()
+  const controls = (await page.getByRole('group', {name: 'Shared file controls'}).boundingBox())!
+  expect(controls.x).toBeGreaterThanOrEqual(0)
+  expect(controls.x + controls.width).toBeLessThanOrEqual(390)
+  expect(controls.y + controls.height).toBeLessThanOrEqual(844)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  let downloads = 0
+  page.on('download', () => {downloads++})
+  await exportButton.click()
+  const menu = page.getByRole('menu')
+  await expect(page.getByRole('menuitem', {name: 'Export to Notion', exact: true})).toBeVisible()
+  await expect(page.getByRole('menuitem', {name: 'Export to Google Docs', exact: true})).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  const canceled = await sharedExportDialog(page)
+  await expect(canceled).toHaveCSS('opacity', '1')
+  const accessibility = await new AxeBuilder({page}).include('[role="dialog"]').analyze()
+  expect(accessibility.violations.map(violation => ({id: violation.id, targets: violation.nodes.map(node => node.target)}))).toEqual([])
+  await canceled.getByRole('button', {name: 'Cancel', exact: true}).click()
+  await expect(canceled).toHaveCount(0)
+  expect(downloads).toBe(0)
+  const dialog = await sharedExportDialog(page)
+  await dialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  const {entries, html} = await downloadNotion(page, dialog)
+  expect(Object.keys(entries)).toEqual(['phone.html'])
+  expect(html).toContain('<strong>portable</strong>')
+  await dialog.locator('[data-slot="dialog-footer"]').getByRole('button', {name: 'Close', exact: true}).click()
+  const googleDialog = await sharedExportDialog(page, 'Google Docs')
+  await expect(googleDialog).toHaveCSS('opacity', '1')
+  const googleAccessibility = await new AxeBuilder({page}).include('[role="dialog"]').analyze()
+  expect(googleAccessibility.violations.map(violation => ({id: violation.id, targets: violation.nodes.map(node => node.target)}))).toEqual([])
+  await googleDialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  expect((await downloadGoogleDocs(page, googleDialog)).text).toContain('A portable saved paragraph.')
+  expect(state.bundle.files[0].content).toBe('# Phone export\n\nA **portable** saved paragraph.')
+  expect(fake.requests.some(request => /\/auth\/v1|save_files|share_project|accept_invitation/.test(request.url()))).toBe(false)
+  await expect(page).toHaveURL(href)
 })
 
 test('shared notes render local images, drawings, diagrams, and collapsible embedded documents', async ({page}) => {
@@ -288,8 +572,17 @@ test('an image file can be shared directly and still has its own comment discuss
   await page.goto(href)
   await expect(page.getByRole('img', {name: 'photo.png', exact: true})).toBeVisible()
   await expect(page.locator(FRAME)).toHaveCount(0)
+  await expect(page.getByRole('button', {name: 'Export', exact: true})).toHaveCount(0)
   await page.getByRole('button', {name: 'Add comment', exact: true}).click()
   await expect(panel(page).getByRole('textbox', {name: 'New comment'})).toBeVisible()
+})
+
+test('a directly shared drawing keeps its drawing view without offering a note export', async ({page}) => {
+  await setup(page, {bundle: bundle(EXPORT_DRAWING, 'board.excalidraw')})
+  await page.goto(href)
+  await expect(page.getByRole('img', {name: 'Shared drawing board.excalidraw', exact: true})).toBeVisible({timeout: 45_000})
+  await expect(page.getByRole('button', {name: 'Export', exact: true})).toHaveCount(0)
+  await expect(page.getByRole('button', {name: 'Comments', exact: true})).toBeVisible()
 })
 
 const FORM_MODULE = `import {useState} from 'react'
@@ -597,9 +890,9 @@ for (const width of [390, 1280]) test(`the shared document fills the viewport an
   expect(before.y + before.height).toBeLessThanOrEqual(901)
   expect(before.width).toBeGreaterThanOrEqual(width - 32)
   const controlsTop: number[] = []
-  for (const name of ['Comments', 'Add comment']) {
+  for (const name of ['Comments', 'Add comment', 'Export']) {
     const box = (await page.getByRole('button', {name, exact: true}).boundingBox())!
-    expect(box.width).toBeLessThanOrEqual(48)
+    expect(box.width).toBeLessThanOrEqual(name === 'Export' ? 180 : 48)
     expect(box.height).toBeLessThanOrEqual(48)
     expect(box.y).toBeGreaterThan(900 / 2)
     expect(box.y + box.height).toBeLessThanOrEqual(900)

@@ -29,6 +29,7 @@ type Props = {
   bottomInset?: number;
   place?: RenderedEditorProps['place'];
   onPlaceShown?: () => void;
+  registerSnapshot?: (file: SharedFile, api: React.RefObject<RenderedEditorApi | null>) => () => void;
 }
 
 function useResourcePixels(bundle: SharedBundle) {
@@ -82,10 +83,13 @@ export function SharedFileRenderer(props: Props) {
   </div>
 }
 
-function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed, bottomInset = 0, place, onPlaceShown}: Props & {
+function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, budget, embed, bottomInset = 0, place, onPlaceShown, registerSnapshot}: Props & {
   resources: Record<string, string>; budget: Budget; embed?: Attached
 }) {
   const format = /\.mdx$/i.test(file.path) ? 'mdx' : 'md'
+  const ownApi = useRef<RenderedEditorApi | null>(null)
+  const rendererApi = apiRef ?? ownApi
+  useEffect(() => registerSnapshot?.(file, rendererApi), [file, rendererApi, registerSnapshot])
   const load = useCallback(async (path: string) => {
     const module = bundle.files.find(f => f.path === path)
     if (!module) throw new Error('This component is not included in the shared file.')
@@ -201,12 +205,12 @@ function SharedNote({bundle, file, comments, apiRef, onOpenEmbedded, resources, 
         readOnly onPatch={() => false} onOpenLink={openLink} onError={setRenderError} errorBanner={false}
         minViewportHeight={0} bottomInset={embed ? 0 : bottomInset}
         resources={resources} allowedResourcePaths={Object.keys(resources)} imageResources={images?.file === file ? images.pixels : {}} onReadImage={readImage}
-        onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={apiRef} place={place} onPlaceShown={onPlaceShown} />
+        onContentHeight={embed ? contentHeight : undefined} comments={comments} apiRef={rendererApi} place={place} onPlaceShown={onPlaceShown} />
     </div>
     {views.map(view => {
       const child = bundle.files.find(f => f.path === view.path)
       return child ? <SharedNote key={view.id} bundle={bundle} file={child} resources={resources} budget={budget}
-        embed={view} onOpenEmbedded={onOpenEmbedded} /> : null
+        embed={view} onOpenEmbedded={onOpenEmbedded} registerSnapshot={registerSnapshot} /> : null
     })}
   </>
 }

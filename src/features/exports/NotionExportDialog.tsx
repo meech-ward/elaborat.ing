@@ -7,16 +7,20 @@ import { downloadBlob } from '@/features/workbench/download'
 import { buildNotionExport, type NotionExportResult, type NotionWorkspace, type SnapshotRequest, type StaticIsland } from './notionExport'
 import { NotionSnapshotRenderer, type NotionRenderRequest } from './NotionSnapshotRenderer'
 
+export type DocumentExportFormat = 'notion' | 'google-docs'
 export type NotionExportDialogProps = {
   path: string; client: NotionWorkspace;
   capture: () => Promise<{source: string; sources: ReadonlyMap<string, string>}>;
   existingSnapshot: (path: string, source: string) => Promise<StaticIsland[]> | null;
   projectFileUrl: (path: string) => string | null;
+  format?: DocumentExportFormat;
+  savedOnly?: boolean;
   onClose: () => void;
 }
 
-export default function NotionExportDialog({path, client, capture, existingSnapshot, projectFileUrl, onClose}: NotionExportDialogProps) {
+export default function NotionExportDialog({path, client, capture, existingSnapshot, projectFileUrl, format = 'notion', savedOnly = false, onClose}: NotionExportDialogProps) {
   const policy = useCustomCodePolicy()
+  const googleDocs = format === 'google-docs'
   const [result, setResult] = useState<NotionExportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState('Preparing the document')
@@ -59,8 +63,13 @@ export default function NotionExportDialog({path, client, capture, existingSnaps
     setBusy(true); setError(null); setResult(null)
     try {
       const sources = await capture()
-      const output = await buildNotionExport({path, client, ...sources, projectFileUrl,
-        signal: controller.signal, onProgress: setProgress, snapshot: request => snapshot(request, controller)})
+      const options = {path, client, ...sources, projectFileUrl,
+        signal: controller.signal, onProgress: setProgress, snapshot: (request: SnapshotRequest) => snapshot(request, controller)}
+      const build = googleDocs
+        ? (await import('./googleDocsExport')).buildGoogleDocsExport
+        : buildNotionExport
+      controller.signal.throwIfAborted()
+      const output = await build(options)
       if (!controller.signal.aborted) setResult(output)
     } catch (error) {
       if (!controller.signal.aborted) setError(error instanceof Error ? error.message : String(error))
@@ -71,12 +80,15 @@ export default function NotionExportDialog({path, client, capture, existingSnaps
     <Dialog open onOpenChange={open => {if (!open) close()}}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Export to Notion</DialogTitle>
+          <DialogTitle>{googleDocs ? 'Export to Google Docs' : 'Export to Notion'}</DialogTitle>
           <DialogDescription className="wrap-anywhere">{path}</DialogDescription>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-3 text-sm">
-          <p>Creates a ZIP on this device with editable text and included image files. Your current unsaved edits and embedded notes are included.</p>
-          <p>In Notion on desktop or web, choose Settings → Import → ZIP, then select the downloaded file.</p>
+          <p>{googleDocs ? 'Creates a DOCX on this device with editable text and embedded images. ' : 'Creates a ZIP on this device with editable text and included image files. '}{savedOnly
+            ? 'The saved shared file and its embedded notes are included. No sign-in is needed.'
+            : 'Your current unsaved edits and embedded notes are included.'}</p>
+          <p>{googleDocs ? 'Upload the downloaded DOCX to Google Drive, then open it with Google Docs.'
+            : 'In Notion on desktop or web, choose Settings → Import → ZIP, then select the downloaded file.'}</p>
           {busy ? <LoadingLine label={progress} /> : null}
           {error ? <Banner tone="danger" role="alert">{error}</Banner> : null}
           {result ? <>
@@ -91,7 +103,8 @@ export default function NotionExportDialog({path, client, capture, existingSnaps
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={close}>{busy || !result ? 'Cancel' : 'Close'}</Button>
-          {result ? <Button onClick={() => downloadBlob(new Blob([result.bytes], {type: 'application/zip'}), result.filename)}>Download ZIP</Button>
+          {result ? <Button onClick={() => downloadBlob(new Blob([result.bytes], {type: googleDocs
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/zip'}), result.filename)}>{googleDocs ? 'Download DOCX' : 'Download ZIP'}</Button>
             : <Button disabled={busy} onClick={() => void prepare()}>{busy ? 'Preparing…' : error ? 'Try again' : 'Prepare export'}</Button>}
         </DialogFooter>
       </DialogContent>

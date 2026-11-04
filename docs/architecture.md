@@ -1550,6 +1550,24 @@ export job or change to sharing. Embedded documents expand into the page;
 the root and retained child drafts are frozen together. Imported component
 modules retain saved-source authority.
 
+Unlisted Markdown and MDX pages expose the same export through their floating
+controls, without authentication. A finite, read-only adapter freezes the
+already authorized shared bundle. Public image bytes are bound to an opaque
+file revision, without manufacturing private Storage metadata or reading the
+project. Matching live views supply snapshots; unopened children use the
+ordinary isolated preview. A changed bundle or known revocation unmounts and
+cancels the operation. Public discussion and form values remain excluded.
+
+**Decision: Google Docs export is a browser-generated DOCX download.** It
+shares frozen source conversion, bounded local assets and isolated snapshots
+with Notion, then writes native editable WordprocessingML through the pinned
+`docx` library. It does not use HTML altChunk, Google OAuth or a backend job.
+The builder loads only for explicit DOCX preparation, outside first-paint
+bundles and Notion preparation. Image placement preserves aspect ratio and
+fits the page; native PNG export scales both canvas and content consistently.
+Direct creation in Google Drive is a separate future integration. See
+[Google Docs export](google-docs-export.md).
+
 Custom component snapshots use the ordinary isolated preview and a bounded,
 revision- and render-epoch-bound request. The parent owns source ranges and
 reconstructs untrusted snapshot HTML through an inert parser and a semantic

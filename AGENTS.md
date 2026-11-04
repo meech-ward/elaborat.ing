@@ -52,7 +52,7 @@ in, style guide, a project before a file opens, the projects in a chat's
 panel) and the chat card's view to
 their JS and CSS budgets (kB gzip) in `scripts/bundle-budget.json`, and fails
 when a heavy library (Monaco, Excalidraw, D2, charts, Shiki, the MDX compiler,
-Prettier, the preview frame, full Zod) is in any first paint, printing what grew by
+Prettier, DOCX export, the preview frame, full Zod) is in any first paint, printing what grew by
 chunk and module. A heavy library goes behind a dynamic import. To raise a
 budget on purpose, run `bun run check:bundle --update` after the visualize
 build (it records today's sizes and sets each budget 5% above them) and commit

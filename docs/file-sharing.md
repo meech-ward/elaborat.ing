@@ -13,6 +13,16 @@ files needed for rendering are included. These dependencies become visible
 to link holders, including their underlying source. Ordinary hyperlinks do
 not share additional files. The page has no project browser or Source view.
 
+Markdown and MDX notes offer **Export** in the floating controls. Anyone with
+the active link can prepare and download a Notion ZIP or Google Docs DOCX
+without signing in.
+The exporter uses a frozen copy of the response already available to the
+reader, including original images, drawings, components and embedded notes.
+It does not fetch other project files or include comments or entered form
+values. A known revocation or a changed displayed bundle cancels an open
+export. See [Notion export](notion-export.md) and
+[Google Docs export](google-docs-export.md).
+
 Visitors can start a comment on the whole file, selected text or a section.
 Posting asks them to sign in, then returns to the same shared page with their
 draft and selection. Link discussion is separate from private project

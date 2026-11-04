@@ -1,6 +1,8 @@
 # Notion export
 
-The note's file menu offers **Export to Notion**. Choose **Prepare export**,
+The note's file menu offers **Export to Notion**. Unlisted Markdown and MDX
+pages also offer it under **Export** in their floating controls, without
+signing in. Choose **Prepare export**,
 review any conversion notes, then **Download ZIP**. In Notion on desktop or
 web, open **Settings → Import → ZIP** and select the file. There is no Notion
 connection, API token, server export job or change to project sharing.
@@ -8,8 +10,17 @@ connection, API token, server export job or change to project sharing.
 The browser builds one HTML page with adjacent `assets/` files. There are no
 README or metadata pages for Notion to import accidentally. Ordinary source
 download remains available as **Export**, and project ZIP downloads keep their
-existing exact-file behavior. PDF and direct Notion publishing are separate
-future features.
+existing exact-file behavior. **Export to Google Docs** is also available as
+a [DOCX download](google-docs-export.md). PDF and direct publishing to external
+accounts are separate future features.
+
+An unlisted export uses one frozen copy of the shared file and its already
+authorized rendering dependencies. It includes the saved source and original
+image bytes from that response, with matching current component output where
+available. Unopened embedded notes are expanded in the export. It does not
+read the project or include private discussions, and project-file links do
+not grant access to other files. A known link revocation or replacement of
+the displayed bundle closes the export and drops its prepared result.
 
 ## Included content
 
@@ -19,7 +30,9 @@ future features.
   image depends on a Storage URL, temporary URL or third-party host.
 - Excalidraw and D2 embeds become PNGs. The native renderer keeps drawing
   images, fonts and saved diagram overrides. It requests twice the native
-  dimensions where the pixel budget allows.
+  dimensions where the pixel budget allows, with the drawing transform scaled
+  to match the canvas. This avoids a small drawing inside an enlarged blank
+  image; reducing scale for the pixel budget preserves the same content bounds.
 - Embedded `Document` notes become expanded sections in the same page,
   including children that were never expanded in the editor.
 - The current root buffer and retained child buffers include unsaved edits.

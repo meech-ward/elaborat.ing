@@ -45,10 +45,10 @@ async function open(page: Page, source: string, otherFiles: Record<string, strin
   return {fake, id}
 }
 
-async function exportDialog(page: Page) {
+async function exportDialog(page: Page, format: 'Notion' | 'Google Docs' = 'Notion') {
   await page.getByRole('button', {name: 'File actions', exact: true}).click()
-  await page.getByRole('menuitem', {name: 'Export to Notion', exact: true}).click()
-  const dialog = page.getByRole('dialog', {name: 'Export to Notion', exact: true})
+  await page.getByRole('menuitem', {name: `Export to ${format}`, exact: true}).click()
+  const dialog = page.getByRole('dialog', {name: `Export to ${format}`, exact: true})
   await expect(dialog).toBeVisible()
   return dialog
 }
@@ -69,6 +69,24 @@ async function exported(page: Page) {
   expect(Object.keys(entries).filter(path => path.endsWith('.html'))).toEqual(['export.html'])
   expect(Object.keys(entries).every(path => path === 'export.html' || /^assets\/[a-f0-9]{64}\.(png|jpg|webp|gif)$/.test(path))).toBe(true)
   return {dialog, entries, html: strFromU8(entries['export.html'])}
+}
+
+async function googleDocsExported(page: Page) {
+  const dialog = await exportDialog(page, 'Google Docs')
+  await dialog.getByRole('button', {name: 'Prepare export', exact: true}).click()
+  await expect(dialog.getByRole('status').filter({hasText: /^Ready:/})).toBeVisible({timeout: 45_000})
+  const pending = page.waitForEvent('download')
+  await dialog.getByRole('button', {name: 'Download DOCX', exact: true}).click()
+  const download = await pending
+  expect(download.suggestedFilename()).toBe('export-google-docs.docx')
+  const entries = await unzip(download)
+  expect(strFromU8(entries['[Content_Types].xml'])).toContain('application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')
+  const xml = strFromU8(entries['word/document.xml'])
+  const parsed = new DOMParser().parseFromString(xml, 'text/xml')
+  const word = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  const text = Array.from(parsed.getElementsByTagNameNS(word, 't')).map(node => node.textContent).join('')
+  expect(xml).not.toContain('altChunk')
+  return {dialog, entries, xml, parsed, text, word}
 }
 
 test('ordinary text, lists, code and tables stay editable HTML and current source drafts are included', async ({page}) => {
@@ -190,6 +208,79 @@ test('collapsed unopened documents and a live unsaved child draft are expanded i
   await expect(dialog.getByRole('status').filter({hasText: /^Ready:/})).toHaveText('Ready: 3 documents and 0 images.')
   expect(fake.server.content(id, childPath)).toBe(childSource)
   expect(fake.server.content(id, NOTE)).toBe(source)
+})
+
+test('Google Docs exports real editable DOCX with unsaved root and child drafts, original images and cached offline repeat', async ({page}) => {
+  const picture = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 800; canvas.height = 450
+    const context = canvas.getContext('2d')!
+    context.fillStyle = 'white'; context.fillRect(0, 0, 800, 450)
+    context.fillStyle = '#3153ec'; context.fillRect(10, 10, 780, 100)
+    return canvas.toDataURL('image/png')
+  })
+  const original = Buffer.from(picture.split(',')[1], 'base64')
+  const childPath = 'notes/google-child.md'
+  const childSource = '# Google child\n\nEditable child paragraph.\n'
+  const source = '# Google project export\n\nA **bold** root paragraph.\n\n| Item | State |\n| --- | --- |\n| Export | Ready |\n\n![Original project picture](../images/google.png)\n\n<Document src="notes/google-child.md" title="Current child" defaultCollapsed />\n\n<Document src="notes/google-unopened.md" title="Unopened child" defaultCollapsed />\n'
+  const {fake, id} = await open(page, source, {
+    [childPath]: childSource,
+    'notes/google-unopened.md': '# Unopened Google child\n\nContent never opened before export.',
+    'private/unrelated.txt': 'UNREFERENCED_PRIVATE_PROJECT_CONTENT',
+  }, [{path: 'images/google.png', bytes: original, type: 'image/png'}])
+  await lines(page).click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('\nCURRENT ROOT DRAFT.\n')
+  await expect(page.getByRole('tab', {name: `${NOTE}, unsaved changes`, exact: true})).toBeVisible()
+  await showView(page, 'Rendered')
+  const embed = frame(page).locator(`[data-document-embed="${childPath}"]`)
+  await embed.getByRole('button', {name: 'Current child', exact: true}).click()
+  const child = embed.frameLocator('iframe')
+  const paragraph = child.getByText('Editable child paragraph.', {exact: true})
+  await paragraph.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' CURRENT CHILD DRAFT.')
+  await expect(child.getByText('Editable child paragraph. CURRENT CHILD DRAFT.', {exact: true})).toBeVisible()
+  const unopened = frame(page).locator('[data-document-embed="notes/google-unopened.md"]')
+  await expect(unopened.locator('iframe')).toHaveCount(0)
+  const requestStart = fake.requests.length
+  const first = await googleDocsExported(page)
+  await expect(first.dialog.getByRole('status').filter({hasText: /^Ready:/})).toHaveText('Ready: 3 documents and 1 image.')
+  for (const content of ['Google project export', 'CURRENT ROOT DRAFT.', 'Editable child paragraph. CURRENT CHILD DRAFT.', 'Content never opened before export.'])
+    expect(first.text).toContain(content)
+  const headings = Array.from(first.parsed.getElementsByTagNameNS(first.word, 'pStyle')).some(style => /^heading-?1$/i.test(style.getAttributeNS(first.word, 'val') ?? '')) ||
+    Array.from(first.parsed.getElementsByTagNameNS(first.word, 'outlineLvl')).some(level => level.getAttributeNS(first.word, 'val') === '0')
+  expect(headings).toBe(true)
+  expect(first.parsed.getElementsByTagNameNS(first.word, 'b').length).toBeGreaterThan(0)
+  const table = first.parsed.getElementsByTagNameNS(first.word, 'tbl').item(0)!
+  expect(table).not.toBeNull()
+  expect(table.getElementsByTagNameNS(first.word, 'tc').length).toBeGreaterThanOrEqual(4)
+  expect(table.textContent).toContain('Item')
+  expect(table.textContent).toContain('Ready')
+  const images = Object.keys(first.entries).filter(path => path.startsWith('word/media/'))
+  expect(images).toHaveLength(1)
+  expect(Buffer.from(first.entries[images[0]]).equals(original)).toBe(true)
+  expect(inspectImage(first.entries[images[0]])).toMatchObject({width: 800, height: 450})
+  const xmlFiles = Object.entries(first.entries).filter(([path]) => /\.(?:xml|rels)$/.test(path)).map(([, bytes]) => strFromU8(bytes)).join('\n')
+  expect(xmlFiles).not.toMatch(/UNREFERENCED_PRIVATE_PROJECT_CONTENT|<script|<iframe|contenteditable|data:/)
+  await first.dialog.locator('[data-slot="dialog-footer"]').getByRole('button', {name: 'Close', exact: true}).click()
+  await expect(unopened.locator('iframe')).toHaveCount(0)
+  await page.context().setOffline(true)
+  try {
+    const offline = await googleDocsExported(page)
+    expect(offline.text).toBe(first.text)
+    expect(Object.keys(offline.entries).filter(path => path.startsWith('word/media/')).some(path => Buffer.from(offline.entries[path]).equals(original))).toBe(true)
+    await offline.dialog.locator('[data-slot="dialog-footer"]').getByRole('button', {name: 'Close', exact: true}).click()
+  } finally {await page.context().setOffline(false)}
+  // Choosing Notion afterward still produces the ordinary HTML/assets ZIP.
+  const notion = await exported(page)
+  expect(notion.html).toContain('CURRENT ROOT DRAFT.')
+  expect(notion.html).toContain('Editable child paragraph. CURRENT CHILD DRAFT.')
+  expect(notion.entries['word/document.xml']).toBeUndefined()
+  expect(fake.server.content(id, NOTE)).toBe(source)
+  expect(fake.server.content(id, childPath)).toBe(childSource)
+  expect(fake.requests.slice(requestStart).some(request => /save_files|save_file|\/oauth\/|\/auth\/v1\/(?:token|authorize)/.test(request.url()))).toBe(false)
+  expect(fake.requests.some(request => /^https:\/\/(?:docs|drive|accounts)\.google\.com\//.test(request.url()))).toBe(false)
 })
 
 const counter = `import {useState} from 'react'

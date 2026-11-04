@@ -49,6 +49,7 @@ import {
 import { linkedFile, resolveNoteLink } from "./noteLinks";
 import { useSettledError, useTyping } from "@/lib/settledError";
 import { LazyNotionExportDialog } from "@/features/exports/LazyNotionExportDialog";
+import type { DocumentExportFormat } from "@/features/exports/NotionExportDialog";
 
 type Mode = EditorView;
 
@@ -159,7 +160,7 @@ export function WorkspaceSession({
   const shownSourceError = useSettledError(sourceError?.message ?? null, typing, sourceError?.text === snapshot.text);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [notionExportOpen, setNotionExportOpen] = useState(false);
+  const [documentExportFormat, setDocumentExportFormat] = useState<DocumentExportFormat | null>(null);
   const [componentGeneration, setComponentGeneration] = useState(0);
   const loadComponentSource = useCallback(async (path: string) => {
     const file = await client.read(path);
@@ -1006,7 +1007,10 @@ export function WorkspaceSession({
     // Read-only, the file follows its saved copy by itself.
     ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
     { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },
-    ...(isNote ? [{ label: "Export to Notion", disabled: renderedPending, onSelect: () => {settle(); setNotionExportOpen(true);} }] : []),
+    ...(isNote ? [
+      { label: "Export to Notion", disabled: renderedPending, onSelect: () => {settle(); setDocumentExportFormat('notion');} },
+      { label: "Export to Google Docs", disabled: renderedPending, onSelect: () => {settle(); setDocumentExportFormat('google-docs');} },
+    ] : []),
     ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending, onSelect: () => void handleFormat() }] : []),
     ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
   ];
@@ -1214,9 +1218,9 @@ export function WorkspaceSession({
           return importProjectImageURL(client.projectId!, url, signal);
         }} />}
     </div>
-    {notionExportOpen && <LazyNotionExportDialog path={displayName} client={client}
+    {documentExportFormat && <LazyNotionExportDialog key={documentExportFormat} path={displayName} client={client} format={documentExportFormat}
       capture={captureNotionSources} existingSnapshot={existingNotionSnapshot} projectFileUrl={notionProjectFileUrl}
-      onClose={() => setNotionExportOpen(false)} />}
+      onClose={() => setDocumentExportFormat(null)} />}
     {/* A nested engine accepts its private port once. Keep that connection
         across the consent prompt; pending stops projection and clears edit
         authority until the checked environment is allowed to run. */}

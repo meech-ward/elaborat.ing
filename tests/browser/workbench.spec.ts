@@ -788,7 +788,7 @@ const tabBeside = (page: Page, name: string) =>
 test("a tab's file actions open from ... on the active tab, and on right-click on any tab", async ({ page }) => {
   await openProject(page, { "a.md": "a\n", "b.md": "b\n" }, "a.md")
   await openFromExplorer(page, "b.md")
-  const items = ["Save", "Duplicate", "Reload", "Export", "Export to Notion", "Format"]
+  const items = ["Save", "Duplicate", "Reload", "Export", "Export to Notion", "Export to Google Docs", "Format"]
   const menu = page.getByRole("menu", { name: "File actions" })
   const more = page.getByRole("button", { name: "File actions" })
   // "..." sits over the active tab's end, shown under the pointer and with

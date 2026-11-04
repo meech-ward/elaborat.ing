@@ -9,12 +9,26 @@ import { createNotionAssets } from './notionAssets'
 import { notionHtml, type NotionHtmlResult } from './notionHtml'
 import { notionVector } from './notionVector'
 
-export type NotionWorkspace = Pick<WorkspaceStore, 'read' | 'readImage' | 'readImageAsset'>
+export type NotionWorkspace = Pick<WorkspaceStore, 'read' | 'readImage' | 'readImageAsset'> & {
+  /** Immutable bytes tied to a file revision, for a finite public bundle that
+   * deliberately does not expose private Storage asset metadata. */
+  readImageRevision?: (path: string, revision: string | null, preview?: boolean) => Promise<Blob>;
+}
 export type StaticIsland = {from: number; to: number; html: string}
 export type SnapshotRequest = {path: string; source: string; format: DocumentFormat; client: NotionWorkspace}
 export type NotionExportResult = {
   bytes: Uint8Array<ArrayBuffer>; filename: string; documentCount: number; assetCount: number;
   diagnostics: NotionHtmlResult['diagnostics'];
+}
+export type DocumentExportOptions = {
+  path: string; source: string; client: NotionWorkspace; sources?: ReadonlyMap<string, string>;
+  snapshot?: (request: SnapshotRequest) => Promise<StaticIsland[]>;
+  projectFileUrl?: (path: string) => string | null;
+  signal?: AbortSignal; onProgress?: (message: string) => void;
+}
+export type PreparedDocumentExport = {
+  html: string; assets: Array<{path: string; bytes: Uint8Array}>; filenameStem: string;
+  documentCount: number; assetCount: number; diagnostics: NotionHtmlResult['diagnostics'];
 }
 
 const encoder = new TextEncoder()
@@ -26,8 +40,9 @@ export function notionExportName(path: string): string {
   return stem || 'document'
 }
 
-/** Reads are frozen once. Image bytes use immutable asset IDs, never a later
- * replacement at the same path. No export operation writes or saves a file.
+/** Reads are frozen once. Images use immutable asset IDs or a public bundle's
+ * revision-bound reader, never a later replacement at the same path.
+ * No export operation writes or saves a file.
  */
 export function frozenNotionWorkspace(client: NotionWorkspace, sources: ReadonlyMap<string, string>, signal?: AbortSignal): NotionWorkspace {
   const files = new Map<string, Promise<WorkspaceFile>>()
@@ -51,7 +66,13 @@ export function frozenNotionWorkspace(client: NotionWorkspace, sources: Readonly
   }
   return {read, readImage: client.readImage ? async (path, preview) => {
     const file = await read(path)
-    if (file.kind !== 'image' || !file.asset) throw new Error('This export image is unavailable.')
+    if (file.kind !== 'image') throw new Error('This export image is unavailable.')
+    if (!file.asset) {
+      if (!client.readImageRevision) throw new Error('This export image is unavailable.')
+      const bytes = await client.readImageRevision(path, file.revision, preview)
+      signal?.throwIfAborted()
+      return bytes
+    }
     if (client.readImageAsset) return client.readImageAsset(file.asset.id, preview)
     const bytes = await client.readImage!(path, preview)
     if ((await client.read(path)).asset?.id !== file.asset.id) throw new Error('An image changed during export. Prepare the export again.')
@@ -60,16 +81,11 @@ export function frozenNotionWorkspace(client: NotionWorkspace, sources: Readonly
   } : undefined}
 }
 
-/** A Notion import package is ordinary semantic HTML and adjacent assets.
+/** Portable exports share ordinary semantic HTML and validated local assets.
  * Its contents are generated locally; custom code runs only in the existing
  * isolated renderer supplied by the caller, never in this converter.
  */
-export async function buildNotionExport(options: {
-  path: string; source: string; client: NotionWorkspace; sources?: ReadonlyMap<string, string>;
-  snapshot?: (request: SnapshotRequest) => Promise<StaticIsland[]>;
-  projectFileUrl?: (path: string) => string | null;
-  signal?: AbortSignal; onProgress?: (message: string) => void;
-}): Promise<NotionExportResult> {
+export async function prepareDocumentExport(options: DocumentExportOptions): Promise<PreparedDocumentExport> {
   const {path, source, signal} = options
   if (!isDocumentPath(path)) throw new Error('Choose a Markdown or MDX note to export.')
   if (encoder.encode(source).byteLength > 2 * 1024 * 1024) throw new Error('This note exceeds the export source limit.')
@@ -131,8 +147,19 @@ export async function buildNotionExport(options: {
   const title = notionExportName(path)
   const html = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>${escape(title)}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><article>${result.html}</article></body></html>\n`
   if (encoder.encode(html).byteLength > 5 * 1024 * 1024) throw new Error('The converted HTML exceeds 5 MiB. Export a smaller document.')
+  // createNotionAssets already owns a fresh byte copy for each asset. Keep
+  // that ownership rather than doubling the full asset budget in memory.
+  return {html, assets: assets.files.map(file => ({...file})), filenameStem: title,
+    documentCount: converted.size, assetCount: assets.files.length, diagnostics: result.diagnostics}
+}
+
+/** A Notion package contains one HTML page and its adjacent asset copies. */
+export async function buildNotionExport(options: DocumentExportOptions): Promise<NotionExportResult> {
+  const result = await prepareDocumentExport(options)
+  options.signal?.throwIfAborted()
   options.onProgress?.('Packing the Notion ZIP')
-  const bytes = zipProject([{path: `${title}.html`, content: html}, ...assets.files.map(file => ({...file, content: ''}))], [])
-  signal?.throwIfAborted()
-  return {bytes, filename: `${title}-notion.zip`, documentCount: converted.size, assetCount: assets.files.length, diagnostics: result.diagnostics}
+  const bytes = zipProject([{path: `${result.filenameStem}.html`, content: result.html}, ...result.assets.map(file => ({...file, content: ''}))], [])
+  options.signal?.throwIfAborted()
+  return {bytes, filename: `${result.filenameStem}-notion.zip`, documentCount: result.documentCount,
+    assetCount: result.assetCount, diagnostics: result.diagnostics}
 }

@@ -529,6 +529,12 @@ limits true in the architecture, roadmap and feature docs.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- The public `SharedBundle` schema spreads the image pixel schema's fields
+  for originals, losing its combined width-times-height refinement. Align that
+  metadata boundary with the existing 8 MP check; the shared export adapter
+  and image decoding still validate pixels before use. Keep malformed-image
+  coverage without weakening the existing byte or decoded-pixel bounds.
+
 - Consider an explicit local sign-out and account-switch flow. The current
   Sign out action uses Supabase's default global scope, which signs out
   other devices too. Cover session scope and account switching with tests

@@ -57,8 +57,10 @@ Developer first, friendly for everyone.
   project sharing stays independent. See [project categories](project-categories.md).
 - **No lock-in.** Any project downloads as a .zip of its files, exactly as
   saved, and a .zip or a folder imports as a new project.
-- **Notion import packages**, generated in the browser from a note with its
-  embedded documents, images and drawings. See [Notion export](notion-export.md).
+- **Document exports**, generated in the browser from a note with its embedded
+  documents, images and drawings: [Notion ZIP](notion-export.md) or
+  [Google Docs DOCX](google-docs-export.md). Unlisted note readers can export
+  the shared content without signing in.
 - **Offline drafts.** Edits live in the browser until saved. Saves are
   revision-checked, and conflicts are recovered visibly, never overwritten.
 - **Search** across every project a user can read, keyword and semantic

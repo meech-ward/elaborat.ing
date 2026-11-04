@@ -6,6 +6,27 @@ import { HARNESS_URL } from "./urls.ts"
 const dist = path.join(import.meta.dirname, "harness", "dist")
 const appDist = path.join(import.meta.dirname, "..", "..", "dist")
 
+test('scaled and pixel-limited PNG exports keep the drawing centered and filling its canvas', async ({page}) => {
+  await page.goto(`${HARNESS_URL}?drawing=export-scale`)
+  await expect(page.getByTestId('drawing-canvas')).toBeVisible()
+  const normal = await page.evaluate(() => window.harness.pngBounds())
+  const doubled = await page.evaluate(() => window.harness.pngBounds({scale: 2}))
+  const bounded = await page.evaluate(() => window.harness.pngBounds({scale: 2, maxPixels: 2800}))
+  expect(normal.width).toBe(140)
+  expect(normal.height).toBe(80)
+  expect(doubled.width).toBe(normal.width * 2)
+  expect(doubled.height).toBe(normal.height * 2)
+  expect(bounded.width * bounded.height).toBeLessThanOrEqual(2800)
+  expect(bounded.width).toBeLessThan(normal.width)
+  for (const image of [normal, doubled, bounded]) {
+    expect(image.right).toBeGreaterThan(image.left)
+    expect((image.right - image.left + 1) / image.width).toBeGreaterThan(0.8)
+    expect((image.bottom - image.top + 1) / image.height).toBeGreaterThan(0.65)
+    expect(Math.abs(image.left - (image.width - image.right - 1))).toBeLessThanOrEqual(3)
+    expect(Math.abs(image.top - (image.height - image.bottom - 1))).toBeLessThanOrEqual(3)
+  }
+})
+
 test("the canvas draws with fonts from this site and nothing else", async ({ page }) => {
   const errors: string[] = []
   const elsewhere: string[] = []
