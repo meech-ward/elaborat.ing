@@ -224,6 +224,27 @@ test("an edit that keeps waiting shows as finishing in the status and the file's
   expect((await page.evaluate(() => window.typing.status)).filter((text) => text === "Finishing edit…")).toHaveLength(1)
 })
 
+test("leaving the page while a saved note's first edit is on its way asks first", async ({ page }) => {
+  await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
+  await expect(frameOf(page).getByText("First paragraph.", { exact: true })).toBeVisible()
+  await caretAfter(page, "First paragraph.")
+  const dialogs: string[] = []
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.type())
+    void dialog.dismiss()
+  })
+  await page.evaluate(() => { window.transactionGate.enabled = true })
+  await page.keyboard.type("X")
+  await page.waitForFunction(() => window.transactionGate.held.length > 0)
+  // The edit is in neither the source nor the draft yet: closing would lose it.
+  await page.close({ runBeforeUnload: true })
+  await expect.poll(() => dialogs).toEqual(["beforeunload"])
+  expect(page.isClosed()).toBe(false)
+  await releaseTransactions(page)
+  await expect(frameOf(page).getByText("First paragraph.X", { exact: true })).toBeVisible()
+  await expect(page.getByRole("tab", { name: /, unsaved changes$/ })).toBeVisible()
+})
+
 /** Hold the edit of the next key, and choose `item` from the file's menu before that edit shows as finishing. */
 async function chooseAsEditStarts(page: Page, key: string, item: string) {
   await page.evaluate(() => { window.transactionGate.enabled = true })

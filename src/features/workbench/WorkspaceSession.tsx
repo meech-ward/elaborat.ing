@@ -367,13 +367,19 @@ export function WorkspaceSession({
   // sets no state here.
   const [pendingShown, setPendingShown] = useState(false);
   const pendingShownTimer = useRef({ timer: 0, shown: false });
+  // Leaving the page asks first from the moment an edit is on its way: until
+  // it lands it is neither in the source nor in the draft, and the shown
+  // state (with the unsaved guard below) comes later. No state is set.
+  const holdUnload = useCallback((event: BeforeUnloadEvent) => event.preventDefault(), []);
+  const unloadHeld = useRef(false);
   useEffect(() => {
     const shown = pendingShownTimer.current;
     return () => {
       window.clearTimeout(shown.timer);
       shown.timer = 0;
+      window.removeEventListener("beforeunload", holdUnload);
     };
-  }, []);
+  }, [holdUnload]);
   const pendingViews = useRef(new Set<string>());
   // Whatever waits for a rendered edit to finish (a duplicate), let go once it has.
   const editWaiters = useRef<Array<() => void>>([]);
@@ -424,6 +430,11 @@ export function WorkspaceSession({
     if (value) pendingViews.current.add(id); else pendingViews.current.delete(id);
     const pending = pendingViews.current.size > 0;
     renderedPendingRef.current = pending;
+    if (pending !== unloadHeld.current) {
+      unloadHeld.current = pending;
+      if (pending) window.addEventListener("beforeunload", holdUnload);
+      else window.removeEventListener("beforeunload", holdUnload);
+    }
     const shown = pendingShownTimer.current;
     if (pending && !shown.shown && !shown.timer) {
       shown.timer = window.setTimeout(() => {
@@ -446,7 +457,7 @@ export function WorkspaceSession({
       showMode(next);
       setNotice(current => current === 'Finishing edit…' ? null : current);
     }
-  }, [showMode]);
+  }, [holdUnload, showMode]);
   const handleRenderedPending = useCallback((pending: boolean) => handleViewPending("standalone", pending), [handleViewPending]);
   const savingRef = useRef(false);
   const pendingOperation = useRef(0);
