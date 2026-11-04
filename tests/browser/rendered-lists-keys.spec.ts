@@ -475,6 +475,22 @@ test.describe("in the app", () => {
     await expect(paragraph(page, /^bravoQ$/)).toBeVisible()
   })
 
+  test("Ctrl+Z after Backspace over the text after a line break brings the text back at once", async ({ page }) => {
+    await openNote(page)
+    await atEnd(page, "bravo")
+    await press(page, "Shift+Enter")
+    await page.keyboard.type("x")
+    await expect(paragraph(page, /^bravox$/)).toBeVisible()
+    // A pause, so the Backspace is an undo step of its own.
+    await page.waitForTimeout(900)
+    await press(page, "Backspace")
+    await expect(paragraph(page, /^bravo$/)).toBeVisible()
+    await expect(lineBreaks(page)).toHaveCount(1)
+    await press(page, "ControlOrMeta+z")
+    await expect(paragraph(page, /^bravox$/)).toBeVisible()
+    await expect(lineBreaks(page)).toHaveCount(1)
+  })
+
   test("Ctrl+Z after Enter and typing in a list takes the text back first, then the new item", async ({ page }) => {
     await openNote(page)
     await atEnd(page, "bravo")

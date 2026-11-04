@@ -62,13 +62,15 @@ const selectionOf = (state: EditorState): Selection => ({
   head: state.selection.head,
 });
 /**
- * A line break typed at the end of a paragraph (`hardBreak`), with whatever
- * it replaced: `step`, made from `base`. Markdown cannot write a break there,
- * so the editor shows it (in `doc`) but sends nothing until text is typed
- * after it, then sends the break and the text as one step. Anything else
- * takes it out again, and the parent never hears of it.
+ * A line break at the end of a paragraph, shown but held back: `step`, made
+ * from `base`, puts it in. Markdown cannot write a break there, so the editor
+ * shows it (in `doc`) but sends nothing until text is typed after it, then
+ * sends the break and the text as one step. Anything else takes it out
+ * again. `sent`: the break was in the note until the edit just sent, which
+ * took out the text after it (`leftBreak`); one typed with Shift+Enter
+ * (`hardBreak`) the parent never had.
  */
-type HeldBreak = { step: ReplaceStep; base: PMNode; doc: PMNode; before: Selection };
+type HeldBreak = { step: ReplaceStep; base: PMNode; doc: PMNode; before: Selection; sent: boolean };
 /** Keys that move the caret or split text: they take a held break out first. */
 const LEAVING_KEYS = new Set(["Enter", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 /** Keys whose move, from the line a held break made, ends where taking the break out leaves the caret. */
@@ -755,7 +757,8 @@ export class FluidEditor {
       }
       if (next && trailingBreak([next], tr.doc, held.base)) {
         this.view.updateState(this.view.state.apply(tr));
-        this.held = { ...held, step: next, doc: this.view.state.doc };
+        // Another break typed after it: the note has neither.
+        this.held = { ...held, step: next, doc: this.view.state.doc, sent: false };
         return;
       }
       // Where the held break is once the edit is made.
@@ -783,14 +786,14 @@ export class FluidEditor {
       const step = trailingBreak(tr.steps, tr.doc, tr.before);
       if (step) {
         this.view.updateState(this.view.state.apply(tr));
-        this.held = { step, base: tr.before, doc: this.view.state.doc, before };
+        this.held = { step, base: tr.before, doc: this.view.state.doc, before, sent: false };
         return;
       }
       left = leftBreak(tr.before, tr.doc);
       holds = left !== null && tr.selection.empty && tr.selection.head === afterBreak(left.hold);
       if (left && !left.steps.length) {
         this.view.updateState(this.view.state.apply(tr));
-        if (holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold) };
+        if (holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: atBreak(left.hold), sent: false };
         else this.showBase(left);
         return;
       }
@@ -815,7 +818,7 @@ export class FluidEditor {
     // What the parent will have once this edit is written.
     const doc = left ? left.base : this.view.state.doc;
     const after = left && holds ? atBreak(left.hold) : selectionOf(this.view.state);
-    if (left && holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after };
+    if (left && holds) this.held = { step: left.hold, base: left.base, doc: this.view.state.doc, before: after, sent: true };
     const group = `${this.epoch}:${this.group}`;
     const syntax: FluidSyntaxHint | undefined = tr.getMeta("fluidSyntax");
     // Typing while an earlier edit is being checked waits as one edit, so
@@ -880,10 +883,13 @@ export class FluidEditor {
   }
 
   private history(direction: "undo" | "redo") {
-    // Undo takes a held line break out: the parent never had it.
-    if (this.heldBreak()) {
+    // Undo takes a held line break out. One typed with Shift+Enter is all it
+    // takes back, as the parent never had it; one the edit just sent left on
+    // screen goes with that edit, which the note's history takes back.
+    const held = this.heldBreak();
+    if (held) {
       this.dropBreak();
-      if (direction === "undo") return;
+      if (direction === "undo" && !held.sent) return;
     }
     this.group++;
     this.historyPending = direction;
