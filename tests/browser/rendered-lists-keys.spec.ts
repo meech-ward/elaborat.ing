@@ -384,6 +384,15 @@ test.describe("in the harness", () => {
     await expect.poll(() => source(page)).toBe("alpha\\\nx\n\nbravo\n")
   })
 
+  test("Shift+Backspace at the start of a nested list's first item moves it out a level, as Backspace does", async ({ page }) => {
+    const mark = await load(page, "- parent\n  - child\n- after\n", "md", /^parent$/)
+    await clickAt(page, "child", 0)
+    await press(page, "Shift+Backspace")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("- parent\n- child\n- after\n")
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

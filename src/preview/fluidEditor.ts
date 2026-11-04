@@ -339,6 +339,8 @@ export class FluidEditor {
         return true;
       };
     const nodes = fluidSchema.nodes;
+    const backspace = chainCommands(emptyListBackspace, listItemBackspace, baseKeymap.Backspace);
+    const del = chainCommands(listItemDelete, baseKeymap.Delete);
     // Tab and Shift+Tab move a list item in and out a level, and otherwise
     // do nothing: the keyboard stays in the text, where taking it away would
     // lose what is typed next. Escape, then Tab or Shift+Tab, takes it out as
@@ -435,11 +437,14 @@ export class FluidEditor {
             Tab: indenting(sinkListItem(nodes.list_item)),
             "Shift-Tab": indenting(liftItem),
             "Shift-Enter": hardBreak,
+            // Every key the base keymap binds to Backspace or Delete (with
+            // Shift or Mod, and Ctrl+H or Ctrl+D on macOS) joins and lifts
+            // list items as those keys do.
             ...Object.fromEntries(
-              Object.entries(baseKeymap).filter(([key]) => key !== "Enter"),
+              Object.entries(baseKeymap)
+                .filter(([key]) => key !== "Enter")
+                .map(([key, command]) => [key, command === baseKeymap.Backspace ? backspace : command === baseKeymap.Delete ? del : command]),
             ),
-            Backspace: chainCommands(emptyListBackspace, listItemBackspace, baseKeymap.Backspace),
-            Delete: chainCommands(listItemDelete, baseKeymap.Delete),
             "Mod-Enter": chainCommands(toggleTask, baseKeymap["Mod-Enter"]),
           }),
         ],
