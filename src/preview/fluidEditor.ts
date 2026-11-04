@@ -734,7 +734,7 @@ export class FluidEditor {
         this.view.updateState(this.view.state);
         return;
       }
-      if (next && trailingBreak([next], tr.doc)) {
+      if (next && trailingBreak([next], tr.doc, held.base)) {
         this.view.updateState(this.view.state.apply(tr));
         this.held = { ...held, step: next, doc: this.view.state.doc };
         return;
@@ -753,7 +753,7 @@ export class FluidEditor {
         before = selectionOf(this.view.state);
       }
     } else {
-      const step = trailingBreak(tr.steps, tr.doc);
+      const step = trailingBreak(tr.steps, tr.doc, tr.before);
       if (step) {
         this.view.updateState(this.view.state.apply(tr));
         this.held = { step, base: tr.before, doc: this.view.state.doc, before };
@@ -813,7 +813,7 @@ export class FluidEditor {
     return this.held;
   }
 
-  /** Take the held line break out of the document on screen, and what it replaced back. */
+  /** Take the held line break out of the document on screen, and the spaces it replaced back. */
   private dropBreak() {
     const held = this.heldBreak();
     if (!held) return;

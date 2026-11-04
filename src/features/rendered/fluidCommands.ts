@@ -197,13 +197,16 @@ export const hardBreak: Command = (state, dispatch) => {
 
 /**
  * Where an edit put a line break that ends its paragraph (Shift+Enter at the
- * end of a line), or null. Markdown cannot write a break there, so the editor
- * shows it but holds it back until text follows (fluidEditor.ts).
+ * end of a line) in place of nothing but spaces, made on `before`, or null.
+ * Markdown cannot write a break there, so the editor shows it but holds it
+ * back until text follows (fluidEditor.ts). A break that took the place of
+ * text is not held: the text's deletion is an edit of its own (`leftBreak`).
  */
-export function trailingBreak(steps: readonly Step[], doc: PMNode): ReplaceStep | null {
+export function trailingBreak(steps: readonly Step[], doc: PMNode, before: PMNode): ReplaceStep | null {
   const [step] = steps;
   if (steps.length !== 1 || !(step instanceof ReplaceStep) || step.slice.openStart || step.slice.openEnd) return null;
   if (step.slice.content.lastChild?.type !== fluidSchema.nodes.hard_break) return null;
+  if (!/^[ \t]*$/.test(before.textBetween(step.from, step.to, undefined, "￼"))) return null;
   const $end = doc.resolve(step.from + step.slice.size);
   return $end.parent.type === fluidSchema.nodes.paragraph && $end.parentOffset === $end.parent.content.size ? step : null;
 }

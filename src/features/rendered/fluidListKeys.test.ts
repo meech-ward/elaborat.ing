@@ -257,7 +257,7 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       expect(after.selection.$head.nodeBefore?.type).toBe(fluidSchema.nodes.hard_break);
       expect(after.selection.$head.nodeAfter?.type).toBe(fluidSchema.nodes.hard_break);
       expect(after.selection.$head.parent.textContent).not.toContain("\n");
-      expect(trailingBreak(made!.steps, made!.doc)).toBeNull();
+      expect(trailingBreak(made!.steps, made!.doc, state.doc)).toBeNull();
       const accepted = await prepareFluidTransaction({ text, revision: 1, format }, projection, made!.steps.map((step) => step.toJSON()));
       expect(accepted.text).toBe(shown);
       expect(accepted.projection.doc.eq(made!.doc)).toBe(true);
@@ -290,7 +290,7 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       const { projection, state } = await at(text, word, word.length, format);
       let made: Transaction | undefined;
       hardBreak(state, (tr) => (made = tr));
-      const held = trailingBreak(made!.steps, made!.doc)!;
+      const held = trailingBreak(made!.steps, made!.doc, state.doc)!;
       expect(held).not.toBeNull();
       // Alone, the break has no Markdown form.
       await expect(prepareFluidTransaction({ text, revision: 1, format }, projection, made!.steps.map((step) => step.toJSON()))).rejects.toThrow();
@@ -300,7 +300,7 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       const typing = shown.tr.insertText(typed);
       const step = afterHeldBreak(held, typing.steps);
       expect(step).toBeInstanceOf(ReplaceStep);
-      expect(trailingBreak([step as Step], typing.doc)).toBeNull();
+      expect(trailingBreak([step as Step], typing.doc, state.doc)).toBeNull();
       const accepted = await prepareFluidTransaction({ text, revision: 1, format }, projection, [(step as Step).toJSON()]);
       expect(accepted.text).toBe(expected);
       expect(accepted.projection.doc.eq(typing.doc)).toBe(true);
@@ -309,12 +309,12 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     const { projection, state } = await at("alpha", "alpha", 5, format);
     let first: Transaction | undefined;
     hardBreak(state, (tr) => (first = tr));
-    const held = trailingBreak(first!.steps, first!.doc)!;
+    const held = trailingBreak(first!.steps, first!.doc, state.doc)!;
     const once = state.apply(first!);
     let second: Transaction | undefined;
     hardBreak(once, (tr) => (second = tr));
     const both = afterHeldBreak(held, second!.steps) as ReplaceStep;
-    expect(trailingBreak([both], second!.doc)).not.toBeNull();
+    expect(trailingBreak([both], second!.doc, state.doc)).not.toBeNull();
     const typing = once.apply(second!).tr.insertText("x");
     const step = afterHeldBreak(both, typing.steps) as Step;
     expect((await prepareFluidTransaction({ text: "alpha", revision: 1, format }, projection, [step.toJSON()])).text).toBe("alpha\\\n\\\nx");
@@ -323,7 +323,7 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     expect(afterHeldBreak(held, once.tr.delete(6, 7).steps)).toBeNull();
     // A break in the middle of a line is not held.
     const middle = await run("alpha bravo", "alpha", hardBreak, { format });
-    expect(trailingBreak(middle!.tr.steps, middle!.tr.doc)).toBeNull();
+    expect(trailingBreak(middle!.tr.steps, middle!.tr.doc, middle!.state.doc)).toBeNull();
   });
 
   test(`${format}: taking out the text after a line break holds the break and sends the rest, and text typed after it goes with the break`, async () => {
@@ -419,14 +419,23 @@ test("Shift+Enter does nothing across paragraphs or over a select-all", async ()
   expect(dispatched).toBe(false);
 });
 
-test("a held line break with what it replaced: taking it out puts that back", async () => {
-  const { state } = await at("alpha bravo", "bravo", 0);
-  const selected = state.apply(state.tr.setSelection(TextSelection.create(state.doc, state.selection.from, state.selection.from + 5)));
-  let made: Transaction | undefined;
-  hardBreak(selected, (tr) => (made = tr));
-  const held = trailingBreak(made!.steps, made!.doc)!;
-  expect(held).not.toBeNull();
-  const back = held.invert(selected.doc).apply(made!.doc).doc!;
-  expect(back.eq(selected.doc)).toBe(true);
+test("a line break typed over a selection at the end of a line: the deletion is sent, and only the break is held", async () => {
+  for (const [text, word, sent] of [
+    ["alpha bravo", "bravo", "alpha "],
+    ["- one two\n- b", "two", "- one \n- b"],
+  ]) {
+    const { projection, state } = await at(text, word, 0);
+    const selected = state.apply(state.tr.setSelection(TextSelection.create(state.doc, state.selection.from, state.selection.from + word.length)));
+    let made: Transaction | undefined;
+    hardBreak(selected, (tr) => (made = tr));
+    expect(trailingBreak(made!.steps, made!.doc, selected.doc)).toBeNull();
+    const left = leftBreak(made!.before, made!.doc)!;
+    expect(left.steps).toHaveLength(1);
+    const accepted = await prepareFluidTransaction({ text, revision: 1, format: "md" }, projection, left.steps.map((step) => step.toJSON()));
+    expect(accepted.text).toBe(sent);
+    // Taking the break out leaves the word deleted.
+    expect(left.hold.invert(left.base).apply(made!.doc).doc!.eq(left.base)).toBe(true);
+    expect(accepted.projection.doc.eq(left.base)).toBe(true);
+  }
 });
 

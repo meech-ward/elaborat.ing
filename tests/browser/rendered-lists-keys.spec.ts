@@ -315,6 +315,21 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("a line break typed over a word at the end of a line takes the word out, and it stays out when the caret leaves", async ({ page }) => {
+    const mark = await load(page, "alpha bravo\n\nNext line.\n", "md", /^alpha bravo$/)
+    await clickAt(page, "alpha bravo", 6)
+    await press(page, "Shift+ArrowRight", 5)
+    await press(page, "Shift+Enter")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alpha \n\nNext line.\n")
+    await expect(lineBreaks(page)).toHaveCount(1)
+    await clickAt(page, "Next line.", 2)
+    await expect(lineBreaks(page)).toHaveCount(0)
+    await expect(paragraph(page, /^alpha $/)).toBeVisible()
+    expect(await source(page)).toBe("alpha \n\nNext line.\n")
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")
