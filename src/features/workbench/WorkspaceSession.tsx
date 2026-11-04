@@ -641,25 +641,45 @@ export function WorkspaceSession({
 
   // Notes compile-check while Source shows (same pipeline as Rendered): its
   // banner and marks are all that show the result, and Rendered reports its
-  // own errors. Hidden, typing compiles nothing here; showing checks again.
+  // own errors. Hidden, nothing is compiled here. The result Source showed
+  // stays until the text changes while it is hidden, so a tab comes back
+  // with its banner instead of being pushed down by it a moment later.
   const checkedSource = isNote && active && view !== "rendered" ? snapshot.text : null;
-  const checkedFormat = snapshot.format;
+  // The text and format the last check finished for (null once its result
+  // is dropped), and the text Source hid with.
+  const sourceCheck = useRef<{ text: string | null; format: string; hidden: string | null }>({ text: null, format: "", hidden: null });
   useEffect(() => {
-    if (checkedSource === null) {
+    const check = sourceCheck.current;
+    if (!isNote) {
+      check.text = check.hidden = null;
       setSourceError(null);
       return;
     }
+    if (checkedSource === null) {
+      if (check.hidden === null) check.hidden = snapshot.text;
+      else if (check.text !== null && check.hidden !== snapshot.text) {
+        check.text = null;
+        setSourceError(null);
+      }
+      return;
+    }
+    check.hidden = null;
+    if (check.text === checkedSource && check.format === snapshot.format) return;
+    const format = snapshot.format;
     let alive = true;
     const timer = window.setTimeout(() => {
-      void diagnoseSource(checkedSource, checkedFormat).then((message) => {
-        if (alive) setSourceError(message === null ? null : { text: checkedSource, message });
+      void diagnoseSource(checkedSource, format).then((message) => {
+        if (!alive) return;
+        check.text = checkedSource;
+        check.format = format;
+        setSourceError(message === null ? null : { text: checkedSource, message });
       });
     }, 400);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [checkedSource, checkedFormat]);
+  }, [checkedSource, isNote, snapshot.format, snapshot.text]);
 
   const switchMode = useCallback((next: Mode) => {
     settle();

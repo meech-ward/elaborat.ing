@@ -99,7 +99,7 @@ async function countTyping(page: Page) {
 
 const projectUrl = (id: string, path: string) => new URL(`projects/${id}/${path}`, APP_URL).href
 
-async function openProject(page: Page, files: Record<string, string>, path: string) {
+async function openProject(page: Page, files: Record<string, string>, path: string, view: "Rendered" | "Source" = "Rendered") {
   await countTyping(page)
   await recordFrameMessages(page)
   const fake = await fakeSupabase(page)
@@ -110,7 +110,7 @@ async function openProject(page: Page, files: Record<string, string>, path: stri
   await signedIn(page)
   await page.goto(projectUrl(id, path))
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
-  await page.getByRole("button", { name: "Rendered", exact: true }).click()
+  if (view === "Rendered") await page.getByRole("button", { name: "Rendered", exact: true }).click()
   return { fake, id }
 }
 
@@ -260,6 +260,36 @@ test("Format and Export to Notion chosen in an edit's first moments wait for the
   await expect(page.getByRole("dialog", { name: "Export to Notion", exact: true })).toBeVisible()
   await expect(notice).not.toHaveText("Finishing edit…")
   await expect(status).toHaveText("Unsaved changes")
+})
+
+test("a note's Source check is there as soon as its tab comes back, without moving the source", async ({ page, appErrors }) => {
+  appErrors.expect(/Expected a closing tag/)
+  await openProject(page, { "notes/broken.mdx": "# Broken\n\nSome <b>bold words.\n", "b.md": "# Other\n\nOther.\n" }, "notes/broken.mdx", "Source")
+  const banner = page.getByRole("alert").filter({ hasText: "Source check:" })
+  await expect(banner).toBeVisible()
+  await page.getByRole("button", { name: "b.md", exact: true }).click()
+  await expect(page.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true")
+  // Each frame from the press on the note's tab: is its source shown, and its banner with it?
+  await page.evaluate(() => {
+    const frames: Array<{ source: boolean; banner: boolean }> = []
+    Object.assign(window, { returnFrames: frames })
+    document.addEventListener("pointerdown", () => {
+      const start = performance.now()
+      const sample = () => {
+        const source = [...document.querySelectorAll(".monaco-editor")].some((editor) => (editor as HTMLElement).checkVisibility())
+        const banner = [...document.querySelectorAll('[role="alert"]')].some((alert) => alert.textContent?.includes("Source check:") && (alert as HTMLElement).checkVisibility())
+        frames.push({ source, banner })
+        if (performance.now() - start < 1500) requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+    }, { capture: true, once: true })
+  })
+  await page.getByRole("tab", { name: /broken\.mdx/ }).click()
+  await expect(banner).toBeVisible()
+  await page.waitForTimeout(1600)
+  const frames = await page.evaluate(() => (window as unknown as { returnFrames: Array<{ source: boolean; banner: boolean }> }).returnFrames)
+  expect(frames.filter((frame) => frame.source).length).toBeGreaterThan(0)
+  expect(frames.filter((frame) => frame.source && !frame.banner)).toEqual([])
 })
 
 test("typing beside an image reads it once, and gives the note frame the same pixels", async ({ page }) => {
