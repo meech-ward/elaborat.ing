@@ -970,7 +970,9 @@ export function checkChildMessage(args: {
  * (`source`), match the active session once initialised, and validate by shape.
  * The first accepted render message initialises the session. A resources
  * message never initialises a session: pixels without a document render
- * are ignored.
+ * are ignored. The appearance and reading preferences may come first, so
+ * that the note's first paint is already in them: they carry no document,
+ * and only the parent holds the port.
  */
 export function checkParentMessage(args: {
   data: unknown;
@@ -990,7 +992,7 @@ export function checkParentMessage(args: {
   ) {
     return { ok: false, error: "Rejected parent message for a stale session." };
   }
-  if (parsed.data.kind !== "render" && args.activeSession == null) {
+  if (args.activeSession == null && !["render", "appearance", "reading-preferences"].includes(parsed.data.kind)) {
     return { ok: false, error: "Rejected resources before a document render." };
   }
   return { ok: true, message: parsed.data };

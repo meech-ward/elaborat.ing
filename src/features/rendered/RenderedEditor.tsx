@@ -762,6 +762,17 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
   }, [document.text, document.revision, document.format, documentId, componentEnvironment, componentError, componentPending, onError, onPendingChange, rejectPendingDraft]);
 
+  // Presentation updates do not re-evaluate MDX or replace in-progress edits.
+  // Each goes to a frame as soon as it has its port, and again only when it
+  // changes. These effects come before the render's, so a new frame has them
+  // before its first render, and the note's first paint is already in them.
+  useEffect(() => {
+    portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
+  }, [appearance, readyTick, session]);
+  useEffect(() => {
+    portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
+  }, [reading, bottomInset, readyTick, session]);
+
   // Post compiled code to the child frame. The render message carries the
   // revision it was built from; the child echoes it back so stale output
   // can never overwrite a newer document. Reposted whenever the frame
@@ -876,14 +887,6 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     });
     return () => { cancelled = true; };
   }, [exposed,documentPath,imageResources,readyTick,session]);
-
-  // Presentation updates do not re-evaluate MDX or replace in-progress edits.
-  useEffect(() => {
-    if (exposed) portRef.current?.postMessage({ kind: "appearance", session, ...appearance });
-  }, [appearance, exposed, readyTick, session]);
-  useEffect(() => {
-    if (exposed) portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
-  }, [reading, bottomInset, exposed, readyTick, session]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
   // other text wait for the next; meanwhile the frame's marks move with edits.
@@ -1774,6 +1777,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             display: "block",
             // The sandbox domain's page shows once it says ready, never a browser's error page.
             visibility: frameDoc.hosted && !frameDoc.ready ? "hidden" : undefined,
+            // Until the frame has its appearance, its page is see-through and
+            // this, the editor's own panel colour, shows. The frame's page
+            // starts with no colour scheme, and a frame whose scheme differs
+            // from its element's is painted opaque by the browser, so the
+            // element has none either.
+            background: "var(--panel)",
+            colorScheme: "normal",
           }}
         /> : null}
         {railShown && (
