@@ -65,6 +65,9 @@ export class DocumentEmbedController {
   }
   dispose() { for (const id of this.entries.keys()) this.release(id); }
   reconcile() {
+    // Nothing open, nothing to release: the note is not read for references
+    // on every change (an open request reads them when it comes).
+    if (!this.entries.size) return;
     const context = this.options.context();
     const refs = this.references(context);
     for (const [id, entry] of this.entries) {

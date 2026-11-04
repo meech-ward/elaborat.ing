@@ -896,29 +896,55 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     port.postMessage(message);
   }, [hasExposed, readyTick, session, resources]);
 
+  // The image keys the note references, as the parser reads them: only these
+  // get pixels. They are kept by runtimeKey and path. Every image syntax (an
+  // image, an image reference and its definition, an HTML or JSX image) is
+  // an island or a block the projection keeps aside, whose source the
+  // runtimeKey hashes, and the modules' code is in its environment key, so
+  // the keys change only with it: typing prose parses nothing.
+  const imageKeys = useRef<{ runtimeKey: string; path: string; keys: Promise<ReadonlySet<string>> } | null>(null);
+  // The pixels the frame was last sent, and on which port: they go again
+  // only when a key or its pixels change.
+  const imagesSent = useRef<{ port: MessagePort; readyTick: number; images: ReadonlyMap<string, ImagePreview> } | null>(null);
   useEffect(() => {
     if (!exposed) return;
     let cancelled = false;
-    void import('../images/references').then(async ({parseImageReferences}) => {
-      const refs = await parseImageReferences(exposed.text,exposed.format,documentPath,
-        exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]));
-      if (cancelled || authority.current !== exposed) return;
-      const allowed = new Set(refs.map(ref => ref.key));
-      const entries = Object.entries(imageResources ?? {}).filter(([key]) => allowed.has(key));
+    let known = imageKeys.current;
+    if (known?.runtimeKey !== exposed.runtimeKey || known.path !== documentPath) {
+      const modules = exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]);
+      known = {
+        runtimeKey: exposed.runtimeKey,
+        path: documentPath,
+        keys: import('../images/references')
+          .then(({parseImageReferences}) => parseImageReferences(exposed.text,exposed.format,documentPath,modules))
+          .then(refs => new Set(refs.map(ref => ref.key))),
+      };
+      imageKeys.current = known;
+    }
+    const keys = known.keys;
+    keys.then(allowed => {
+      const port = portRef.current;
+      if (cancelled || authority.current !== exposed || !port) return;
+      const images = new Map(Object.entries(imageResources ?? {}).filter(([key,image]) => allowed.has(key) && image.dataURL.length <= 8 * 1024 * 1024));
+      const sent = imagesSent.current;
+      if (sent?.port === port && sent.readyTick === readyTick && sent.images.size === images.size &&
+        [...images].every(([key,image]) => sent.images.get(key) === image)) return;
+      imagesSent.current = {port,readyTick,images};
       let message:ImagesMessage = {kind:'images',session,revision:exposed.revision,reset:true,images:[]};
       let bytes = 0;
-      for (const [key,image] of entries) {
+      for (const [key,image] of images) {
         if (message.images.length && (bytes + image.dataURL.length > 8 * 1024 * 1024 || message.images.length >= 32)) {
-          portRef.current?.postMessage(message);
+          port.postMessage(message);
           message = {...message,reset:false,images:[]};
           bytes = 0;
         }
-        if (image.dataURL.length > 8 * 1024 * 1024) continue;
         message.images.push({key,...image});
         bytes += image.dataURL.length;
       }
-      portRef.current?.postMessage(message);
-    }).catch(error => {
+      port.postMessage(message);
+    }, error => {
+      // A note the parser could not read is read again next time.
+      if (imageKeys.current?.keys === keys) imageKeys.current = null;
       if (!cancelled) console.warn('Image references could not be resolved:',error);
     });
     return () => { cancelled = true; };

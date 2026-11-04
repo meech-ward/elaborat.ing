@@ -123,6 +123,16 @@ describe('document embed capabilities', () => {
     f.controller.reconcile();
     expect(f.detached()).toBe(2);
   });
+  test('with no document open, a change of the note is not read for references', () => {
+    let reads = 0;
+    const context = {session:'session-1234',revision:3,format:'mdx' as const,owner:{} as Window,path:'parent.mdx',ancestors:['parent.mdx'],
+      get text() { reads++; return '<Document src="child.mdx" />\n\nTyping here.'; }};
+    const controller = new DocumentEmbedController({context:() => context, send:() => {}, nonce:() => '0'.repeat(32), bootstrap:() => Promise.resolve('')});
+    controllers.push(controller);
+    controller.reconcile();
+    controller.reconcile();
+    expect(reads).toBe(0);
+  });
   test('a new view of an embedded document starts at the height it last reported', () => {
     const first = fixture();
     first.context.text = '<Document src="tall.mdx" />';
