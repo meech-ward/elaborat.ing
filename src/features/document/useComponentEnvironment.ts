@@ -86,12 +86,20 @@ export function reusedEnvironment(state: ComponentPreparation, identity: number,
 // The MDX compiler loads with the first note that needs it.
 const componentModules = () => import('./componentModules');
 const NO_COMPONENTS = {};
+/** How long typing pauses before a text its own view already shows is compiled. */
+export const SHOWN_TEXT_PAUSE_MS = 500;
 
 /**
  * Saved dependencies are cached until the explicit note Reload generation, or
  * until one of the modules they came from is saved again, here or by sync.
+ *
+ * `shown` says the view that changed the text already shows it, with the
+ * last environment: a rendered edit, which that view projected itself. The
+ * text's environment is then compiled once typing pauses, not at each
+ * keystroke, and the last one stays meanwhile, not pending. Any other text,
+ * or one without an environment for this document yet, compiles at once.
  */
-export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void, identity = 0): {environment?: ComponentEnvironment; error?: string; pending?: boolean} {
+export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void, identity = 0, shown = false): {environment?: ComponentEnvironment; error?: string; pending?: boolean} {
   const [moduleEpoch,setModuleEpoch] = useState(0);
   // The epoch is part of the cache's semantics, not a dependency-only hint:
   // the React Compiler may otherwise reuse cachedSourceLoader(load) across
@@ -101,17 +109,22 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   const [state,setState] = useState<ComponentPreparation>({});
   // Made in the same render as the text, so the rendered view never waits for it.
   const reused = useMemo(() => enabled ? reusedEnvironment(state,identity,cachedLoader,source) : null, [enabled,state,identity,cachedLoader,source]);
-  const compile = enabled && reused === null;
+  // The last environment compiled for this document and loader, without an error.
+  const last = state.settled && state.error === undefined && state.identity === identity && state.loader === cachedLoader ? state.environment : undefined;
+  const compile = enabled && reused === null && last?.source !== source;
+  const pause = compile && shown && last !== undefined;
   useEffect(() => {
     if (!compile) return;
     let cancelled = false;
-    componentModules().then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
+    const run = () => componentModules().then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
       if (!cancelled) setState({environment,loader:cachedLoader,settled:true,identity});
     },error => {
       if (!cancelled) setState(previous => ({environment:previous.identity === identity ? previous.environment : undefined,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true,identity}));
     });
-    return () => {cancelled = true;};
-  },[source,compile,cachedLoader,identity]);
+    const timer = pause ? window.setTimeout(run, SHOWN_TEXT_PAUSE_MS) : 0;
+    if (!pause) void run();
+    return () => {cancelled = true;window.clearTimeout(timer);};
+  },[source,compile,pause,cachedLoader,identity]);
   useEffect(() => {
     if (!enabled || !load || !subscribe || !cached) return;
     return watchSavedModules(subscribe,cached.revisions,load,() => setModuleEpoch(epoch => epoch + 1));

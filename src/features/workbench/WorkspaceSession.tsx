@@ -150,6 +150,9 @@ export function WorkspaceSession({
     return store;
   });
   const [snapshot, setSnapshot] = useState<StoreState>(() => store.snapshot());
+  // The document as the rendered view's last typing left it: that view shows
+  // it already, without a new component environment.
+  const [renderedEdit, setRenderedEdit] = useState<StoreState | null>(null);
   const [openFile, setOpenFile] = useState<OpenFile>(() =>
     opening.revision
       ? openWorkspaceFile(initial.path, opening.revision)
@@ -190,7 +193,10 @@ export function WorkspaceSession({
   // A module saved in another tab, or brought in by sync, rebuilds the components.
   // Typing (a draft's new text) never changes a saved module.
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe((change) => { if (change !== "drafts") listener(); }), [client]);
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId);
+  // Typing in the rendered view compiles the note's components once it
+  // pauses. An embedded copy of the note would wait for them to show the edit.
+  const shownByRendered = renderedEdit === snapshot && embeddedViews.length === 0;
+  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId, shownByRendered);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
   const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId);
@@ -586,6 +592,9 @@ export function WorkspaceSession({
         editorApi.current.applyExternalPatches(patches, options);
         setPatchError(null);
         setSnapshot(next);
+        // Typing in the rendered view (a transaction, in an undo group) is
+        // shown by that view already; its other edits show once projected.
+        if (options?.group !== undefined) setRenderedEdit(next);
         return true;
       } catch (error) {
         setPatchError(error instanceof Error ? error.message : String(error));

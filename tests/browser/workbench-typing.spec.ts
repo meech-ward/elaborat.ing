@@ -187,6 +187,17 @@ test("typing prose into an MDX note without code compiles no component environme
   expect(counts.commits).toBeLessThanOrEqual(20)
 })
 
+test("typing prose into an MDX note with code compiles its component environment once the typing pauses", async ({ page }) => {
+  await openProject(page, { "notes/code.mdx": "# Code\n\nFirst paragraph.\n\n<Counter initial={3} />\n\n```js\nconst value = { a: 1 }\n```\n" }, "notes/code.mdx")
+  await expect(frameOf(page).getByText("First paragraph.", { exact: true })).toBeVisible()
+  await startTyping(page, "First paragraph.")
+  const counts = await typed(page, "abcdefgh")
+  await expect(frameOf(page).getByText("First paragraph. abcdefgh", { exact: true })).toBeVisible()
+  // Its braces could be code, so the text is compiled: once it pauses, not once a keystroke.
+  expect(counts.environments).toBeGreaterThanOrEqual(1)
+  expect(counts.environments).toBeLessThanOrEqual(2)
+})
+
 test("an edit that keeps waiting shows as finishing in the status and the file's menu, and stops once it lands", async ({ page }) => {
   const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n" }, "a.md")
   await expect(frameOf(page).getByText("First paragraph.", { exact: true })).toBeVisible()
