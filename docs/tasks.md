@@ -555,6 +555,10 @@ limits true in the architecture, roadmap and feature docs.
 
 ## Small things
 
+- Google Docs conversion of nested `sup` and `sub` elements can retain both
+  vertical-alignment flags on one text run. Clear the inherited opposing flag
+  and verify that the innermost element controls the exported alignment.
+
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 

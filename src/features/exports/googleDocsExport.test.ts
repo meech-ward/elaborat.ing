@@ -122,12 +122,13 @@ describe('browser generated Google Docs document', () => {
   })
 
   test('active markup and form values cannot enter OOXML and remote images are never fetched', async () => {
-    const bytes = await htmlToDocx({filenameStem: 'safe', assets: [], html: '<html><body><span><div><h2>Nested component result</h2><p>Readable result.</p></div></span><script>privateScript()</script><form><label>Email<input value="private@example.invalid" /></label><input type="password" value="password-secret" /><textarea>private draft</textarea><button>Continue</button></form></body></html>'})
+    const bytes = await htmlToDocx({filenameStem: 'safe', assets: [], html: '<html><body><span><div><h2>Nested component result</h2><p>Readable result.<span hidden="">hidden-empty-inline</span></p><p hidden="">hidden-empty-block</p></div></span><script>privateScript()</script><form><label>Email<input value="private@example.invalid" /></label><input type="password" value="password-secret" /><textarea>private draft</textarea><button>Continue</button></form></body></html>'})
     const xml = xmlPart(unzipSync(bytes)), text = allText(xml)
     expect(text).toContain('Nested component result')
     expect(text).toContain('Readable result.')
     expect(text).toContain('Continue')
     expect(text).not.toMatch(/privateScript|private@example|password-secret|private draft/)
+    expect(text).not.toContain('hidden-empty-')
     expect(xml).toContain('w:pStyle w:val="Heading2"')
     await expect(htmlToDocx({filenameStem: 'remote', assets: [], html: '<img src="https://outside.example/private.png" />'})).rejects.toThrow('not included')
     await expect(htmlToDocx({filenameStem: 'external', assets: [], html: '<!DOCTYPE html SYSTEM "https://outside.example/entity"><html><body>Text</body></html>'})).rejects.toThrow('invalid')

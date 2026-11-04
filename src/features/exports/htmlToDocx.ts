@@ -19,6 +19,7 @@ const OMIT = new Set(['head', 'script', 'style', 'iframe', 'object', 'embed', 't
 const children = (node: Node) => Array.from({length: node.childNodes.length}, (_, index) => node.childNodes.item(index)!).filter(Boolean)
 const tag = (node: Node) => node.nodeType === 1 ? (node as Element).tagName.toLowerCase() : ''
 const attr = (node: Node, name: string) => node.nodeType === 1 ? (node as Element).getAttribute(name) ?? '' : ''
+const hidden = (node: Node) => node.nodeType === 1 && ((node as Element).hasAttribute('hidden') || attr(node, 'aria-hidden') === 'true')
 const span = (node: Node, name: string) => Math.max(1, Math.min(32, Math.floor(Number(attr(node, name))) || 1))
 
 /** Only validated local bytes reach the browser decoder. PNG/JPEG originals
@@ -132,7 +133,7 @@ export async function htmlToDocx(input: Pick<PreparedDocumentExport, 'html' | 'a
   const inline = async (node: Node, context: Context, style: Style = context.style ?? {}): Promise<ParagraphChild[]> => {
     signal?.throwIfAborted()
     if (node.nodeType === 3 || node.nodeType === 4) return [new api.TextRun({text: node.nodeValue ?? '', ...style})]
-    if (node.nodeType !== 1 || OMIT.has(tag(node)) || attr(node, 'hidden') || attr(node, 'aria-hidden') === 'true') return []
+    if (node.nodeType !== 1 || OMIT.has(tag(node)) || hidden(node)) return []
     const name = tag(node)
     if (name === 'input') return attr(node, 'type') === 'checkbox' ? [new api.TextRun({text: (node as Element).hasAttribute('checked') ? '☑ ' : '☐ ', ...style})] : []
     if (name === 'img') return [await image(node, context.width)]
@@ -244,7 +245,7 @@ export async function htmlToDocx(input: Pick<PreparedDocumentExport, 'html' | 'a
     for (const node of items) {
       signal?.throwIfAborted()
       const name = tag(node)
-      if (node.nodeType === 8 || OMIT.has(name) || attr(node, 'hidden') || attr(node, 'aria-hidden') === 'true') continue
+      if (node.nodeType === 8 || OMIT.has(name) || hidden(node)) continue
       if (node.nodeType === 3 && !node.nodeValue?.trim() && !pending.length) continue
       const blockWrapper = node.nodeType === 1 && !BLOCK.has(name) && !CONTAINER.has(name) &&
         children(node).some(child => CONTAINER.has(tag(child)) || BLOCK.has(tag(child)))
