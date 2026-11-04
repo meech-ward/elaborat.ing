@@ -590,6 +590,25 @@ for (const format of ["md", "mdx"] as const) {
     }
   });
 
+  test(`${format}: a space or tab before a line break in a paragraph, which Markdown drops, keeps the note editable`, async () => {
+    for (const [text, first] of [
+      ["line one \nline two", "line one"],
+      ["line one \t\nline two", "line one"],
+      ["a\t\r\nb", "a"],
+      ["- a \n  b", "a"],
+      ["> a \n> b", "a"],
+    ]) {
+      const projection = await projectFluidSource(text, format);
+      expect(projection.doc.textContent, text).toBe(`${first}\n${text.endsWith("line two") ? "line two" : "b"}`);
+      // Typed at the end of the first line, text goes before the spaces; the line break joins the lines.
+      const end = fluidPositionForSourceOffset(projection, text.indexOf(first) + first.length)!;
+      const typed = await prepareFluidTransaction({ text, revision: 1, format }, projection, [replace(end, end, "x")]);
+      expect(typed.text).toBe(text.replace(first, `${first}x`));
+      const joined = await prepareFluidTransaction({ text, revision: 1, format }, projection, [replace(end, end + 1, "")]);
+      expect(joined.projection.doc.textContent).toBe(projection.doc.textContent.replace("\n", ""));
+    }
+  });
+
   test(`${format}: typing into a file that holds only a byte order mark adds no blank lines`, async () => {
     const projection = await projectFluidSource("﻿", format);
     const next = await prepareFluidTransaction({ text: "﻿", revision: 1, format }, projection, [replace(1, 1, "S")]);

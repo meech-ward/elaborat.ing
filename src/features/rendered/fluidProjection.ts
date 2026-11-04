@@ -199,9 +199,17 @@ function decodedBoundaries(
         /^(?:\\[!-/:-@\[-`{-~]|&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);)/.exec(
           remaining,
         )?.[0] ?? token;
-    const decoded = code
+    let decoded = code
       ? token.replace(/\r\n?|\n/g, " ")
       : decodeString(token).replace(/\r\n?/g, "\n");
+    // Spaces and tabs before a line break are absent from the parser's text
+    // value too: they go with the line break, so text typed at the end of
+    // the line is written before them.
+    const suffix = !code && value[output] === "\n" ? /^[ \t]+(?:\r\n?|\n)/.exec(remaining)?.[0] : undefined;
+    if (suffix) {
+      token = suffix;
+      decoded = "\n";
+    }
     if (
       !value.startsWith(decoded, output) &&
       output > 0 &&
