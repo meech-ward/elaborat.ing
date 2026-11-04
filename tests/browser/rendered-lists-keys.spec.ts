@@ -444,12 +444,12 @@ test.describe("in the app", () => {
   test.describe.configure({ timeout: 60_000 })
   const NOTE = "# Steps\n\n- alpha\n- bravo\n- charlie\n\nTail paragraph.\n"
 
-  async function openNote(page: Page) {
+  async function openNote(page: Page, note = NOTE) {
     const fake = await fakeSupabase(page)
     const remote = fake.server.remote(person.id)
     const id = crypto.randomUUID()
     await remote.createProject(id, "Notes")
-    await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/lists.md", content: NOTE }])
+    await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "notes/lists.md", content: note }])
     await signedIn(page)
     await page.goto(new URL(`projects/${id}/notes/lists.md`, APP_URL).href)
     await page.getByRole("button", { name: "Rendered" }).click()
@@ -489,6 +489,19 @@ test.describe("in the app", () => {
     await press(page, "ControlOrMeta+z")
     await expect(paragraph(page, /^bravox$/)).toBeVisible()
     await expect(lineBreaks(page)).toHaveCount(1)
+  })
+
+  test("Ctrl+Z after typing and then Shift+Tab at once takes back only the Shift+Tab", async ({ page }) => {
+    await openNote(page, "# Steps\n\n- alpha\n  - bravo\n  - charlie\n- delta\n")
+    const top = frameOf(page).locator(".ProseMirror > ul > li")
+    await expect(top).toHaveCount(2)
+    await atEnd(page, "bravo")
+    await page.keyboard.type("xy")
+    await press(page, "Shift+Tab")
+    await expect(top).toHaveCount(3)
+    await press(page, "ControlOrMeta+z")
+    await expect(top).toHaveCount(2)
+    await expect(paragraph(page, /^bravoxy$/)).toBeVisible()
   })
 
   test("Ctrl+Z after Enter and typing in a list takes the text back first, then the new item", async ({ page }) => {

@@ -15,19 +15,20 @@ export type SourceHistoryResult = { text: string; selection: SourceSelection };
  */
 export type NotePlace = { selection: SourceSelection } | { top: number };
 
-/** The blocks of a rendered document, in a form two can be compared by: how
- * many there are at the top, and of each kind at any depth (paragraphs and
- * list items in lists, too). */
+/** The blocks of a rendered document and how they nest, in a form two can
+ * be compared by: typing never changes it, and Enter, a join or a lift
+ * always does, even a lift that leaves as many blocks of each kind
+ * (Shift+Tab on a nested list's first item with items after it). */
 export function blockShape(doc: PMNode): string {
-  const counts = new Map<string, number>();
-  const count = (node: PMNode) =>
+  const shape = (node: PMNode): string => {
+    const blocks: string[] = [];
     node.forEach((child) => {
       if (child.isInline) return;
-      counts.set(child.type.name, (counts.get(child.type.name) ?? 0) + 1);
-      if (!child.isTextblock) count(child);
+      blocks.push(child.isTextblock || child.isLeaf ? child.type.name : `${child.type.name}(${shape(child)})`);
     });
-  count(doc);
-  return [doc.childCount, ...[...counts].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, n]) => `${name}:${n}`)].join(" ");
+    return blocks.join(" ");
+  };
+  return shape(doc);
 }
 
 /** A text replacement can remove paragraph boundaries, but is still one
