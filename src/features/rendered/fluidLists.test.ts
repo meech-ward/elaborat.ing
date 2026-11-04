@@ -132,7 +132,7 @@ for (const format of ["md", "mdx"] as const) {
     expect((await type(caret(await note(fenced, format), "b"), "x")).text).toBe("- ```js\n  x()\n  ```\n- bx\n- c");
     expect((await press(caret(await note(fenced, format), "b"), enter)).text).toBe("- ```js\n  x()\n  ```\n- b\n- \n- c");
     expect((await press(caret(await note(fenced, format), "b"), tab)).text).toBe("- ```js\n  x()\n  ```\n  - b\n- c");
-    expect((await press(caret(await note("- # Title\n- b", format), "b", 0), backspace)).text).toBe("- # Title\n\n  b");
+    expect((await press(caret(await note("- # Title\n- b", format), "b", 0), backspace)).text).toBe("- # Title\n  b");
   });
 
   test(`${format}: Enter at the end of an item with a nested list starts an item that holds the nested list`, async () => {
@@ -375,7 +375,7 @@ for (const format of ["md", "mdx"] as const) {
     expect(islandSources(entered)).toEqual(islandSources(await note(fenced, format)));
     expect((await press(caret(await note(fenced, format), "b"), tab)).text).toBe("- a\n  ```js\n  x()\n  ```\n  - b");
     expect((await press(caret(await note(fenced, format), "b"), untab)).text).toBe("- a\n  ```js\n  x()\n  ```\n\nb");
-    expect((await press(caret(await note(fenced, format), "b", 0), backspace)).text).toBe("- a\n  ```js\n  x()\n  ```\n\n  b");
+    expect((await press(caret(await note(fenced, format), "b", 0), backspace)).text).toBe("- a\n  ```js\n  x()\n  ```\n  b");
     // Out of the list the code block keeps its name, and its code is exactly as it was.
     const lifted = await press(caret(await note(fenced, format), "a"), untab);
     expect(lifted.text).toBe("a\n\n```js\nx()\n```\n\n- b");
@@ -386,6 +386,22 @@ for (const format of ["md", "mdx"] as const) {
     expect((await press(caret(await note("- ![x](a.png)\n- b", format), "b"), tab)).text).toBe("- ![x](a.png)\n  - b");
     expect((await press(caret(await note("- ![x](a.png)\n- b", format), "b"), untab)).text).toBe("- ![x](a.png)\n\nb");
     expect((await press(caret(await note("- ![x](a.png)\n- b", format), "b", 0), untab)).text).toBe("- ![x](a.png)\n\nb");
+    // Joined items keep a tight list tight, where the next block can start on the next line.
+    for (const [list, command, block, offset, joined] of [
+      ["- a\n  ```js\n  x\n  ```\n- b\n- c", backspace, "b", 0, "- a\n  ```js\n  x\n  ```\n  b\n- c"],
+      ["1. a\n   ```js\n   x\n   ```\n2. b\n3. c", backspace, "b", 0, "1. a\n   ```js\n   x\n   ```\n   b\n2. c"],
+      ["- a\n- ```js\n  x()\n  ```\n- c", del, "a", undefined, "- a\n  ```js\n  x()\n  ```\n- c"],
+      ["- a\n- ```js\n  x()\n  ```\n- c", backspace, "c", 0, "- a\n- ```js\n  x()\n  ```\n  c"],
+      ["- a\n  # Title\n- b", del, "Title", undefined, "- a\n  # Title\n  b"],
+      ["- # Title\n- b", backspace, "b", 0, "- # Title\n  b"],
+      ["- a\n  > q\n- b", backspace, "b", 0, "- a\n  > qb"],
+      // Not a paragraph after a quote, which would continue it, nor in a loose list.
+      ["- a\n  > q\n- b", del, "q", undefined, "- a\n  > q\n\n  b"],
+      ["- a\n  ```js\n  x\n  ```\n\n- b\n\n- c", backspace, "b", 0, "- a\n  ```js\n  x\n  ```\n\n  b\n\n- c"],
+    ] as const)
+      expect((await press(caret(await note(list, format), block, offset), command)).text, list).toBe(joined);
+    // A fence its item's end closes would take in any line after it.
+    await refused(caret(await note("- a\n  ```js\n  x\n- b", format), "b", 0), backspace, "Unsupported structural endpoint");
     // Deleting across the code block is still refused.
     await refused(caret(await note(fenced, format), "a", 0, undefined, 0), (state, dispatch) => {
       const b = state.doc.content.size - 3;

@@ -1495,6 +1495,34 @@ function sourceGap(projection: FluidProjection, before: PMNode, after: PMNode, s
   return blankLine(gap) ? "\n\n" : "\n";
 }
 
+/**
+ * Whether block `after` can start on the line right after block `before`,
+ * so an item's blocks need no blank line between them (which would make its
+ * list loose): a paragraph after a heading or a closed code fence, and a
+ * heading, a quote or a code fence after a paragraph. A paragraph after a
+ * quote or a list would continue it, and an unclosed fence would take it in.
+ */
+function followsTightly(projection: FluidProjection, before: PMNode, after: PMNode): boolean {
+  const { paragraph, heading, blockquote, object } = fluidSchema.nodes;
+  // An island is known by its source: a block opening with a fence is a
+  // code block, and one opening with "#" and a space is a heading.
+  const source = (node: PMNode) => {
+    if (node.type !== object) return "";
+    const entry = islandEntry(projection, node);
+    return entry.copy ?? detached(projection.text, entry.from, entry.to);
+  };
+  const atx = (node: PMNode) => node.type === heading || /^ {0,3}#{1,6}(?:[ \t]|$)/.test(source(node));
+  const fence = (node: PMNode) => {
+    const code = source(node);
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(code)?.[1];
+    if (!open) return null;
+    const close = /\n {0,3}(`+|~+)[ \t]*$/.exec(code)?.[1];
+    return close?.[0] === open[0] && close.length >= open.length ? "closed" : "open";
+  };
+  if (after.type === paragraph) return atx(before) || fence(before) === "closed";
+  return before.type === paragraph && (atx(after) || after.type === blockquote || fence(after) !== null);
+}
+
 /** One item of `list`: an unchanged item exactly as written, or its marker, box and blocks. */
 function itemSource(
   list: PMNode,
@@ -1518,16 +1546,17 @@ function itemSource(
   let body = "";
   item.forEach((child, _, i) => {
     // Two blocks the source has side by side keep the line breaks between
-    // them. A nested list can start on the line after the item's text,
-    // except an ordered one not starting at 1, which cannot interrupt a
-    // paragraph.
+    // them. In a tight list, a nested list can start on the line after the
+    // item's text, except an ordered one not starting at 1, which cannot
+    // interrupt a paragraph, and so can other blocks that may (`followsTightly`).
     if (i)
       body +=
         requiredGap(item, i) ??
         sourceGap(projection, item.child(i - 1), child, stays) ??
         (!style.nested &&
         (child.type === fluidSchema.nodes.bullet_list ||
-          (child.type === fluidSchema.nodes.ordered_list && child.attrs.order === 1))
+          (child.type === fluidSchema.nodes.ordered_list && child.attrs.order === 1) ||
+          followsTightly(projection, item.child(i - 1), child))
           ? "\n"
           : "\n\n");
     body += blockSource(
