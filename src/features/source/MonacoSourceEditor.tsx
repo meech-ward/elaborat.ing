@@ -13,6 +13,7 @@ import type { SourcePatch } from "@/features/document";
 import { languageForFormat } from "./modelSync";
 import { appendedFrom, mapThroughText } from "../document/writeIn";
 import { typeInSource, type SourceTypeIn } from "./sourceTypeIn";
+import { sourceChangePatches } from "./sourceChangePatches";
 
 /**
  * VS Code-like Markdown/MDX source editor (Monaco, workers bundled locally).
@@ -171,6 +172,10 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     let applyingRendered = false;
     // Replaying the shell's steps: the parent already has their text.
     let replaying = false;
+    // Always advance these on model events, including replay and outside
+    // flushes. The next edit's ranges belong to the model just shown.
+    let previousFileText = fileText(model);
+    let previousBomLength = bomLength(model);
     const selectionAt = (selection: SourceSelection) => {
       const anchor = positionAt(model, selection.anchor);
       const head = positionAt(model, selection.head);
@@ -428,12 +433,15 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
     );
 
     disposables.push(
-      editor.onDidChangeModelContent(() => {
+      editor.onDidChangeModelContent((event) => {
         if (!applyingRendered) renderedGroup = undefined;
-        if (replaying) return;
         const text = fileText(model);
+        const patches = sourceChangePatches(previousFileText, text, previousBomLength, event);
+        previousFileText = text;
+        previousBomLength = bomLength(model);
+        if (replaying) return;
         documentSync.emitted(text);
-        live.current.onChange(text);
+        live.current.onChange(text, patches);
         updateComments();
       }),
       editor.onDidFocusEditorText(() => {

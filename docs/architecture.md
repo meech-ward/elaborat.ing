@@ -1709,6 +1709,93 @@ where a browser groups frames by site they can share a process.
 
 ## Rendered editing
 
+**Experiment: local suggestions keep a separate working source.** On the
+`codex/suggesting-mode` branch, a build with `VITE_LOCAL_SUGGESTIONS=1` lets an
+owner or editor try suggesting on an existing Markdown or MDX note. This is
+a browser-only review experiment labelled "Suggesting locally"; it grants
+no new role, writes no shared
+suggestions and adds no MCP behavior. The ordinary read-only checks still
+apply.
+
+Run the experiment locally with:
+
+```bash
+VITE_LOCAL_SUGGESTIONS=1 bun run dev
+```
+
+Open an existing saved note and choose **Suggest changes locally** from
+**File actions**. Ordinary builds leave the flag unset. Suggestions stay in
+this browser and account; they are not shared with collaborators or agents.
+
+Source and Rendered show the proposed text. A local review panel shows each
+change's original and replacement source and offers individual or whole-file
+accept and reject. Inline insertion and deletion decorations are outside the
+experiment. Normal comment marks and selection actions are hidden in the
+proposed views because their anchors refer to accepted text.
+
+The note's canonical source store remains the source for normal saves,
+draft persistence and exports. A separate review source store holds the
+candidate text and its own undo history, shared by Source and Rendered while
+the experiment is active. A bounded, account- and project-scoped browser
+sidecar retains that review across reloads. Saving in this mode keeps only
+the local review. Accepting a checked change saves it to the canonical
+store through the ordinary checked file-write path and syncs normally;
+rejecting it changes only the review. Acceptance stops if the file moved or
+its accepted base changed. An explicit proposed-source export provides a
+recovery copy independently of ordinary exports.
+
+Review recovery is scoped to the current browser account and project.
+Transferring an accountless local project into a signed-in account does not
+yet transfer its review sidecars. Export proposed source or finish those
+reviews before signing in; account-transition recovery is part of T54.
+
+Keeping the sidecar changes review status, not the source snapshot sent to
+the renderer. Status-only updates retain the exact document object and its
+opaque review identity. Replacing that object while a source projection is
+compiling can invalidate its epoch without starting another compile, leaving
+the frame stale. Ordinary editing keeps its existing snapshot and identity.
+
+This separate working projection is necessary because continuing to type
+inside an insertion needs the inserted text to participate in the editor's
+positions and undo history, while an unaccepted insertion must never enter
+the normal file draft or export. Both stores still contain ordinary exact
+Markdown or MDX source, not suggestion markup or a second rich-text document
+format. Review boundaries and expected source are checked before applying
+an accepted change.
+
+Rendered edits supply their usual checked source patches. Monaco edits keep
+the exact replacement ranges from its model events, validated against the
+old and new source with byte-order-mark and UTF-16 offset handling. Model
+resets or line-ending conversions use a whole-source fallback and can group
+several changed passages into one proposal. Accepting or rejecting ends the
+review's typing history so Undo cannot revive an already decided proposal.
+
+Candidate MDX uses the ordinary isolated renderer and custom-code consent.
+Review mode disables image staging and inline embedded child editing.
+Existing component modules retain their accepted source authority. An
+embedded child's local review belongs to that child file; saving its parent
+keeps the review locally and never accepts it. Unsupported operations stay
+unavailable rather than mutating accepted files through the proposed view.
+Shared storage, commenter access, collaborative conflict handling, reviewed
+agent writes and proposals spanning several files remain follow-up work.
+The next steps are [T54 and T55](tasks.md#t54-define-shared-note-suggestions-and-checked-acceptance).
+
+Browser coverage in `tests/browser/suggesting.spec.ts` checks both note
+formats, Source and Rendered typing, individual and whole-review decisions,
+shared undo, reload recovery, stale or moved targets, commenter read-only
+access and accessibility. It also checks that ordinary source, project ZIP
+and Notion exports retain accepted content, including custom component
+output, and that saving a parent cannot accept its child's review.
+
+Checked on 2026-11-04 with Bun 1.4.3: production and browser builds,
+typecheck, lint, 1,573 passing unit tests and unchanged bundle budgets. All
+22 feature journeys pass in Chromium and Firefox; ten affected comment,
+byte-order-mark and stale-frame checks and six repeated review undo/redo
+runs pass too. The wider browser suite is not fully green on this macOS
+host. A clean `e1ea699` comparison reproduces Source-shortcut fixture
+failures and the Firefox task-list conversion failure recorded in the task
+queue; those are outside this experiment.
+
 **Decision: an embedded document keeps a separate editing session and source.**
 The MDX built-in `<Document src="notes/details.mdx" />` references a same-project
 Markdown or MDX file. Each file has one session shared by standalone tabs and

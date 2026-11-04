@@ -63,7 +63,7 @@ export type ConflictCopies = {
 
 /** One change in a local save. All changes in one save share a batch and sync together. */
 export type LocalChange =
-  | { kind: "write"; path: string; content: string; expectedRevision: string | null }
+  | { kind: "write"; path: string; content: string; expectedRevision: string | null; expectedIdentity?: string }
   | { kind: "asset"; path: string; asset: ImageAsset; expectedRevision: string | null }
   | { kind: "move"; from: string; to: string; expectedRevision: string; content?: string; asset?: ImageAsset }
   | { kind: "delete"; path: string; expectedRevision: string }
@@ -335,6 +335,17 @@ export class ProjectFileStore {
     return stored
   }
 
+  /** A saved file's stable identity on this device, independent of its content or server acknowledgement. */
+  async fileIdentity(path: string): Promise<string> {
+    checkPath(path)
+    return this.db.transaction(this.partition, "readonly", async (tx) => {
+      await this.project(tx)
+      const file = await tx.getFile(this.projectId, path)
+      if (!file || file.content === null) throw new FileStoreError(`${path} is not in this project.`)
+      return file.localId
+    })
+  }
+
   /** Both versions of a file whose sync conflicts, or null when it has no conflict. */
   async conflictCopies(path: string): Promise<ConflictCopies | null> {
     checkPath(path)
@@ -354,8 +365,8 @@ export class ProjectFileStore {
   }
 
   /** Save one file on this device. */
-  async write(path: string, content: string, expectedRevision: string | null) {
-    const [result] = await this.save([{ kind: "write", path, content, expectedRevision }])
+  async write(path: string, content: string, expectedRevision: string | null, expectedIdentity?: string) {
+    const [result] = await this.save([{ kind: "write", path, content, expectedRevision, ...(expectedIdentity === undefined ? {} : { expectedIdentity }) }])
     return result
   }
 
@@ -405,7 +416,10 @@ export class ProjectFileStore {
       const saved = file?.content ?? null
       const current = file ? await savedToken(file) : ""
       const expected = change.expectedRevision ?? ""
-      if (current !== expected) throw new LocalConflictError(sourcePaths[index], current, saved)
+      if (current !== expected || (change.kind === "write" && change.expectedIdentity !== undefined &&
+        (file?.localId !== change.expectedIdentity || saved === null))) {
+        throw new LocalConflictError(sourcePaths[index], current, saved)
+      }
     }
 
     const batch = changes.length > 1 ? crypto.randomUUID() : null
@@ -439,6 +453,11 @@ export class ProjectFileStore {
         }
         const index = fileIndex++
         const source = await tx.getFile(this.projectId, sourcePaths[index])
+        if (change.kind === "write" && change.expectedIdentity !== undefined &&
+          (source?.localId !== change.expectedIdentity || source?.content === null ||
+            source?.localId !== before[index]?.localId || (source?.base?.id ?? null) !== (before[index]?.base?.id ?? null))) {
+          throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
+        }
         if ((source?.content ?? null) !== (before[index]?.content ?? null) || (source?.asset?.id ?? null) !== (before[index]?.asset?.id ?? null)) {
           throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
         }

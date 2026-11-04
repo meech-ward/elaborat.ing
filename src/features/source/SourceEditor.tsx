@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DocumentSnapshot } from "@/features/document";
+import type { DocumentSnapshot, SourcePatch } from "@/features/document";
 import type { CommentMark, NoteCommentRequest } from "@/features/comments";
 import { Banner, BannerAction, LoadingLine, type Shortcut } from "@/features/design-system";
 import { moduleLoader, useModule } from "@/lib/moduleLoader";
@@ -60,7 +60,8 @@ export interface SourceEditorProps {
   visible: boolean;
   /** Latest render error message, if any; parsed for line info into markers. */
   renderError: string | null;
-  onChange: (text: string) => void;
+  /** Exact old-source patches when the editor can faithfully describe its transaction. */
+  onChange: (text: string, patches?: SourcePatch[]) => void;
   onCursor: (line: number, column: number) => void;
   onSave: () => void;
   /** Set while mounted: calls reach the code editor once it has loaded, and the text kept without it before. */

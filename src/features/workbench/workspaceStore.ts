@@ -21,9 +21,11 @@ export interface WorkspaceStore {
   /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
   listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
   read(path: string): Promise<WorkspaceFile>
+  /** Stable identity on this device, when the store supports identity-checked writes. */
+  fileIdentity?(path: string): Promise<string>
   /** Both versions of a file whose sync conflicts (this device's and the server's), or null when it has none. */
   readConflict(path: string): Promise<ConflictCopies | null>
-  write(path: string, input: { content: string; expectedRevision: string | null }): Promise<{ path: string; revision: string; size: number }>
+  write(path: string, input: { content: string; expectedRevision: string | null; expectedIdentity?: string }): Promise<{ path: string; revision: string; size: number }>
   createDirectory(path: string): Promise<{ path: string }>
   /** Apply moves and writes on this device as one save that syncs together. */
   save(changes: LocalChange[]): Promise<Array<{ path: string; revision: string; size: number }>>
@@ -92,8 +94,9 @@ export function projectWorkspace(
       return { ...file, revision: revisionOf(file.revision) }
     },
     readConflict: (path) => store.conflictCopies(path),
-    async write(path, { content, expectedRevision }) {
-      const saved = await store.write(path, content, expectedRevision)
+    fileIdentity: (path) => store.fileIdentity(path),
+    async write(path, { content, expectedRevision, expectedIdentity }) {
+      const saved = await store.write(path, content, expectedRevision, expectedIdentity)
       afterSave()
       return saved
     },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type ComponentProps } from "react";
 import type { OperationSession } from "./operationSession";
 import type { DocumentEmbedSessions, EmbeddedDocumentView } from "./documentEmbeds";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
@@ -49,8 +49,13 @@ import {
 import { linkedFile, resolveNoteLink } from "./noteLinks";
 import { useSettledError, useTyping } from "@/lib/settledError";
 import { LazyNotionExportDialog } from "@/features/exports/LazyNotionExportDialog";
+import { LocalReviewSession, type LocalReviewSnapshot } from "../suggestions/session";
+import { LocalSuggestionsPanel } from "../suggestions/LocalSuggestionsPanel";
 
 type Mode = EditorView;
+const NO_REVIEW: LocalReviewSnapshot = { review: null, document: null, baseRevision: null, busy: false, keeping: false, kept: true, error: null };
+const noReview = () => NO_REVIEW;
+const noReviewSubscription = () => () => {};
 
 /** Each view's code loads when it first shows; the pointer on the view switch starts both. */
 function preloadViews() {
@@ -133,6 +138,38 @@ export function WorkspaceSession({
       ? openWorkspaceFile(initial.path, opening.revision)
       : { ...newUntitledNote(initial.path), kind: kindForPath(initial.path) },
   );
+  // The ordinary store remains the sole authority for saves, drafts and exports.
+  // Review source gets a separate identity and never enters that store on typing.
+  const [localReview, setLocalReview] = useState<LocalReviewSession | null>(null);
+  const [reviewFileIdentity, setReviewFileIdentity] = useState<string | null>(null);
+  const reviewSnapshot = useSyncExternalStore(localReview?.subscribe ?? noReviewSubscription, localReview?.snapshot ?? noReview);
+  const review = reviewSnapshot.review;
+  // Review identities are separate from the canonical store's positive IDs.
+  // Ordinary editing keeps its exact snapshot and identity.
+  // Keeping a sidecar changes status, never the document sent to the renderer.
+  const reviewDocument = useMemo(() => reviewSnapshot.document
+    ? { ...reviewSnapshot.document, docId: -reviewSnapshot.document.docId } : null, [reviewSnapshot.document]);
+  const viewDocument = reviewDocument ?? snapshot;
+  const reviewStale = Boolean(review?.suggestions.length && (localReview?.path !== initial.path || localReview?.scope !== client.persistenceKey ||
+    localReview?.fileKey !== reviewFileIdentity || review.base !== store.snapshot().text || conflicted || openFile.serverChanged || blocked || readOnly));
+  const editorReadOnly = readOnly ?? (reviewSnapshot.busy ? "Finishing the suggestion decision." : null);
+  const reviewing = Boolean(review);
+  useEffect(() => {
+    if (import.meta.env.VITE_LOCAL_SUGGESTIONS !== "1" || !client.fileIdentity || kindForPath(initial.path) !== "note") return;
+    let alive = true;
+    void client.fileIdentity(initial.path).then(identity => {
+      if (!alive) return;
+      setReviewFileIdentity(identity);
+      setLocalReview(current => {
+        if (current?.snapshot().review || (current?.fileKey === identity && current.path === initial.path && current.scope === client.persistenceKey)) return current;
+        return new LocalReviewSession(client.persistenceKey, identity, initial.path, formatForFilename(initial.path));
+      });
+    }).catch(() => { if (alive) setReviewFileIdentity(null); });
+    return () => { alive = false; };
+  }, [client, initial.path, replacementEpoch, reviewing, server?.id]);
+  useEffect(() => {
+    if (!readOnly && kindForPath(initial.path) === "note") localReview?.restore();
+  }, [initial.path, localReview, readOnly]);
   // Split is desktop only: at compact widths a stored Split shows Rendered.
   const compact = useCompactWorkbench();
   const [mode, setMode] = useState<Mode>(() => {
@@ -155,8 +192,8 @@ export function WorkspaceSession({
   // half-typed text waits until they pause, or until they act on the text (a
   // view switch, Save, Export, Format) and it shows at once (lib/settledError.ts).
   const { typing, typed, settle } = useTyping();
-  const shownRenderError = useSettledError(renderError?.message ?? null, typing, renderError?.text === snapshot.text);
-  const shownSourceError = useSettledError(sourceError?.message ?? null, typing, sourceError?.text === snapshot.text);
+  const shownRenderError = useSettledError(renderError?.message ?? null, typing, renderError?.text === viewDocument.text);
+  const shownSourceError = useSettledError(sourceError?.message ?? null, typing, sourceError?.text === viewDocument.text);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [notionExportOpen, setNotionExportOpen] = useState(false);
@@ -167,10 +204,10 @@ export function WorkspaceSession({
   }, [client]);
   // A module saved in another tab, or brought in by sync, rebuilds the components.
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe(listener), [client]);
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId);
+  const componentState = useComponentEnvironment(viewDocument.text, viewDocument.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, viewDocument.docId);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
-  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId);
+  const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, !review && snapshot.dirty, viewDocument.docId);
   const shownComponents = componentGate.kind === "open" ? componentGate.components : null;
   const [imageRequest, setImageRequest] = useState<{ files?: readonly File[]; initialAlt?: string; commit: (images: readonly { path: string; alt: string }[]) => Promise<boolean> } | null>(null);
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
@@ -194,7 +231,7 @@ export function WorkspaceSession({
     const controller = new AbortController();
     void (async () => {
       const [{ parseImageReferences }, { documentImage }] = await Promise.all([import("../images/references"), import("../images/documentImage")]);
-      const refs = await parseImageReferences(snapshot.text, snapshot.format, initial.path, JSON.parse(imageModuleSources));
+      const refs = await parseImageReferences(viewDocument.text, viewDocument.format, initial.path, JSON.parse(imageModuleSources));
       const pixels: Record<string, ImagePreview> = {};
       const loaded = new Map<string, ImagePreview>();
       const nextCache = new Map<string, ImagePreview>();
@@ -228,18 +265,19 @@ export function WorkspaceSession({
       if (live) { documentImageCache.current = nextCache; setImageResources(pixels); }
     })().catch(() => { if (live) setImageResources({}); });
     return () => { live = false; controller.abort(); };
-  }, [documentActive, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
+  }, [documentActive, client, initial.path, viewDocument.text, viewDocument.format, imageModuleSources, imageGeneration]);
   const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
     if (!client.readImage) throw new Error("Image viewing is unavailable.");
     const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
-    const refs = await parseImageReferences(store.snapshot().text, store.snapshot().format, initial.path, JSON.parse(imageModuleSources));
+    const current = localReview?.snapshot().document ?? store.snapshot();
+    const refs = await parseImageReferences(current.text, current.format, initial.path, JSON.parse(imageModuleSources));
     const ref = refs.find(ref => ref.key === key);
     if (!ref) throw new Error("This image is no longer in the document.");
     const file = await client.read(ref.path);
     if (file.kind !== "image" || !file.asset) throw new Error("The image is unavailable.");
     const blob = await client.readImage(ref.path);
     return { dataURL: imageDataURL(new Uint8Array(await blob.arrayBuffer()), file.asset.media_type), width: file.asset.width, height: file.asset.height };
-  }, [client, initial.path, imageModuleSources, store]);
+  }, [client, initial.path, imageModuleSources, localReview, store]);
   const chooseImages = async (choices: ImageChoice[]) => {
     if (!imageRequest || readOnly || frozen.current || !client.stageImage) throw new Error("This document cannot be changed right now.");
     const { imageExtension } = await import("../images/types");
@@ -376,7 +414,7 @@ export function WorkspaceSession({
   useLayoutEffect(() => { frozen.current = locked; }, [locked]);
   useLayoutEffect(() => {
     onOperationSession?.(initial.path, {
-      state: () => ({dirty:store.snapshot().dirty, pending:renderedPendingRef.current || pendingOperation.current > 0,
+      state: () => ({dirty:store.snapshot().dirty || Boolean(localReview?.snapshot().review?.suggestions.length), pending:renderedPendingRef.current || pendingOperation.current > 0 || Boolean(localReview?.snapshot().busy),
           saving:savingRef.current || openFile.save.stage === "saving",
           reconciled:openFile.baseRevision !== null && openFile.save.stage !== "conflict" && openFile.serverChanged === null}),
       freeze: () => { frozen.current = true; },
@@ -389,17 +427,17 @@ export function WorkspaceSession({
         renderedPendingRef.current ? new Promise<void>((resolve) => { editWaiters.current.push(resolve); }) : Promise.resolve(),
     });
     return () => onOperationSession?.(initial.path,null);
-  }, [client,initial.path,locked,notAnEdit,onOperationSession,openFile,readOnly,store]);
+  }, [client,initial.path,localReview,locked,notAnEdit,onOperationSession,openFile,readOnly,store]);
 
   const displayName = openFile.path ?? openFile.pendingName ?? "No file open";
   const isNote = openFile.kind === "note";
   const hasFile = saveTarget(openFile) !== null;
-  const refs = useMemo(() => parseSourceRefs(snapshot.text), [snapshot.text]);
+  const refs = useMemo(() => parseSourceRefs(viewDocument.text), [viewDocument.text]);
   const visibleRefs = useMemo(
     () => refs.filter((ref) => ref.path !== openFile.path),
     [refs, openFile.path],
   );
-  const ownDirty = snapshot.dirty || renderedPending;
+  const ownDirty = snapshot.dirty || renderedPending || Boolean(review && !reviewSnapshot.kept);
   const overallDirty = ownDirty || Boolean(documentEmbeds?.descendantsDirty(initial.path));
 
   useEffect(() => {
@@ -471,18 +509,23 @@ export function WorkspaceSession({
     return () => {
       alive = false;
     };
-  }, [documentActive, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId]);
+  }, [documentActive, client, isNote, presentDiagram, resourceTargetsKey, viewDocument.docId]);
 
   const handleSourceChange = useCallback(
-    (text: string) => {
-      if (frozen.current) return;
+    (text: string, patches?: SourcePatch[]) => {
+      if (frozen.current || localReview?.snapshot().busy) return;
       // Text that arrived (a rendered edit, an agent's save, a reload) is in the store already.
-      if (text === store.snapshot().text) return;
+      if (text === (localReview?.snapshot().document?.text ?? store.snapshot().text)) return;
       typed();
       setPatchError(null);
-      setSnapshot(store.setText(text));
+      try {
+        if (localReview?.snapshot().review) localReview.changeSource(text, patches);
+        else setSnapshot(store.setText(text));
+      } catch (error) {
+        setPatchError(error instanceof Error ? error.message : String(error));
+      }
     },
-    [store, typed],
+    [localReview, store, typed],
   );
 
   const handlePatch = useCallback(
@@ -491,31 +534,33 @@ export function WorkspaceSession({
       patches: SourcePatch[],
       options?: RenderedPatchOptions,
     ) => {
-      if (frozen.current) return false;
+      if (frozen.current || localReview?.snapshot().busy) return false;
       try {
         if (!editorApi.current) throw new Error("Source editor is not ready.");
-        const next = store.applyPatches(revision, patches);
+        let next: StoreState | null = null;
+        if (localReview?.snapshot().review) localReview.applyPatches(revision, patches);
+        else next = store.applyPatches(revision, patches);
         editorApi.current.applyExternalPatches(patches, options);
         setPatchError(null);
-        setSnapshot(next);
+        if (next) setSnapshot(next);
         return true;
       } catch (error) {
         setPatchError(error instanceof Error ? error.message : String(error));
         return false;
       }
     },
-    [store],
+    [localReview, store],
   );
 
   const handleHistory = useCallback((direction: "undo" | "redo") => {
-    if (frozen.current) throw new Error("This session is waiting for move recovery.");
+    if (frozen.current || localReview?.snapshot().busy) throw new Error("This session is waiting for an operation to finish.");
     if (!editorApi.current) throw new Error("Source editor is not ready.");
     return editorApi.current.history(direction);
-  }, []);
+  }, [localReview]);
 
   const handleRenderError = useCallback((message: string | null) => {
-    setRenderError(message === null ? null : { text: store.snapshot().text, message });
-  }, [store]);
+    setRenderError(message === null ? null : { text: localReview?.snapshot().document?.text ?? store.snapshot().text, message });
+  }, [localReview, store]);
 
   const handleEditResource = useCallback(
     (path: string) => {
@@ -550,15 +595,15 @@ export function WorkspaceSession({
     }
     let alive = true;
     const timer = window.setTimeout(() => {
-      void diagnoseSource(snapshot.text, snapshot.format).then((message) => {
-        if (alive) setSourceError(message === null ? null : { text: snapshot.text, message });
+      void diagnoseSource(viewDocument.text, viewDocument.format).then((message) => {
+        if (alive) setSourceError(message === null ? null : { text: viewDocument.text, message });
       });
     }, 400);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [snapshot.text, snapshot.format, isNote]);
+  }, [viewDocument.text, viewDocument.format, isNote]);
 
   const switchMode = useCallback((next: Mode) => {
     settle();
@@ -594,6 +639,7 @@ export function WorkspaceSession({
     active,
     text: snapshot.text,
     onReveal: (mark, focus) => {
+      if (review) { setNotice("Return to editing to locate comments in accepted text."); return; }
       const sourceShown = view !== "rendered" || !isNote;
       if (sourceShown) editorApi.current?.revealRange(mark.from, mark.to, focus);
       if (isNote && view !== "source") renderedApi.current?.revealRange(mark.from, mark.to, focus && !sourceShown);
@@ -630,6 +676,100 @@ export function WorkspaceSession({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active, apple, isNote, switchMode, views]);
 
+  const keepReview = useCallback(async (): Promise<boolean> => {
+    try {
+      await localReview?.keep();
+      setNotice("Review kept in this browser. The file has not changed.");
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }, [localReview]);
+
+  const startReview = useCallback(() => {
+    if (!localReview || readOnly || frozen.current || !isNote) return;
+    if (store.snapshot().dirty || renderedPendingRef.current || pendingOperation.current || savingRef.current ||
+      !openFile.baseRevision || conflicted || openFile.serverChanged || openFile.save.stage === "conflict") {
+      setNotice("Save your edits and finish resolving this file before suggesting changes.");
+      return;
+    }
+    try {
+      setImageRequest(null);
+      localReview.start(store.snapshot().text, openFile.baseRevision);
+      resetEditorMessages();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  }, [conflicted, isNote, localReview, openFile, readOnly, resetEditorMessages, store]);
+
+  const acceptSuggestion = useCallback(async (id: string | null) => {
+    if (!localReview || reviewStale || readOnly || frozen.current || renderedPendingRef.current) return;
+    settle();
+    try {
+      await localReview.accept(id, async (next, base, revision) => {
+        if (await diagnoseSource(next, formatForFilename(initial.path)) &&
+          !await confirmAction("The proposed source has a preview error. Accept this source change anyway?", { confirmLabel: "Accept source" })) return null;
+        if (frozen.current || readOnly || initial.path !== localReview.path || store.snapshot().text !== base || store.snapshot().dirty)
+          throw new Error("The accepted file changed. Export the proposed source and start a new review.");
+        await client.flushLocalDrafts();
+        const current = await client.read(initial.path);
+        if (current.revision !== revision || current.savedContent !== base || current.content !== base || current.draft ||
+          await client.fileIdentity?.(initial.path) !== localReview.fileKey || await client.readConflict(initial.path))
+          throw new Error("The accepted file changed or moved. Export the proposed source and start a new review.");
+        setOpenFile(file => markSaving(file));
+        try {
+          const saved = await client.write(initial.path, { content: next, expectedRevision: revision, expectedIdentity: localReview.fileKey });
+          setSnapshot(store.replaceDocument(next, formatForFilename(initial.path)));
+          setOpenFile(file => markSaved(file, saved.path, saved.revision));
+          void refreshList().catch(() => setNotice("Accepted the change. Refresh the file list to see its latest status."));
+          return saved.revision;
+        } catch (error) {
+          setOpenFile(file => clearSave(file));
+          throw error;
+        }
+      });
+      resetEditorMessages();
+      setNotice("The local review is up to date.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  }, [client, initial.path, localReview, readOnly, refreshList, resetEditorMessages, reviewStale, settle, store]);
+
+  const rejectSuggestion = useCallback((id: string | null) => {
+    if (!localReview || renderedPendingRef.current || localReview.snapshot().busy) return;
+    try { localReview.reject(id); resetEditorMessages(); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  }, [localReview, resetEditorMessages]);
+
+  const stopReview = useCallback(async () => {
+    if (!localReview || renderedPendingRef.current) return;
+    try { await localReview.stop(); resetEditorMessages(); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  }, [localReview, resetEditorMessages]);
+
+  const exportProposedSource = useCallback(async () => {
+    if (!localReview?.snapshot().document || renderedPendingRef.current) return;
+    try {
+      const text = localReview.snapshot().document!.text;
+      await saveSourceText(displayName.replace(/(\.mdx?)$/i, ".proposed$1"), text);
+    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  }, [displayName, localReview]);
+
+  const revealSuggestion = useCallback((id: string) => {
+    const current = localReview?.snapshot().review;
+    if (!current) return;
+    let shift = 0;
+    for (const suggestion of current.suggestions) {
+      if (suggestion.id === id) {
+        switchMode("source");
+        editorApi.current?.revealRange(suggestion.from + shift, suggestion.from + shift + suggestion.insert.length, true);
+        return;
+      }
+      shift += suggestion.insert.length - (suggestion.to - suggestion.from);
+    }
+  }, [localReview, switchMode]);
+
   const doWrite = useCallback(
     async (target: string, expectedRevision: string | null, verb: string): Promise<boolean> => {
       settle();
@@ -640,6 +780,7 @@ export function WorkspaceSession({
         await new Promise<void>(resolve => editWaiters.current.push(resolve));
         if (frozen.current || store.snapshot().docId !== identity) return false;
       }
+      if (localReview?.snapshot().review) return keepReview();
       if (savingRef.current) return false;
       savingRef.current = true;
       // Capture the document identity with the text: completion below must
@@ -721,10 +862,14 @@ export function WorkspaceSession({
         savingRef.current = false;
       }
     },
-    [client, refreshList, settle, store],
+    [client, keepReview, localReview, refreshList, settle, store],
   );
   const saveDocument = useCallback(async (): Promise<boolean> => {
     if (readOnly) return false;
+    if (localReview?.snapshot().review) {
+      if (renderedPendingRef.current) await new Promise<void>(resolve => editWaiters.current.push(resolve));
+      return keepReview();
+    }
     const identity = store.snapshot().docId;
     if (renderedPendingRef.current) {
       setNotice("Finishing edit…");
@@ -738,7 +883,7 @@ export function WorkspaceSession({
       : target ? await doWrite(target, openFile.baseRevision, openFile.path ? "Saved" : "Created") : false;
     if (failures.length) setNotice(failures.join(" "));
     return ownSaved && failures.length === 0;
-  }, [documentEmbeds, initial.path, openFile, doWrite, readOnly, store]);
+  }, [documentEmbeds, initial.path, keepReview, localReview, openFile, doWrite, readOnly, store]);
   // A registry save calls this file's own writer. Descendants are traversed
   // once by the registry, so repeated embeds never write the same file twice.
   useLayoutEffect(() => documentEmbeds?.register(initial.path, {
@@ -748,8 +893,8 @@ export function WorkspaceSession({
     },
     run: () => { if (componentGate.kind === "ask") componentGate.run(); },
     sourceSnapshot: () => ({text: store.snapshot().text, pending: renderedPendingRef.current}),
-    exportSnapshot: () => renderedApi.current?.exportSnapshot() ?? null,
-  }), [documentEmbeds, initial.path, openFile, readOnly, doWrite, componentGate, store]);
+    exportSnapshot: () => localReview?.snapshot().review ? null : renderedApi.current?.exportSnapshot() ?? null,
+  }), [documentEmbeds, initial.path, localReview, openFile, readOnly, doWrite, componentGate, store]);
   useEffect(() => {
     documentEmbeds?.publish(initial.path, {
       dirty: ownDirty,
@@ -953,8 +1098,8 @@ export function WorkspaceSession({
   const existingNotionSnapshot = useCallback((path: string, source: string) => {
     const registered = documentEmbeds?.exportSnapshot(path, source);
     if (registered) return registered;
-    return path === displayName && source === store.snapshot().text ? renderedApi.current?.exportSnapshot() ?? null : null;
-  }, [displayName, documentEmbeds, store]);
+    return !localReview?.snapshot().review && path === displayName && source === store.snapshot().text ? renderedApi.current?.exportSnapshot() ?? null : null;
+  }, [displayName, documentEmbeds, localReview, store]);
   const notionProjectFileUrl = useCallback((path: string) => client.projectId
     ? `${location.origin}/projects/${encodeURIComponent(client.projectId)}/${path.split('/').map(encodeURIComponent).join('/')}` : null,
   [client.projectId]);
@@ -1000,14 +1145,16 @@ export function WorkspaceSession({
   const duplicateKey = commandShortcut("D", apple);
   // The file's actions: its tab's menu on a desktop, "..." on a phone.
   const fileActions: MenuEntry[] = [
-    ...(readOnly ? [] : [{ label: "Save", disabled: saveDisabled, onSelect: save }]),
+    ...(readOnly ? [] : [{ label: review ? "Keep review locally" : "Save", disabled: saveDisabled || reviewSnapshot.busy, onSelect: save }]),
+    ...(localReview && isNote && !readOnly && !review ? [{ label: "Suggest changes locally", disabled: renderedPending || !hasFile, onSelect: startReview }] : []),
+    ...(review ? [{ label: "Export proposed source", disabled: renderedPending, onSelect: () => void exportProposedSource() }] : []),
     // Off while a rendered edit is finishing, as Save is, so the copy has it.
-    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: renderedPending, onSelect: onDuplicate }] : []),
+    ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: renderedPending || Boolean(review), onSelect: onDuplicate }] : []),
     // Read-only, the file follows its saved copy by itself.
-    ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || !openFile.path, onSelect: () => void doReload(openFile) }]),
+    ...(readOnly ? [] : [{ label: "Reload", disabled: renderedPending || Boolean(review) || !openFile.path, onSelect: () => void doReload(openFile) }]),
     { label: "Export", disabled: renderedPending, onSelect: () => void handleExport() },
     ...(isNote ? [{ label: "Export to Notion", disabled: renderedPending, onSelect: () => {settle(); setNotionExportOpen(true);} }] : []),
-    ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending, onSelect: () => void handleFormat() }] : []),
+    ...(isNote && !readOnly ? [{ label: "Format", disabled: renderedPending || Boolean(review), onSelect: () => void handleFormat() }] : []),
     ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
   ];
 
@@ -1019,9 +1166,14 @@ export function WorkspaceSession({
         active={active}
         navigation={navigation}
         view={isNote ? { value: view, views, names: "note", label: "Editor mode", onChange: switchMode, preload: preloadViews } : undefined}
-        save={!readOnly && overallDirty ? { disabled: headerSaveDisabled, onSave: save } : null}
+        save={!readOnly && !review && overallDirty ? { disabled: headerSaveDisabled, onSave: save } : null}
         actions={fileActions}
       />
+      {review && <LocalSuggestionsPanel snapshot={reviewSnapshot} stale={reviewStale}
+        disabled={renderedPending || blocked || openFile.save.stage === "saving"}
+        onAccept={id => void acceptSuggestion(id)} onReject={rejectSuggestion} onStop={() => void stopReview()}
+        onKeep={() => void keepReview()} onReveal={revealSuggestion} />}
+      {!review && reviewSnapshot.error && <Banner role="alert">{reviewSnapshot.error}</Banner>}
       {/* The saved state and the last notice, for screen readers: Save and
           the tab's unsaved dot show it on screen. */}
       {active && (
@@ -1133,10 +1285,10 @@ export function WorkspaceSession({
           start={
           <div hidden={!inSource} className="wb-source-stage">
             <SourceEditor
-              initialText={opening.content}
-              documentText={snapshot.text}
-              format={snapshot.format}
-              documentId={snapshot.docId}
+              initialText={viewDocument.text}
+              documentText={viewDocument.text}
+              format={viewDocument.format}
+              documentId={viewDocument.docId}
               workspacePaths={workspacePaths.filter(path => path !== initial.path)}
               componentCatalog={componentState.environment?.catalog}
               editorLanguage={
@@ -1146,9 +1298,9 @@ export function WorkspaceSession({
               renderError={shownRenderError ?? shownSourceError}
               onChange={handleSourceChange}
               onCursor={() => {}}
-              readOnly={readOnly}
-              comments={{ ...commentProps, sections: isNote }}
-              writeIn={isNote ? arrived : null}
+              readOnly={editorReadOnly}
+              comments={review ? undefined : { ...commentProps, sections: isNote }}
+              writeIn={isNote && !review ? arrived : null}
               onShown={embedded ? sourceShown : undefined}
               onSave={() => {
                 if (readOnly) {
@@ -1167,15 +1319,15 @@ export function WorkspaceSession({
                 <CustomCodeNotice files={componentGate.files} onRun={componentGate.run} onShowSource={() => switchMode("source")} />
               ) : (
               <LazyRenderedEditor
-                document={snapshot}
+                document={viewDocument}
                 active={active && inRendered}
-                documentId={snapshot.docId}
+                documentId={viewDocument.docId}
                 documentPath={initial.path}
-                documentEmbedHost={documentEmbeds?.host(initial.path)}
+                documentEmbedHost={review ? undefined : documentEmbeds?.host(initial.path)}
                 onSave={save}
                 imageResources={imageResources}
                 onReadImage={readImageOriginal}
-                onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
+                onInsertImage={!review && !readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
                 componentEnvironment={shownComponents?.environment}
                 componentError={shownComponents?.error}
                 componentPending={shownComponents?.pending}
@@ -1188,14 +1340,14 @@ export function WorkspaceSession({
                 typing={typing}
                 resources={resourcePixels}
                 allowedResourcePaths={refs.map((ref) => ref.path)}
-                availableResourcePaths={workspacePaths.filter((path) =>
+                availableResourcePaths={review ? [] : workspacePaths.filter((path) =>
                   /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)),
                 )}
                 onEditResource={handleEditResource}
                 onOpenLink={handleOpenLink}
-                readOnly={Boolean(readOnly)}
-                comments={commentProps}
-                writeIn={arrived}
+                readOnly={Boolean(editorReadOnly)}
+                comments={review ? undefined : commentProps}
+                writeIn={review ? null : arrived}
                 onShown={embedded ? renderedShown : undefined}
                 onActivity={onActivity}
                 place={renderedPlace}
@@ -1234,10 +1386,10 @@ export function WorkspaceSession({
       documentPath={initial.path}
       imageResources={imageResources}
       onReadImage={readImageOriginal}
-      onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
-      componentEnvironment={shownComponents?.environment}
+      onInsertImage={!review && !readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
+      componentEnvironment={review ? undefined : shownComponents?.environment}
       componentError={shownComponents?.error}
-      componentPending={asking || shownComponents?.pending}
+      componentPending={Boolean(review) || asking || shownComponents?.pending}
       onHistory={handleHistory}
       onPatch={handlePatch}
       onError={handleRenderError}
@@ -1248,7 +1400,7 @@ export function WorkspaceSession({
       availableResourcePaths={workspacePaths.filter(path => /\.(?:excalidraw(?:\.md)?|d2)$/.test(path) || (path !== initial.path && isDocumentPath(path)))}
       onEditResource={handleEditResource}
       onOpenLink={handleOpenLink}
-      readOnly={Boolean(readOnly) || blocked}
+      readOnly={Boolean(readOnly) || blocked || Boolean(review)}
       onSave={save}
       onActivity={onActivity}
     />)}

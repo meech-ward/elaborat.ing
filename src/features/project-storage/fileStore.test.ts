@@ -3,6 +3,7 @@ import { MemoryProjectDatabase, type ProjectDatabase, type StorageTransaction } 
 import { FileStoreError, LocalConflictError, ProjectFileStore } from "./fileStore"
 import { contentToken } from "./model"
 import { device, FakeProjectServer, put } from "./testing"
+import { projectWorkspace } from "../workbench/workspaceStore"
 
 async function setup() {
   const a = device(new FakeProjectServer())
@@ -19,6 +20,119 @@ test("a save is checked against the revision it was based on", async () => {
   await expect(store.write("a.md", "new", null)).rejects.toBeInstanceOf(LocalConflictError)
   expect((await store.read("a.md")).content).toBe("two")
   expect((await a.record(id, "a.md"))?.batch).toBeNull()
+})
+
+test("file identity survives a server acknowledgement and move, and excludes missing or deleted files", async () => {
+  const { a, id, store } = await setup()
+  const saved = await store.write("a.md", "same bytes", null)
+  const identity = await store.fileIdentity("a.md")
+  expect(identity).toBe((await a.record(id, "a.md"))!.localId)
+  await a.sync.sync(id)
+  expect((await store.read("a.md")).server?.id).toBeString()
+  expect(await store.fileIdentity("a.md")).toBe(identity)
+  await store.move("a.md", "moved.md", saved.revision)
+  expect(await store.fileIdentity("moved.md")).toBe(identity)
+  await expect(store.fileIdentity("a.md")).rejects.toBeInstanceOf(FileStoreError)
+  await store.delete("moved.md", saved.revision)
+  await expect(store.fileIdentity("moved.md")).rejects.toBeInstanceOf(FileStoreError)
+  await store.persistDrafts([{ path: "draft.md", content: "not saved", baseRevision: null }])
+  await expect(store.fileIdentity("draft.md")).rejects.toBeInstanceOf(FileStoreError)
+})
+
+test("identity-checked writes refuse a different file with identical content and roll back their entire batch", async () => {
+  const { store } = await setup()
+  const saved = await store.write("a.md", "same bytes", null)
+  await store.write("other.md", "same bytes", null)
+  const otherIdentity = await store.fileIdentity("other.md")
+  await expect(store.write("a.md", "accepted", saved.revision, otherIdentity)).rejects.toBeInstanceOf(LocalConflictError)
+  await expect(store.save([
+    { kind: "write", path: "new.md", content: "must not save", expectedRevision: null },
+    { kind: "write", path: "a.md", content: "accepted", expectedRevision: saved.revision, expectedIdentity: otherIdentity },
+  ])).rejects.toBeInstanceOf(LocalConflictError)
+  expect((await store.read("a.md")).content).toBe("same bytes")
+  await expect(store.read("new.md")).rejects.toBeInstanceOf(FileStoreError)
+  const accepted = await store.write("a.md", "accepted", saved.revision, await store.fileIdentity("a.md"))
+  expect((await store.read("a.md")).content).toBe("accepted")
+  await store.write("a.md", "ordinary write", accepted.revision)
+  expect((await store.read("a.md")).content).toBe("ordinary write")
+})
+
+test("an identity-checked write rejects a move and same-content replacement between its read and write transactions", async () => {
+  const inner = new MemoryProjectDatabase()
+  let beforeWrite: (() => Promise<void>) | null = null
+  const db: ProjectDatabase = {
+    listProjects: partition => inner.listProjects(partition),
+    transaction: async (partition, mode, work) => {
+      if (mode === "readwrite" && beforeWrite) {
+        const mutate = beforeWrite
+        beforeWrite = null
+        await mutate()
+      }
+      return inner.transaction(partition, mode, work)
+    },
+  }
+  const a = device(new FakeProjectServer(), undefined, db)
+  const { id } = await a.sync.createProject("Notes")
+  const store = a.files(id)
+  const saved = await store.write("a.md", "same bytes", null)
+  const identity = await store.fileIdentity("a.md")
+  beforeWrite = () => inner.transaction(a.partition, "readwrite", async tx => {
+    const original = (await tx.getFile(id, "a.md"))!
+    await tx.deleteFile(id, "a.md")
+    await tx.putFile({ ...original, path: "moved.md" })
+    await tx.putFile({ ...original, localId: crypto.randomUUID() })
+  })
+  let notices = 0
+  store.subscribe(() => notices++)
+  await expect(store.write("a.md", "accepted", saved.revision, identity)).rejects.toBeInstanceOf(LocalConflictError)
+  expect(notices).toBe(0)
+  expect((await store.read("a.md")).content).toBe("same bytes")
+  expect((await store.read("moved.md")).content).toBe("same bytes")
+  expect(await store.fileIdentity("moved.md")).toBe(identity)
+  expect(await store.fileIdentity("a.md")).not.toBe(identity)
+})
+
+test("a guarded write also detects a changed server identity with the same local identity and bytes", async () => {
+  const inner = new MemoryProjectDatabase()
+  let beforeWrite: (() => Promise<void>) | null = null
+  const db: ProjectDatabase = {
+    listProjects: partition => inner.listProjects(partition),
+    transaction: async (partition, mode, work) => {
+      if (mode === "readwrite" && beforeWrite) {
+        const mutate = beforeWrite
+        beforeWrite = null
+        await mutate()
+      }
+      return inner.transaction(partition, mode, work)
+    },
+  }
+  const a = device(new FakeProjectServer(), undefined, db)
+  const { id } = await a.sync.createProject("Notes")
+  const store = a.files(id)
+  const saved = await store.write("a.md", "same bytes", null)
+  await a.sync.sync(id)
+  const identity = await store.fileIdentity("a.md")
+  beforeWrite = () => inner.transaction(a.partition, "readwrite", async tx => {
+    const original = (await tx.getFile(id, "a.md"))!
+    await tx.putFile({ ...original, base: { ...original.base!, id: crypto.randomUUID() } })
+  })
+  await expect(store.write("a.md", "accepted", saved.revision, identity)).rejects.toBeInstanceOf(LocalConflictError)
+  expect((await store.read("a.md")).content).toBe("same bytes")
+  expect(await store.fileIdentity("a.md")).toBe(identity)
+})
+
+test("the workbench adapter forwards stable identity checks without weakening ordinary writes", async () => {
+  const { store } = await setup()
+  let saves = 0
+  const workspace = projectWorkspace(store, { afterSave: () => { saves++ }, subscribeSync: () => () => {} })
+  const saved = await workspace.write("a.md", { content: "base", expectedRevision: null })
+  const identity = await workspace.fileIdentity!("a.md")
+  expect(identity).toBe(await store.fileIdentity("a.md"))
+  await expect(workspace.write("a.md", { content: "wrong target", expectedRevision: saved.revision, expectedIdentity: crypto.randomUUID() })).rejects.toBeInstanceOf(LocalConflictError)
+  expect(saves).toBe(1)
+  await workspace.write("a.md", { content: "accepted", expectedRevision: saved.revision, expectedIdentity: identity })
+  expect(saves).toBe(2)
+  expect((await workspace.read("a.md")).content).toBe("accepted")
 })
 
 test("changes saved together share a batch and fail together", async () => {

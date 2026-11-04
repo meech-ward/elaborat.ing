@@ -376,6 +376,68 @@ Preserve drafts through sign-in, omit public email addresses and retain the
 existing renderer isolation. Verify database access boundaries, browser
 journeys, bundle budgets and the hosted flow, including the supplied script.
 
+## T54: define shared note suggestions and checked acceptance
+
+**Status:** Waiting (feedback on the local suggestions experiment and a
+recorded shared-review contract in `architecture.md`)
+
+The branch-local experiment keeps proposals on one device. Shared suggestions
+need durable proposal records tied to a stable file id and an exact saved
+base, with author, source changes, proposal version and decision history.
+Keep suggestion metadata outside the Markdown or MDX source.
+
+Record the roles and review rules before implementation: commenters may
+propose without gaining file-write access; editors and owners may review;
+decide explicitly whether OAuth clients may accept and whether review is an
+optional agent workflow or a server-enforced policy. A local mode switch
+cannot restrict an agent's existing direct-write tools.
+
+Build shared storage and an idempotent acceptance function that rechecks
+access, archive state, file identity, proposal version and exact base text,
+then saves the file and records the decision in one transaction. Preserve
+the original proposal when its target changed or disappeared. Use the
+declarative schema workflow and pgTAP coverage for every role, cross-project
+access, revocation, overlapping decisions and retries. Connect shared reads
+to the existing project revision signals; the signal carries no proposal
+content. The local experiment remains available until shared recovery and
+offline boundaries have equivalent coverage.
+
+Cover account transitions as well as reloads: signing in moves an accountless
+local project into a new account and project partition. Pending review
+sidecars must move with it, or the transition must preserve an accessible
+recovery path. Test starter-only projects with pending proposals, multiple
+tabs, interrupted transfers, sign-out and account switching without placing
+proposed content in ordinary file saves or exports.
+
+## T55: extend suggesting across the note editing surfaces
+
+**Status:** Waiting (feedback on the local experiment; T54 for shared roles
+and agent tools)
+
+Extend the existing checked-patch engine rather than putting review markup
+in saved source. Add inline insertion and deletion presentation with an
+explicit mapping between accepted and proposed source positions in Monaco,
+the rendered editor and their comment/review rail. Cover hidden MDX imports
+and exports, JSX boundaries, code islands, formatting and ambiguous overlaps.
+Keep a source diff fallback where rendered markup cannot represent a change
+faithfully.
+
+An embedded child's review must stay attached to that file and its shared
+session. Show its accepted content when an ordinary parent needs it; saving
+a parent must never accept a child proposal. Keep normal source, ZIP and
+Notion exports and unlisted links on accepted content. Preview dependency
+changes only through an explicitly selected candidate set in the existing
+sandbox; source edits spanning a note and its MDX component need atomic
+acceptance. Image uploads and drawing or D2 changes need separate proposal
+contracts before enabling them.
+
+Add explicit MCP proposal/read tools and a separate assistant proposal
+landing path after the shared contract is ready. Preserve direct-write
+tool meanings, distinguish proposed from saved content in chat cards, and
+update the plugin skills with a version bump. Browser checks must cover
+Source/Rendered switching, undo, retained embeds, exact exports, accessibility
+and existing bundle budgets in Chromium and Firefox.
+
 ## Small things
 
 - A large unlisted file currently resolves dependencies and image bytes in
@@ -388,6 +450,29 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 
+- Make browser tests' Source shortcuts follow their configured user agent.
+  The Desktop Chrome and Firefox fixtures identify as Windows; on a macOS
+  host Playwright's `ControlOrMeta` sends Meta while Monaco binds Control.
+  The untouched `e1ea699` baseline reproduces failed Source save and undo in
+  `rendered-switching.spec.ts` and `rendered-undo.spec.ts` in both browsers.
+  Use a shared test helper that matches the editor's platform, and verify
+  these journeys on macOS and Linux without changing product shortcuts.
+- Investigate the existing Firefox task-list conversion failure in
+  `rendered-undo.spec.ts`, "Enter after a task makes another, and [ ] typed
+  at the start of an item gives it a box". The untouched `e1ea699` baseline
+  also fails to produce the Snacks checkbox after typing `[ ] ` at the
+  beginning of that list item, with one worker. Preserve the source and
+  existing task state while making the conversion visible in Rendered.
+- Investigate Firefox's synthetic multiline composition with Monaco before
+  changing product input handling. In an ordinary MDX Source editor as well
+  as the local suggestions experiment, Playwright `Control+A`, Backspace,
+  then `keyboard.insertText(multilineSource)` duplicates the inserted source.
+  Selection and deletion are correct. A captured `compositionend` sees the
+  correct textarea length of 229 UTF-16 code units before Monaco's handler
+  and 458 afterward, followed by `inputType=insertCompositionText`.
+  Compare a real operating-system paste and real IME composition with the
+  synthetic event, then add coverage for the actual failure. Per-line key
+  input avoids this synthetic multiline-composition path in browser tests.
 - Consider an explicit local sign-out and account-switch flow. The current
   Sign out action uses Supabase's default global scope, which signs out
   other devices too. Cover session scope and account switching with tests
