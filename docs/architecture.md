@@ -190,12 +190,35 @@ checked against the already issued links.
 **Decision:** pull requests get a CI check that regenerates migrations from
 `schemas/` and fails if the committed migrations are out of date.
 
-**Open: a separate test project.** Today there is one hosted project, and
-changes are tested there before real users exist. Once the hosted instance has
-users, changes need somewhere else to land first. The options: a project in a
-separate free organization (free, but pauses when idle and uses one of two free
-slots), a second project in the paid organization (about $10 a month, under the
-spend cap), or a persistent branch (about $10 a month, outside the spend cap).
+**Decision: a separate free staging project and Worker.**
+`elaborating-staging` belongs to the Free `DevRel` organization, separate from
+the production project. The `staging` Git branch deploys its exact triggering
+revision through `.github/workflows/staging.yml`, with its own GitHub
+environment and deployment queue. `main` retains the production workflow.
+Staging applies the same committed migrations, provisions the private image
+bucket and deploys the browser's Edge Functions before publishing the app.
+It does not copy production accounts, content or provider credentials.
+
+The public staging connection lives in `env/staging/.env.staging`.
+`scripts/staging.ts` starts Vite with Node, removes inherited `VITE_` values
+that Bun may have loaded from root dotenv files, and pins the committed public
+values above ignored local overrides. It selects a dedicated `envDir` and
+`dist-staging` output. Local staging runs on port 5174, leaving
+port 5173 available for an explicitly configured production connection.
+The Cloudflare `staging` environment explicitly clears inherited custom
+domain routes, uses a different Worker and assets directory, and has no
+production MCP upstream. `scripts/deploy-staging.ts` checks the requested
+backend, origin and Worker settings against committed staging configuration
+before making any hosted changes. Distinct `STAGING_*` variables and secrets
+prevent GitHub's repository production values being selected by fallback.
+
+Staging uses password sign-up with confirmation disabled, default email
+templates, no custom SMTP and no social providers. Its minimal Supabase
+config lives separately under `supabase/staging/`; production config stays
+independent. MCP, event webhook delivery and the dedicated component sandbox
+domain are not deployed to staging yet. Notes use the supported inline
+component frame. See [staging](staging.md) for commands, credentials and
+current limits.
 
 ## Data
 

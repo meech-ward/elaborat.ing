@@ -1,0 +1,38 @@
+# Staging Auth overlay. The deploy helper fills the origin in a temporary
+# workdir; production supabase/config.toml stays authoritative for production.
+project_id = "elaborating-staging"
+
+[api]
+auto_expose_new_tables = false
+
+[auth]
+enabled = true
+site_url = "__STAGING_APP_ORIGIN__"
+additional_redirect_urls = ["__STAGING_APP_ORIGIN__/**", "http://localhost:5174/**", "http://127.0.0.1:5174/**"]
+enable_signup = true
+minimum_password_length = 10
+
+# Staging accounts can sign up with a password without production SMTP.
+# Email invitations to new accounts still depend on the project's sender limits.
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+secure_password_change = false
+
+[auth.email.smtp]
+enabled = false
+
+[auth.sms]
+enable_signup = false
+
+[auth.external.github]
+enabled = false
+
+[auth.external.google]
+enabled = false
+
+[auth.passkey]
+enabled = false
+
+[auth.oauth_server]
+enabled = false

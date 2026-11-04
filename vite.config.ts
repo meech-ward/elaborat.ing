@@ -113,7 +113,10 @@ function chunkFileName(chunk: Rolldown.PreRenderedChunk): string {
 // worker built as a separate worker graph (see each plugin).
 // The service worker lets the app start with no network (see "Offline start"
 // in docs/architecture.md).
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Staging must never inherit the production connection in root .env.local.
+  // scripts/staging.ts also removes values Bun may have preloaded into env.
+  ...(mode === "staging" ? { envDir: path.resolve(import.meta.dirname, "env/staging") } : {}),
   plugins: [
     // The assistant's live view draws with the MCP server's renderers, which
     // import packages as Deno does (see the plugin).
@@ -135,7 +138,7 @@ export default defineConfig({
     // Before thirdPartyNotices, so the frame's licenses are merged first.
     // The frame's page for a sandbox domain goes in dist-sandbox/, which
     // wrangler.sandbox.jsonc serves (docs/architecture.md, Component isolation).
-    previewFrame({ sandboxDir: path.resolve(import.meta.dirname, "dist-sandbox") }),
+    previewFrame({ sandboxDir: mode === "staging" ? undefined : path.resolve(import.meta.dirname, "dist-sandbox") }),
     // The generated service worker ships these Workbox modules in its own
     // workbox-*.js file, outside the bundle (checked by offline.spec.ts), and
     // the chat card's D2 engine worker brotli's decoder and base64-js, in
@@ -217,6 +220,7 @@ export default defineConfig({
   // The minifier drops license comments, so the build lists the licenses of
   // the third-party code it includes in one file, served at this path.
   build: {
+    ...(mode === "staging" ? { outDir: "dist-staging" } : {}),
     license: { fileName: "third-party-notices.txt" },
     rolldownOptions: {
       treeshake: { moduleSideEffects: appModuleSideEffects },
@@ -227,4 +231,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

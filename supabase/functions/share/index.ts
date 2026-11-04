@@ -4,6 +4,7 @@ import { withSupabase } from 'npm:@supabase/server@1.6.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
 import { handleShare } from './handler.ts'
+import { applicationOrigin } from '../_shared/applicationOrigin.ts'
 
 // Called by the app for a signed-in person, so `verify_jwt` stays on. The
 // caller's token scopes `ctx.supabase` to them; `ctx.supabaseAdmin` uses the
@@ -29,7 +30,7 @@ const share = withSupabase({ auth: 'user' }, async (req, ctx) => {
       shareProject: async (args) => await db.rpc('share_project', args),
       inviteUserByEmail: async (email, options) => await admin.auth.admin.inviteUserByEmail(email, options),
       record: async (args) => await admin.rpc('record_email_invitation', args),
-      redirectTo: 'https://elaborat.ing/',
+      redirectTo: `${applicationOrigin(Deno.env.get('ELABORATING_APP_ORIGIN'))}/`,
     },
   )
 })

@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "bun scripts/staging.ts dev",
     "build": "vite build",
+    "build:staging": "bun scripts/staging.ts build",
     "preview": "vite preview",
+    "preview:staging": "bun scripts/staging.ts preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "bun test src vite-plugins worker",
+    "test:staging": "bun test scripts/staging.test.ts scripts/deploy-staging.test.ts",
     "build:harness": "vite build --config tests/browser/harness/vite.config.ts",
     "build:browser-test": "vite build --mode browser-test",
     "build:next-version": "vite build --mode browser-test --config tests/browser/next-version/vite.config.ts",
@@ -21,7 +25,8 @@
     "package:plugin": "bun scripts/package-plugin.ts",
     "test:browser": "playwright test",
     "try:chatgpt": "sh scripts/try-chatgpt.sh",
-    "deploy": "bun run build && wrangler deploy"
+    "deploy": "bun run build && wrangler deploy",
+    "deploy:staging": "bun scripts/deploy-staging.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

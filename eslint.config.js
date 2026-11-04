@@ -6,6 +6,7 @@ export default defineConfig(
   {
     ignores: [
       "dist/",
+      "dist-staging/",
       "dist-sandbox/",
       "dist-visualize/",
       "dist-next/",

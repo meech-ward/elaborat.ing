@@ -440,6 +440,12 @@ and existing bundle budgets in Chromium and Firefox.
 
 ## Small things
 
+- Extend staging to MCP, chat cards and event delivery. Generalize the
+  remaining production origin constants, build chat-card assets against the
+  staging origin and configure a separate preview sandbox before enabling the
+  staging MCP upstream. Browser staging currently uses its separate database
+  and the supported inline component frame; see [staging](staging.md).
+
 - A large unlisted file currently resolves dependencies and image bytes in
   sequence, and its periodic refresh builds the whole bundle again. Batch
   authorized dependency reads and check for an unchanged revision after

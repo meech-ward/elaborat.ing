@@ -1,0 +1,73 @@
+name: Deploy staging
+
+# A push can run this workflow before it is merged into the default branch.
+# GitHub's manual Run workflow button requires the workflow on the default
+# branch; pushing staging remains the initial deployment trigger.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Never interrupt a deployment while its backend changes are being applied.
+# This is independent of the production deployment queue.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: staging
+    steps:
+      # Deploy exactly the revision that triggered this run. The production
+      # workflow's newest-green-main selection does not apply to staging.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check the staging revision
+        run: |
+          test "$GITHUB_REF" = refs/heads/staging
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.118.0
+      - run: bun install --frozen-lockfile
+      # The staging launcher isolates dotenv files and build outputs. These
+      # distinct variable names cannot fall back to production's repo values.
+      # The build also generates the route tree needed by typecheck and lint.
+      - name: Build staging
+        env:
+          STAGING_SUPABASE_PROJECT_ID: ${{ vars.STAGING_SUPABASE_PROJECT_ID }}
+          STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          STAGING_APP_ORIGIN: ${{ vars.STAGING_APP_ORIGIN }}
+        run: bun run build:staging
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run test
+      - name: Check staging deployment guards
+        run: bun test scripts/staging.test.ts scripts/deploy-staging.test.ts scripts/provision-image-bucket.test.ts
+      # Only the deploy process receives credentials. Its orchestrator
+      # validates the staging target before backend or Cloudflare writes.
+      - name: Deploy this staging revision
+        env:
+          STAGING_SUPABASE_PROJECT_ID: ${{ vars.STAGING_SUPABASE_PROJECT_ID }}
+          STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          STAGING_APP_ORIGIN: ${{ vars.STAGING_APP_ORIGIN }}
+          STAGING_SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+          STAGING_SUPABASE_SECRET_KEY: ${{ secrets.STAGING_SUPABASE_SECRET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun run deploy:staging

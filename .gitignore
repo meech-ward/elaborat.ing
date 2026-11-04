@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-staging/
 # The note frame's page for a sandbox domain (wrangler.sandbox.jsonc), written by the build
 dist-sandbox/
 # `bun run build:visualize`

@@ -1,5 +1,5 @@
 import path from "node:path"
-import { mergeConfig, type Plugin } from "vite"
+import { defineConfig, mergeConfig, type Plugin } from "vite"
 import app from "../../../vite.config.ts"
 
 // The app built again with one visible change, as the next version for the
@@ -19,7 +19,7 @@ function visibleChange(): Plugin {
   }
 }
 
-export default mergeConfig(app, {
+export default defineConfig(env => mergeConfig(app(env), {
   plugins: [visibleChange()],
   build: { outDir: "dist-next" },
-})
+}))

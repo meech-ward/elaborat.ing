@@ -72,6 +72,14 @@ bun run dev
 
 Contributors and coding agents: start with [AGENTS.md](AGENTS.md).
 
+### Staging
+
+Run `bun run dev:staging` for the separate staging database on
+http://localhost:5174. Root `.env.local` remains the connection used by
+`bun run dev` on port 5173. Push the `staging` branch to publish a test version
+before merging into `main`. See [staging setup](docs/staging.md) for the hosted
+address and deployment settings.
+
 ### The assistant on your ChatGPT plan
 
 A local run can have an assistant that writes notes, drawings and diagrams in
