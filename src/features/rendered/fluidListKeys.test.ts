@@ -146,8 +146,14 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     }
     // Three levels: the innermost first item moves out one level.
     expect((await written("- a\n  - b\n    - c\n- d", "c", backspace, options)).text).toBe("- a\n  - b\n  - c\n- d");
-    // Lists of two bullets: the item takes the bullet of the list it moves into.
+    // Numbered and mixed lists too, and lists of two bullets: the item takes
+    // the marker of the list it moves into, which keeps counting.
     for (const [text, expected] of [
+      ["- a\n  1. b\n- d", "- a\n- b\n- d"],
+      ["1. a\n   - b\n2. c", "1. a\n2. b\n3. c"],
+      ["1. a\n   1. b\n   2. c\n2. d", "1. a\n2. b\n   1. c\n3. d"],
+      ["1) a\n   1) b\n2) c", "1) a\n2) b\n3) c"],
+      ["> 1. a\n>    1. b\n> 2. c", "> 1. a\n> 2. b\n> 3. c"],
       ["- a\n  * b\n- c", "- a\n- b\n- c"],
       ["* a\n  - b\n* c", "* a\n* b\n* c"],
       ["- a\n  + b\n  + bb\n- c", "- a\n- b\n  + bb\n- c"],
@@ -159,10 +165,6 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
       expect(lifted.caret.parent.textContent).toBe("b");
       expect(lifted.caret.parentOffset).toBe(0);
     }
-    // Ordered lists keep the standard Backspace for now: moved out, their
-    // items cannot be written yet.
-    expect((await written("- a\n  1. b\n- d", "b", backspace, options)).text).toBe("- a\n\n  b\n- d");
-    expect(listItemBackspace((await at("1. a\n   - b\n2. c", "b", 0, format)).state)).toBe(false);
     // The first item of a list that is not nested still leaves the list.
     expect(listItemBackspace((await at("- a\n- b", "a", 0, format)).state)).toBe(false);
     expect(listItemBackspace((await at("> - a\n> - b", "a", 0, format)).state)).toBe(false);

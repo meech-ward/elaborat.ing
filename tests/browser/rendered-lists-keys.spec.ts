@@ -145,6 +145,17 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("Backspace at the start of a numbered nested list's first item moves it out a level, and the numbers count on", async ({ page }) => {
+    const mark = await load(page, "1. parent\n   1. child\n   2. sibling\n2. after\n", "md", /^parent$/)
+    await clickAt(page, "child", 0)
+    await press(page, "Backspace")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("1. parent\n2. child\n   1. sibling\n3. after\n")
+    await expect(frameOf(page).locator("li li")).toHaveText("sibling")
+    expect((await selection(page)).focus).toEqual({ paragraph: "child", offset: 0 })
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Shift+Tab on an item with a nested list and items after it makes one list of them", async ({ page }) => {
     for (const [note, word, expected] of [
       ["- alpha\n  - beta\n- gamma\n", "alpha", "alpha\n\n- beta\n- gamma\n"],

@@ -66,10 +66,11 @@ export const emptyListBackspace: Command = (state, dispatch, view) => {
  * step, undoing an Enter split without leaving two paragraphs in that item.
  * At the first item of a nested list it moves the item out a level, as
  * Shift+Tab does, instead of making it a second paragraph of the item above.
+ * The item takes the marker of the list it moves into, a bullet or a number.
  * Empty items keep their separate exit behavior above. */
 export const listItemBackspace: Command = (state, dispatch, view) => {
   const { $from, empty } = state.selection;
-  const { list_item, bullet_list } = fluidSchema.nodes;
+  const { list_item } = fluidSchema.nodes;
   if (
     !empty ||
     $from.parent.type !== fluidSchema.nodes.paragraph ||
@@ -81,14 +82,7 @@ export const listItemBackspace: Command = (state, dispatch, view) => {
   )
     return false;
   if ($from.index(-2) > 0) return joinTextblockBackward(state, dispatch, view);
-  // Bullet lists only: the source cannot yet write an ordered item moved
-  // out this way, so those keep the standard Backspace.
-  return $from.depth >= 4 &&
-    $from.node(-3).type === list_item &&
-    $from.node(-2).type === bullet_list &&
-    $from.node(-4).type === bullet_list
-    ? liftItem(state, dispatch, view)
-    : false;
+  return $from.depth >= 4 && $from.node(-3).type === list_item ? liftItem(state, dispatch, view) : false;
 };
 
 /** Delete at the end of an item's text joins the text after it (the next
