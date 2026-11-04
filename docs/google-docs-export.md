@@ -26,8 +26,10 @@ The shared conversion pipeline also powers [Notion export](notion-export.md).
 It expands embedded notes, creates native drawing and diagram images, captures
 matching current component output where available, and uses an isolated
 temporary preview for unopened components. Interactive components become
-static content. Unsupported content produces visible source or placeholders
-and conversion notes for review. Google Docs may change formatting on import.
+static content. Custom form inputs and CSS layouts are not preserved; labels
+can run together when their layout came only from CSS. Unsupported content
+produces visible source or placeholders and conversion notes for review.
+Google Docs may change formatting on import.
 
 In a project, current root and retained child drafts are included. In an
 unlisted reader, one saved shared bundle is frozen for the operation; reads
@@ -56,5 +58,7 @@ headings, lists, tables, links, captions, image bounds and unsupported input.
 Chromium and Firefox journeys cover project drafts, anonymous shared exports,
 current and unopened component views, mobile accessibility, cancellation,
 revision changes, revocation, unchanged Notion export and cached offline use.
-Rendered DOCX output is checked separately for page layout and image scaling.
+The supplied script's DOCX was rendered and all 27 pages checked for page
+layout and image scaling. Its 18 original images retain their exact bytes,
+and its 15 drawing images fill their corrected export canvases.
 Generating and inspecting a DOCX does not verify a live Google Drive import.

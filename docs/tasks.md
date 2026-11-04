@@ -555,12 +555,16 @@ limits true in the architecture, roadmap and feature docs.
 
 ## Small things
 
+Found while doing other tasks; each is small or rare. Make one a task when it
+matters.
+
 - Google Docs conversion of nested `sup` and `sub` elements can retain both
   vertical-alignment flags on one text run. Clear the inherited opposing flag
   and verify that the innermost element controls the exported alignment.
-
-Found while doing other tasks; each is small or rare. Make one a task when it
-matters.
+- Static custom-form export drops input values and CSS layout intentionally,
+  but adjacent labels can become `EmailPassword` and source circle markers
+  can appear beside a second list bullet. Preserve readable separation and
+  choose one bullet representation without including entered form data.
 
 - The public `SharedBundle` schema spreads the image pixel schema's fields
   for originals, losing its combined width-times-height refinement. Align that
