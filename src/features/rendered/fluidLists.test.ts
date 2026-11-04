@@ -5,7 +5,7 @@ import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirr
 import { EditorState, NodeSelection, TextSelection, type Command, type Selection, type Transaction } from "prosemirror-state";
 import { ReplaceStep } from "prosemirror-transform";
 import type { DocumentFormat } from "../document";
-import { emptyListBackspace, keepingEmptyParagraphs, listItemBackspace, quoteStartEnter } from "./fluidCommands";
+import { emptyListBackspace, keepingEmptyParagraphs, liftItem, listItemBackspace, quoteStartEnter } from "./fluidCommands";
 import {
   fluidSourceOffsetForPosition,
   prepareFluidTransaction,
@@ -173,6 +173,18 @@ for (const format of ["md", "mdx"] as const) {
     // Under an item that ends in a nested list it leaves the list, as before:
     // joined there, the blocks would go a level deeper.
     expect((await press(caret(await note("- a\n  - x\n- \n  - b\n- c", format), "", 0), backspace)).text).toBe("- a\n  - x\n\n\n\n* b\n* c");
+  });
+
+  test(`${format}: a nested list an edit moves keeps its own blank lines and bullets, not those of an equal list elsewhere`, async () => {
+    // Another item holds the same nested list, spaced or marked another way.
+    const loose = "- p\n  - y\n\n  - z\n- a\n  - y\n  - z\n- c";
+    const entered = await press(caret(await note(loose, format), "a"), enter);
+    expect(entered.text).toBe("- p\n  - y\n\n  - z\n- a\n- \n  - y\n  - z\n- c");
+    expect((await press(entered, backspace)).text).toBe(loose);
+    expect((await press(caret(await note("- p\n  * y\n  * z\n- a\n  - y\n  - z\n- c", format), "a"), enter)).text).toBe("- p\n  * y\n  * z\n- a\n- \n  - y\n  - z\n- c");
+    // Tab makes the nested list again; Shift+Tab sends its lift as one step, made again from the step.
+    expect((await press(caret(await note("- q\n  - y\n\n  - z\n\nPara\n\n- a\n  - y\n- z", format), "z", undefined, undefined, 1), tab)).text).toBe("- q\n  - y\n\n  - z\n\nPara\n\n- a\n  - y\n  - z");
+    expect((await press(caret(await note("- b\n\n- z\n\nPara\n\n- a\n  - b\n- c", format), "a"), liftItem)).text).toBe("- b\n\n- z\n\nPara\n\na\n\n- b\n- c");
   });
 
   test(`${format}: a nested list whose first item is empty is set off by a blank line until the item has text`, async () => {

@@ -1459,16 +1459,38 @@ function joined(text: string, patches: readonly SourcePatch[]): SourcePatch {
 }
 
 /**
+ * Where block `node` of an edit's document is in the note's source: the
+ * block itself, where the edit kept it, else an equal block the edit took
+ * out of its place (one a step moved and so made again). A block still in
+ * the edited document (`stays`) is not where another came from: an equal
+ * list elsewhere in the note can be spaced or marked another way, which the
+ * document does not show.
+ */
+function sourceOf(projection: FluidProjection, node: PMNode, stays: ReadonlySet<PMNode>): MappedNode | undefined {
+  return (
+    projection.mapping.nodes.find((entry) => entry.node === node) ??
+    projection.mapping.nodes.find((entry) => !stays.has(entry.node) && entry.node.eq(node))
+  );
+}
+
+/** Every block of `doc`, to tell the blocks an edit kept from those it moved (`sourceOf`). */
+function blocksOf(doc: PMNode): Set<PMNode> {
+  const blocks = new Set<PMNode>();
+  doc.descendants((node) => {
+    blocks.add(node);
+    return !node.isTextblock;
+  });
+  return blocks;
+}
+
+/**
  * The line breaks between two blocks where the source has them side by side
  * (one right after the other in the same container), so an item's blocks
  * stay as close as they were written: "\n" or "\n\n".
  */
-function sourceGap(projection: FluidProjection, before: PMNode, after: PMNode): string | undefined {
-  const find = (node: PMNode) =>
-    projection.mapping.nodes.find((entry) => entry.node === node) ??
-    projection.mapping.nodes.find((entry) => entry.node.eq(node));
-  const above = find(before),
-    below = find(after);
+function sourceGap(projection: FluidProjection, before: PMNode, after: PMNode, stays: ReadonlySet<PMNode>): string | undefined {
+  const above = sourceOf(projection, before, stays),
+    below = sourceOf(projection, after, stays);
   if (!above || !below || above.to > below.from) return undefined;
   const gap = projection.text.slice(above.to, below.from);
   if (!/^[ \t]*\r?\n[\s>]*$/.test(gap)) return undefined;
@@ -1482,11 +1504,10 @@ function itemSource(
   projection: FluidProjection,
   hint: FluidSyntaxHint | undefined,
   style: ListStyle,
+  stays: ReadonlySet<PMNode>,
 ): string {
   const item = list.child(index);
-  const unchanged =
-    projection.mapping.nodes.find((entry) => entry.node === item) ??
-    projection.mapping.nodes.find((entry) => entry.node.eq(item));
+  const unchanged = sourceOf(projection, item, stays);
   // An unchanged item as written, with the marker of the list it is in now
   // (Tab or Shift+Tab moves items between lists).
   if (unchanged) {
@@ -1505,7 +1526,7 @@ function itemSource(
     if (i)
       body +=
         requiredGap(item, i) ??
-        sourceGap(projection, item.child(i - 1), child) ??
+        sourceGap(projection, item.child(i - 1), child, stays) ??
         (!style.nested &&
         (child.type === fluidSchema.nodes.bullet_list ||
           (child.type === fluidSchema.nodes.ordered_list && child.attrs.order === 1))
@@ -1514,6 +1535,7 @@ function itemSource(
     body += blockSource(
       child,
       projection,
+      stays,
       true,
       hint,
       isList(child) ? { ...style, loose: style.nested } : style,
@@ -1528,12 +1550,13 @@ function itemSource(
 }
 
 /** Serialize only a changed, parser-owned ordinary subtree. Exact unchanged
- * sibling subtrees are reused; this never serializes the document. `avoid`:
- * bullets or delimiters a list may not use, those of a list of its kind
- * beside it. */
+ * sibling subtrees are reused; this never serializes the document. `stays`:
+ * the edited document's blocks (`sourceOf`). `avoid`: bullets or delimiters
+ * a list may not use, those of a list of its kind beside it. */
 function blockSource(
   node: PMNode,
   projection: FluidProjection,
+  stays: ReadonlySet<PMNode>,
   reuse = true,
   hint?: FluidSyntaxHint,
   style: ListStyle = TIGHT,
@@ -1541,9 +1564,7 @@ function blockSource(
 ): string {
   if (node.type === fluidSchema.nodes.object)
     return islandSource(islandEntry(projection, node));
-  const old = reuse && !avoid.length
-    ? projection.mapping.nodes.find((entry) => entry.node.eq(node))
-    : undefined;
+  const old = reuse && !avoid.length ? sourceOf(projection, node, stays) : undefined;
   if (old) return detached(projection.text, old.from, old.to);
   // Markdown drops spaces and tabs at the start of a paragraph or heading, so
   // they are not written (the editor takes the document without them).
@@ -1559,7 +1580,7 @@ function blockSource(
     case "blockquote": {
       const parts: string[] = [];
       node.forEach((child) => {
-        parts.push(blockSource(child, projection, true, hint, style));
+        parts.push(blockSource(child, projection, stays, true, hint, style));
       });
       return parts
         .join("\n\n")
@@ -1571,7 +1592,7 @@ function blockSource(
     case "ordered_list": {
       // Spaced like the list its first kept item comes from.
       const kept = node.content.content
-        .map((item) => projection.mapping.nodes.find((entry) => entry.node.eq(item)))
+        .map((item) => sourceOf(projection, item, stays))
         .find(Boolean);
       const original =
         kept &&
@@ -1591,7 +1612,7 @@ function blockSource(
       };
       const parts: string[] = [];
       node.forEach((_, __, index) => {
-        parts.push(itemSource(node, index, projection, hint, own));
+        parts.push(itemSource(node, index, projection, hint, own, stays));
       });
       return parts.join(own.loose ? "\n\n" : "\n");
     }
@@ -1613,6 +1634,7 @@ function listItemsPatch(
   projection: FluidProjection,
   previous: PMNode,
   next: PMNode,
+  stays: ReadonlySet<PMNode>,
   hint?: FluidSyntaxHint,
 ): SourcePatch | null {
   const text = projection.text;
@@ -1700,13 +1722,13 @@ function listItemsPatch(
         counted.push({
           from: entry.from,
           to: entry.to,
-          insert: reindent(itemSource(next, i, projection, hint, style)),
+          insert: reindent(itemSource(next, i, projection, hint, style, stays)),
           expected: text.slice(entry.from, entry.to),
         });
       }
     const written: string[] = [];
     for (let i = first; i < newLast; i++) {
-      written.push(reindent(itemSource(next, i, projection, hint, style)));
+      written.push(reindent(itemSource(next, i, projection, hint, style, stays)));
     }
     let insert = written.join(gap),
       from: number,
@@ -1793,6 +1815,7 @@ function structuralPatch(
       : ".",
   };
   const content = Fragment.fromArray(next.content.content.slice(prefix, newEnd));
+  const stays = blocksOf(next);
   const previous = affected[0].node,
     replacement = content.firstChild;
   if (
@@ -1803,7 +1826,7 @@ function structuralPatch(
     isList(previous) &&
     previous.sameMarkup(replacement)
   ) {
-    const patch = listItemsPatch(projection, previous, replacement, hint);
+    const patch = listItemsPatch(projection, previous, replacement, stays, hint);
     if (patch) return patch;
   }
   assertRenderedBetween(projection, affected[0].pos, affected.at(-1)!.end);
@@ -1838,7 +1861,7 @@ function structuralPatch(
           avoid.push(markerOf(projection.text.slice(projection.mapping.roots[root].from)));
       }
     }
-    chunks.push(blockSource(node, projection, true, hint, style, avoid));
+    chunks.push(blockSource(node, projection, stays, true, hint, style, avoid));
   });
   const from = affected[0].from,
     to = affected.at(-1)!.to;
