@@ -285,6 +285,36 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("after Shift+Enter, what is typed goes on the new line, also where the break takes a space or a selected word", async ({ page }) => {
+    let mark = await load(page, "alpha bravo\n\nkeep this line\n", "md", /^alpha bravo$/)
+    await clickAt(page, "alpha bravo", 5)
+    await press(page, "Shift+Enter")
+    await page.keyboard.type("x")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alpha\\\nxbravo\n\nkeep this line\n")
+    mark = await revision(page)
+    await clickAt(page, "keep this line", 5)
+    await press(page, "Shift+ArrowRight", 4)
+    await press(page, "Shift+Enter")
+    await page.keyboard.type("y")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alpha\\\nxbravo\n\nkeep \\\nyline\n")
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
+  test("Shift+Enter at the end of a line the note breaks makes a new line there, and typing goes on it", async ({ page }) => {
+    // A line break typed in Source, which Markdown reads as part of the paragraph.
+    const mark = await load(page, "Dear team,\nthanks for the notes.\n", "md", /^Dear team,/)
+    await clickAt(page, "Dear team,", 9)
+    await press(page, "ArrowRight")
+    await press(page, "Shift+Enter")
+    await page.keyboard.type("x")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("Dear team,\\\nx\\\nthanks for the notes.\n")
+    await expect(lineBreaks(page)).toHaveCount(2)
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

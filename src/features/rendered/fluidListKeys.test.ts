@@ -224,6 +224,48 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     expect((await written("alpha bravo", "alpha", hardBreak, options)).text).toBe("alpha\\\nbravo");
     expect((await written("alpha bravo", "alpha ", hardBreak, options)).text).toBe("alpha \\\nbravo");
     expect((await written("- alpha bravo\n- b", "alpha", hardBreak, options)).text).toBe("- alpha\\\nbravo\n- b");
+    // The caret goes on the new line, after the break, also when the break
+    // takes spaces or a selection; what is typed next goes there.
+    for (const [text, word, offset, selected, typed] of [
+      ["alpha bravo", "alpha", 5, 0, "alpha\\\nxbravo"],
+      ["- one two\n- b", "one", 3, 0, "- one\\\nxtwo\n- b"],
+      ["alpha bravo charlie", "bravo", 0, 5, "alpha \\\nxcharlie"],
+    ] as const) {
+      const { projection, state } = await at(text, word, offset, format);
+      const selection = state.apply(state.tr.setSelection(TextSelection.create(state.doc, state.selection.from, state.selection.from + selected)));
+      let made: Transaction | undefined;
+      hardBreak(selection, (tr) => (made = tr));
+      const shown = selection.apply(made!);
+      expect(shown.selection.empty).toBe(true);
+      expect(shown.selection.$head.nodeBefore?.type).toBe(fluidSchema.nodes.hard_break);
+      const typing = shown.tr.insertText("x");
+      const accepted = await prepareFluidTransaction({ text, revision: 1, format }, projection, [...made!.steps, ...typing.steps].map((step) => step.toJSON()));
+      expect(accepted.text).toBe(typed);
+      expect(accepted.projection.doc.eq(typing.doc)).toBe(true);
+    }
+    // Before a line break the note has (one typed in Source), that one
+    // becomes a break too, and the caret goes between the two, on the new line.
+    for (const [text, word, shown, typed] of [
+      ["Dear team,\nthanks for the notes.", "Dear team,", "Dear team,\\\n\\\nthanks for the notes.", "Dear team,\\\nx\\\nthanks for the notes."],
+      ["- item one\n  continued\n- b", "item one", "- item one\\\n\\\ncontinued\n- b", "- item one\\\n  x\\\n  continued\n- b"],
+      ["> quoted one\n> quoted two", "quoted one", "> quoted one\\\n\\\nquoted two", "> quoted one\\\n> x\\\n> quoted two"],
+    ]) {
+      const { projection, state } = await at(text, word, word.length, format);
+      let made: Transaction | undefined;
+      hardBreak(state, (tr) => (made = tr));
+      const after = state.apply(made!);
+      expect(after.selection.$head.nodeBefore?.type).toBe(fluidSchema.nodes.hard_break);
+      expect(after.selection.$head.nodeAfter?.type).toBe(fluidSchema.nodes.hard_break);
+      expect(after.selection.$head.parent.textContent).not.toContain("\n");
+      expect(trailingBreak(made!.steps, made!.doc)).toBeNull();
+      const accepted = await prepareFluidTransaction({ text, revision: 1, format }, projection, made!.steps.map((step) => step.toJSON()));
+      expect(accepted.text).toBe(shown);
+      expect(accepted.projection.doc.eq(made!.doc)).toBe(true);
+      const typing = after.tr.insertText("x");
+      const next = await prepareFluidTransaction({ text: accepted.text, revision: 2, format }, accepted.projection, typing.steps.map((step) => step.toJSON()));
+      expect(next.text).toBe(typed);
+      expect(next.projection.doc.eq(typing.doc)).toBe(true);
+    }
     // Inside formatting the break has none, as Markdown writes it.
     const bold = await run("**alpha bravo**", "alpha", hardBreak, options);
     const inserted = (bold!.tr.steps[0] as ReplaceStep).slice.content.firstChild!;

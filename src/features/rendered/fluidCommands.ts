@@ -1,4 +1,4 @@
-import { NodeSelection, Selection, type Command, type Transaction } from "prosemirror-state";
+import { NodeSelection, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { Fragment, Slice, type Node as PMNode } from "prosemirror-model";
 import { canJoin, Mapping, ReplaceStep, Transform, type Step } from "prosemirror-transform";
 import { joinTextblockBackward, joinTextblockForward } from "prosemirror-commands";
@@ -170,21 +170,28 @@ export const toggleTask: Command = (state, dispatch) => {
 /**
  * Shift+Enter: a line break in a paragraph, with no formatting (Markdown
  * writes a break with none), in place of the selection and of the spaces
- * after it, which Markdown cannot write at the start of a line. A heading
- * has no line breaks in Markdown, so there the key does nothing.
+ * after it, which Markdown cannot write at the start of a line, and the caret
+ * after it, on the new line. A heading has no line breaks in Markdown, so
+ * there the key does nothing.
  */
 export const hardBreak: Command = (state, dispatch) => {
   const { $from, $to } = state.selection;
   // A selected island stays: a break in its place would replace it.
   if (state.selection instanceof NodeSelection) return true;
   if ($from.parent.type !== fluidSchema.nodes.paragraph || !$from.sameParent($to)) return true;
-  const after = $to.parent.textBetween($to.parentOffset, $to.parent.content.size, undefined, "\n");
+  // A line break or an island counts one character, as it takes one position.
+  const after = $to.parent.textBetween($to.parentOffset, $to.parent.content.size, undefined, "￼");
   const spaces = /^[ \t]*/.exec(after)![0].length;
-  dispatch?.(
-    state.tr
-      .replaceWith($from.pos, $to.pos + spaces, fluidSchema.nodes.hard_break.create())
-      .scrollIntoView(),
-  );
+  if (!dispatch) return true;
+  const br = fluidSchema.nodes.hard_break.create();
+  // Just before a line break the note has (one typed in Source, a "\n" in
+  // the text), Markdown cannot write another: that one becomes a break too,
+  // and the caret goes between the two, on the new line. A "\n" left beside
+  // the caret would not last either: the editor reads text typed next to it
+  // back from the page with the "\n" as a space.
+  const soft = after[spaces] === "\n" ? 1 : 0;
+  const tr = state.tr.replaceWith($from.pos, $to.pos + spaces + soft, soft ? [br, br] : br);
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, $from.pos + 1)).scrollIntoView());
   return true;
 };
 
