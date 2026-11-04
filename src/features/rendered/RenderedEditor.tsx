@@ -1865,7 +1865,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   return (
     <div ref={rootRef} data-rendered-editor={document.format} style={externalFrame ? {display:'contents'} : { position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice && externalFrame ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
-      {componentPending ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
+      {componentPending && externalFrame ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
       {displayedError && errorBanner ? (
         <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
           {displayedError} Source is unchanged and remains editable.
@@ -1882,7 +1882,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       ) : (frameDoc.hosted ? !frameDoc.ready : !srcdoc) ? (
         <LoadingLine label="Loading preview" className="shrink-0" />
       ) : null}
-      <div style={{ display: externalFrame || componentPending || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
+      {/* A note on screen stays while its components are made again (another
+      version of it came, or a module it imports changed); its next render
+      takes its place. */}
+      <div style={{ display: externalFrame || (componentPending && !hasExposed) || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
         {!externalFrame && !frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
           key={frameDoc.key}
           ref={frameRef}
@@ -1942,6 +1945,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         // the note. Placed with inline styles, as the editor's own box is.
         <div style={{ position: "absolute", left: 0, right: 0, bottom: bottomInset, zIndex: 10, pointerEvents: "none" }}>
           <Banner tone="warn" className="rounded-none">Edit not applied: {editNotice}</Banner>
+        </div>
+      ) : null}
+      {componentPending && !externalFrame ? (
+        // Along the top of the note, over it, so it moves nothing either.
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 10, pointerEvents: "none" }}>
+          <LoadingLine label="Loading components" />
         </div>
       ) : null}
       {active && offlineAction && (

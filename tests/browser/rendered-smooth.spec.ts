@@ -1035,4 +1035,39 @@ test.describe("in the app", () => {
     await frame(page).locator("body").evaluate(() => document.scrollingElement!.scrollBy(0, 120))
     await expect.poll(apart).toBeLessThan(3)
   })
+
+  test("a newer saved version of an open note with components keeps the note on screen while they are made again", async ({ page }) => {
+    const before = "# Note\n\nFirst paragraph here.\n\n<Counter initial={1} />\n\nLast paragraph here.\n"
+    const fake = await fakeSupabase(page)
+    const remote = fake.server.remote(person.id)
+    const id = crypto.randomUUID()
+    await remote.createProject(id, "Notes")
+    await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.mdx", content: before }])
+    await signedIn(page)
+    await page.goto(new URL(`projects/${id}/a.mdx`, APP_URL).href)
+    await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Rendered", exact: true }).click()
+    await expect(frame(page).getByText("Last paragraph here.")).toBeVisible()
+    await frame(page).getByRole("button", { name: "Increment" }).click()
+    await expect(frame(page).locator('[data-component="Counter"] output')).toHaveText("2")
+    // Where the frame is and how tall, at every frame from now on.
+    await page.evaluate(() => {
+      const seen: string[] = []
+      ;(window as Window & { __frameBoxes?: string[] }).__frameBoxes = seen
+      const sample = () => {
+        const element = [...document.querySelectorAll('iframe[title="Isolated document preview"]')].find((frame) => frame.getBoundingClientRect().height > 0) as HTMLIFrameElement | undefined
+        const box = element?.getBoundingClientRect()
+        const line = box ? `${Math.round(box.top)}:${Math.round(box.height)}` : "none"
+        if (seen.at(-1) !== line) seen.push(line)
+        if (seen.length < 50) requestAnimationFrame(sample)
+      }
+      sample()
+    })
+    await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.mdx", content: `${before}\nA paragraph another device added.\n`, base_version: 1 }])
+    fake.signal(id, fake.server.projects.get(id)!.revision)
+    await expect(frame(page).getByText("A paragraph another device added.")).toBeVisible({ timeout: 15_000 })
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => (window as Window & { __frameBoxes?: string[] }).__frameBoxes)).toHaveLength(1)
+    await expect(frame(page).locator('[data-component="Counter"] output')).toHaveText("2")
+  })
 })
