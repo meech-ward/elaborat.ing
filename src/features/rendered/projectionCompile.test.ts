@@ -47,9 +47,12 @@ const twoCompiles: typeof oneCompile = async (source, format, hooks, catalog) =>
   return { code, instrumentation: instrumented };
 };
 let separately = false;
-const compiler = spyOn(instrumentation, "compileProjection").mockImplementation(
-  (...args) => (separately ? twoCompiles : oneCompile)(...args),
-);
+const dispatch: typeof oneCompile = (...args) => {
+  // The spy forgets each call: it would keep every compile's result until the file ends.
+  compiler.mockClear();
+  return (separately ? twoCompiles : oneCompile)(...args);
+};
+const compiler = spyOn(instrumentation, "compileProjection").mockImplementation(dispatch);
 afterAll(() => compiler.mockRestore());
 
 async function bothWays<T>(run: () => Promise<T>): Promise<[T, T]> {
@@ -526,6 +529,39 @@ test("attempts that write the same source parse it once", async () => {
     expect(space!.patches).toEqual([]);
     expect(typed).toEqual([" " + text, text]);
   }
+});
+
+test("a transaction holds one step's projections at a time", async () => {
+  // Select all and bold: a step for each paragraph, and each step projects the whole note.
+  const text = Array.from({ length: 40 }, (_, index) => `Paragraph ${index + 1} with plain words.`).join("\n\n") + "\n";
+  const projection = await projectFluidSource(text, "mdx", ready(text));
+  const bold = steps(projection, toggleMark(fluidSchema.marks.strong), 1, projection.doc.content.size - 1);
+  expect(bold).toHaveLength(40);
+  // Each compile's instrumentation, which its projection holds.
+  const compiled: Array<WeakRef<object>> = [];
+  const alive: number[] = [];
+  compiler.mockImplementation(async (...args) => {
+    if (compiled.length && compiled.length % 10 === 0) {
+      // A WeakRef keeps its object until the current job ends.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      Bun.gc(true);
+      alive.push(compiled.filter((ref) => ref.deref()).length);
+    }
+    const result = await dispatch(...args);
+    compiled.push(new WeakRef(result.instrumentation));
+    return result;
+  });
+  try {
+    const result = await prepareFluidTransaction({ text, revision: 1, format: "mdx" }, projection, bold);
+    expect(result.text).toBe(text.replace(/^Paragraph .*$/gm, "**$&**"));
+  } finally {
+    compiler.mockImplementation(dispatch);
+  }
+  expect(compiled).toHaveLength(40);
+  // Of the earlier steps' projections, only the one the next step builds on
+  // is left, give or take what the collector's stack scan keeps.
+  expect(alive).toHaveLength(3);
+  expect(Math.max(...alive)).toBeLessThanOrEqual(3);
 });
 
 function steps(projection: FluidProjection, command: Command, from: number, to = from): unknown[] {

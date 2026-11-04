@@ -2106,11 +2106,13 @@ export async function prepareFluidTransaction(
   let queue = proposed;
   let candidate = projection;
   let nearest = false;
-  // Each text an attempt wrote, projected once. The format and the component
-  // environment stay the same through the transaction, so the text decides it.
-  const projections = new Map<string, Promise<FluidProjection>>();
   for (let index = 0; index < queue.length; index++) {
     const step = queue[index];
+    // Each text this step's attempts wrote, projected once. The format and the
+    // component environment stay the same through the transaction, so the text
+    // decides it. Kept for one step only: a transaction can have hundreds of
+    // steps, and each projection holds the whole note.
+    const projections = new Map<string, Promise<FluidProjection>>();
     const { from, to } = step as unknown as { from: number; to: number };
     if (from > to || to > candidate.doc.content.size)
       throw new Error("Invalid projection step range");
