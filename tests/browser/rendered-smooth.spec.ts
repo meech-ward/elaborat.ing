@@ -603,6 +603,40 @@ After paragraph.
     await expect(frameOf(page).locator("tbody tr")).toHaveCount(2)
   })
 
+  test("a component's text the note refuses, with nothing else changed, can be sent again", async ({ page }) => {
+    await openHarness(page)
+    const note = `Intro.\n\n<Callout tone="info" title="A note">\nA note body\n</Callout>\n\nMore text.\n`
+    await load(page, note, "mdx", "More text.")
+    const body = frameOf(page).locator('[data-component="Callout"] [role="textbox"]').filter({ hasText: "A note body" })
+    const end = async () => {
+      const box = (await body.boundingBox())!
+      await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+    }
+    // The text's next edit names source the note does not have there, as a
+    // stale or mistaken frame might, so the page refuses it and the note
+    // stays as it is.
+    await frameOf(page).locator("body").evaluate(() => {
+      const port = window.pagePort!
+      const send = port.postMessage.bind(port)
+      port.postMessage = (message: unknown) => {
+        const edit = message as { kind?: string; expected?: string }
+        if (edit?.kind !== "prose-edit") return send(message)
+        delete (port as { postMessage?: unknown }).postMessage
+        send({ ...edit, expected: `${edit.expected}!` })
+      }
+    })
+    await end()
+    await page.keyboard.type(" one")
+    await clickAt(page, "More text.", 2)
+    await expect(page.getByRole("status").filter({ hasText: /^Edit not applied:/ })).toBeVisible()
+    expect(await source(page)).toBe(note)
+    // The text, which still shows what was typed, sends its next edit, which the note takes.
+    await end()
+    await page.keyboard.type(" two")
+    await clickAt(page, "More text.", 2)
+    await expect.poll(() => source(page)).toBe(note.replace("A note body", "A note body one two"))
+  })
+
   test("equal islands start again when another like them comes before them, and none takes the count of another", async ({ page }) => {
     await openHarness(page)
     const note = (top: string) => `${top}Intro.\n\n<Counter initial={1} />\n\nText.\n\n<Counter initial={1} />\n`

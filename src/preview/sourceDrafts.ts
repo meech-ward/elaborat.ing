@@ -54,15 +54,18 @@ export class SourceDraftStore {
     if (draft.value !== draft.baseline) this.retain(draft.value, reason);
   }
 
-  settle(draftId: number, outcome: 'noop' | 'rejected', reason?: string) {
-    if (this.flight?.message.draftId !== draftId) return;
-    if (outcome === 'rejected') this.retain(this.flight.submittedValue, reason ?? 'Source refused the edit.');
+  /** The edit in flight changed nothing or was refused: the next goes. Returns that edit, or null when it was not in flight. */
+  settle(draftId: number, outcome: 'noop' | 'rejected', reason?: string): Edit | null {
+    const settled = this.flight;
+    if (settled?.message.draftId !== draftId) return null;
+    if (outcome === 'rejected') this.retain(settled.submittedValue, reason ?? 'Source refused the edit.');
     else {
-      const region = pendingRegion(this.flight), draft = region && this.drafts.get(key(region));
-      if (draft && draft.value === this.flight.submittedValue) this.drafts.delete(key(draft));
+      const region = pendingRegion(settled), draft = region && this.drafts.get(key(region));
+      if (draft && draft.value === settled.submittedValue) this.drafts.delete(key(draft));
     }
     this.flight = null;
     this.flush();
+    return settled.message;
   }
 
   queue(message: Edit, submittedValue?: string, sourceRegion?: DraftRegion) {
@@ -228,7 +231,12 @@ export function setSourceDraftContext(session: string, revision: number, ack?: E
 }
 export function queueRangeEdit(message: RangeEdit, submittedValue?: string) { store.queue(message, submittedValue); renderRecoveryNotice(); }
 export function queueComponentValueEdit(message: ComponentEdit, region?: DraftRegion) { store.queue(message, message.value, region); renderRecoveryNotice(); }
-export function settleSourceDraft(draftId: number, outcome: 'noop' | 'rejected', reason?: string) { store.settle(draftId, outcome, reason); renderRecoveryNotice(); }
+/** The page's answer to a draft's edit that changed nothing or was refused; returns that edit, or null. */
+export function settleSourceDraft(draftId: number, outcome: 'noop' | 'rejected', reason?: string) {
+  const settled = store.settle(draftId, outcome, reason);
+  renderRecoveryNotice();
+  return settled;
+}
 
 export function finishSourceDraftRender(extraRegions: readonly DraftRegion[] = []) {
   store.finishRender([...extraRegions, ...[...document.querySelectorAll<HTMLElement>(selector)].flatMap(element => {

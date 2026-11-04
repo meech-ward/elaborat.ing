@@ -1187,7 +1187,11 @@ function onParentMessage(event: MessageEvent): void {
     return;
   }
   if (message.kind === 'source-draft-settled') {
-    settleSourceDraft(message.draftId, message.outcome, message.reason);
+    const settled = settleSourceDraft(message.draftId, message.outcome, message.reason);
+    // A component's text sends its edits through the drafts: it hears the
+    // answer as a text that sends its own does, and can send again.
+    if (settled?.kind === 'prose-edit')
+      settleDirectEdit({ kind: 'edit-settled', session: message.session, revision: settled.revision, target: { from: settled.from, to: settled.to }, outcome: message.outcome });
     return;
   }
   if (message.kind === "module") {

@@ -219,14 +219,16 @@ function EditableText(props: {
       // No new text comes for it: the caret is still here.
       if (enterCommit?.session === session && enterCommit.from === props.from) enterCommit = null;
       // A refused edit is not in the note, as the page's notice says: the
-      // text shows the note's own again, unless the person has typed on.
-      if (answer.outcome === "rejected" && (element.textContent ?? "") === edit.value) element.textContent = props.value;
+      // text shows the note's own again, unless the person has typed on. A
+      // component's text keeps what was typed, which its draft holds
+      // (sourceDrafts.ts), to send again.
+      if (answer.outcome === "rejected" && !props.literal && (element.textContent ?? "") === edit.value) element.textContent = props.value;
     };
     settledListeners.add(settled);
     return () => {
       settledListeners.delete(settled);
     };
-  }, [props.value, props.from, session]);
+  }, [props.value, props.literal, props.from, session]);
   useLayoutEffect(() => {
     if (props.literal && ref.current) restoreSourceDraft(ref.current);
   }, [revision, props.from, props.leaf?.expected, props.literal]);
