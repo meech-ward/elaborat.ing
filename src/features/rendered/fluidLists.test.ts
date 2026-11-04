@@ -287,6 +287,32 @@ for (const format of ["md", "mdx"] as const) {
     expect((await write(n, tr)).text).toBe("- a\n  1. b");
   });
 
+  test(`${format}: a bullet typed at the start of a line marks only the list it makes`, async () => {
+    // The frame's input rule: the bullet taken out, the paragraph wrapped in
+    // a list, and the bullet sent as a hint for the list it makes.
+    const bullet = async (n: Note, marker: "-" | "*" | "+") => {
+      n = await type(n, marker);
+      const state = EditorState.create({ doc: n.projection.doc, selection: n.selection });
+      const tr = state.tr.delete(state.selection.from - 1, state.selection.from).setMeta("fluidSyntax", { marker });
+      wrapInList(nodes.bullet_list)(state.apply(tr), (next) => {
+        for (const step of next.steps) tr.step(step);
+      });
+      return write(n, tr);
+    };
+    // In an empty item: a nested list with the typed bullet, in a list that keeps its own.
+    for (const list of ["* a\n* c", "+ a\n+ c", "- a\n- c"]) {
+      const outer = list[0];
+      const nested = await bullet(await press(caret(await note(list, format), "a"), enter), "-");
+      expect(nested.text, list).toBe(`${outer} a\n\n  - \n${outer} c`);
+    }
+    expect((await bullet(caret(await note("* a\n* b", format), "b", 0), "-")).text).toBe("* a\n  - b");
+    // Beside a list with the same bullet, the new list takes another, or the two would join.
+    expect((await bullet(caret(await note("- a\n- b\n\nc", format), "c", 0), "-")).text).toBe("- a\n- b\n\n* c");
+    expect((await bullet(caret(await note("- a\n\nc", format), "c", 0), "-")).text).toBe("- a\n\n* c");
+    expect((await bullet(caret(await note("* a\n\nc", format), "c", 0), "*")).text).toBe("* a\n\n- c");
+    expect((await bullet(caret(await note("Para\n\nc", format), "c", 0), "+")).text).toBe("Para\n\n+ c");
+  });
+
   test(`${format}: Enter or Shift+Tab on an empty middle item splits the list around an empty paragraph`, async () => {
     for (const [list, split] of [
       ["- a\n- \n- c", "- a\n\n\n\n* c"],

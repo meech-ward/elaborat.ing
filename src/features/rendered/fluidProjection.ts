@@ -1358,11 +1358,9 @@ function itemMarker(
   list: PMNode,
   index: number,
   style: ListStyle,
-  hint: FluidSyntaxHint | undefined,
   source?: string,
 ): string {
-  if (list.type !== fluidSchema.nodes.ordered_list)
-    return hint && "marker" in hint ? hint.marker : style.marker;
+  if (list.type !== fluidSchema.nodes.ordered_list) return style.marker;
   const kept = source && /^(\d{1,9})[.)]/.exec(source)?.[1];
   const number =
     index === 0 || style.numbering === "same"
@@ -1512,9 +1510,9 @@ function itemSource(
   // (Tab or Shift+Tab moves items between lists).
   if (unchanged) {
     const source = detached(projection.text, unchanged.from, unchanged.to);
-    return withMarker(source, itemMarker(list, index, style, hint, source));
+    return withMarker(source, itemMarker(list, index, style, source));
   }
-  const marker = `${itemMarker(list, index, style, hint)} `;
+  const marker = `${itemMarker(list, index, style)} `;
   const box =
     item.attrs.checked === null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
   let body = "";
@@ -1600,12 +1598,18 @@ function blockSource(
           (entry) => isList(entry.node) && entry.node.content.content.includes(kept.node),
         );
       const spaced = original ? listStyle(projection, original.node, style) : style;
+      // A bullet typed at the start of a line (`hint`) marks the list it
+      // makes, whose items are all new; other lists keep their own.
+      const made =
+        node.type === fluidSchema.nodes.bullet_list &&
+        !node.content.content.some((item) => projection.mapping.nodes.some((entry) => entry.node === item));
+      const marker = made && hint && "marker" in hint ? hint.marker : spaced.marker;
       // Beside a list of its kind, another bullet or delimiter keeps the two apart.
       const own = {
         ...spaced,
-        marker: avoid.includes(spaced.marker)
-          ? (["-", "*", "+"].find((marker) => !avoid.includes(marker)) ?? spaced.marker)
-          : spaced.marker,
+        marker: avoid.includes(marker)
+          ? (["-", "*", "+"].find((bullet) => !avoid.includes(bullet)) ?? marker)
+          : marker,
         delimiter: avoid.includes(spaced.delimiter)
           ? ([".", ")"].find((delimiter) => !avoid.includes(delimiter)) ?? spaced.delimiter)
           : spaced.delimiter,
