@@ -56,18 +56,42 @@ exactly the same database functions, as the user.
 safe, ready content is displayed immediately.** This is an app-wide
 requirement, including public links, the project workbench, embedded documents
 and chat views. The code already splits heavy modules and has a local fast
-path for cached projects. Other data and rendering gates do not yet meet
-the requirement.
+path for cached projects. Requested files now open ahead of offline image
+preparation, public readers receive requested source ahead of independent assets, and
+visible preview assets publish individually. Source-only notes do no preview
+decoding. Checked MDX prose can display with protected placeholders while
+component preparation finishes. See [Progressive loading](progressive-loading.md)
+for the contracts, verification evidence and deployment measurement limits.
 
-**Implementation status: pending.** First project open waits for complete
-offline data, public reading waits for a complete bundle, Source-only notes
-can prepare unseen previews, and assets are published in batches. Initial
-MDX display also waits for component preparation and projection. The current
-documentation task authorizes no implementation. See
-[Progressive loading](progressive-loading.md) for the dated audit, required
-behavior, storage and isolation constraints, and T55 through T59. Future
-changes must distinguish useful display from complete offline or export
-readiness and keep existing access and source guarantees.
+**Decision: partial project availability is durable and distinct from offline
+completion.** [Project loading](project-loading.md) defines the account-scoped
+partial marker, complete revision, interrupted recovery and export rules.
+IndexedDB v3 is an intentional compatibility boundary: older tabs close their
+connections and must reload before writing. Committed drafts survive the
+upgrade. A tab running old code cannot be retrofitted with new reload wording;
+it reports its storage failure and retains its in-memory work.
+
+**Decision: pending MDX is a checked, display-only projection.** Parse the
+whole source and retain exact source mappings, omit executable document code,
+and use static protected placeholders until the matching approved environment
+is ready. Source editing stays available; rendered writes and export capture
+wait. [Component preparation](progressive-components.md) defines this boundary.
+
+**Decision: public progressive responses are revision-bound capabilities.** A
+`mode: "manifest", stream: true` request returns no-store NDJSON: the complete,
+validated requested source first, followed by independently validated file and
+image records. Up to four text reads and three image preparations run together
+under the existing aggregate file, byte and depth bounds. Every published
+record rechecks the active link and revision. Missing or invalid descendants
+have local error records; access, revision and aggregate-limit failures
+invalidate the partial view. Client-selected paths never authorize reads.
+
+An unchanged response requires a fresh active-link context read and matching
+identity, revision, path and archived state, without canceling an ongoing
+dependency stream. Legacy callers can still request a complete JSON bundle or
+the non-streaming manifest and graph-derived image ordinals. Partial display
+never means an export package is ready: export preparation completes and
+verifies the frozen revision, including validated originals, before success.
 
 ## Supabase as code
 
@@ -244,11 +268,10 @@ further reads and comment writes, without granting or removing project
 membership. Already delivered content cannot be taken back. See
 [unlisted file sharing](file-sharing.md) for release scope and verification.
 
-**Loading follow-up, pending (T55):** the current route builds the whole
-authorized bundle before starting its viewer, and refresh repeats that work.
-The [progressive loading requirement](progressive-loading.md) calls for
-earlier useful display and bounded, overlapping reads while retaining active
-link checks, revision consistency and the existing public caching policy.
+**Progressive public reading (T55):** viewer loading overlaps the authorized
+source stream. Files and images arrive as separate graph-bound records and
+publish independently. Active-link revision checks avoid rebuilding unchanged bundles.
+The existing no-store policy and complete export checks remain in force.
 
 **Decision: project categories are personal organization.** Flat categories
 and project associations belong to an account, and a project may be in several.
@@ -342,19 +365,31 @@ cannot sync (the server takes each path once per save), and a pulled file can
 briefly sit under a local file of the same name until the push marks the path
 as taken.
 
-**Loading follow-up, pending (T56):** the first project open currently waits
-for a full pull and image caching before mounting the workbench. Selected-file
-availability must be separated from that complete offline checkpoint before
-the UI gate changes. Do not advance the current fully-ingested revision for a
-partial download. See [Progressive loading](progressive-loading.md).
+**Progressive first open (T56):** a targeted authenticated read publishes the
+requested file before the full metadata and image pull completes. A durable
+partial marker distinguishes that availability from the fully-ingested
+revision. Complete ZIP snapshots wait for the full pull. See
+[Project loading](project-loading.md).
+
+**Decision: recover one prematurely closed read phase without replaying writes.**
+Firefox's interrupted-offline browser check exposed a native IndexedDB
+transaction completing before the success handler's queued microtasks ran.
+The next transaction request then failed before any write had been accepted.
+Removing diagnostic storage access and record parsing did not resolve it;
+the underlying browser trigger is not established. After that transaction
+settles, the database may retry its callback once only when the failure came
+from its own native request/store access and no mutation request was accepted.
+Callbacks must keep pre-write work to database reads and pure planning.
+Explicit aborts, quota errors, application errors and failures after a write
+are not replayed. There is no keepalive or relaxation of atomic commits.
 
 Stopped sync keeps a bounded, known-safe validation explanation alongside
 its category in the application's project state. The explanation is
 best-effort UI metadata in versioned localStorage scoped to the account and
-project. It stays outside IndexedDB's legacy flat project row: already-open
-older tabs validate that row strictly and must keep saving after another tab
-updates. A database version bump would close those tabs' connections without
-giving their old code a compatible reopen path. Sidecar updates follow a
+project. Within a compatible storage version, it stays outside the strict
+project row so diagnostic changes do not interrupt older writers. The later
+v3 readiness change is an explicit schema boundary requiring older tabs to
+reload, as defined under Progressive loading. Sidecar updates follow a
 successful database commit; unavailable browser storage leaves the category's
 fallback message and does not block saved work. Older records keep that
 fallback too. Retry clears both before waiting for the
@@ -510,12 +545,10 @@ metadata, durable drafts, upload recovery and sync. Image viewers, comparisons,
 pickers and decoders have separate lazy modules; no heavy library enters first paint.
 The recorded budgets retain the standard five percent margin.
 
-**Loading follow-up, pending (T56, T57):** first project open downloads every
-image original and preview before exposing files. Active Source-only notes
-can also prepare image and drawing previews, and ready note assets wait for
-the whole preparation batch. These gaps are separate from first-paint library
-splitting. Apply [Progressive loading](progressive-loading.md) without reducing
-image resolution, validation or complete offline guarantees.
+**Progressive image loading (T56, T57):** files open before offline image
+preparation finishes. Source-only notes prepare no unseen preview pixels;
+visible previews publish each independently ready image or drawing. Original
+resolution, byte/pixel validation and complete offline guarantees remain.
 
 Crop and resize create new PNG copies and retain originals. Captions use
 portable figure syntax with inline Markdown. Description generation belongs
@@ -1021,7 +1054,7 @@ The production server's tools are unchanged.
   characters as a file, and the view then gets no result to show (its MCP
   Apps troubleshooting page). A drawing or diagram that does not fit in what
   is left, but would in a result of its own, is `deferred`: the card loads
-  each with `card_embed`, one at a time, where the host lets it call tools,
+  each with `card_embed`, sharing at most two calls with image requests,
   and draws it where its link was. `card_embed` is the view's own tool
   (`ui.visibility: ["app"]`), so the model never reads its result: it reads
   and draws one drawing or diagram as `show_file` does shown on its own, as
@@ -2077,12 +2110,11 @@ text with (`src/features/structured/native-font-ttf.json`, 220 kB) with the
 first compile; and the code that pictures a diagram in a note with the first
 such embed. All of it stays precached for offline use.
 
-**Loading follow-up, pending (T57, T58):** the view modules above are lazy,
-but active Source-only note effects can still prepare unseen image and drawing
-previews. MDX preparation gates initial prose display, and preview maps publish
-only after their whole loop finishes. Follow [Progressive loading](progressive-loading.md)
-with safe source-backed placeholders and preserve editing, selection, scroll
-and component state as content arrives.
+**Progressive preview preparation (T57, T58):** visible Rendered/Split and
+active, expanded embedded sessions request preview assets. Source-only notes defer
+them. Ready pixels update resource slots without compiling the document again.
+Checked independent MDX prose appears with protected placeholders while
+component modules prepare; rendered writes wait for approved source mapping.
 
 ## Frontend hosting
 
@@ -2174,11 +2206,11 @@ the parts only full Zod uses. Where people see Zod's messages, the code passes
 Zod's English messages itself, since `zod/mini` has none of its own.
 `bun run check:bundle` fails if full Zod reaches a first paint.
 
-**Loading follow-up, pending (T55 through T59):** fast shell paint and lazy
-chunks do not establish that the requested document is usable promptly. Overlap
-viewer loading with its authorized data where safe, prioritize useful content,
-and verify the remaining data and rendering gates described in
-[Progressive loading](progressive-loading.md).
+**Useful-content checks (T59):** first-paint budgets remain independent from
+the production browser regressions that hold unrelated work and assert readable
+content and individually ready assets. Sanitized readiness attachments record
+shell, data and useful-content milestones. See
+[Progressive loading](progressive-loading.md) for measurement conditions.
 
 **Decision: the app in a chat's panel is `/embed`, framed only by origins
 the Worker names.** `/embed`, `/embed/` and `/embed/projects/<anything>` (GET
@@ -2327,18 +2359,20 @@ zoom, and text size is adjustable in Settings > Reading.
 
 ## Offline start
 
-**Decision: once a project has opened on a device, the app starts again with
-no network**: a reload, a new tab or a browser restart. A service worker from
+**Decision: once the build is precached and a project has completed offline
+preparation, the app and that project start again with no network**: a reload,
+a new tab or a browser restart. A partial opening preserves only files and
+drafts already kept; it does not promise unavailable bytes or uncached code.
+A service worker from
 [vite-plugin-pwa](https://vite-pwa-org.netlify.app/), using Workbox's
 generated worker (`generateSW`), configured in `vite.config.ts`:
 
-**Loading follow-up, pending (T56, T59):** whole-project offline preparation
-currently gates first project display. Its complete revision guarantee must
-be preserved while selected-file availability is made independent. The
-whole-build precache below is intentional background work; registration after
-the load event alone does not prove it avoids contention with useful content.
-Measure that separately before changing offline policy. See
-[Progressive loading](progressive-loading.md).
+**Progressive offline preparation (T56, T59):** a selected file can be read
+while the project is only partly downloaded. The complete revision advances
+only after validated bytes arrive. Interrupted preparation resumes from the
+previous checkpoint. The whole-build precache below remains intentional
+background work; registration after load alone does not establish absence of
+contention on every network. Its inventory and offline guarantee are unchanged.
 
 - **It precaches every file the build writes** except Cloudflare's `_headers`,
   Excalidraw's CJK drawing font, and Excalidraw's translations other than
@@ -2348,9 +2382,10 @@ Measure that separately before changing offline policy. See
   preview frame (a chunk of its own, the `srcdoc` fallback: the sandbox
   domain's page is another origin's, which the worker never sees), the D2
   compiler, `.wasm` files and the license texts. That is about 44 MB, about 13 MB over the network. The worker registers once the page
-  has loaded and reuses files already in the browser's cache. Whether this
-  background download competes with still-pending useful content remains to
-  be measured under T59. The largest chunks are over Workbox's 2 MiB default, so
+  has loaded and reuses files already in the browser's cache. T59 verifies that
+  requested text becomes usable while optional precache engines are blocked.
+  Contention on representative production networks still needs post-deployment
+  measurement. The largest chunks are over Workbox's 2 MiB default, so
   `maximumFileSizeToCacheInBytes` is 32 MiB, and `tests/browser/offline.spec.ts`
   fails if any other shipped file is missing from the precache list.
   Navigations fall back to the cached `index.html`.
@@ -2385,8 +2420,9 @@ Babel plugin is built on Babel 7 too: under Babel 8 it skipped every component
 with a default in its destructured props, silently.
 
 Browser tests block service workers (`playwright.config.ts`) except in
-`offline.spec.ts`, because `page.route` does not see requests a worker answers
-and each test would otherwise download the whole app. The harness's rendered
+`offline.spec.ts` and the explicit precache journey in `progressive-project.spec.ts`,
+because `page.route` does not see requests a worker answers and each test would
+otherwise download the whole app. The harness's rendered
 specs allow them: Playwright's blocking script throws inside the sandboxed
 preview frame, and the harness registers no worker.
 
@@ -2431,13 +2467,13 @@ secrets supplied through `env()` from GitHub secrets.)
 
 ## Testing
 
-**Required loading coverage, pending (T59):** retain bundle budgets and add
-checks for time to readable requested content. Delayed or failed unrelated
-assets must not hold back text or earlier ready assets, and idle Source-only
-views must not prepare unseen previews. Cover cold, cached and offline opens,
-public link revocation, navigation and stale work, with the storage and editing
-invariants in [Progressive loading](progressive-loading.md). These checks are
-not implemented by this documentation change.
+**Useful-content coverage (T59):** bundle budgets and readable-content checks
+cover different milestones. Controlled delayed, failed and out-of-order work
+proves requested text and ready assets remain usable. Source-only and hidden
+previews defer unseen work. Cold, cached and offline opens, public revocation,
+navigation, stale work and complete-package invariants have browser and unit
+regressions. [Progressive loading](progressive-loading.md) records sanitized
+measurements, test evidence and the limits of local and hosted baselines.
 
 **Decision:** unit tests cover pure logic (the editor, anchoring, sync) and
 run with `bun run test`. Edge Function tests run on Deno with `deno test` in

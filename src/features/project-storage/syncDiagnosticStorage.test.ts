@@ -27,7 +27,7 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
     value.onerror = () => reject(value.error)
   })
 }
-async function rawConnection(factory: IDBFactory) { return request(factory.open("elaborating", 2)) }
+async function rawConnection(factory: IDBFactory) { return request(factory.open("elaborating")) }
 const legacyProject = z.omit(LocalProject, { syncErrorDetail: true })
 
 // An older app tab's database adapter, with its existing strict project parser.
@@ -48,7 +48,7 @@ function legacyDatabase(raw: IDBDatabase) {
   }
 }
 
-test("raw v2 projects stay readable and an older tab can persist a draft after a new tab records its diagnostic", async () => {
+test("raw projects retain the legacy diagnostic shape and a reloaded tab can persist a draft", async () => {
   const factory = new IDBFactory(), storage = sidecar()
   const db = new IndexedProjectDatabase(factory, undefined, storage)
   const p = project()
@@ -76,7 +76,7 @@ test("aborted transactions neither publish nor remove diagnostics", async () => 
   expect((await db.listProjects(p.partition))[0].syncErrorDetail).toBe(detail)
 })
 
-test("observing a legacy retry clears its old diagnostic and it cannot reappear on another same-category stop", async () => {
+test("observing another tab's retry clears its old diagnostic and it cannot reappear on another same-category stop", async () => {
   const factory = new IDBFactory(), storage = sidecar(), db = new IndexedProjectDatabase(factory, undefined, storage), p = project()
   await db.transaction(p.partition, "readwrite", tx => tx.putProject(p))
   const raw = await rawConnection(factory)

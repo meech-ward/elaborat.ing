@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SharedBundle, SharedDiscussion, ShareToken, shareCommentRPC } from './publicRemote'
+import { SharedBundle, SharedDiscussion, ShareToken, shareCommentRPC, readSharedStream } from './publicRemote'
 import { readShareDraft, saveShareDraft, forgetShareDraft, type ShareCommentDraft } from './commentDraft'
 
 const SHARE = '11111111-1111-4111-8111-111111111111'
@@ -70,5 +70,64 @@ describe('sign-in comment drafts', () => {
     expect(readShareDraft(SHARE, blocked)).toBeNull()
     expect(() => saveShareDraft(draft(), blocked, 0)).toThrow('blocked')
     expect(() => forgetShareDraft(SHARE, blocked)).not.toThrow()
+  })
+})
+
+
+describe('progressive shared response boundary', () => {
+  const events = () => [{type: 'start', share: bundle().share},
+    {type: 'file', file: {...bundle().files[0], content: '# Ready café 🌱'}, pendingPaths: ['child.md'], pendingImages: []},
+    {type: 'file', file: {id: OTHER, path: 'child.md', content: '# Child', version: 1}, pendingPaths: [], pendingImages: []}, {type: 'complete'}]
+  const response = (records: unknown[], chunk = 1) => {
+    const data = new TextEncoder().encode(records.map(record => JSON.stringify(record)).join('\n') + '\n')
+    return new Response(new ReadableStream<Uint8Array>({start(controller) {
+      for (let offset = 0; offset < data.length; offset += chunk) controller.enqueue(data.slice(offset, offset + chunk))
+      controller.close()
+    }}))
+  }
+  test('complete UTF-8 records publish independently and retain previous file identity', async () => {
+    const progress: SharedBundle[] = []
+    const result = await readSharedStream(response(events()), partial => progress.push(partial))
+    expect(progress[0].files).toHaveLength(1)
+    expect(progress[0].files[0].content).toBe('# Ready café 🌱')
+    expect(progress[0].complete).toBe(false)
+    expect(progress[1].files[0]).toBe(progress[0].files[0])
+    expect(result.complete).toBe(true)
+    expect(result.files).toHaveLength(2)
+  })
+  test('truncated and revoked streams fail after partial availability instead of becoming export-ready', async () => {
+    await expect(readSharedStream(response(events().slice(0, -1)))).rejects.toThrow('before loading completed')
+    const seen: SharedBundle[] = []
+    await expect(readSharedStream(response([...events().slice(0, 2), {type: 'error', status: 404, error: 'Unavailable'}]), partial => seen.push(partial))).rejects.toThrow('This link is unavailable.')
+    expect(seen).toHaveLength(1)
+    expect(seen[0].complete).toBe(false)
+  })
+  test('a missing authorized child stays local while undeclared error paths are rejected', async () => {
+    const result = await readSharedStream(response([...events().slice(0, 2), {type: 'file-error', path: 'child.md'}, {type: 'complete'}]))
+    expect(result.files[0].content).toBe('# Ready café 🌱')
+    expect(result.fileErrors).toEqual(['child.md'])
+    await expect(readSharedStream(response([...events().slice(0, 2), {type: 'file-error', path: 'private.md'}, {type: 'complete'}]))).rejects.toThrow('manifest is invalid')
+  })
+  test('rejects undeclared nonroot records even when they declare their own safe path', async () => {
+    const extra = {type: 'file', file: {id: USER, path: 'unrelated.md', content: 'Unrelated private source', version: 1}, pendingPaths: ['unrelated.md'], pendingImages: []}
+    const seen: SharedBundle[] = []
+    await expect(readSharedStream(response([...events().slice(0, 2), extra, ...events().slice(2)]), partial => seen.push(partial))).rejects.toThrow('not declared')
+    expect(seen).toHaveLength(1)
+    expect(seen[0].files.some(file => file.path === 'unrelated.md')).toBe(false)
+    await expect(readSharedStream(response([events()[0], extra, ...events().slice(1)]))).rejects.toThrow('root file')
+  })
+  test('rejects an aggregate declared graph beyond the server file budget', async () => {
+    const root = {...events()[1], pendingPaths: Array.from({length: 128}, (_, index) => `missing-${index}.md`)}
+    await expect(readSharedStream(response([events()[0], root]))).rejects.toThrow('too large')
+  })
+  test('a malformed event cancels the remaining body and cannot publish a source prefix', async () => {
+    let canceled = false
+    const received = new Response(new ReadableStream<Uint8Array>({start(controller) {
+      controller.enqueue(new TextEncoder().encode(JSON.stringify({type: 'start', share: bundle().share}) + '\n' + '{"type":"file","file":false}\n'))
+    }, cancel() {canceled = true}}))
+    const seen: SharedBundle[] = []
+    await expect(readSharedStream(received, partial => seen.push(partial))).rejects.toThrow()
+    expect(canceled).toBe(true)
+    expect(seen).toEqual([])
   })
 })

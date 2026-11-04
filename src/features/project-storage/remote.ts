@@ -162,7 +162,7 @@ export const FileEditor = z.object({ path: z.string(), updated_by: z.nullable(z.
 export type FileEditor = z.infer<typeof FileEditor>
 
 export interface ProjectRemote {
-  listProjects(): Promise<RemoteProject[]>
+  listProjects(signal?: AbortSignal): Promise<RemoteProject[]>
   /** Creates the project, or returns it if this account already created it with this id. */
   createProject(id: string, title: string): Promise<RemoteProject>
   renameProject(id: string, title: string): Promise<RemoteProject>
@@ -170,13 +170,15 @@ export interface ProjectRemote {
   /** Serialized with file saves: distinguishes a committed lost answer from expired staging. */
   imageUploadStatus(projectId: string, assetId: string): Promise<ImageUploadStatus>
   uploadImage(projectId: string, asset: ImageAsset, bytes: Blob): Promise<ImageAsset>
-  downloadImage(projectId: string, asset: ImageAsset, preview?: boolean): Promise<Blob>
+  downloadImage(projectId: string, asset: ImageAsset, preview?: boolean, signal?: AbortSignal): Promise<Blob>
+  /** One requested file, through the same authenticated RLS boundary. */
+  requestedFile?(projectId: string, path: string, until: number, signal?: AbortSignal): Promise<RemoteFile | null>
   /** Files whose version is in (since, until]: new, changed or moved in that range. */
-  changedFiles(projectId: string, since: number, until: number): Promise<RemoteFile[]>
+  changedFiles(projectId: string, since: number, until: number, signal?: AbortSignal): Promise<RemoteFile[]>
   /** Files deleted at a version in (since, until]. */
-  deletedFiles(projectId: string, since: number, until: number): Promise<DeletedFile[]>
+  deletedFiles(projectId: string, since: number, until: number, signal?: AbortSignal): Promise<DeletedFile[]>
   /** The project's explicit folders. */
-  folders(projectId: string): Promise<string[]>
+  folders(projectId: string, signal?: AbortSignal): Promise<string[]>
   /** Who last changed each of these files (null when their account is gone); files not there are left out. */
   fileEditors(projectId: string, paths: string[]): Promise<FileEditor[]>
   /** Invitations waiting for the caller to accept, newest first. */
@@ -219,19 +221,23 @@ type Page = PromiseLike<{ data: unknown[] | null; error: PostgrestLikeError | nu
 export class SupabaseProjectRemote implements ProjectRemote {
   constructor(private readonly supabase: SupabaseClient) {}
 
-  private async rpc(name: string, args: Record<string, unknown>): Promise<unknown> {
+  private async rpc(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     let response
     try {
-      response = await this.supabase.rpc(name, args)
+      let query = this.supabase.rpc(name, args)
+      if (signal) query = query.abortSignal(signal)
+      response = await query
+      signal?.throwIfAborted()
     } catch (error) {
+      signal?.throwIfAborted()
       throw new RemoteError("network", error instanceof Error ? error.message : String(error))
     }
     if (response.error) throw classify(response.error)
     return response.data
   }
 
-  async listProjects() {
-    return z.array(RemoteProject).parse(await this.rpc("list_projects", {}))
+  async listProjects(signal?: AbortSignal) {
+    return z.array(RemoteProject).parse(await this.rpc("list_projects", {}, signal))
   }
 
   async createProject(id: string, title: string) {
@@ -272,12 +278,12 @@ export class SupabaseProjectRemote implements ProjectRemote {
     return verified
   }
 
-  async downloadImage(projectId: string, asset: ImageAsset, preview = false): Promise<Blob> {
+  async downloadImage(projectId: string, asset: ImageAsset, preview = false, signal?: AbortSignal): Promise<Blob> {
     const key = preview ? asset.preview_key : asset.object_key
     if (key !== `${projectId}/${asset.id}/${preview ? "preview" : "original"}`) throw new RemoteError("invalid", "The image object does not belong to this project.")
     let response
-    try { response = await this.supabase.storage.from("project-images").download(key) }
-    catch (error) { throw new RemoteError("network", error instanceof Error ? error.message : String(error)) }
+    try { response = await this.supabase.storage.from("project-images").download(key, {}, { signal }); signal?.throwIfAborted() }
+    catch (error) { signal?.throwIfAborted(); throw new RemoteError("network", error instanceof Error ? error.message : String(error)) }
     if (response.error) {
       const status = String(response.error.statusCode ?? "")
       throw new RemoteError(status === "401" || status === "403" ? "access" : status === "404" ? "invalid" : "network", response.error.message)
@@ -339,14 +345,17 @@ export class SupabaseProjectRemote implements ProjectRemote {
    * Reads every page of a query, continuing after the last row seen rather
    * than by offset, so rows that change between pages never shift others out.
    */
-  private async keyset<T>(page: (after: T | null) => Page, parse: (row: unknown) => T): Promise<T[]> {
+  private async keyset<T>(page: (after: T | null) => Page, parse: (row: unknown) => T, signal?: AbortSignal): Promise<T[]> {
     const rows: T[] = []
     let after: T | null = null
     for (;;) {
       let response
       try {
+        signal?.throwIfAborted()
         response = await page(after)
+        signal?.throwIfAborted()
       } catch (error) {
+        signal?.throwIfAborted()
         throw new RemoteError("network", error instanceof Error ? error.message : String(error))
       }
       if (response.error) throw classify(response.error)
@@ -357,7 +366,19 @@ export class SupabaseProjectRemote implements ProjectRemote {
     }
   }
 
-  changedFiles(projectId: string, since: number, until: number) {
+  async requestedFile(projectId: string, path: string, until: number, signal?: AbortSignal): Promise<RemoteFile | null> {
+    ProjectPath.parse(path)
+    let query = this.supabase.from("project_files").select("id, path, content, version, kind, asset_id, asset").eq("project_id", projectId).eq("path", path).lte("version", until)
+    if (signal) query = query.abortSignal(signal)
+    let response
+    try { response = await query.maybeSingle() }
+    catch (error) { signal?.throwIfAborted(); throw new RemoteError("network", error instanceof Error ? error.message : String(error)) }
+    signal?.throwIfAborted()
+    if (response.error) throw classify(response.error)
+    return response.data === null ? null : RemoteFile.parse(response.data)
+  }
+
+  changedFiles(projectId: string, since: number, until: number, signal?: AbortSignal) {
     return this.keyset<RemoteFile>(
       (after) => {
         let query = this.supabase
@@ -367,13 +388,15 @@ export class SupabaseProjectRemote implements ProjectRemote {
           .gt("version", since)
           .lte("version", until)
         if (after) query = query.or(`version.gt.${after.version},and(version.eq.${after.version},id.gt.${after.id})`)
-        return query.order("version").order("id").limit(PAGE)
+        const ordered = query.order("version").order("id").limit(PAGE)
+        return signal ? ordered.abortSignal(signal) : ordered
       },
       (row) => RemoteFile.parse(row),
+      signal,
     )
   }
 
-  deletedFiles(projectId: string, since: number, until: number) {
+  deletedFiles(projectId: string, since: number, until: number, signal?: AbortSignal) {
     return this.keyset<DeletedFile>(
       (after) => {
         let query = this.supabase
@@ -384,12 +407,14 @@ export class SupabaseProjectRemote implements ProjectRemote {
           .gt("version", since)
           .lte("version", until)
         if (after) query = query.or(`version.gt.${after.version},and(version.eq.${after.version},file_id.gt.${after.id})`)
-        return query.order("version").order("file_id").limit(PAGE)
+        const ordered = query.order("version").order("file_id").limit(PAGE)
+        return signal ? ordered.abortSignal(signal) : ordered
       },
       (row) => {
         const parsed = z.object({ file_id: z.uuid(), version: Version }).parse(row)
         return { id: parsed.file_id, version: parsed.version }
       },
+      signal,
     )
   }
 
@@ -421,14 +446,16 @@ export class SupabaseProjectRemote implements ProjectRemote {
     return z.array(FileEditor).parse(response.data ?? [])
   }
 
-  folders(projectId: string) {
+  folders(projectId: string, signal?: AbortSignal) {
     return this.keyset<string>(
       (after) => {
         let query = this.supabase.from("project_folders").select("path").eq("project_id", projectId)
         if (after !== null) query = query.gt("path", after)
-        return query.order("path").limit(PAGE)
+        const ordered = query.order("path").limit(PAGE)
+        return signal ? ordered.abortSignal(signal) : ordered
       },
       (row) => z.object({ path: ProjectPath }).parse(row).path,
+      signal,
     )
   }
 }

@@ -303,3 +303,28 @@ describe("shared embedded document sessions", () => {
     expect(view.states.at(-1)).toMatchObject({ readOnly: true, error: "child.md is not in this project." });
   });
 });
+
+
+test('retained child views combine owner activity and collapse visibility without losing their drafts or ports', async () => {
+  const reads: string[] = [];
+  const pool = new DocumentEmbedSessions(async path => {reads.push(path);return file(path);});
+  const host = pool.host('parent.mdx');
+  host.setActive?.('parent-session',true);
+  const detach = host.attach({id:'retained',ownerSession:'parent-session',visible:true,path:'child.mdx',ancestors:['parent.mdx','child.mdx'],frame,onState:() => {}});
+  await tick();
+  pool.register('child.mdx',{save:async () => true,run:() => {},sourceSnapshot:() => ({text:'Unsaved child draft',pending:false})});
+  const child = pool.snapshot().files[0];
+  expect(pool.snapshot().views[0].active).toBe(true);
+  host.setVisible?.('retained',false);
+  expect(pool.snapshot().views[0].active).toBe(false);
+  host.setActive?.('parent-session',false);
+  host.setVisible?.('retained',true);
+  expect(pool.snapshot().views[0].active).toBe(false);
+  expect(pool.exportSources().get('child.mdx')).toBe('Unsaved child draft');
+  host.setActive?.('parent-session',true);
+  expect(pool.snapshot().views[0].active).toBe(true);
+  expect(pool.snapshot().files[0]).toBe(child);
+  expect(reads).toEqual(['child.mdx']);
+  detach();
+  expect(pool.snapshot().views).toHaveLength(0);
+});

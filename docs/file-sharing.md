@@ -16,10 +16,10 @@ not share additional files. The page has no project browser or Source view.
 Markdown and MDX notes offer **Export** in the floating controls. Anyone with
 the active link can prepare and download a Notion ZIP or Google Docs DOCX
 without signing in.
-The exporter uses a frozen copy of the response already available to the
-reader, including original images, drawings, components and embedded notes.
-It does not fetch other project files or include comments or entered form
-values. A known revocation or a changed displayed bundle cancels an open
+The exporter freezes the displayed revision, including drawings, components
+and embedded notes. Prepare export completes any image originals still missing
+from that revision's authorized manifest. It does not fetch other project files
+or include comments or entered form values. A known revocation or a changed displayed bundle cancels an open
 export. See [Notion export](notion-export.md) and
 [Google Docs export](google-docs-export.md).
 
@@ -51,26 +51,58 @@ no-referrer. Unlisted means anyone can forward the link; it is not an
 invitation-only access policy. Disabling a link stops later access, but cannot
 erase copies a visitor already received.
 
-## Loading follow-up (pending)
+## Progressive loading
 
-Sharing is implemented; the app-wide [progressive loading requirement](progressive-loading.md)
-is still pending here. The reader currently waits for the complete server
-bundle before loading its viewer. Dependency reads and image original/preview
-downloads are serial, and refresh rebuilds the bundle even when its revision
-has not changed. Drawing and image preparation also publishes results in batches.
+The viewer module starts alongside a no-store streaming manifest request.
+Each NDJSON record carries a complete validated file or image. The requested
+root source appears before delayed child sources and Storage downloads; sibling
+file reads and image preparation use separate bounded queues. Each ready result
+publishes independently after a fresh active-link and revision check. Missing or
+invalid descendants and image failures remain local to their placeholders.
+Access changes, source revision changes, malformed streams and aggregate limits
+invalidate the partial snapshot.
 
-T55, T57, T58 and T59 in the [task queue](tasks.md) track this follow-up, waiting for
-implementation approval. Prioritize readable content and independently ready
-assets while retaining token validation, revocation, source-authorized reads,
-full-resolution images, response limits and document network isolation.
-Unlisted document responses must not become an offline cache as a shortcut.
+The browser parses complete UTF-8 records and retains existing file objects as
+resources arrive. Components can wait for their streamed complete module source
+without blocking independently checked prose. Initially collapsed child frames
+stay detached. Retained collapsed children suspend compilation, resource decoding
+and projection while keeping their sessions. Pending images reserve their saved
+dimensions. Drawings render for the current note, its active component modules or
+the selected drawing, rather than every file in the dependency graph. Background
+saved-source and original-byte transfer does not instantiate a child preview.
+
+Refresh sends the displayed identity and revision. An unchanged reply revalidates
+the active link without reconstructing the graph or downloading image bytes,
+and leaves an incomplete stream running. Navigation cancels queued reads and
+ignores late completions. The server parses all dependency authority from saved
+source; client-selected paths never authorize reads, and reusable Storage URLs
+are never exposed. The global file, text, depth, image and response limits apply
+across the stream. The 128-identity graph budget includes the root, missing
+references and optional companions. Each distinct dependency is scheduled once;
+its identity is reserved before publishing its declaration or starting a read.
+The browser requires the root record first and accepts later files only after
+an earlier record declared them.
+
+The legacy complete response remains available for compatible callers. Neither
+manifest nor asset responses are cached offline. A stream is readable before
+it is complete; failed or unfinished graph/image records cannot become an
+export snapshot. Prepare export completes the frozen revision through a full
+capability read when necessary, then verifies that its identity still matches.
+Save, component isolation and discussion access keep their existing guarantees. Server tests
+cover root readiness before blocked child source and Storage bytes, unchanged
+and revoked links, graph-bound image reads, local descendant failures, revision
+changes during download, cancellation, aggregate limits and batched reads.
+Client boundary tests cover split UTF-8 records, truncated/malformed streams,
+file identity retention and invalidation. `progressive-public.spec.ts` covers
+controlled blocked and failing images, delayed and missing child source,
+collapsed children, unchanged refresh, revocation and stale work in both browsers.
 
 Regression coverage includes cross-project and dependency authorization,
 revocation/rotation, private-discussion separation, author privacy, comment
 ownership, sign-in draft return, rendering and accessibility in Chromium and
-Firefox and bundle budgets. The new shared-page first paint is measured at
-162.4 kB gzip JavaScript with a 171 kB budget; existing page budgets are
-unchanged. Coverage lives in `file-sharing-owner.spec.ts`,
+Firefox and bundle budgets. The shared-page JavaScript first-paint budget
+remains 171 kB gzip; `check:bundle` measures the current build. Existing page
+budgets are unchanged. Coverage lives in `file-sharing-owner.spec.ts`,
 `file-sharing-public.spec.ts`, `rendered-sandbox.spec.ts`, the feature unit
 tests and the two file-share database suites. Hosted anonymous reading and
 signed-in comments are verified after the automatic CI and deployment gate.

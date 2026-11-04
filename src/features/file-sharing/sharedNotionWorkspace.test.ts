@@ -20,6 +20,11 @@ function bundle(): SharedBundle {
 }
 
 describe('finite shared Notion workspace', () => {
+  test('refuses partial or failed progressive snapshots before exposing export reads', () => {
+    for (const readiness of [{complete: false}, {fileErrors: ['missing.md']}, {imageErrors: ['images/photo.png']}])
+      expect(() => sharedNotionWorkspace({...bundle(), ...readiness})).toThrow('must finish loading')
+  })
+
   test('exposes read-only saved files and original bytes without Storage metadata or account operations', async () => {
     const client = sharedNotionWorkspace(bundle())
     expect(Object.keys(client).sort()).toEqual(['read', 'readImage', 'readImageRevision'])

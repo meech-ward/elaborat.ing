@@ -201,11 +201,11 @@ function ProjectImage(props: {src?:string;alt?:string;__imageFrom?:number;'data-
       dialog.current?.showModal();
       if (activeSession && src) postToParent({kind:'view-image',session:activeSession,revision:activeRevision,key:src});
     }}>
-      <img src={pixels.dataURL} alt={alt} width={pixels.width} height={pixels.height} loading="lazy" decoding="async" />
+      <img src={pixels.dataURL} alt={alt} width={size?.width ?? pixels.width} height={size?.height ?? pixels.height} loading="lazy" decoding="async" />
     </button> : <span className="project-image-missing" role="img" aria-label={alt || 'Image unavailable'}
       // Pixels that were here keep their place: the picture's size, and the
       // space above and below an image in the note's type (prose).
-      style={size ? {display:'block',width:size.width,maxWidth:'100%',aspectRatio:`${size.width} / ${size.height}`,overflow:'hidden',marginBlock:'2em'} : undefined}>{alt || 'Image unavailable'}</span>}
+      style={size ? {display:'block',width:size.width,maxWidth:'100%',aspectRatio:`${size.width} / ${size.height}`,overflow:'hidden',padding:0,border:0,outline:'1px dashed currentColor',outlineOffset:-1,marginBlock:'2em'} : undefined}>{alt || 'Image unavailable'}</span>}
     {pixels ? <dialog ref={dialog} className="project-image-viewer" aria-label={alt || 'Image'} onClose={() => {
       trigger.current?.focus({preventScroll:true});
       originalImages = Object.create(null);
@@ -1102,6 +1102,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       kind: "render-error",
       session: pending.session,
       revision: pending.revision,
+      epoch: pending.fluid?.epoch,
       message: error instanceof Error ? error.message : String(error),
     });
   }
@@ -1278,7 +1279,18 @@ function onParentMessage(event: MessageEvent): void {
     imagesRevision = message.revision;
     imageTable = Object.assign(message.reset ? Object.create(null) : {...imageTable},
       Object.fromEntries(message.images.map(({key,...pixels}) => [key,pixels])));
-    for (const {key, width, height} of message.images) imageSizes.set(key, {width, height});
+    for (const {key, width, height} of message.images) if (!imageSizes.has(key)) imageSizes.set(key, {width, height});
+    for (const listener of imageListeners) listener();
+    return;
+  }
+  if (message.kind === 'image-dimensions') {
+    if (message.revision !== activeRevision) return;
+    const allowed = new Set(message.keys ?? message.sizes.map(size => size.key));
+    for (const key of imageSizes.keys()) if (!allowed.has(key)) imageSizes.delete(key);
+    for (const {key,width,height} of message.sizes) imageSizes.set(key,{width,height});
+    // Dimensions are presentation data. A new snapshot updates only image
+    // subscribers and never evaluates or remounts document/component code.
+    imageTable = {...imageTable};
     for (const listener of imageListeners) listener();
     return;
   }
@@ -1359,6 +1371,9 @@ window.addEventListener("error", (event: ErrorEvent) => {
     kind: "render-error",
     session: activeSession,
     revision: activeRevision,
+    // During a same-source rebuild the old component tree remains mounted
+    // until its replacement commits. Its late errors belong to that old epoch.
+    epoch: shownEpoch >= 0 ? shownEpoch : undefined,
     message: event.message || "Preview runtime error.",
   });
 });

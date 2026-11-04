@@ -5,6 +5,13 @@ import { APP_URL, HARNESS_URL, SANDBOX_URL } from "./tests/browser/urls.ts"
 // occupied port instead of silently testing another checkout's build.
 const reuseExistingServer = !process.env.CI && process.env.ELABORATING_BROWSER_TEST_PORT_OFFSET === undefined
 
+// The desktop presets carry a Windows UA. On macOS, keep the browser's
+// native UA so Monaco, navigator.platform and ControlOrMeta agree on keys.
+function desktopDevice(name: "Desktop Chrome" | "Desktop Firefox") {
+  const { userAgent, ...device } = devices[name]
+  return process.platform === "darwin" ? device : { ...device, userAgent }
+}
+
 // Browser tests run against production builds: the app built against a
 // stand-in Supabase URL (`bun run build:browser-test`, see .env.browser-test),
 // the test harness (`bun run build:harness`, which also writes its frame page
@@ -22,7 +29,7 @@ export default defineConfig({
   // load can take longer than the 5 second default.
   expect: { timeout: 10_000 },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", use: { ...desktopDevice("Desktop Chrome") } },
     // Firefox on CI runners now and then drops a click made right after a page
     // loads (never reproduced elsewhere), so CI gives Firefox one retry. A test
     // that passes on retry is still reported as flaky.
@@ -33,7 +40,7 @@ export default defineConfig({
     // click straight after the fill did nothing.
     {
       name: "firefox",
-      use: { ...devices["Desktop Firefox"], launchOptions: { firefoxUserPrefs: { "browser.formfill.enable": false } } },
+      use: { ...desktopDevice("Desktop Firefox"), launchOptions: { firefoxUserPrefs: { "browser.formfill.enable": false } } },
       retries: process.env.CI ? 1 : 0,
     },
   ],

@@ -37,6 +37,31 @@ import {
 const FRAME = { id: 'frame' };
 const OTHER = { id: 'other' };
 
+describe('provisional presentation boundary', () => {
+  test('allows only exact current image inspection and bounded height without write/export authority', () => {
+    const context = {source:FRAME,expectedSource:FRAME,session:'session-1234',revision:-1,presentationRevision:7};
+    const image = {kind:'view-image',session:context.session,revision:7,key:'photo.svg'};
+    const height = {kind:'document-height',session:context.session,revision:7,height:1200};
+    for (const data of [image,height]) {
+      expect(checkChildMessage({...context,data}).ok).toBe(true);
+      expect(checkChildMessage({...context,data,source:OTHER}).ok).toBe(false);
+      expect(checkChildMessage({...context,data,session:'other-session'}).ok).toBe(false);
+      expect(checkChildMessage({...context,data,presentationRevision:8}).ok).toBe(false);
+      expect(checkChildMessage({...context,data,presentationRevision:undefined}).ok).toBe(false);
+    }
+    for (const data of [
+      {kind:'fluid-history',session:context.session,revision:7,epoch:1,direction:'undo'},
+      {kind:'export-snapshot-result',session:context.session,revision:7,epoch:1,request:'request-1234',entries:[]},
+      {kind:'edit-resource',session:context.session,revision:7,path:'drawing.excalidraw'},
+      {kind:'document-embed-open',session:context.session,revision:7,id:'embed-1234',path:'private.md',from:0},
+    ]) {
+      expect(childMessageSchema.safeParse(data).success).toBe(true);
+      expect(checkChildMessage({...context,data}).ok).toBe(false);
+    }
+    expect(checkChildMessage({...context,data:{...height,height:2_000_001}}).ok).toBe(false);
+  });
+});
+
 describe('Notion component snapshot boundary', () => {
   const response = {kind:'export-snapshot-result',session:'session-1234',revision:7,epoch:3,request:'request-1234',entries:[{id:'island:a:0',html:'<p>Shown</p>'}]};
   test('private-port replies remain sender, session and revision checked', () => {
@@ -336,6 +361,7 @@ describe('staleChildMessage', () => {
       'copy-code': 'drop',
       'document-embed-open': 'drop',
       'document-embed-release': 'drop',
+      'document-embed-visibility': 'drop',
       'document-embed-action': 'drop',
       'document-height': 'drop',
       'comment-shortcut': 'drop',
@@ -793,4 +819,18 @@ describe('checkPropEdit', () => {
       }),
     ).toBe(false);
   });
+});
+
+
+test('runtime errors preserve a bounded projection epoch independently of source revision', () => {
+  const data = {kind:'render-error',session:'session-runtime',revision:7,epoch:12,message:'Component failed.'};
+  const valid = {data,source:FRAME,expectedSource:FRAME,session:data.session,revision:7};
+  const result = checkChildMessage(valid);
+  expect(result.ok).toBe(true);
+  if (result.ok && result.message.kind === 'render-error') expect(result.message.epoch).toBe(12);
+  expect(checkChildMessage({...valid,data:{...data,epoch:undefined}}).ok).toBe(true);
+  for (const epoch of [-1,0.5,'12',null]) expect(checkChildMessage({...valid,data:{...data,epoch}}).ok).toBe(false);
+  expect(checkChildMessage({...valid,source:OTHER}).ok).toBe(false);
+  expect(checkChildMessage({...valid,session:'another-session'}).ok).toBe(false);
+  expect(checkChildMessage({...valid,revision:8}).ok).toBe(false);
 });

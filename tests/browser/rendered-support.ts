@@ -74,10 +74,14 @@ export async function recordFrameMessages(page: Page) {
   })
 }
 
-/** Load a note and wait until the frame has rendered it. */
+/** Load an editing fixture and wait for its checked editing authority. */
 export async function load(page: Page, text: string, format: "md" | "mdx", visible: string | RegExp): Promise<Revision> {
   await page.evaluate(([text, format]) => window.renderedHarness.load(text, format as "md" | "mdx"), [text, format])
   await paragraph(page, visible).waitFor()
+  // Provisional prose is deliberately readable before it can accept edits.
+  // Progressive-readiness tests exercise that stage directly; editing tests
+  // begin once the matching environment has granted source-backed writes.
+  await expect(frameOf(page).locator(".ProseMirror")).toHaveAttribute("contenteditable", "true")
   return revision(page)
 }
 
@@ -134,7 +138,12 @@ export async function clickAt(page: Page, text: string, offset: number) {
 }
 
 export async function press(page: Page, key: string, count = 1) {
-  for (let i = 0; i < count; i++) await page.keyboard.press(key)
+  // These journeys use Home/End for line boundaries. macOS exposes that
+  // motion through Command+Arrow; its physical Home/End scroll the document.
+  const native = process.platform === "darwin"
+    ? ({Home: "Meta+ArrowLeft", End: "Meta+ArrowRight", "Shift+Home": "Meta+Shift+ArrowLeft", "Shift+End": "Meta+Shift+ArrowRight"} as Record<string, string>)[key] ?? key
+    : key
+  for (let i = 0; i < count; i++) await page.keyboard.press(native)
 }
 
 /** The frame's selection: its text and where each end is, as paragraph text and offset. */

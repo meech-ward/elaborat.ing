@@ -13,6 +13,8 @@ import { ProjectSync, type SyncOutcome } from "./sync"
 export type ProjectStatus =
   /** On the server, not yet downloaded to this device. */
   | "not-downloaded"
+  /** Readable files are available while the offline copy is still preparing. */
+  | "preparing"
   /** On this device and the server, nothing waiting to send. */
   | "synced"
   /** Changes saved on this device that the server does not have yet. */
@@ -30,6 +32,7 @@ export type ProjectEntry = {
   stopped: LocalProject["syncError"]
   stoppedDetail?: string | null
   archived: boolean
+  preparation?: { metadata: boolean; images: number; total: number; error?: string }
 }
 
 /**
@@ -82,6 +85,8 @@ export class ProjectLibrary {
   private state: LibraryState = { entries: [], deleted: [], invitations: [], offline: false, syncing: [], loaded: false }
   private readonly syncing = new Set<{ projectId: string }>()
   private catalog: RemoteProject[] = []
+  private readonly preparationErrors = new Map<string, string>()
+  private readonly downloads = new Map<string, { ready: Promise<boolean>; complete: Promise<LocalProject> }>()
   /** Deleted projects removed from this device since this page opened, still to tell the person about. */
   private removed = new Map<string, DeletedProject>()
   /** The last load asked for, which the next one waits for. */
@@ -145,16 +150,19 @@ export class ProjectLibrary {
         deleted.push({ id: project.id, title: project.pendingTitle ?? project.title, unsaved: waiting(files).length })
         continue
       }
+      const assets = project.partial ? new Set((await this.db.transaction(this.partition, "readonly", tx => tx.listAssets(project.id))).filter(asset => asset.preview).map(asset => asset.id)) : null
+      const images = files.flatMap(file => file.kind === "image" && file.asset ? [file.asset.id] : [])
       const conflict = files.some((file) => file.conflict !== null)
       const unsynced = !project.created || project.pending !== null || project.pendingTitle !== null || files.some(isDirty)
       entries.push({
         id: project.id,
         title: project.pendingTitle ?? project.title,
         role: project.role,
-        status: project.syncError ? "stopped" : conflict ? "conflict" : unsynced ? "unsynced" : "synced",
+        status: project.syncError ? "stopped" : conflict ? "conflict" : unsynced ? "unsynced" : project.partial ? "preparing" : "synced",
         stopped: project.syncError,
         stoppedDetail: project.syncError ? project.syncErrorDetail ?? null : null,
         archived: project.archivedAt !== null,
+        ...(project.partial ? { preparation: { metadata: project.partial.metadata, images: images.filter(id => assets?.has(id)).length, total: images.length, ...(this.preparationErrors.has(project.id) ? { error: this.preparationErrors.get(project.id)! } : {}) } } : {}),
       })
     }
     for (const gone of this.removed.values()) if (!deleted.some((entry) => entry.id === gone.id)) deleted.push(gone)
@@ -236,16 +244,94 @@ export class ProjectLibrary {
    * Make sure a project is on this device, downloading it if the server has
    * it. Returns false when neither has it.
    */
-  async open(projectId: string): Promise<boolean> {
-    if ((await this.db.listProjects(this.partition)).some((project) => project.id === projectId)) return true
-    let entry = this.catalog.find((candidate) => candidate.id === projectId)
-    if (!entry) {
-      await this.refresh()
-      entry = this.catalog.find((candidate) => candidate.id === projectId)
+  async open(projectId: string, path?: string | null, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted()
+    const local = await this.db.transaction(this.partition, "readonly", async tx => ({ project: await tx.getProject(projectId), file: path ? await tx.getFile(projectId, path) : null }))
+    if (local.project && (!local.project.partial || local.project.partial.metadata || !path || local.file)) return true
+    const running = this.downloads.get(projectId)
+    if (running) {
+      try { return await running.ready }
+      catch (error) {
+        signal?.throwIfAborted()
+        if (!(error instanceof DOMException) || error.name !== "AbortError") throw error
+        await running.complete.catch(() => {})
+        if (this.downloads.get(projectId) === running) this.downloads.delete(projectId)
+        return this.open(projectId, path, signal)
+      }
     }
-    if (!entry) return false
-    await this.sync.download(entry)
-    await this.load()
+    let entry = this.catalog.find(candidate => candidate.id === projectId)
+    if (!entry) {
+      try {
+        // Opening a requested project must not await pulls of unrelated projects.
+        this.catalog = await this.remote.listProjects(signal)
+        this.set({ offline: false })
+      } catch (error) {
+        if (!(error instanceof RemoteError) || error.kind !== "network") throw error
+        this.set({ offline: true })
+        return local.project !== null
+      }
+      signal?.throwIfAborted()
+      entry = this.catalog.find(candidate => candidate.id === projectId)
+    }
+    if (!entry) return local.project !== null
+    this.preparationErrors.delete(projectId)
+    const ready = Promise.withResolvers<boolean>()
+    const request = { projectId }
+    this.syncing.add(request)
+    this.publishSyncing()
+    let displayed = false
+    const complete = this.sync.download(entry, { path, signal, ready: async () => {
+      await this.load()
+      signal?.throwIfAborted()
+      displayed = true
+      ready.resolve(true)
+    } })
+    this.downloads.set(projectId, { ready: ready.promise, complete })
+    void complete.then(async () => {
+      await this.load()
+      ready.resolve(true)
+    }, async error => {
+      if (!signal?.aborted && !(error instanceof DOMException && error.name === "AbortError")) {
+        this.preparationErrors.set(projectId, preparationFailure(error))
+      }
+      if (!displayed) ready.reject(error)
+      if (error instanceof RemoteError && error.kind === "network") this.set({ offline: true })
+      if (error instanceof RemoteError && error.kind === "access") {
+        await this.db.transaction(this.partition, "readwrite", async tx => {
+          const project = await tx.getProject(projectId)
+          if (project && project.syncError !== "deleted") await tx.putProject({ ...project, syncError: "access-lost" })
+        })
+      }
+      await this.load()
+    }).finally(() => {
+      if (this.downloads.get(projectId)?.complete === complete) this.downloads.delete(projectId)
+      this.syncing.delete(request)
+      this.publishSyncing()
+    }).catch(() => {})
+    return ready.promise
+  }
+
+  /** Demand for a missing file can run ahead of a still-pending project metadata pull. */
+  async requestFile(projectId: string, path: string, signal?: AbortSignal): Promise<void> {
+    await this.sync.requestFile(projectId, path, signal)
+    // Durable progress emits a sync event, which already queues its reload.
+    // An absent optional companion must not publish another files change:
+    // its reader would react to that change by requesting it again.
+    await this.loading
+  }
+
+  /** Explicit complete-package actions wait for every file and verified image. */
+  async openComplete(projectId: string): Promise<boolean> {
+    if (!await this.open(projectId)) return false
+    const running = this.downloads.get(projectId)
+    if (running) await running.complete
+    const project = await this.db.transaction(this.partition, "readonly", tx => tx.getProject(projectId))
+    if (project?.partial) {
+      const outcome = await this.syncProject(projectId)
+      if (outcome.status !== "synced") throw new Error(outcome.message)
+      const current = await this.db.transaction(this.partition, "readonly", tx => tx.getProject(projectId))
+      if (current?.partial) throw new Error("This project has not downloaded completely. Connect and sync before downloading it.")
+    }
     return true
   }
 
@@ -435,12 +521,13 @@ export class ProjectLibrary {
   }
 
   /** Send and receive changes; only an explicit user retry clears a stopped sync. */
-  async syncProject(projectId: string, retryStopped = false): Promise<SyncOutcome> {
+  async syncProject(projectId: string, retryStopped = false, signal?: AbortSignal): Promise<SyncOutcome> {
+    this.preparationErrors.delete(projectId)
     const request = { projectId }
     this.syncing.add(request)
     this.publishSyncing()
     try {
-      const outcome = await (retryStopped ? this.sync.retry(projectId) : this.sync.sync(projectId))
+      const outcome = await (retryStopped ? this.sync.retry(projectId, signal) : this.sync.sync(projectId, signal))
       this.set({ offline: outcome.status === "offline" })
       if (outcome.status === "stopped" && outcome.reason === "deleted") await this.settleDeleted()
       await this.load()
@@ -450,4 +537,12 @@ export class ProjectLibrary {
       this.publishSyncing()
     }
   }
+}
+
+/** Background work reports an actionable explanation without copying remote output. */
+function preparationFailure(error: unknown): string {
+  if (error instanceof DOMException && error.name === "QuotaExceededError") return "Offline preparation paused because this device is out of storage. Free some space, then retry."
+  if (error instanceof RemoteError && error.kind === "invalid") return "An image could not be verified for offline use. Retry preparation."
+  if (error instanceof RemoteError && error.kind === "network") return "Offline preparation paused. Reconnect, then retry."
+  return "Offline preparation paused. Retry to finish keeping this project on the device."
 }

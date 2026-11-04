@@ -68,6 +68,10 @@ export function DocumentEmbed({src, title, defaultCollapsed = false, from}: {
     asked.current = request;
     postToParent({kind:'document-embed-open', ...context, id, path:src, from:at.current});
   }, [opened, expanded, valid, id, src, asking, answered]);
+  useEffect(() => {
+    if (!opened || !valid) return;
+    postToParent({kind:'document-embed-visibility',...context,id,visible:expanded});
+  },[opened,valid,id,expanded]);
   useEffect(() => () => {
     postToParent({kind:'document-embed-release', ...context, id});
     entries.delete(id);

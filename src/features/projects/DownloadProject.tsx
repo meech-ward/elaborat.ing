@@ -39,7 +39,7 @@ export function useProjectDownload(library: ProjectLibrary, onError: (message: s
     try {
       let found: boolean
       try {
-        found = await library.open(projectId)
+        found = await library.openComplete(projectId)
       } catch (cause) {
         if (cause instanceof RemoteError && cause.kind === "network") throw new Error("This project is not on this device yet, and downloading it needs a connection.")
         throw cause

@@ -8,6 +8,8 @@ export function statusLabel(entry: Pick<ProjectEntry, "status" | "stopped" | "st
   switch (entry.status) {
     case "not-downloaded":
       return "On the server"
+    case "preparing":
+      return "Preparing the offline copy; ready files are available"
     case "synced":
       return "Synced"
     case "unsynced":
@@ -52,6 +54,8 @@ export function syncDot(entry: Pick<ProjectEntry, "status" | "stopped" | "stoppe
       return { status: "unsaved", text: "Waiting to sync", label }
     case "conflict":
       return { status: "failed", text: "Conflict", label }
+    case "preparing":
+      return { status: "unsaved", text: "Preparing offline", label }
     case "not-downloaded":
       return { status: "offline", text: "On the server", label }
     case "stopped":

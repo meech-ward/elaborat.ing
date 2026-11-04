@@ -32,7 +32,7 @@ function fake(content = '# Public', path = 'note.mdx') {
   }
   return { initial, files, downloads, calls, deps, contexts: () => contexts }
 }
-async function image(path: string, bytes = png, mediaType = 'image/png') {
+async function image(path: string, bytes: Uint8Array = png, mediaType = 'image/png') {
   return { id: crypto.randomUUID(), path, content: '', version: 1, kind: 'image', asset: {
     id: ASSET, media_type: mediaType, byte_length: bytes.length, width: 1, height: 1, sha256: await imageDigest(bytes),
     object_key: `${PROJECT}/${ASSET}/original`, preview_key: `${PROJECT}/${ASSET}/preview`,
@@ -319,4 +319,199 @@ Deno.test('archived shares remain readable and announce their read-only comment 
   const response = await handleFileShare({ token: TOKEN }, f.deps)
   assertEquals(response.status, 200)
   assertEquals((await response.json()).share.archived, true)
+})
+
+const known = (f: ReturnType<typeof fake>) => ({id: f.initial.id, file_id: f.initial.file_id, path: f.initial.path,
+  version: f.initial.version, revision: f.initial.revision, archived: f.initial.archived})
+
+Deno.test('a progressive manifest publishes authorized text and dimensions without any Storage download', async () => {
+  const f = fake('# Read now\n\n![Photo](a.png)', 'note.md')
+  f.files.set('a.png', await image('a.png'))
+  f.deps.download = () => {throw new Error('Storage must not gate text')}
+  const response = await handleFileShare({token: TOKEN, mode: 'manifest'}, f.deps)
+  assertEquals(response.status, 200)
+  const result = await response.json()
+  assertEquals(result.files[0].content, f.initial.content)
+  assertEquals(result.pendingImages, [{path: 'a.png', width: 1, height: 1}])
+  assertEquals(result.images, [])
+  assertFalse(JSON.stringify(result).includes(PROJECT))
+  assertEquals(f.contexts(), 2)
+})
+
+Deno.test('an unchanged refresh checks the active link without resolving dependencies or bytes', async () => {
+  const f = fake('![Photo](a.png)', 'note.md')
+  const response = await handleFileShare({token: TOKEN, mode: 'manifest', known: known(f)}, f.deps)
+  assertEquals(response.status, 200)
+  assertEquals(await response.json(), {unchanged: true, share: known(f)})
+  assertEquals(f.calls, [['context', TOKEN]])
+  f.deps.context = () => Promise.resolve({data: null, error: {code: '42501'}})
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'manifest', known: known(f)}, f.deps)).status, 404)
+})
+
+Deno.test('a progressive image ordinal is reauthorized from the graph and bound to the manifest revision', async () => {
+  const f = fake('![Photo](a.png)', 'note.md')
+  f.files.set('a.png', await image('a.png'))
+  f.files.set('private.png', await image('private.png'))
+  f.downloads.set(`${PROJECT}/${ASSET}/original`, png)
+  f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+  const response = await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 0}, f.deps)
+  assertEquals(response.status, 200)
+  const result = await response.json()
+  assertEquals(result.image.path, 'a.png')
+  assertEquals(result.image.dataURL, `data:image/png;base64,${btoa(String.fromCharCode(...png))}`)
+  assertEquals(result.share, known(f))
+  assertFalse(readPaths(f.calls).includes('private.png'))
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 1}, f.deps)).status, 404)
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'image', known: {...known(f), revision: 2}, image: 0}, f.deps)).status, 409)
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 0, path: 'private.png'}, f.deps)).status, 404)
+})
+
+Deno.test('revocation or revision changes while progressive bytes download discard those bytes', async () => {
+  for (const revoke of [true, false]) {
+    const f = fake('![Photo](a.png)', 'note.md')
+    f.files.set('a.png', await image('a.png'))
+    f.deps.download = () => {
+      f.deps.context = () => Promise.resolve(revoke ? {data: null, error: {code: '42501'}} : {data: {...f.initial, revision: 4}, error: null})
+      return Promise.resolve(png)
+    }
+    const response = await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 0}, f.deps)
+    assertEquals(response.status, revoke ? 404 : 409)
+    assertFalse('image' in await response.json())
+  }
+})
+
+Deno.test('a failed image does not prevent the manifest or an independent image', async () => {
+  const f = fake('![Bad](bad.png)\n\n![Good](good.png)', 'note.md')
+  const bad = await image('bad.png'), good = await image('good.png')
+  bad.asset.object_key = `${PROJECT}/${ROOT}/original`
+  bad.asset.preview_key = `${PROJECT}/${ROOT}/preview`
+  bad.asset.id = ROOT
+  f.files.set('bad.png', bad); f.files.set('good.png', good)
+  f.downloads.set(`${PROJECT}/${ASSET}/original`, png)
+  f.downloads.set(`${PROJECT}/${ASSET}/preview`, png)
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'manifest'}, f.deps)).status, 200)
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 0}, f.deps)).status, 409)
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'image', known: known(f), image: 1}, f.deps)).status, 200)
+})
+
+Deno.test('progressive dependency batches stay scoped to server-parsed sibling references', async () => {
+  const f = fake('<Document src="a.md" />\n\n<Document src="b.md" />')
+  f.files.set('a.md', text('a.md')); f.files.set('b.md', text('b.md'))
+  const batches: string[][] = []
+  f.deps.readMany = (token, paths) => {
+    assertEquals(token, TOKEN); batches.push(paths)
+    return Promise.resolve({data: paths.map(path => f.files.get(path)).filter(Boolean), error: null})
+  }
+  assertEquals((await handleFileShare({token: TOKEN, mode: 'manifest'}, f.deps)).status, 200)
+  assertEquals(batches, [['a.md', 'b.md']])
+  assertEquals(readPaths(f.calls), [])
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => {resolve = done})
+  return {promise, resolve}
+}
+async function lines(response: Response) {
+  return (await response.text()).trim().split('\n').map(line => JSON.parse(line))
+}
+
+Deno.test('a stream publishes the complete root before a delayed child source and Storage bytes', async () => {
+  const f = fake('# Read now\n\n<Document src="slow.md" />\n\n![Photo](a.png)')
+  const child = deferred<{data: FileRecord; error: null}>()
+  const storage = deferred<Uint8Array>()
+  f.files.set('a.png', await image('a.png'))
+  const originalRead = f.deps.read
+  f.deps.read = (token, path) => path === 'slow.md' ? child.promise : originalRead(token, path)
+  f.deps.download = () => storage.promise
+  const response = await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps)
+  assertEquals(response.headers.get('content-type'), 'application/x-ndjson')
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let root = ''
+  while (!root.includes('"type":"file"')) root += decoder.decode((await reader.read()).value)
+  assert(root.includes('# Read now'))
+  assertFalse(root.includes('"type":"complete"'))
+  child.resolve({data: text('slow.md', '# Child'), error: null})
+  storage.resolve(png)
+  let rest = ''
+  while (true) {const result = await reader.read(); if (result.done) break; rest += decoder.decode(result.value)}
+  reader.releaseLock()
+  assert(rest.includes('# Child'))
+  assert(rest.includes('"type":"image"'))
+  assert(rest.includes('"type":"complete"'))
+})
+
+Deno.test('a missing child and failed image are local stream placeholders beside ready text', async () => {
+  const f = fake('# Root\n\n<Document src="missing.md" />\n\n![Photo](a.png)')
+  f.files.set('a.png', await image('a.png'))
+  const events = await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps))
+  assert(events.some(event => event.type === 'file' && event.file.content.startsWith('# Root')))
+  assert(events.some(event => event.type === 'file-error' && event.path === 'missing.md'))
+  assert(events.some(event => event.type === 'image-error' && event.path === 'a.png'))
+  assertEquals(events.at(-1), {type: 'complete'})
+  assertFalse(events.some(event => event.type === 'error'))
+})
+
+Deno.test('a stream revalidates revocation and revisions before later publication', async () => {
+  for (const revoke of [true, false]) {
+    const f = fake('# Root\n\n![Photo](a.png)')
+    f.files.set('a.png', await image('a.png'))
+    f.deps.download = () => {
+      f.deps.context = () => Promise.resolve(revoke ? {data: null, error: {code: '42501'}} : {data: {...f.initial, revision: 4}, error: null})
+      return Promise.resolve(png)
+    }
+    const events = await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps))
+    assert(events.some(event => event.type === 'file' && event.file.path === 'note.mdx'))
+    assertEquals(events.at(-1).status, revoke ? 404 : 409)
+    assertFalse(events.some(event => event.type === 'image'))
+    assertFalse(events.some(event => event.type === 'complete'))
+  }
+})
+
+Deno.test('canceling a progressive reader stops queued dependency reads', async () => {
+  const f = fake(Array.from({length: 20}, (_, index) => `<Document src="${index}.md" />`).join('\n\n'))
+  const blocked = deferred<{data: null; error: null}>()
+  f.deps.read = (_token, path) => {f.calls.push(['read', path]); return blocked.promise}
+  const response = await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps)
+  const reader = response.body!.getReader()
+  await reader.read()
+  await reader.cancel()
+  blocked.resolve({data: null, error: null})
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert(readPaths(f.calls).length <= 4)
+})
+
+Deno.test('stream aggregate text/depth bounds invalidate partial availability', async () => {
+  const f = fake('<Document src="child.md" />')
+  f.files.set('child.md', text('child.md', 'x'.repeat(SHARE_LIMITS.textBytes)))
+  const events = await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps))
+  assertEquals(events.at(-1).type, 'error')
+  assertEquals(events.at(-1).status, 413)
+  assertFalse(events.some(event => event.type === 'complete'))
+})
+
+Deno.test('stream discovery bounds missing paths before publishing the root or starting RPCs', async () => {
+  const f = fake(Array.from({length: SHARE_LIMITS.files * 4}, (_, index) => `<Document src="missing-${index}.md" />`).join('\n\n'))
+  const events = await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps))
+  assertEquals(events.at(-1).type, 'error')
+  assertEquals(events.at(-1).status, 413)
+  assertFalse(events.some(event => event.type === 'file'))
+  assertEquals(readPaths(f.calls), [])
+})
+
+Deno.test('stream discovery counts missing optional companions and deduplicates shared dependency reads', async () => {
+  const f = fake(Array.from({length: 50}, (_, index) => `<Diagram src="flow-${index}.d2" />`).join('\n\n'))
+  for (let index = 0; index < 50; index++) f.files.set(`flow-${index}.d2`, text(`flow-${index}.d2`, 'a -> b'))
+  const events = await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, f.deps))
+  assertEquals(events.at(-1).status, 413)
+  const paths = readPaths(f.calls)
+  assert(paths.length <= SHARE_LIMITS.files - 1)
+  assertEquals(new Set(paths).size, paths.length)
+  const duplicate = fake('<Document src="a.mdx" />\n\n<Document src="b.mdx" />')
+  duplicate.files.set('a.mdx', text('a.mdx', '<Document src="common.md" />'))
+  duplicate.files.set('b.mdx', text('b.mdx', '<Document src="common.md" />'))
+  duplicate.files.set('common.md', text('common.md'))
+  assertEquals((await lines(await handleFileShare({token: TOKEN, mode: 'manifest', stream: true}, duplicate.deps))).at(-1).type, 'complete')
+  assertEquals(readPaths(duplicate.calls).filter(path => path === 'common.md').length, 1)
 })

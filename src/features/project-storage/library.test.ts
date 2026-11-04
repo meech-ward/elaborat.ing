@@ -4,6 +4,7 @@ import { ProjectLibrary, offlineRemote } from "./library"
 import { partitionKey } from "./model"
 import { FakeProjectServer, OTHER, OWNER, put } from "./testing"
 import { ProjectFileStore } from "./fileStore"
+import { MissingFileError, projectWorkspace, type WorkspaceChange } from "../workbench/workspaceStore"
 
 const partition = partitionKey("https://example.supabase.co", OWNER)
 
@@ -40,6 +41,27 @@ test("the list shows projects on this device and on the server, with their state
 test("opening a project neither side has says so", async () => {
   const { library: here } = library(new FakeProjectServer())
   expect(await here.open(crypto.randomUUID())).toBe(false)
+})
+
+test("missing optional diagram companions in a complete project do not publish file changes", async () => {
+  const { db, library: here } = library(new FakeProjectServer())
+  const id = await here.create("Diagram")
+  const store = new ProjectFileStore(db, partition, id)
+  await put(store, "flow.d2", "a -> b")
+  await here.syncProject(id)
+  const client = projectWorkspace(store, {
+    afterSave: () => {}, subscribeSync: listener => here.subscribe(listener),
+    beforeRead: (path, signal) => here.requestFile(id, path, signal),
+  })
+  const state = here.getState(), changes: WorkspaceChange[] = []
+  const stop = client.subscribe(change => changes.push(change))
+  for (let pass = 0; pass < 3; pass++) {
+    for (const path of ["flow.excalidraw", "flow.d2.json"])
+      await expect(client.read(path)).rejects.toBeInstanceOf(MissingFileError)
+  }
+  expect(changes).toEqual([])
+  expect(here.getState()).toBe(state)
+  stop()
 })
 
 test("without a connection, projects on this device still open, and new ones wait to sync", async () => {

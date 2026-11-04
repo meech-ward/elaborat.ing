@@ -35,7 +35,7 @@ function browserStorage(): SyncDiagnosticStorage | null {
   try { return typeof localStorage === "undefined" ? null : localStorage } catch { return null }
 }
 
-/** Separate from v2 IndexedDB rows so older app tabs keep reading and saving them. */
+/** Separate from project rows so optional diagnostics do not change their stored shape. */
 export class ProjectDiagnosticStorage {
   private unavailable = false
 

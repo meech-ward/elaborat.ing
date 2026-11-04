@@ -156,7 +156,7 @@ test('anyone can read a complete long rendered file without project or source co
   await expect(page.getByRole('button', {name: 'Source', exact: true})).toHaveCount(0)
   await expect(page.getByRole('navigation', {name: 'Workspace files'})).toHaveCount(0)
   await expect(page.locator('.monaco-editor')).toHaveCount(0)
-  expect(state.calls.find(c => c.name === 'read')?.args).toEqual({token: TOKEN})
+  expect(state.calls.find(c => c.name === 'read')?.args).toEqual({token: TOKEN, mode: 'manifest', stream: true})
   expect(fake.requests.some(r => /project_files|list_projects|list_members|list_comments/.test(r.url()))).toBe(false)
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow, noarchive')
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer')
@@ -286,7 +286,7 @@ int main() { return 0; }
   expect(reached).toEqual([])
   expect(fake.requests.slice(requestStart).some(request => /\/auth\/v1|\/storage\/v1|project_files|list_projects|list_members|save_files|save_file/.test(request.url()))).toBe(false)
   expect(state.calls.every(call => call.name === 'read' || call.name === 'list_file_share_comments')).toBe(true)
-  expect(state.calls.filter(call => call.name === 'read').every(call => JSON.stringify(call.args) === JSON.stringify({token: TOKEN}))).toBe(true)
+  expect(state.calls.filter(call => call.name === 'read').every(call => call.args.token === TOKEN && call.args.mode === 'manifest' && !('path' in call.args))).toBe(true)
   expect(fake.server.content(privateId, 'private/plan.md')).toBe('UNSHARED_PRIVATE_CONTENT_MUST_NOT_LEAVE')
   expect(state.bundle.files[0].content).toBe(source)
 })
@@ -524,7 +524,7 @@ test('ordinary project links stay private while shared custom components render 
   await frame(page).getByRole('link', {name: 'Private planning'}).click()
   await expect(page.getByText('That link points to another project file. It needs its own share link.')).toBeVisible()
   await expect(page).toHaveURL(href)
-  expect(state.calls.filter(c => c.name === 'read').every(c => Object.keys(c.args).join() === 'token')).toBe(true)
+  expect(state.calls.filter(c => c.name === 'read').every(c => c.args.token === TOKEN && c.args.mode === 'manifest' && !('path' in c.args))).toBe(true)
 })
 
 test('nested shared documents run components automatically while keeping their sandbox isolation', async ({page}) => {

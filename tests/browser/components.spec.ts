@@ -67,13 +67,13 @@ async function save(page: Page) {
 /** Put the caret at the end of the visible source editor. */
 async function endOfSource(page: Page) {
   await editorText(page).click()
-  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End")
 }
 
 /** Replace the text on the last line of the visible source editor. */
 async function replaceLastLine(page: Page, text: string) {
   await endOfSource(page)
-  await page.keyboard.press("Shift+Home")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+ArrowLeft" : "Shift+Home")
   await page.keyboard.press("Delete")
   if (text) await page.keyboard.type(text)
   await page.keyboard.press("Escape")
@@ -148,22 +148,21 @@ test("charts and code highlighting load into the frame the first time a note sho
 
 test("in the source view, typing <Rel offers the imported component with its default props", async ({ page, appErrors }) => {
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), "notes/source.mdx": importCard }, "notes/source.mdx")
-  // The rendered view shows once the imported module has loaded, so the
-  // suggestions list it as soon as the tag is started. A slow runner can
-  // outlast typing suppression while this deliberately incomplete tag waits.
+  // Provisional prose can appear before imported metadata. Hints must still
+  // arrive if Source becomes incomplete while that metadata is preparing.
   await rendered(page)
   await showView(page, "Source")
   await endOfSource(page)
-  const offered = page.getByRole("listbox", { name: "Suggest" }).getByRole("listitem", { name: /^ReleaseCard\b/ })
-  appErrors.expect(/^Render error: Expected a closing tag for `<Rel>` \(3:1-3:6\) Source is unchanged and remains editable\.$/)
+  const suggestions = page.getByRole("listbox", { name: "Suggest" })
+  const offered = suggestions.getByRole("option", { name: /^ReleaseCard\b/ }).or(suggestions.getByRole("listitem", { name: /^ReleaseCard\b/ }))
+  appErrors.expect(/^(?:Render error: |Source check: Invalid MDX: )Expected a closing tag for `<Rel>` \(3:1-3:6\) Source is unchanged and remains editable\.$/)
   await page.keyboard.type("<Rel")
   if (!(await offered.isVisible())) await page.keyboard.press("Control+Space")
   await expect(offered).toBeVisible()
   await page.keyboard.press("Enter")
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+s")
+  await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => fake.server.content(id, "notes/source.mdx")).toBe(`${importCard}<ReleaseCard title="Review" count={3} ready={true} />`)
-  await expect(page.getByRole("alert").filter({ hasText: /^Render error:/ })).toHaveCount(0)
+  await expect(page.getByRole("alert").filter({ hasText: /^(?:Render error:|Source check:)/ })).toHaveCount(0)
 })
 
 test("the prop controls change the output, and saving changes only those props", async ({ page }) => {
@@ -295,9 +294,9 @@ test("inside the preview frame, the parent page, storage and the network are out
   expect(reached).toEqual([])
 })
 
-test("a module that fails to compile or throws hides the frame, and fixing it brings the note back", async ({ page, appErrors }) => {
+test("a failed component keeps independent prose readable with protected placeholders and recovers when fixed", async ({ page, appErrors }) => {
   const notePath = "notes/errors.mdx"
-  const note = `${importCard}<ReleaseCard title="Launch" count={2} ready={false} />\n`
+  const note = `${importCard}# Error recovery\n\nIndependent prose stays readable.\n\n<ReleaseCard title="Launch" count={2} ready={false} />\n`
   const { fake, id } = await openProject(page, { [MODULE]: releaseCard(), [notePath]: note }, notePath)
   await rendered(page)
   const frame = frameOf(page)
@@ -315,20 +314,31 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
     await replaceLastLine(page, lastLine)
     await save(page)
     await expect(unsaved(page, MODULE)).toHaveCount(0)
+    await expect.poll(() => fake.server.content(id, MODULE)).toBe(releaseCard() + lastLine)
     await page.getByRole("tab", { name: notePath }).click()
   }
 
   appErrors.expect("Could not parse import/exports with acorn")
   await saveModule("export const = 1")
   await expect(alert).toBeVisible()
-  await expect(page.locator(PREVIEW)).toBeHidden()
-  await expect(frame.getByLabel("ReleaseCard title")).toBeHidden()
+  await expect(page.locator(PREVIEW)).toBeVisible()
+  await expect(frame.getByRole("heading", {name: "Error recovery"})).toBeVisible()
+  await expect(frame.getByText("Independent prose stays readable.", {exact: true})).toBeVisible()
+  await expect(frame.getByRole("status").filter({hasText: "Component unavailable"})).toBeVisible()
+  await expect(frame.locator("section.release-card")).toHaveCount(0)
+  await expect(frame.getByLabel("ReleaseCard title")).toHaveCount(0)
+  await expect(frame.locator('[contenteditable="true"]')).toHaveCount(0)
 
   appErrors.expect("notDefined is not defined")
   await saveModule("export const missing = notDefined()")
   await expect(alert).toContainText("notDefined")
-  await expect(page.locator(PREVIEW)).toBeHidden()
-  await expect(frame.getByLabel("ReleaseCard title")).toBeHidden()
+  await expect(page.locator(PREVIEW)).toBeVisible()
+  await expect(frame.getByRole("heading", {name: "Error recovery"})).toBeVisible()
+  await expect(frame.getByText("Independent prose stays readable.", {exact: true})).toBeVisible()
+  await expect(frame.getByRole("status").filter({hasText: "Component unavailable"})).toBeVisible()
+  await expect(frame.locator("section.release-card")).toHaveCount(0)
+  await expect(frame.getByLabel("ReleaseCard title")).toHaveCount(0)
+  await expect(frame.locator('[contenteditable="true"]')).toHaveCount(0)
 
   await saveModule("")
   await expect(alert).toBeHidden()
@@ -337,6 +347,28 @@ test("a module that fails to compile or throws hides the frame, and fixing it br
   await expect.poll(() => fake.server.content(id, MODULE)).toBe(releaseCard())
   expect(fake.server.content(id, notePath)).toBe(note)
   await expect(unsaved(page, notePath)).toHaveCount(0)
+})
+
+
+test("editing failed inline MDX source retries its checked preview without stale runtime errors", async ({page, appErrors}) => {
+  appErrors.expect("notDefined is not defined")
+  const path = "notes/source-recovery.mdx"
+  const safe = "# Source recovery\n\nIndependent prose survives a runtime failure.\n\n"
+  const {fake, id} = await openProject(page, {[path]: safe + "export const broken = notDefined()"}, path)
+  await rendered(page)
+  const alert = page.getByRole("tabpanel", {name: path}).getByRole("alert")
+  await expect(alert).toContainText("notDefined")
+  await expect(frameOf(page).getByRole("heading", {name: "Source recovery"})).toBeVisible()
+  await expect(frameOf(page).getByText("Independent prose survives a runtime failure.", {exact: true})).toBeVisible()
+  await expect(frameOf(page).locator('[contenteditable="true"]')).toHaveCount(0)
+  await showView(page, "Source")
+  await replaceLastLine(page, "")
+  await rendered(page)
+  await expect(alert).toBeHidden()
+  await expect(frameOf(page).getByRole("heading", {name: "Source recovery"})).toBeVisible()
+  await expect(frameOf(page).locator('[contenteditable="true"]')).toBeVisible()
+  await save(page)
+  await expect.poll(() => fake.server.content(id, path)).toBe(safe)
 })
 
 test("a module changed on another device reaches the open note through sync", async ({ page }) => {

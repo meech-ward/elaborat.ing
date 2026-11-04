@@ -11,6 +11,8 @@ export function sharedNotionWorkspace(bundle: SharedBundle): NotionWorkspace {
   // Parsing also copies nested records, so a later refresh or caller mutation
   // cannot replace source or image strings while an export is being prepared.
   const snapshot = SharedBundle.parse(bundle)
+  if (snapshot.complete === false || snapshot.fileErrors?.length || snapshot.imageErrors?.length)
+    throw new Error('The shared document must finish loading before export.')
   const files = new Map(snapshot.files.map(file => [file.path, Object.freeze({...file})]))
   const images = new Map(snapshot.images.map(image => [image.path, Object.freeze({...image, preview: Object.freeze({...image.preview})})]))
   const revisions = new Map(snapshot.files.map(file => [file.path,

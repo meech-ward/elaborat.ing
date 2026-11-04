@@ -54,13 +54,17 @@ export function ProjectPage({ account }: { account: ProjectAccount }) {
       </PanelPage>
     )
   }
-  return <OpenProject key={location.projectId} account={account} projectId={location.projectId} />
+  return <OpenProject key={`${account.userId}:${location.projectId}`} account={account} projectId={location.projectId} initialPath={location.path} />
 }
 
-function OpenProject({ account, projectId }: { account: ProjectAccount; projectId: string }) {
+function OpenProject({ account, projectId, initialPath }: { account: ProjectAccount; projectId: string; initialPath: string | null }) {
+  const [requestedPath] = useState(initialPath)
   const library = libraryFor(account)
   const state = useLibraryState(library)
+  const projectRequests = useMemo(() => ({ library, projectId, controller: new AbortController() }), [library, projectId])
+  useEffect(() => () => projectRequests.controller.abort(), [projectRequests])
   const navigate = useNavigate()
+  const [openingAttempt, setOpeningAttempt] = useState(0)
   const [opened, setOpened] = useState<"opening" | "open" | "missing">("opening")
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -80,7 +84,7 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
     const isCurrent = syncRequests.start()
     setError(null)
     try {
-      const outcome = await library.syncProject(projectId, retryStopped)
+      const outcome = await library.syncProject(projectId, retryStopped, projectRequests.controller.signal)
       if (outcome.projectId !== projectId) {
         await navigate({ href: projectHref(outcome.projectId), replace: true, ignoreBlocker: true })
       } else if (isCurrent()) {
@@ -89,21 +93,23 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
         setError(outcome.status === "incomplete" ? outcome.message : null)
       }
     } catch (cause) {
-      if (isCurrent()) setError(cause instanceof Error ? cause.message : String(cause))
+      if (isCurrent() && !projectRequests.controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [library, navigate, projectId, syncRequests])
+  }, [library, navigate, projectId, projectRequests, syncRequests])
 
   // Download on first open, then sync. A new local project's welcome note
   // first opens in its Rendered view, on a desktop too.
   const viewsKey = workspacePersistenceKey(library.partition, projectId)
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
+    void loadWorkbench()
     const opening = account.local
       ? openLocalProject(() => import("./welcomeNote")).then((welcome) => {
           if (welcome) writeProjectView(viewsKey, welcome, "rendered")
           return true
         })
-      : library.open(projectId)
+      : library.open(projectId, requestedPath, controller.signal)
     opening
       .then((found) => {
         if (!active) return
@@ -113,8 +119,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
       .catch((cause: unknown) => active && setError(cause instanceof Error ? cause.message : String(cause)))
     return () => {
       active = false
+      controller.abort()
     }
-  }, [account.local, account.online, library, projectId, syncNow, viewsKey])
+  }, [account.local, account.online, library, openingAttempt, projectId, requestedPath, syncNow, viewsKey])
 
   // The project's comments, in memory while it is open. Its own writes are
   // marked as seen, so they do not come back as a change to pull.
@@ -192,8 +199,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           if (account.online) delayedSync.run(() => void syncNow())
         },
         subscribeSync: (listener) => library.subscribe(listener),
+        beforeRead: (path, signal) => library.requestFile(projectId, path, signal ? AbortSignal.any([signal, projectRequests.controller.signal]) : projectRequests.controller.signal),
       }),
-    [account.online, delayedSync, library, projectId, syncNow],
+    [account.online, delayedSync, library, projectId, projectRequests, syncNow],
   )
 
   // The files panel's search: the server's search in this project.
@@ -292,9 +300,9 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   if (opened === "opening") {
     return (
       <PanelPage>
-        <p role="status" className="text-[13px] text-muted-foreground">
-          Opening project...
-        </p>
+        {error ? <Banner tone="danger" action={<BannerAction onClick={() => { setError(null); setOpeningAttempt(attempt => attempt + 1) }}>Retry opening</BannerAction>}>{error}</Banner> : (
+          <p role="status" className="text-[13px] text-muted-foreground">Opening project...</p>
+        )}
       </PanelPage>
     )
   }
@@ -320,6 +328,13 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
           action={entry?.archived && canEdit(entry.role) ? <BannerAction onClick={() => void unarchive()}>Unarchive</BannerAction> : undefined}
         >
           {readOnly}
+        </Banner>
+      ) : null}
+      {entry?.preparation ? (
+        <Banner tone={entry.preparation.error ? "warn" : "info"} action={entry.preparation.error && account.online ? <BannerAction onClick={() => void syncNow(true)}>Retry preparation</BannerAction> : undefined}>
+          {entry.preparation.error ?? (entry.preparation.metadata
+            ? `Preparing the offline copy: ${entry.preparation.images} of ${entry.preparation.total} images ready. You can use the files that have loaded.`
+            : "Loading the remaining files. You can use the files that have loaded.")}
         </Banner>
       ) : null}
       {problem ? <Banner tone="danger">{problem}</Banner> : null}

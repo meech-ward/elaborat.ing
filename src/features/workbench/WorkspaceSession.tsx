@@ -24,6 +24,7 @@ import { createDocumentStore, type StoreState } from "@/lib/documentStore";
 import { formatForFilename, saveSourceText } from "@/lib/fileAdapter";
 import { diagnoseSource } from "@/lib/sourceDiagnostics";
 import { parseSourceRefs } from "./refs";
+import { prepareVisibleAssets } from "./progressiveAssets";
 import { diagramSvgForWorkspace, drawingSvgForContent } from "./resources";
 import { useCanvasPresentation } from "./viewTheme";
 import { readProjectView, writeProjectView } from "./projectViews";
@@ -136,7 +137,6 @@ export function WorkspaceSession({
   /** Intentional source replacement, independent of which views are open. */
   replacementEpoch?: number;
 }) {
-  const documentActive = active || embeddedViews.length > 0;
   // A note opened to follow an agent starts empty (TabFile.arriving), and
   // takes its saved version once its views show that (below).
   const [opening, setOpening] = useState<TabFile>(() =>
@@ -186,6 +186,7 @@ export function WorkspaceSession({
   const [patchError, setPatchError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [documentExportFormat, setDocumentExportFormat] = useState<DocumentExportFormat | null>(null);
+  const previewActive = (active && view !== "source") || embeddedViews.some(embed => embed.active !== false) || documentExportFormat !== null;
   const [componentGeneration, setComponentGeneration] = useState(0);
   const loadComponentSource = useCallback(async (path: string) => {
     const file = await client.read(path);
@@ -196,8 +197,8 @@ export function WorkspaceSession({
   const subscribeToStore = useCallback((listener: () => void) => client.subscribe((change) => { if (change === "files") listener(); }), [client]);
   // Typing in the rendered view compiles the note's components once it
   // pauses. An embedded copy of the note would wait for them to show the edit.
-  const shownByRendered = renderedEdit === snapshot && embeddedViews.length === 0;
-  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx', loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId, shownByRendered);
+  const shownByRendered = renderedEdit === snapshot && !embeddedViews.some(embed => embed.active !== false);
+  const componentState = useComponentEnvironment(snapshot.text, snapshot.format === 'mdx' && (active || previewActive), loadComponentSource, componentGeneration, subscribeToStore, snapshot.docId, shownByRendered);
   // In a project shared with the person, custom components run only once they choose to.
   const customCode = useCustomCodePolicy();
   const componentGate = useCustomCodeGate(customCode, openFile.path ?? initial.path, componentState, snapshot.dirty, snapshot.docId);
@@ -206,9 +207,13 @@ export function WorkspaceSession({
   const requestedImageFiles = useMemo(() => imageRequest?.files ? [...imageRequest.files] : undefined, [imageRequest]);
   const [imageEntries, setImageEntries] = useState<Awaited<ReturnType<WorkspaceStore["listEntries"]>>["files"]>([]);
   const [imageResources, setImageResources] = useState<Record<string, ImagePreview>>(NO_IMAGES);
+  const [imageDimensions,setImageDimensions] = useState<Record<string,{width:number;height:number}>>({});
+  const shownImageDimensions = useRef(imageDimensions);
   // Assets are immutable. Reuse their pixels while typing instead of decoding
   // and base64-encoding every full-size image for each source revision.
   const documentImageCache = useRef(new Map<string, ImagePreview>());
+  const imageAssetIds = useRef(new Map<string, string>());
+  const imageOwner = useRef({client, identity: snapshot.docId});
   // The images last shown, and the references and store change they were
   // read for: typing that keeps the note's references reads nothing again,
   // and the same pixels are not handed to the note again.
@@ -225,7 +230,7 @@ export function WorkspaceSession({
   }, [client, imageRequest, imageGeneration]);
   const imageModuleSources = JSON.stringify(shownComponents?.environment?.code.filter(module => module.path !== null) ?? []);
   useEffect(() => {
-    if (!documentActive || !client.readImage || kindForPath(initial.path) !== "note") return;
+    if (!previewActive || !client.readImage || kindForPath(initial.path) !== "note") return;
     let live = true;
     const controller = new AbortController();
     const show = (pixels: Record<string, ImagePreview>) => {
@@ -240,40 +245,87 @@ export function WorkspaceSession({
       const key = JSON.stringify(refs.map((ref) => [ref.key, ref.path]));
       const read = imagesRead.current;
       if (!live || (read?.client === client && read.key === key && read.generation === imageGeneration)) return;
-      const pixels: Record<string, ImagePreview> = {};
-      const loaded = new Map<string, ImagePreview>();
-      const nextCache = new Map<string, ImagePreview>();
-      let total = 0;
-      for (const ref of refs) {
-        if (!live) return;
+      const sameOwner = imageOwner.current.client === client && imageOwner.current.identity === snapshot.docId;
+      if (!sameOwner) {
+        documentImageCache.current.clear();
+        imageAssetIds.current.clear();
+        imageOwner.current = {client, identity:snapshot.docId};
+      }
+      const pixels: Record<string, ImagePreview> = sameOwner
+        ? Object.fromEntries(refs.flatMap(ref => shownImages.current[ref.key] ? [[ref.key, shownImages.current[ref.key]]] : [])) : {};
+      const dimensions: typeof imageDimensions = sameOwner ? Object.fromEntries(refs.flatMap(ref => shownImageDimensions.current[ref.key] ? [[ref.key,shownImageDimensions.current[ref.key]]] : [])) : {};
+      const showDimensions = () => {
+        const previous = shownImageDimensions.current;
+        const keys = Object.keys(dimensions);
+        if (keys.length === Object.keys(previous).length && keys.every(key => dimensions[key].width === previous[key]?.width && dimensions[key].height === previous[key]?.height)) return;
+        shownImageDimensions.current = {...dimensions};
+        setImageDimensions(shownImageDimensions.current);
+      };
+      showDimensions();
+      const assetIds = new Map([...imageAssetIds.current].filter(([key]) => refs.some(ref => ref.key === key)));
+      const rememberAssetIds = () => {
+        if (live && imageOwner.current.client === client && imageOwner.current.identity === snapshot.docId) {
+          imageAssetIds.current = new Map(assetIds);
+        }
+      };
+      // A ready sibling remains validated even while another decode waits.
+      // A later files event can then reuse it without briefly clearing pixels.
+      rememberAssetIds();
+      const loaded = new Map<string, Promise<ImagePreview>>();
+      let total = Object.values(pixels).reduce((sum, image) => sum + image.dataURL.length, 0);
+      const remove = (key: string) => {
+        if (pixels[key]) total -= pixels[key].dataURL.length;
+        delete pixels[key];
+        assetIds.delete(key);
+        rememberAssetIds();
+        show({ ...pixels });
+      };
+      show({ ...pixels });
+      await prepareVisibleAssets(refs, controller.signal, async ref => {
         try {
           const file = await client.read(ref.path);
-          if (file.kind !== "image" || !file.asset || pixels[ref.key]) continue;
-          let image = loaded.get(ref.path) ?? documentImageCache.current.get(file.asset.id);
-          if (!image) {
-            try {
-              image = await documentImage(await client.readImage!(ref.path), controller.signal);
-              nextCache.set(file.asset.id, image);
-            }
-            catch {
-              controller.signal.throwIfAborted();
-              image = await documentImage(await client.readImage!(ref.path, true), controller.signal);
-            }
-            loaded.set(ref.path, image);
-          } else if (documentImageCache.current.has(file.asset.id)) nextCache.set(file.asset.id, image);
+          if (!live) return;
+          if (file.kind !== "image" || !file.asset) {delete dimensions[ref.key];showDimensions();remove(ref.key);return;}
+          dimensions[ref.key] = {width:file.asset.width,height:file.asset.height};
+          showDimensions();
+          // An immutable identity change removes the old pixels before waiting
+          // for its replacement; other validated, ready images stay in place.
+          if (assetIds.get(ref.key) !== file.asset.id) remove(ref.key);
+          if (pixels[ref.key]) return;
+          let pending = loaded.get(file.asset.id);
+          if (!pending) {
+            const cached = documentImageCache.current.get(file.asset.id);
+            pending = cached ? Promise.resolve(cached) : (async () => {
+              try { return await documentImage(await client.readImage!(ref.path), controller.signal); }
+              catch {
+                controller.signal.throwIfAborted();
+                return documentImage(await client.readImage!(ref.path, true), controller.signal);
+              }
+            })();
+            loaded.set(file.asset.id, pending);
+          }
+          let image = await pending;
+          if (!live || pixels[ref.key]) return;
           if (total + image.dataURL.length > 20 * 1024 * 1024) {
-            nextCache.delete(file.asset.id);
             image = await documentImage(await client.readImage!(ref.path, true), controller.signal);
           }
-          if (total + image.dataURL.length > 20 * 1024 * 1024) continue;
+          if (!live || pixels[ref.key] || total + image.dataURL.length > 20 * 1024 * 1024) return;
           total += image.dataURL.length;
+          documentImageCache.current.set(file.asset.id, image);
+          assetIds.set(ref.key, file.asset.id);
+          rememberAssetIds();
           pixels[ref.key] = image;
-        } catch { /* Missing or incomplete images show the frame's placeholder. */ }
-      }
+          show({ ...pixels });
+        } catch {
+          if (live) remove(ref.key);
+        }
+      });
       if (live) {
-        documentImageCache.current = nextCache;
+        const retained = new Set(assetIds.values());
+        documentImageCache.current = new Map([...documentImageCache.current].filter(([id]) => retained.has(id)));
+        rememberAssetIds();
         imagesRead.current = { client, key, generation: imageGeneration };
-        show(pixels);
+        show({ ...pixels });
       }
     })().catch(() => {
       if (!live) return;
@@ -281,7 +333,7 @@ export function WorkspaceSession({
       show(NO_IMAGES);
     });
     return () => { live = false; controller.abort(); };
-  }, [documentActive, client, initial.path, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
+  }, [previewActive, client, initial.path, snapshot.docId, snapshot.text, snapshot.format, imageModuleSources, imageGeneration]);
   const readImageOriginal = useCallback(async (key: string): Promise<ImagePreview> => {
     if (!client.readImage) throw new Error("Image viewing is unavailable.");
     const [{ parseImageReferences }, { imageDataURL }] = await Promise.all([import("../images/references"), import("../images/types")]);
@@ -549,35 +601,57 @@ export function WorkspaceSession({
       .map(({ kind, path }) => ({ kind, path })),
   );
   const [resourcePixels, setResourcePixels] = useState<Record<string, string>>({});
+  const readyResources = useRef<{client:WorkspaceStore; identity:number; presentation:unknown; pixels:Record<string,string>; sources:Map<string,string>} | null>(null);
   // A diagram shows in the palette's diagram fills, as on its canvas (the
   // note frame's dark filter turns them into the dark ones).
   const presentDiagram = useCanvasPresentation("diagram");
   useEffect(() => {
-    if (!documentActive || !isNote) return;
+    if (!previewActive || !isNote) return;
     const targets: Array<{ kind: string; path: string }> = JSON.parse(resourceTargetsKey);
-    let alive = true;
-    void (async () => {
-      const pixels: Record<string, string> = {};
-      for (const target of targets) {
-        try {
-          const read = await client.read(target.path);
-          if (!alive) return;
-          if (read.savedContent === null) continue;
-          pixels[target.path] =
-            target.kind === "drawing"
-              ? await drawingSvgForContent(read.savedContent, target.path)
-              : await diagramSvgForWorkspace(read.savedContent, target.path, client, presentDiagram);
-        } catch {
-          // A file that cannot be pictured shows as a placeholder in the note.
-        }
-        if (!alive) return;
-      }
-      if (alive) setResourcePixels(pixels);
-    })();
-    return () => {
-      alive = false;
+    const controller = new AbortController();
+    const previous = readyResources.current;
+    const reusable = previous?.client === client && previous.identity === snapshot.docId && previous.presentation === presentDiagram ? previous : null;
+    const paths = new Set(targets.map(target => target.path));
+    const pixels: Record<string, string> = reusable ? Object.fromEntries(Object.entries(reusable.pixels).filter(([path]) => paths.has(path))) : {};
+    const sources = new Map(reusable ? [...reusable.sources].filter(([path]) => paths.has(path)) : []);
+    const publish = () => {
+      if (controller.signal.aborted) return;
+      readyResources.current = {client,identity:snapshot.docId,presentation:presentDiagram,pixels:{...pixels},sources:new Map(sources)};
+      setResourcePixels({ ...pixels });
     };
-  }, [documentActive, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId]);
+    publish();
+    void prepareVisibleAssets(targets, controller.signal, async target => {
+      try {
+        const read = await client.read(target.path);
+        if (controller.signal.aborted) return;
+        if (read.savedContent === null) throw new Error('No saved resource.');
+        let sourceIdentity = read.savedContent;
+        if (target.kind === 'diagram') {
+          const [{nativePathFor,readDiagramCompanion},{sidecarPathFor}] = await Promise.all([import('./diagramArtifact'),import('../structured/structuredClient')]);
+          const [native,sidecar] = await Promise.all([readDiagramCompanion(client,nativePathFor(target.path)),readDiagramCompanion(client,sidecarPathFor(target.path))]);
+          if (controller.signal.aborted) return;
+          sourceIdentity = JSON.stringify([read.savedContent,native?.savedContent,sidecar?.savedContent]);
+        }
+        if (sources.get(target.path) === sourceIdentity && pixels[target.path]) return;
+        delete pixels[target.path];
+        sources.delete(target.path);
+        publish();
+        const svg = target.kind === "drawing"
+          ? await drawingSvgForContent(read.savedContent, target.path)
+          : await diagramSvgForWorkspace(read.savedContent, target.path, client, presentDiagram);
+        if (controller.signal.aborted) return;
+        pixels[target.path] = svg;
+        sources.set(target.path, sourceIdentity);
+        publish();
+      } catch {
+        if (controller.signal.aborted) return;
+        delete pixels[target.path];
+        sources.delete(target.path);
+        publish();
+      }
+    });
+    return () => controller.abort();
+  }, [previewActive, client, isNote, presentDiagram, resourceTargetsKey, snapshot.docId, imageGeneration]);
 
   const handleSourceChange = useCallback(
     (text: string) => {
@@ -1306,7 +1380,7 @@ export function WorkspaceSession({
               format={snapshot.format}
               documentId={snapshot.docId}
               workspacePaths={otherPaths}
-              componentCatalog={componentState.environment?.catalog}
+              componentCatalog={componentState.catalog}
               editorLanguage={
                 isNote ? undefined : editorLanguageForPath(displayName)
               }
@@ -1327,7 +1401,7 @@ export function WorkspaceSession({
             <div hidden={!inRendered} className="wb-rendered-stage">
               {componentGate.kind === "ask" ? (
                 <CustomCodeNotice files={componentGate.files} onRun={componentGate.run} onShowSource={() => switchMode("source")} />
-              ) : (
+              ) : null}
               <LazyRenderedEditor
                 document={snapshot}
                 active={active && inRendered}
@@ -1336,11 +1410,12 @@ export function WorkspaceSession({
                 documentEmbedHost={documentEmbeds?.host(initial.path)}
                 onSave={save}
                 imageResources={imageResources}
+                imageDimensions={imageDimensions}
                 onReadImage={readImageOriginal}
                 onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
                 componentEnvironment={shownComponents?.environment}
                 componentError={shownComponents?.error}
-                componentPending={shownComponents?.pending}
+                componentPending={asking || shownComponents?.pending}
                 onHistory={handleHistory}
                 onPendingChange={handleRenderedPending}
                 onPatch={handlePatch}
@@ -1362,7 +1437,6 @@ export function WorkspaceSession({
                 onPlaceShown={renderedPlaceShown}
                 apiRef={renderedApi}
               />
-              )}
             </div>
           )}
         />
@@ -1385,7 +1459,7 @@ export function WorkspaceSession({
       embed={embed}
       onViewPending={handleViewPending}
       document={snapshot}
-      active
+      active={embed.active !== false}
       externalFrame={embed.frame}
       externalFrameScriptUrl={embed.frameScriptUrl}
       embeddedAncestors={embed.ancestors}
@@ -1393,6 +1467,7 @@ export function WorkspaceSession({
       documentId={snapshot.docId}
       documentPath={initial.path}
       imageResources={imageResources}
+      imageDimensions={imageDimensions}
       onReadImage={readImageOriginal}
       onInsertImage={!readOnly && client.stageImage && client.projectId ? setImageRequest : undefined}
       componentEnvironment={shownComponents?.environment}

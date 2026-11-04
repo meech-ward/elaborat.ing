@@ -1,10 +1,39 @@
 # Progressive loading
 
-**Status: requirements recorded; implementation pending.** The 2026-11-04
-request authorizes documentation only. The follow-ups are
-[T55 through T59](tasks.md#t55-show-unlisted-content-before-independent-assets),
-waiting for implementation approval. This document does not mark the current
-loading paths as fixed.
+**Status: implemented and locally verified on 2026-11-04.** Implementation was
+authorized on 2026-11-04. T55 through T59 cover the public reader, project
+storage, preview assets, MDX preparation and useful-content verification.
+
+## Implementation
+
+- Public links stream the complete validated requested source before child
+  sources and image bytes. Every published result checks the active link and
+  revision. Discovered identities, including missing and optional paths, are
+  bounded before reads are queued. Missing descendants stay local; revocation,
+  revision changes, invalid streams and aggregate limits invalidate the view.
+  Unchanged refresh keeps an ongoing stream and its ready content intact.
+- Projects prioritize a requested file, including a later navigation during a
+  partial pull. The durable partial marker, progress and retry state are
+  separate from the complete offline revision. Image demand can join or move
+  ahead of background work. Cancellation reaches metadata and Storage requests.
+  [Project loading](project-loading.md) defines recovery, migration and exports.
+- Source-only and hidden/collapsed previews do no unseen decoding or drawing
+  work. Visible assets publish individually with known image dimensions.
+  Exact immutable/source identities retain healthy pixels while siblings arrive.
+  File-session orchestration loads when a file opens, preserving the existing
+  first-paint budgets without increasing them.
+- MDX parses its entire current source and can show checked, read-only prose
+  with protected pending/unavailable islands. Imports and expressions do not
+  execute in that provisional projection. Matching approved code restores
+  editing. Runtime initialization failures use the same safe fallback; stale
+  render epochs cannot invalidate a newer projection. See
+  [component preparation](progressive-components.md).
+- Chat cards already show server HTML while their component frame prepares.
+  Deferred drawings and images share two bounded host calls and publish
+  individually. Resource portals preserve the prose DOM and selection; an
+  initial component frame waits for an active prose selection to finish.
+  The embedded project panel uses the same prioritized project opening after
+  its existing pass and account checks.
 
 ## Required behavior
 
@@ -36,10 +65,11 @@ gaps; it is not a claim that every route has been measured or has the same bug.
   Do not restart a healthy view, lose interaction state, or replace its source
   with stale work when a later asset or request completes.
 
-## Confirmed gaps and existing behavior
+## Historical audit before implementation
 
 Read-only code audit on 2026-11-04, against `e5cf8ed`. Recheck current code
-before implementing. These are loading follow-ups to functioning features.
+before implementing. This table records the original gaps, rather than the
+implemented behavior above.
 
 | Area | Current behavior | Follow-up |
 |---|---|---|
@@ -84,6 +114,38 @@ must distinguish data wait, transfer, module loading and useful display.
 Do not put share tokens, document contents or account credentials in traces
 or committed fixtures.
 
+### Hosted browser baseline
+
+Repeated anonymously on 2026-11-04 against the maintainer-supplied reference.
+This measured the existing deployment, not the new branch. Headless desktop
+browsers used a 1280 by 900 viewport on an Apple M4 with 32 GiB memory, no CPU
+or network throttle, and service workers blocked. Each browser had one fresh
+context and one revisit in the same context. Backend/CDN caches were not reset.
+
+| Browser | Client cache | FCP | API headers since navigation | Body transfer after headers | Readable prose |
+|---|---|---:|---:|---:|---:|
+| Chromium | Cold | 0.288 s | 23.652 s | 0.259 s | 24.799 s |
+| Chromium | Revisit | 0.084 s | 13.658 s | 0.368 s | 14.490 s |
+| Firefox | Cold | 0.639 s | 25.078 s | 0.573 s | 27.386 s |
+| Firefox | Revisit | 0.075 s | 13.030 s | 0.655 s | 15.808 s |
+
+The anonymous JSON was 3,344,861 decoded bytes. Cross-origin resource timing
+did not expose compressed API bytes; privileged request timing supplied phases.
+The interval from body completion to readable prose ranged from 0.464 to
+2.123 seconds, combining viewer loading, validation, compilation and rendering;
+those costs were not individually profiled.
+Chromium emitted request-failed instrumentation as the HTTP 200 share response
+ended despite readable content, so that event alone does not diagnose a network
+failure. All-inline-image decoding was not observed within ten seconds after
+readable content; no scrolling or child expansion was forced. Image DOM counts
+include repeated instances and are not unique-asset counts.
+
+These single samples isolate client milestones, not an end-user performance
+target. Concurrent local work and warmed backend caches limit comparison.
+Post-deployment measurements of the new protocol must use the same conditions
+and distinguish first prose, first asset and complete assets. No reference
+token, source, credentials, trace or screenshot was saved in the repository.
+
 ## Contracts that the follow-ups must preserve
 
 Progressive display does not authorize new access or weaker validation.
@@ -118,22 +180,76 @@ preparation. It is separate from the first-display requirement. Check that
 background downloads do not contend with requested content; changing the
 precache inventory or offline guarantee needs its own recorded decision.
 
-## Verification required before calling this implemented
+## Verification and regression budgets
 
-T59 must cover cold first visits, cached revisits and offline reopening, and
-record time to readable requested content separately from shell paint and
-time to all assets. Agree realistic budgets from measurements on representative
-devices and networks; the observations above are not acceptable targets.
+The deterministic production-browser checks cover cold first visits, cached
+revisits and offline reopening. `tests/browser/readiness.ts` writes sanitized
+JSON attachments for shell paint, HTML/data phases, requested content and
+offline completion. Hidden cross-origin timing fields remain null. Source and
+public content assertions wait on visible readable content; independent gates
+hold unrelated metadata, bytes, decoding or modules until that assertion passes.
+Milestones are navigation-relative observations and can include prior user
+actions or assertions. Summed request durations aggregate completed requests;
+they are not an isolated render or expansion duration.
 
-Use controlled delayed, failing and out-of-order unrelated assets in Chromium
-and Firefox. Prove that requested text and the first ready asset appear while
-later assets remain blocked, and that an idle Source-only view does no preview
-work. Exercise first project open, unlisted links, MDX and embedded documents,
-plus cancellation, navigation, stale revisions, revocation and interrupted
-offline preparation. Preserve editing and accessibility checks and the
-existing bundle budgets. Complete the shared-renderer audit for chat cards
-and the project panel without assuming their loading paths are identical.
+The requested-Source journey has a generous 20-second CI ceiling to catch a
+hung view. The stronger regressions assert readiness ordering while unrelated
+work is explicitly blocked, independent of machine speed. This CI ceiling is
+not a production SLA. The hosted observations above are baselines, not targets;
+real-device/network budgets need post-deployment samples of the new protocol.
 
-Update this document, the linked feature notes, architecture, roadmap and
-task statuses with evidence as each follow-up is implemented. Until then,
-describe the behavior above as required or pending.
+The `progressive-loading`, `progressive-public`, `progressive-project` and
+`progressive-preview` browser specs exercise these milestones, cancellation,
+navigation, stale revisions, revocation, partial offline recovery, component
+failure, hidden/collapsed work, selection and known-dimension layout. The chat
+card and embedded-panel regressions check their distinct loading paths. The
+precache check holds optional engines while requested text becomes usable, then
+waits for the complete build cache; its inventory and offline guarantee are
+unchanged. Existing editing, consent, accessibility and bundle checks remain.
+
+Local verification completed on 2026-11-04:
+
+- Production, chat-card, browser, harness and next-version builds; TypeScript
+  and ESLint passed. Rebuilding the committed chat card produces identical
+  artifacts. All seven first-paint budgets and heavy-library boundaries pass
+  without raising a budget.
+- App tests: 1,669 passed, 13 skipped and two existing TODOs across 195 files.
+  The two script-test files passed all four tests.
+- All nine Edge Functions passed frozen Deno checks and tests: 302 tests.
+- Combined browser coverage checked 798 selected Chromium/Firefox cases:
+  796 passed and two existing touch checks were skipped. The broad run and
+  green focused reruns cover the same final behavior; the final affected
+  loading, approval, embeds and rendering suite passed 146 of 146, and the
+  corrected component suite passed 30 of 30. Interrupted offline recovery
+  also passed three consecutive runs in each browser.
+
+This verifies local production fixtures and source contracts. The hosted
+numbers above measure the earlier deployment, so they do not establish hosted
+performance for this implementation. Post-deployment reference measurements
+and representative network contention remain operational follow-up.
+
+### Local fixture observations
+
+The 2026-11-04 production-browser run used headless Chromium and Firefox on
+the same Apple M4/32 GiB machine, no network or CPU throttle, four main test
+workers and occasional concurrent focused checks. These are navigation-relative
+observations from synthetic fixtures, including assertions and earlier user
+actions, rather than isolated render durations or hosted performance targets.
+The public-root range covers four different blocked/failing-asset fixtures.
+
+| Milestone | Chromium | Firefox |
+|---|---:|---:|
+| Project home | 0.333 s | 0.796 s |
+| Requested Source | 1.065 s | 2.106 s |
+| Cold project, unrelated metadata still blocked | 1.513 s | 2.144 s |
+| Cached Rendered | 1.554 s | 1.600 s |
+| Expanded document, including earlier actions | 1.935 s | 2.047 s |
+| Partial project reopened offline | 0.905 s | 1.906 s |
+| Public readable root | 0.508–1.138 s | 0.798–1.396 s |
+| Chat-card prose | 0.171 s | 0.143 s |
+| Chat-card first independent asset | 0.214 s | 0.174 s |
+| Whole-build offline preparation complete | 4.832 s | 9.077 s |
+
+The controlled gates, not these elapsed values, prove that unrelated work
+cannot block ready content. The complete-cache milestone follows release of
+the optional-engine gate; it does not measure a production download rate.

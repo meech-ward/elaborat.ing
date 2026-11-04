@@ -214,7 +214,8 @@ export class ProjectFileStore {
    */
   async snapshot(): Promise<{ files: Array<{ path: string; saved: string | null; draft: string | null; kind?: "image"; asset?: ImageAsset | null; savedBytes?: Uint8Array; draftBytes?: Uint8Array }>; folders: string[] }> {
     const snapshot = await this.db.transaction(this.partition, "readonly", async (tx) => {
-      await this.project(tx)
+      const project = await this.project(tx)
+      if (project.partial) throw new FileStoreError("This project has not downloaded completely. Connect and sync before downloading it.")
       const files = (await tx.listFiles(this.projectId)).filter((file) => file.content !== null || file.draft !== null)
       const assets = new Map((await tx.listAssets(this.projectId)).map((asset) => [asset.id, asset]))
       const folders = (await tx.listFolders(this.projectId)).filter((folder) => folder.local).map((folder) => folder.path)
@@ -679,8 +680,8 @@ export class ProjectFileStore {
     }
     // Typing replaces a draft's text many times; only a draft that starts or
     // ends, or a new file, changes what a file list shows.
-    let textOnly = true
-    await this.db.transaction(this.partition, "readwrite", async (tx) => {
+    const textOnly = await this.db.transaction(this.partition, "readwrite", async (tx) => {
+      let textOnly = true
       await this.project(tx)
       for (const entry of entries) {
         const file = await tx.getFile(this.projectId, entry.path)
@@ -710,6 +711,7 @@ export class ProjectFileStore {
           })
         }
       }
+      return textOnly
     })
     this.emit(textOnly ? "drafts" : "unsaved")
   }

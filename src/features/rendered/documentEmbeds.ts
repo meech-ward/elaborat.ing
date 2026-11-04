@@ -17,6 +17,9 @@ export type DocumentEmbedHost = {
   attach(request: {
     /** Scoped to the owning RenderedEditor's random session. */
     id: string;
+    /** Trusted renderer session that owns this retained view. */
+    ownerSession?: string;
+    visible?: boolean;
     path: string;
     ancestors: readonly string[];
     frame: Window;
@@ -25,6 +28,9 @@ export type DocumentEmbedHost = {
     onState: (state: DocumentEmbedState) => void;
   }): () => void;
   action(id: string, action: DocumentEmbedAction): void;
+  /** Suspend retained children without releasing their drafts, frames or ports. */
+  setActive?(session: string, active: boolean): void;
+  setVisible?(id: string, visible: boolean): void;
 };
 
 /** Passed only in trusted preview bootstrap HTML, never in document source. */

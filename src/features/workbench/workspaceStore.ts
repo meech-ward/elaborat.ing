@@ -13,14 +13,14 @@ export interface WorkspaceStore {
   readonly persistenceKey: string
   readonly projectId?: string
   stageImage?(path: string, bytes: Blob, asset: ImageAsset, noteDrafts?: Array<{ path: string; content: string; baseRevision: string | null }>, preview?: Blob): Promise<WorkspaceFile>
-  readImage?(path: string, preview?: boolean): Promise<Blob>
+  readImage?(path: string, preview?: boolean, signal?: AbortSignal): Promise<Blob>
   readImageAsset?(assetId: string, preview?: boolean): Promise<Blob>
   saveImages?(paths: string[], writes?: Array<{ path: string; content: string; expectedRevision: string | null }>): Promise<Array<{ path: string; revision: string; size: number }>>
   draftImageAsset?(path: string): Promise<ImageAsset | null>
   cacheImage?(bytes: Blob, asset: ImageAsset, preview?: Blob): Promise<void>
   /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
   listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
-  read(path: string): Promise<WorkspaceFile>
+  read(path: string, signal?: AbortSignal): Promise<WorkspaceFile>
   /** Both versions of a file whose sync conflicts (this device's and the server's), or null when it has none. */
   readConflict(path: string): Promise<ConflictCopies | null>
   write(path: string, input: { content: string; expectedRevision: string | null }): Promise<{ path: string; revision: string; size: number }>
@@ -68,7 +68,7 @@ export const workspacePersistenceKey = (partition: string, projectId: string): s
  */
 export function projectWorkspace(
   store: ProjectFileStore,
-  { afterSave, subscribeSync }: { afterSave: () => void; subscribeSync: (listener: () => void) => () => void },
+  { afterSave, subscribeSync, beforeRead }: { afterSave: () => void; subscribeSync: (listener: () => void) => () => void; beforeRead?: (path: string, signal?: AbortSignal) => Promise<void> },
 ): WorkspaceStore {
   return {
     persistenceKey: workspacePersistenceKey(store.partition, store.projectId),
@@ -77,7 +77,15 @@ export function projectWorkspace(
       const file = await store.stageImage(path, bytes, asset, noteDrafts, preview)
       return { ...file, revision: revisionOf(file.revision) }
     },
-    readImage: (path, preview) => store.readImage(path, preview),
+    async readImage(path, preview, signal) {
+      try { return await store.readImage(path, preview) }
+      catch (error) {
+        if (!beforeRead || !(error instanceof FileStoreError) || !error.message.includes("has not downloaded completely")) throw error
+        await beforeRead(path, signal)
+        signal?.throwIfAborted()
+        return store.readImage(path, preview)
+      }
+    },
     readImageAsset: (assetId, preview) => store.readImageAsset(assetId, preview),
     async saveImages(paths, writes) {
       const saved = await store.saveImages(paths, writes)
@@ -90,10 +98,16 @@ export function projectWorkspace(
       const { files, directories, folders } = await store.listEntries()
       return { files: files.map((file) => ({ ...file, revision: revisionOf(file.revision) })), directories, folders }
     },
-    async read(path) {
+    async read(path, signal) {
       let file: StoredFile
       try {
-        file = await store.read(path)
+        try { file = await store.read(path) }
+        catch (error) {
+          if (!beforeRead || !(error instanceof FileStoreError) || !error.message.endsWith("is not in this project.")) throw error
+          await beforeRead(path, signal)
+          signal?.throwIfAborted()
+          file = await store.read(path)
+        }
       } catch (error) {
         if (error instanceof FileStoreError && error.message.endsWith("is not in this project.")) throw new MissingFileError(path)
         throw error

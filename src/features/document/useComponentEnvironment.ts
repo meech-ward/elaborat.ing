@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentEnvironment } from './componentModules';
 import type { ComponentSourceLoader } from './componentSource';
 
@@ -23,13 +23,14 @@ function cachedSourceLoader(load: ComponentSourceLoader | undefined, generation:
 
 /**
  * Calls `onChange` once, when a module in `revisions` has a different saved
- * revision (or starts or stops being readable) after a change on the device.
- * Drafts and changes to other files leave saved revisions alone, so they never
- * call it.
+ * revision (or starts or stops being readable), first when watching resumes
+ * and then after changes on the device. Drafts and changes to other files
+ * leave saved revisions alone, so they never call it.
  */
 export function watchSavedModules(subscribe: (listener: () => void) => () => void, revisions: ModuleRevisions, load: ComponentSourceLoader, onChange: () => void): () => void {
   let stopped = false, checking = false, again = false;
   const check = async () => {
+    if (stopped) return;
     if (checking) {again = true;return;}
     checking = true;
     try {
@@ -45,10 +46,23 @@ export function watchSavedModules(subscribe: (listener: () => void) => () => voi
     } finally {checking = false;}
   };
   const unsubscribe = subscribe(() => void check());
+  // Hidden notes unsubscribe. A dependency may have been saved meanwhile,
+  // so resuming must validate cached revisions without waiting for an event.
+  void check();
   return () => {stopped = true;unsubscribe();};
 }
 
-type ComponentPreparation = { environment?: ComponentEnvironment; error?: string; loader?: ComponentSourceLoader; settled?: boolean; identity?: number };
+type ComponentPreparation = { environment?: ComponentEnvironment; error?: string; loader?: ComponentSourceLoader; settled?: boolean; identity?: number; source?: string };
+
+type SourceCatalog = {identity:number;loader?:ComponentSourceLoader;sequence:number;catalog:ComponentEnvironment['catalog']};
+type CatalogScope = {identity:number;loader?:ComponentSourceLoader;live:boolean};
+
+/** Completion metadata may finish after Source has become incomplete. It
+ * never carries executable modules or replaces the current preparation. */
+export function retainSourceCatalog(previous: SourceCatalog | null, result: SourceCatalog, scope: CatalogScope): SourceCatalog | null {
+  if (!scope.live || result.identity !== scope.identity || result.loader !== scope.loader || previous && previous.sequence > result.sequence) return previous;
+  return result;
+}
 
 /** Ordinary typing keeps the last good environment; another document cannot. */
 export function componentPreparationForIdentity(state: ComponentPreparation, identity: number, loader?: ComponentSourceLoader): { environment?: ComponentEnvironment; error?: string; pending?: boolean } {
@@ -99,7 +113,7 @@ export const SHOWN_TEXT_PAUSE_MS = 500;
  * keystroke, and the last one stays meanwhile, not pending. Any other text,
  * or one without an environment for this document yet, compiles at once.
  */
-export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void, identity = 0, shown = false): {environment?: ComponentEnvironment; error?: string; pending?: boolean} {
+export function useComponentEnvironment(source: string, enabled: boolean, load?: ComponentSourceLoader, generation = 0, subscribe?: (listener: () => void) => () => void, identity = 0, shown = false): {environment?: ComponentEnvironment; catalog?:ComponentEnvironment['catalog']; error?: string; pending?: boolean} {
   const [moduleEpoch,setModuleEpoch] = useState(0);
   // The epoch is part of the cache's semantics, not a dependency-only hint:
   // the React Compiler may otherwise reuse cachedSourceLoader(load) across
@@ -107,6 +121,13 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   const cached = useMemo(() => cachedSourceLoader(load,`${identity}:${generation}:${moduleEpoch}`), [load,identity,generation,moduleEpoch]);
   const cachedLoader = cached?.loader;
   const [state,setState] = useState<ComponentPreparation>({});
+  const [sourceCatalog,setSourceCatalog] = useState<SourceCatalog | null>(null);
+  const catalogSequence = useRef(0);
+  const catalogScope = useRef<CatalogScope>({identity,loader:cachedLoader,live:true});
+  useLayoutEffect(() => {
+    catalogScope.current = {identity,loader:cachedLoader,live:true};
+    return () => {catalogScope.current.live = false;};
+  },[identity,cachedLoader]);
   // Made in the same render as the text, so the rendered view never waits for it.
   const reused = useMemo(() => enabled ? reusedEnvironment(state,identity,cachedLoader,source) : null, [enabled,state,identity,cachedLoader,source]);
   // The last environment compiled for this document and loader, without an error.
@@ -116,10 +137,15 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   useEffect(() => {
     if (!compile) return;
     let cancelled = false;
+    const sequence = ++catalogSequence.current;
     const run = () => componentModules().then(({prepareComponentEnvironment}) => prepareComponentEnvironment(source,cachedLoader)).then(environment => {
-      if (!cancelled) setState({environment,loader:cachedLoader,settled:true,identity});
+      const scope = catalogScope.current;
+      const result = {identity,loader:cachedLoader,sequence,catalog:environment.catalog};
+      if (scope.live && scope.identity === identity && scope.loader === cachedLoader)
+        setSourceCatalog(previous => retainSourceCatalog(previous,result,scope));
+      if (!cancelled) setState({environment,loader:cachedLoader,settled:true,identity,source});
     },error => {
-      if (!cancelled) setState(previous => ({environment:previous.identity === identity ? previous.environment : undefined,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true,identity}));
+      if (!cancelled) setState(previous => ({environment:previous.identity === identity ? previous.environment : undefined,error:error instanceof Error ? error.message : String(error),loader:cachedLoader,settled:true,identity,source}));
     });
     const timer = pause ? window.setTimeout(run, SHOWN_TEXT_PAUSE_MS) : 0;
     if (!pause) void run();
@@ -131,6 +157,13 @@ export function useComponentEnvironment(source: string, enabled: boolean, load?:
   },[enabled,load,subscribe,cached]);
   return useMemo(() => {
     if (!enabled) return NO_COMPONENTS;
-    return reused ? {environment:reused,pending:false} : componentPreparationForIdentity(state,identity,cachedLoader);
-  }, [enabled,reused,state,identity,cachedLoader]);
+    const catalog = sourceCatalog?.identity === identity && sourceCatalog.loader === cachedLoader ? sourceCatalog.catalog : undefined;
+    if (reused) return {environment:reused,catalog:catalog ?? reused.catalog,pending:false};
+    const current = componentPreparationForIdentity(state,identity,cachedLoader);
+    // Source edits can change imports while the last environment is still
+    // settled. Mark that new source pending in the same render, before the
+    // asynchronous preparation starts, so its safe prose need not wait.
+    const preparingSource = compile && !pause && (state.source ?? state.environment?.source) !== source;
+    return preparingSource ? {...current,catalog,pending:true,error:undefined} : {...current,catalog};
+  }, [enabled,reused,state,identity,cachedLoader,compile,pause,source,sourceCatalog]);
 }

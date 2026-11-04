@@ -39,6 +39,8 @@ type Ast = {
   ordered?: boolean;
   start?: number;
   url?: string;
+  name?: string;
+  attributes?: Array<{type:string;name?:string;value?:unknown;position?:unknown}>;
   title?: string | null;
   /** A list item's task box, from remark-gfm. */
   checked?: boolean | null;
@@ -175,6 +177,22 @@ function detached(text: string, from: number, to: number): string {
     .join("\n");
 }
 
+const staticImageAttributes = new Set(['src','alt','title','width','height','loading','decoding']);
+/** A complete parser-owned image island needs no document/module code. */
+function staticImageIsland(ast: Ast): boolean {
+  if (ast.type === 'image' || ast.type === 'imageReference') return true;
+  if (!['mdxJsxFlowElement','mdxJsxTextElement'].includes(ast.type) || !['img','ProjectImage'].includes(ast.name ?? '') || ast.children?.length) return false;
+  // The trusted preview transform has already appended its numeric source
+  // marker here. Source-authored attributes retain parser positions and
+  // cannot impersonate that generated marker.
+  const attributes = (ast.attributes ?? []).filter(attribute => !(attribute.name === '__imageFrom' && attribute.position === undefined));
+  return new Set(attributes.map(attribute => attribute.name)).size === attributes.length &&
+    attributes.filter(attribute => attribute.type === 'mdxJsxAttribute' && attribute.name === 'src' && typeof attribute.value === 'string').length === 1 &&
+    attributes.every(attribute => attribute.type === 'mdxJsxAttribute' && staticImageAttributes.has(attribute.name ?? '') && (typeof attribute.value === 'string' || attribute.value === null));
+}
+
+const inlinePlaceholder = (inline: boolean) => inline ? 'mdxJsxTextElement' : 'mdxJsxFlowElement';
+
 function islandHash(value: string): string {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++)
@@ -291,14 +309,17 @@ export async function projectFluidSource(
   text: string,
   format: DocumentFormat,
   environment?: ComponentEnvironment,
+  deferred?: { label: string },
 ): Promise<FluidProjection> {
-  const components = environment ?? (format === 'mdx' ? await prepareComponentEnvironment(text) : {source:text,catalog:COMPONENT_CATALOG,modules:[],key:'',code:[]});
+  // A provisional projection parses all source but emits no document code.
+  const components = deferred ? {source:text,catalog:COMPONENT_CATALOG,modules:[],key:`deferred:${deferred.label}`,code:[]} : environment ?? (format === 'mdx' ? await prepareComponentEnvironment(text) : {source:text,catalog:COMPONENT_CATALOG,modules:[],key:'',code:[]});
   const leaves: Leaf[] = [],
     nodes: MappedNode[] = [],
     roots: MappedNode[] = [],
     islands: FluidIsland[] = [];
   const islandAsts: Ast[] = [],
     retained: Ast[] = [];
+  const staticImages = new WeakSet<Ast>();
   const occurrences = new Map<string, number>();
   let doc: PMNode = fluidSchema.node("doc", null, [
     fluidSchema.node("paragraph"),
@@ -323,6 +344,7 @@ export async function projectFluidSource(
     const id = `island:${hash}:${count}`;
     islands.push({ id, from, to, inline });
     islandAsts.push(ast);
+    if (deferred && staticImageIsland(ast)) staticImages.add(ast);
     const node = fluidSchema.node(
       inline ? "inline_object" : "object",
       { id },
@@ -679,7 +701,7 @@ export async function projectFluidSource(
       // The original AST references have now received ordinary slot/prose
       // instrumentation. Compile only islands, retaining the document ESM scope.
       (tree as Ast).children = [
-        ...retained,
+        ...retained.filter(ast => !deferred || !["mdxjsEsm", "mdxFlowExpression", "mdxTextExpression"].includes(ast.type)),
         ...islandAsts.map(
           (ast, index) => {
             const { id } = islands[index];
@@ -707,7 +729,15 @@ export async function projectFluidSource(
                   value: equal > 1 ? `${id}/${equal}` : id,
                 },
               ],
-              children: [ast],
+              // A static placeholder has no attributes, children or ESM
+              // from the document. Even nested JSX and expression side effects
+              // never reach the sandbox before the checked environment does.
+              children: deferred && !staticImages.has(ast) ? [{
+                type: inlinePlaceholder(islands[index].inline),
+                name: islands[index].inline ? 'span' : 'div',
+                attributes: [{type:'mdxJsxAttribute',name:'role',value:'status'}],
+                children: [{type:'text',value:deferred.label}],
+              }] : [ast],
             } as Ast;
           },
         ),

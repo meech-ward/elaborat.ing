@@ -10,23 +10,22 @@ original prototype.
 
 ## Cross-app requirement: progressive loading
 
-**Status:** requirements documented; implementation follow-ups are pending.
-The maintainer has requested documentation only, so T55 through T59 remain
-Waiting until implementation is authorized.
+**Status:** implemented and locally verified on 2026-11-04.
+T55 through T59 cover the public reader, first project open, visible assets,
+safe MDX preparation and useful-content checks.
 
 Every app surface should prioritize the requested content, display each safe
 ready part immediately, and continue unrelated loading and offline preparation
 in the background. This includes the authenticated workbench, unlisted links,
 embedded documents and chat cards. Lazy engine imports and first-paint bundle
-budgets already exist, but they do not establish time until a document is
-readable. Initial project downloads, whole unlisted bundles, unnecessary
-Source-view preview preparation and batch asset publication still need work.
+budgets remain independent from time until a document is readable. Requested
+files open before offline preparation, visible assets publish individually,
+and checked prose can display while MDX components prepare.
 
 See [progressive loading](progressive-loading.md) for the verified current
-behavior, required changes and compatibility boundaries, and
+behavior, continuing requirements and compatibility boundaries, and
 [T55 through T59](tasks.md#t55-show-unlisted-content-before-independent-assets)
-for self-contained follow-ups. Completed features below describe their
-existing functionality; they do not imply that this loading pass is complete.
+for implementation contracts, tests and measurement limits.
 
 ## Phase 1: agents can work on your projects
 
@@ -103,8 +102,8 @@ this repository once the steps before them have landed.
    registers one that keeps unsaved edits, step 10), and projects stay on the
    device under their account.
 9. **The app opens a user's projects at real URLs, online or offline (done).**
-   `/projects/<id>/<file path>`; the first open currently waits for the whole
-   project download, including image originals and previews. Cached projects
+   `/projects/<id>/<file path>`; first open prioritizes the requested file,
+   with a separate durable partial state while offline data prepares. Cached projects
    open locally, sync in the background and on Realtime change signals, and
    wait on the device while offline. Guarding navigation away from unsaved
    edits comes with the editor
@@ -115,9 +114,8 @@ this repository once the steps before them have landed.
    commenter, and everyone in an archived project, sees it read-only: the page
    says why (with Unarchive for owners and editors), every editor shows its
    files without changing them or keeping drafts, and nothing offers to
-   create, import, rename, move or delete files. Selected-file-first opening
-   with separate background offline preparation is a pending
-   [T56 follow-up](tasks.md#t56-open-the-requested-project-file-before-offline-preparation).
+   create, import, rename, move or delete files. Complete revisions and ZIP
+   exports still require the full offline copy. See [project loading](project-loading.md).
 10. **Notes open in tabs, edit in source and rendered views, and save (done)**
     with drafts and conflict recovery (keep mine, keep theirs, keep both, after
     comparing the two versions: a diff for text and D2 code, pictures and
@@ -160,10 +158,11 @@ this repository once the steps before them have landed.
     the last valid canvas, and renaming a node on the canvas updates the code.
     Notes show pictures of the drawings and diagrams they embed, with a zoomable
     viewer. New diagrams come from the workbench menu.
-15. **The app restarts offline (done)**, using vite-plugin-pwa. Once a
-    project has opened on a device, the app, its projects and unsaved edits
-    come back with no network, and a new version waits until the person
-    chooses "Update ready".
+15. **The app restarts offline (done)**, using vite-plugin-pwa. Once the build
+    is cached and a project's offline preparation completes, the app, that
+    project and unsaved edits come back with no network. Partial first opens
+    retain available files and drafts and resume preparation on reconnect.
+    A new version waits until the person chooses "Update ready".
 16. **Projects exported from the prototype import into elaborat.ing (done).**
     "A prototype export" in the projects home's import menu reads the
     prototype's one-file JSON export, creates the project on this device in saves of at most 500
@@ -258,8 +257,9 @@ requires no sign-in, and cancels on a changed bundle or known revocation.
   custom-code prompt, owner enable/copy/replace/disable controls and a
   separate discussion that requires sign-in only to post. See
   [unlisted file sharing](file-sharing.md) for release scope and checks.
-  Loading still waits for its complete dependency bundle; progressive reading
-  and revision-aware refresh are pending in
+  Root-first streaming and active-link revision checks allow progressive
+  reading and cheap unchanged refresh. Independent failures stay local while
+  revocation or revision changes invalidate the partial view. See
   [T55](tasks.md#t55-show-unlisted-content-before-independent-assets).
 
 - Share by email, including people without an account yet (done: the owner

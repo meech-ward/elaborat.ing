@@ -6,7 +6,7 @@ import {
 } from './documentEmbeds';
 
 type Context = {
-  session: string; revision: number; text: string; format: 'md'|'mdx';
+  session: string; revision: number; text: string; format: 'md'|'mdx'; active?: boolean;
   owner: Window | null; path: string; ancestors: readonly string[];
   host?: DocumentEmbedHost;
   frameScriptUrl?: string;
@@ -20,9 +20,9 @@ type Context = {
 type Entry = {
   id: string; path: string; nonce: string; label: string; owner: Window;
   host: DocumentEmbedHost; state: DocumentEmbedState; timer: ReturnType<typeof setTimeout>;
-  cleanup?: () => void;
+  cleanup?: () => void; visible: boolean;
 };
-type Request = Extract<ChildMessage, {kind:'document-embed-open'|'document-embed-release'|'document-embed-action'}>;
+type Request = Extract<ChildMessage, {kind:'document-embed-open'|'document-embed-release'|'document-embed-action'|'document-embed-visibility'}>;
 /** Assigned at instance creation, never during render or HTML generation. */
 let documentView = 0;
 /**
@@ -90,6 +90,14 @@ export class DocumentEmbedController {
     const context = this.options.context();
     if (message.session !== context.session || message.revision !== context.revision) return;
     if (message.kind === 'document-embed-release') { this.release(message.id); return; }
+    if (message.kind === 'document-embed-visibility') {
+      const entry = this.entries.get(message.id);
+      if (!entry) return;
+      entry.visible = message.visible;
+      if (entry.cleanup) entry.host.setVisible?.(`${context.session}:${entry.id}`,message.visible);
+      return;
+    }
+    if (context.active === false) return;
     if (message.kind === 'document-embed-action') {
       if (!activated) return;
       const entry = this.entries.get(message.id);
@@ -116,7 +124,7 @@ export class DocumentEmbedController {
       this.state(message.id, {pending:false,error:'Open this document in the project to view its embedded documents.'}); return;
     }
     const entry: Entry = {
-      id:message.id, path:message.path, nonce:this.options.nonce(), owner:context.owner, host:context.host,
+      id:message.id, path:message.path, visible:true, nonce:this.options.nonce(), owner:context.owner, host:context.host,
       label:`Embedded document ${message.path}, view ${++documentView}`,
       state:{pending:true,error:null,...(reportedHeights.has(message.path) ? {height:reportedHeights.get(message.path)} : {})},
       timer:setTimeout(() => {
@@ -151,7 +159,7 @@ export class DocumentEmbedController {
     if (this.entries.get(entry.id) !== entry) return;
     clearTimeout(entry.timer);
     const context = this.options.context();
-    entry.cleanup = entry.host.attach({id:`${context.session}:${entry.id}`,path:entry.path,
+    entry.cleanup = entry.host.attach({id:`${context.session}:${entry.id}`,ownerSession:context.session,visible:entry.visible,path:entry.path,
       ancestors:[...context.ancestors, entry.path],frame,frameScriptUrl:context.frameScriptUrl,
       onState:state => {
         if (this.entries.get(entry.id) !== entry) return;

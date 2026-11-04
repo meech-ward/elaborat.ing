@@ -427,6 +427,9 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       const paths = [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map((match) => match[1]?.replace(/\\(.)/g, "$1") ?? match[2])
       return answer(route, () => remote.fileEditors(projectId, paths))
     }
+    if (projectId && path.endsWith("/project_files") && query("path", "eq")) {
+      return answer(route, () => remote.requestedFile!(projectId, query("path", "eq")!, Number(query("version", "lte"))))
+    }
     if (projectId && path.endsWith("/project_files")) {
       return answer(route, () => remote.changedFiles(projectId, Number(query("version", "gt")), Number(query("version", "lte"))))
     }

@@ -277,7 +277,7 @@ test("Enter after a task makes another, and [ ] typed at the start of an item gi
   await expect(box("Water")).not.toBeChecked()
 
   await frameOf(page).locator("p").filter({ hasText: "Snacks" }).click()
-  await page.keyboard.press("Home")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Home")
   await page.keyboard.type("[ ] ")
   await expect(box("Snacks")).not.toBeChecked()
   expect(await saved(page, fake, id)).toBe("# Packing\n\n- [x] Book the train\n- [ ] Water\n- [ ] Snacks\n")

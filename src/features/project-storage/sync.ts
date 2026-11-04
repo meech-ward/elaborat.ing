@@ -2,7 +2,6 @@ import type { ProjectDatabase, StorageTransaction } from "./database"
 import { safeSyncErrorDetail, stoppedSyncMessage } from "./syncDiagnostics"
 import {
   canEdit,
-  assetToken,
   companionPaths,
   fileState,
   isDirty,
@@ -12,11 +11,10 @@ import {
   type LocalFile,
   type LocalFolder,
   type LocalProject,
-  type LocalImageAsset,
   type PendingSave,
   type SaveChange,
 } from "./model"
-import { RemoteError, type DeletedFile, type ProjectRemote, type RemoteFile, type RemoteProject, type SaveResult } from "./remote"
+import { RemoteError, type ProjectRemote, type RemoteProject, type SaveResult } from "./remote"
 
 /**
  * Keeps projects on this device in step with the server.
@@ -56,6 +54,13 @@ export function defaultLock(): Lock {
   }
 }
 
+export type DownloadOptions = {
+  path?: string | null
+  /** Display readiness, separate from the promise for complete offline preparation. */
+  ready?: () => void | Promise<void>
+  signal?: AbortSignal
+}
+
 export type ConflictChoice = "mine" | "theirs" | "both"
 
 /** A guard against a bug turning one sync into an endless loop; normal syncs stop long before. */
@@ -63,6 +68,7 @@ const MAX_ROUNDS = 1000
 
 export class ProjectSync {
   private listeners = new Set<(event: SyncEvent) => void>()
+  private readonly imageTransfers = new Map<string, import("./cacheRemoteImages").ImageTransfer>()
 
   constructor(
     private readonly db: ProjectDatabase,
@@ -128,10 +134,11 @@ export class ProjectSync {
   }
 
   /** Clear a stopped sync (after the person fixed the cause) and sync again. */
-  async retry(projectId: string): Promise<SyncOutcome> {
+  async retry(projectId: string, signal?: AbortSignal): Promise<SyncOutcome> {
+    signal?.throwIfAborted()
     await this.updateProject(projectId, (project) => ({ ...project, syncError: null, syncErrorDetail: null }))
     this.emit({ type: "changed", projectId })
-    return this.sync(projectId)
+    return this.sync(projectId, signal)
   }
 
   /**
@@ -186,7 +193,7 @@ export class ProjectSync {
   }
 
   /** Bring a project from the server onto this device. */
-  async download(entry: RemoteProject): Promise<LocalProject> {
+  async download(entry: RemoteProject, options: DownloadOptions = {}): Promise<LocalProject> {
     await this.db.transaction(this.partition, "readwrite", async (tx) => {
       if (await tx.getProject(entry.id)) return
       await tx.putProject({
@@ -196,16 +203,44 @@ export class ProjectSync {
         pendingTitle: null,
         role: entry.role,
         revision: 0,
+        ...(entry.revision > 0 ? { partial: { revision: entry.revision, metadata: false } } : {}),
         created: true,
         archivedAt: entry.archived_at,
         syncError: null,
         pending: null,
       })
     })
-    await this.locked(entry.id, () => this.pull(entry.id, entry.revision))
+    await this.locked(entry.id, () => this.pull(entry.id, entry.revision, options))
     const project = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(entry.id))
     if (!project) throw new Error("This project could not be kept on this device.")
     return project
+  }
+
+  /** Read a newly requested path without waiting for unrelated metadata or offline work. */
+  async requestFile(projectId: string, path: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    const { project, file } = await this.db.transaction(this.partition, "readonly", async tx => ({ project: await tx.getProject(projectId), file: await tx.getFile(projectId, path) }))
+    if (!project?.created || !project.partial || project.syncError === "access-lost" || project.syncError === "deleted") return
+    if (file?.kind === "image" && file.asset && !file.draft?.asset) {
+      await this.cacheRemoteImages(projectId, [file.asset], signal)
+      return
+    }
+    if (project.partial.metadata || !this.remote.requestedFile) return
+    const requested = await this.remote.requestedFile(projectId, path, project.partial.revision, signal)
+    signal?.throwIfAborted()
+    if (!requested) return
+    const { applyRemoteFiles } = await import("./pullFiles")
+    signal?.throwIfAborted()
+    const applied = await this.db.transaction(this.partition, "readwrite", async tx => {
+      signal?.throwIfAborted()
+      const current = await tx.getProject(projectId)
+      if (!current?.partial || current.partial.revision !== project.partial!.revision || current.pending || current.syncError === "access-lost" || current.syncError === "deleted") return false
+      await applyRemoteFiles(tx, this.partition, projectId, [requested], [], current.revision)
+      return true
+    })
+    if (!applied) return
+    this.emit({ type: "changed", projectId })
+    if (requested.kind === "image" && requested.asset) await this.cacheRemoteImages(projectId, [requested.asset], signal)
   }
 
   /**
@@ -213,18 +248,21 @@ export class ProjectSync {
    * project across tabs. The outcome's projectId differs from the argument
    * when the project had to take a fresh id (see `rekeyed` events).
    */
-  sync(projectId: string): Promise<SyncOutcome> {
+  sync(projectId: string, signal?: AbortSignal): Promise<SyncOutcome> {
     return this.locked(projectId, async () => {
+      signal?.throwIfAborted()
       const outcome = await this.push(projectId)
+      // A sent mutation is acknowledged durably before optional pull cancellation.
+      signal?.throwIfAborted()
       // Refused, or no longer listed (below): the owner may have deleted the project.
       if (outcome.status === "stopped" && outcome.reason === "access-lost") return (await this.deletedOutcome(outcome.projectId)) ?? outcome
       if (outcome.status !== "synced") return outcome
       try {
-        const entry = (await this.remote.listProjects()).find((candidate) => candidate.id === outcome.projectId)
+        const entry = (await this.remote.listProjects(signal)).find((candidate) => candidate.id === outcome.projectId)
         if (entry) {
           // The role and archived state follow too, so a new role or an unarchive shows without waiting for a refresh.
           await this.updateDetails(outcome.projectId, entry)
-          await this.pull(outcome.projectId, entry.revision)
+          await this.pull(outcome.projectId, entry.revision, { signal })
         } else {
           // No longer listed: its owner deleted it, or, as `refresh()` finds, the person's access ended.
           const deleted = await this.deletedOutcome(outcome.projectId)
@@ -233,6 +271,7 @@ export class ProjectSync {
           return { status: "stopped", projectId: outcome.projectId, reason: "access-lost", message: stoppedSyncMessage("access-lost") }
         }
       } catch (error) {
+        signal?.throwIfAborted()
         if (error instanceof RemoteError && error.kind === "network") return { status: "offline", projectId: outcome.projectId, message: error.message }
         throw error
       }
@@ -376,100 +415,17 @@ export class ProjectSync {
     return newId
   }
 
-  /** Retry committed saves unchanged; only proven expired staging gets a new identity. */
   private async uploadPendingImages(projectId: string, pending: PendingSave): Promise<PendingSave> {
-    for (let index = 0; index < pending.changes.length; index++) {
-      const change = pending.changes[index]
-      if (change.op !== "asset" && !(change.op === "move" && change.asset_id)) continue
-      let local = await this.db.transaction(this.partition, "readonly", (tx) => tx.getAsset(projectId, change.asset_id!))
-      if (!local) throw new RemoteError("invalid", "The image bytes are missing from this device. Your note has not been saved to the server.")
-      let asset: ImageAsset | undefined
-      if (local.uploaded || local.uploadAttempted) {
-        // The RPC takes the same project lock as save_files: a missing answer
-        // cannot race a previous save that is still committing this asset.
-        const status = await this.remote.imageUploadStatus(projectId, local.id)
-        if (status.status === "available") asset = status.asset
-        else if (status.status === "expired" || status.status === "missing") {
-          const rotated = await this.rotatePendingImage(projectId, pending, local)
-          pending = rotated.pending
-          local = rotated.local
-        }
-      }
-      if (!asset) {
-        // Keep the attempt across a crash or lost response, including before
-        // the upload finished and before a preview could be downloaded.
-        local = { ...local, uploadAttempted: true }
-        await this.db.transaction(this.partition, "readwrite", async (tx) => {
-          if (await tx.getProject(projectId)) await tx.putAsset(local!)
-        })
-        asset = await this.remote.uploadImage(projectId, local.asset, local.bytes)
-      }
-      if (asset.id !== local.id || asset.sha256 !== local.asset.sha256 || asset.byte_length !== local.bytes.size || asset.media_type !== local.asset.media_type || asset.width !== local.asset.width || asset.height !== local.asset.height) throw new RemoteError("invalid", "The uploaded image does not match the local image.")
-      // New uploads use trusted preview bytes even when the browser happened
-      // to produce the same codec and length.
-      const verifiedPreview = local.uploaded && matchesImagePreview(local.preview, asset) ? local.preview! : await this.downloadImagePreview(projectId, asset)
-      await this.db.transaction(this.partition, "readwrite", async (tx) => {
-        if (!await tx.getProject(projectId)) return
-        await tx.putAsset({ ...local!, asset, preview: verifiedPreview, uploaded: true })
-        for (const file of await tx.listFiles(projectId)) {
-          if (file.asset?.id !== asset.id && file.draft?.asset?.id !== asset.id) continue
-          await tx.putFile({ ...file, ...(file.asset?.id === asset.id ? { asset } : {}), ...(file.draft?.asset?.id === asset.id ? { draft: { ...file.draft, asset } } : {}) })
-        }
-      })
-    }
-    return pending
-  }
-
-  private async rotatePendingImage(projectId: string, pending: PendingSave, previous: LocalImageAsset): Promise<{ pending: PendingSave; local: LocalImageAsset }> {
-    const id = crypto.randomUUID()
-    const asset: ImageAsset = { ...previous.asset, id, object_key: `${projectId}/${id}/original`, preview_key: `${projectId}/${id}/preview` }
-    const local: LocalImageAsset = { ...previous, id, asset, uploaded: false, uploadAttempted: false }
-    const next: PendingSave = {
-      ...pending,
-      mutationId: crypto.randomUUID(),
-      changes: pending.changes.map(change => (change.op === "asset" || change.op === "move") && change.asset_id === previous.id ? { ...change, asset_id: id } : change),
-      files: pending.files.map(file => file.asset?.id === previous.id ? { ...file, asset_id: id, asset } : file),
-    }
-    await this.db.transaction(this.partition, "readwrite", async tx => {
-      const project = await tx.getProject(projectId)
-      if (project?.pending?.mutationId !== pending.mutationId) throw new RemoteError("network", "The pending save changed. Sync again to continue.")
-      await tx.putAsset(local)
-      for (const file of await tx.listFiles(projectId)) {
-        if (file.asset?.id !== previous.id && file.draft?.asset?.id !== previous.id) continue
-        const draft = file.draft ? {
-          ...file.draft,
-          // A different replacement draft still rests on these same saved
-          // bytes. Rekeying their staging identity must not make it stale.
-          ...(file.asset?.id === previous.id && file.draft.token === assetToken(previous.asset) ? { token: assetToken(asset) } : {}),
-          ...(file.draft.asset?.id === previous.id ? { asset } : {}),
-        } : null
-        await tx.putFile({ ...file, ...(file.asset?.id === previous.id ? { asset_id: id, asset } : {}), draft })
-      }
-      await tx.putProject({ ...project, pending: next })
-    })
-    return { pending: next, local }
+    if (!pending.changes.some(change => change.op === "asset" || change.op === "move" && change.asset_id)) return pending
+    const { ImageUploads } = await import("./uploadImages")
+    return new ImageUploads(this.db, this.remote, this.partition).uploadPendingImages(projectId, pending)
   }
 
   /** Cache originals and previews before a remote revision is considered available offline. */
-  private async cacheRemoteImages(projectId: string, assets: ImageAsset[]): Promise<void> {
-    for (const asset of new Map(assets.map((asset) => [asset.id, asset])).values()) {
-      const existing = await this.db.transaction(this.partition, "readonly", (tx) => tx.getAsset(projectId, asset.id))
-      if (existing?.asset.sha256 === asset.sha256 && existing.bytes.size === asset.byte_length && matchesImagePreview(existing.preview, asset)) continue
-      const bytes = existing?.asset.sha256 === asset.sha256 && existing.bytes.size === asset.byte_length ? existing.bytes : await this.remote.downloadImage(projectId, asset)
-      const digest = await crypto.subtle.digest("SHA-256", await bytes.arrayBuffer())
-      const sha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-      if (bytes.size !== asset.byte_length || sha256 !== asset.sha256) throw new RemoteError("invalid", "A downloaded image does not match its saved digest.")
-      const preview = await this.downloadImagePreview(projectId, asset)
-      await this.db.transaction(this.partition, "readwrite", async (tx) => {
-        if (await tx.getProject(projectId)) await tx.putAsset({ partition: this.partition, projectId, id: asset.id, asset, bytes, preview, uploaded: true })
-      })
-    }
-  }
-
-  private async downloadImagePreview(projectId: string, asset: ImageAsset): Promise<Blob> {
-    const preview = await this.remote.downloadImage(projectId, asset, true)
-    if (!matchesImagePreview(preview, asset)) throw new RemoteError("invalid", "A downloaded image preview does not match its saved size or type.")
-    return preview
+  private async cacheRemoteImages(projectId: string, assets: ImageAsset[], signal?: AbortSignal): Promise<void> {
+    if (assets.length === 0) return
+    const { cacheRemoteImages } = await import("./cacheRemoteImages")
+    await cacheRemoteImages(this.db, this.remote, this.partition, projectId, assets, () => this.emit({type: "changed", projectId}), signal, this.imageTransfers)
   }
 
   private async acknowledge(projectId: string, pending: PendingSave, result: SaveResult): Promise<void> {
@@ -576,23 +532,95 @@ export class ProjectSync {
   }
 
   /** Take in the server's changes after this device's revision, up to `remoteRevision`. Call under the project lock. */
-  private async pull(projectId: string, remoteRevision: number): Promise<void> {
-    const project = await this.db.transaction(this.partition, "readonly", (tx) => tx.getProject(projectId))
-    // A batch in flight is settled by the next push; pulling first would mistake it for someone else's change.
-    if (!project?.created || project.pending || remoteRevision <= project.revision) return
+  private async pull(projectId: string, remoteRevision: number, options: DownloadOptions = {}): Promise<void> {
+    const { signal } = options
+    signal?.throwIfAborted()
+    const project = await this.db.transaction(this.partition, "readonly", tx => tx.getProject(projectId))
+    // A batch in flight is settled by push, before pulling authoritative copies.
+    if (!project?.created || project.pending) {
+      await options.ready?.()
+      return
+    }
+    if (remoteRevision <= project.revision) {
+      // A legacy revision-zero row was conservatively marked unknown during
+      // upgrade. The authenticated catalog confirms that it is truly empty.
+      if (project.partial && project.revision === 0 && remoteRevision === 0) {
+        await this.updateProject(projectId, current => {
+          const complete = { ...current }
+          delete complete.partial
+          return complete
+        })
+        this.emit({ type: "changed", projectId })
+      }
+      await options.ready?.()
+      return
+    }
     const since = project.revision
-    const [changed, deleted, folders] = await Promise.all([
-      this.remote.changedFiles(projectId, since, remoteRevision),
-      this.remote.deletedFiles(projectId, since, remoteRevision),
-      this.remote.folders(projectId),
+    await this.updateProject(projectId, current => ({ ...current, partial: { revision: remoteRevision, metadata: false } }))
+    const metadata = Promise.all([
+      this.remote.changedFiles(projectId, since, remoteRevision, signal),
+      this.remote.deletedFiles(projectId, since, remoteRevision, signal),
+      this.remote.folders(projectId, signal),
     ])
-    await this.cacheRemoteImages(projectId, changed.flatMap((file) => file.kind === "image" && file.asset ? [file.asset] : []))
-    const applied = await this.db.transaction(this.partition, "readwrite", async (tx) => {
+    // A failure remains observed while the independent requested-file read runs.
+    void metadata.catch(() => {})
+    const applying = import("./pullFiles")
+    void applying.catch(() => {})
+    let shown = false
+    const ready = async () => {
+      if (shown) return
+      signal?.throwIfAborted()
+      shown = true
+      await options.ready?.()
+    }
+    if (options.path && this.remote.requestedFile) {
+      const requested = await this.remote.requestedFile(projectId, options.path, remoteRevision, signal)
+      signal?.throwIfAborted()
+      if (requested) {
+        const { applyRemoteFiles } = await applying
+        await this.db.transaction(this.partition, "readwrite", async tx => {
+          signal?.throwIfAborted()
+          const current = await tx.getProject(projectId)
+          if (!current || current.revision !== since || current.pending) return
+          await applyRemoteFiles(tx, this.partition, projectId, [requested], [], since)
+        })
+        this.emit({ type: "changed", projectId })
+        if (requested.kind === "image" && requested.asset) await this.cacheRemoteImages(projectId, [requested.asset], signal)
+        await ready()
+      }
+    }
+    const [changed, deleted, folders] = await metadata
+    const { applyRemoteFiles, applyRemoteFolders } = await applying
+    signal?.throwIfAborted()
+    const published = await this.db.transaction(this.partition, "readwrite", async tx => {
+      signal?.throwIfAborted()
+      const current = await tx.getProject(projectId)
+      if (!current || current.revision !== since || current.pending) return false
+      await applyRemoteFiles(tx, this.partition, projectId, changed, deleted, since)
+      await applyRemoteFolders(tx, this.partition, projectId, folders)
+      await tx.putProject({ ...current, partial: { revision: remoteRevision, metadata: true } })
+      return true
+    })
+    if (!published) return
+    this.emit({ type: "changed", projectId })
+    await ready()
+    await this.cacheRemoteImages(projectId, changed.flatMap(file => file.kind === "image" && file.asset ? [file.asset] : []), signal)
+    const latest = (await this.remote.listProjects(signal)).find(entry => entry.id === projectId)
+    signal?.throwIfAborted()
+    if (!latest) {
+      if (!await this.deletedOutcome(projectId)) await this.updateDetails(projectId, null)
+      throw new RemoteError("access", "Your access to this project ended while its offline copy was being prepared.")
+    }
+    await this.updateDetails(projectId, latest)
+    const applied = await this.db.transaction(this.partition, "readwrite", async tx => {
+      signal?.throwIfAborted()
       const current = await tx.getProject(projectId)
       if (!current || current.revision !== since || current.pending) return false
       const reached = await applyRemoteFiles(tx, this.partition, projectId, changed, deleted, remoteRevision)
       await applyRemoteFolders(tx, this.partition, projectId, folders)
-      await tx.putProject({ ...current, revision: Math.max(since, reached) })
+      const complete = { ...current, revision: Math.max(since, reached) }
+      delete complete.partial
+      await tx.putProject(complete)
       return true
     })
     if (applied) this.emit({ type: "changed", projectId })
@@ -742,107 +770,6 @@ function changeFor(file: LocalFile): SaveChange {
   }
 }
 
-const isDraftOnly = (file: LocalFile) => file.base === null && file.content === null
-
-/**
- * Apply the server's changed and deleted files. Only files without local
- * changes are touched. Returns the revision this device has now fully taken
- * in: `until`, or lower when something had to be left for a later pull.
- */
-async function applyRemoteFiles(
-  tx: StorageTransaction,
-  partition: string,
-  projectId: string,
-  changed: RemoteFile[],
-  deleted: DeletedFile[],
-  until: number,
-): Promise<number> {
-  let reached = until
-  const hold = (version: number) => {
-    reached = Math.min(reached, version - 1)
-  }
-
-  for (const gone of deleted) {
-    const local = await tx.findFileByBaseId(projectId, gone.id)
-    if (!local) continue
-    if (isDirty(local) || local.conflict !== null) {
-      hold(gone.version)
-      continue
-    }
-    if (local.draft) await tx.putFile({ ...local, base: null, content: null, batch: null })
-    else await tx.deleteFile(projectId, local.path)
-  }
-
-  // Plan every placement before writing, so a file that cannot be placed stays where it was.
-  type Plan = { remote: RemoteFile; local: LocalFile | null; occupant: LocalFile | null }
-  const plans: Plan[] = []
-  for (const remote of changed) {
-    const local = await tx.findFileByBaseId(projectId, remote.id)
-    if (local && (isDirty(local) || local.conflict !== null)) {
-      hold(remote.version)
-      continue
-    }
-    if (local && local.base!.version === remote.version && local.path === remote.path) continue
-    const found = await tx.getFile(projectId, remote.path)
-    plans.push({ remote, local, occupant: found && found.localId !== local?.localId ? found : null })
-  }
-  const failed = new Set<Plan>()
-  for (let settled = false; !settled; ) {
-    settled = true
-    const vacated = new Set(plans.filter((plan) => plan.local && !failed.has(plan)).map((plan) => plan.local!.path))
-    const claimed = new Set<string>()
-    for (const plan of plans) {
-      if (failed.has(plan)) continue
-      const { occupant, local } = plan
-      const blocked =
-        claimed.has(plan.remote.path) ||
-        (occupant !== null && !vacated.has(occupant.path) && !(isDraftOnly(occupant) && !local?.draft))
-      if (blocked) {
-        failed.add(plan)
-        settled = false
-      } else {
-        claimed.add(plan.remote.path)
-      }
-    }
-  }
-
-  for (const plan of plans) if (failed.has(plan)) hold(plan.remote.version)
-  const placing = plans.filter((plan) => !failed.has(plan))
-  for (const { local } of placing) if (local) await tx.deleteFile(projectId, local.path)
-  for (const { remote, local } of placing) {
-    const occupant = await tx.getFile(projectId, remote.path)
-    // Only an unsaved draft can be here now; keep it on top of the server's file.
-    const draft = occupant?.draft ?? local?.draft ?? null
-    await tx.putFile({
-      partition,
-      projectId,
-      localId: local?.localId ?? occupant?.localId ?? crypto.randomUUID(),
-      path: remote.path,
-      base: { id: remote.id, path: remote.path, version: remote.version, content: remote.content, ...(remote.kind === "image" ? { kind: "image" as const, asset_id: remote.asset_id, asset: remote.asset } : {}) },
-      content: remote.content,
-      ...(remote.kind === "image" ? { kind: "image" as const, asset_id: remote.asset_id, asset: remote.asset } : {}),
-      batch: null,
-      draft: draft?.content === remote.content ? null : draft,
-      conflict: null,
-    })
-  }
-  return reached
-}
-
-/** Follow the server's explicit folders, except where this device has a folder change still to send. */
-async function applyRemoteFolders(tx: StorageTransaction, partition: string, projectId: string, remote: string[]) {
-  const server = new Set(remote)
-  const local = await tx.listFolders(projectId)
-  for (const folder of local) {
-    const onServer = server.has(folder.path)
-    const next = folder.base === folder.local ? { ...folder, base: onServer, local: onServer } : { ...folder, base: onServer }
-    if (!next.base && !next.local) await tx.deleteFolder(projectId, folder.path)
-    else await tx.putFolder(next)
-  }
-  const known = new Set(local.map((folder) => folder.path))
-  for (const path of server) if (!known.has(path)) await tx.putFolder({ partition, projectId, path, base: true, local: true, batch: null })
-}
-
 /** Drop this device's changes to a conflicted file and take the server's copy (or its absence). */
 async function takeTheirs(tx: StorageTransaction, projectId: string, file: LocalFile, current: FileConflict["current"]) {
   await tx.deleteFile(projectId, file.path)
@@ -877,9 +804,4 @@ async function copyPath(tx: StorageTransaction, projectId: string, path: string)
     if (!(await tx.getFile(projectId, candidate))) return candidate
   }
   throw new Error("Could not find a free name for the copy.")
-}
-
-/** Browser-made previews may differ from the immutable preview verified by the server. */
-function matchesImagePreview(preview: Blob | undefined, asset: ImageAsset): preview is Blob {
-  return Boolean(preview && preview.size === asset.preview_byte_length && preview.type === asset.preview_type)
 }

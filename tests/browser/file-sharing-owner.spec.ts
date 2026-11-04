@@ -141,9 +141,8 @@ test("unsaved edits refuse sharing until they are saved and synchronized", async
   await expect(page.getByText("Save or discard this file's unsaved changes before sharing it.", { exact: true })).toBeVisible()
   await expect(page.getByRole("dialog", { name: "Share file", exact: true })).toHaveCount(0)
   expect(sharing.calls).toEqual([])
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
   await page.locator(".monaco-editor:visible .view-lines").first().click()
-  await page.keyboard.press("Control+s")
+  await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => server.content(id, PATH)).toContain("More text.")
   await expect(page.getByRole("status").filter({ hasText: "Synced" })).toBeVisible()
   const dialog = await openSharing(page)
@@ -169,7 +168,7 @@ test("a read failure retries and a refused change remains visibly off", async ({
 
 test("an archived project's owner can still enable and disable its file link", async ({ page }) => {
   const { sharing } = await ownerFixture(page, { archived: true })
-  await expect(page.getByRole("banner").getByRole("status")).toContainText("This project is archived. Unarchive it to make changes.")
+  await expect(page.getByRole("banner").getByRole("status").filter({hasText: "This project is archived. Unarchive it to make changes."})).toBeVisible()
   const dialog = await openSharing(page)
   await dialog.getByRole("button", { name: "Enable link", exact: true }).click()
   await expect(dialog.getByText("Link sharing is on.", { exact: true })).toBeVisible()

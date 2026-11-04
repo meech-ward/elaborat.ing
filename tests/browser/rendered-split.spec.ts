@@ -88,22 +88,24 @@ test("in Split, undo works in each pane and both panes follow it", async ({ page
 
 test("the view shortcuts switch views, and the buttons show them", async ({ page }) => {
   await openNote(page)
-  await expect(view(page, "Split")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+2")
+  const apple = process.platform === "darwin"
+  const modifier = apple ? "Meta" : "Control"
+  await expect(view(page, "Split")).toHaveAttribute("aria-keyshortcuts", `${modifier}+Alt+2`)
   // The tooltip names the view and its key.
   await view(page, "Split").hover()
-  await expect(page.getByRole("tooltip")).toHaveText(/^Split\s*Ctrl\+Alt\+2$/)
-  await expect(view(page, "Source")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+1")
-  await expect(view(page, "Rendered")).toHaveAttribute("aria-keyshortcuts", "Control+Alt+3")
+  await expect(page.getByRole("tooltip")).toHaveText(apple ? /^Split\s*⌘⌥2$/ : /^Split\s*Ctrl\+Alt\+2$/)
+  await expect(view(page, "Source")).toHaveAttribute("aria-keyshortcuts", `${modifier}+Alt+1`)
+  await expect(view(page, "Rendered")).toHaveAttribute("aria-keyshortcuts", `${modifier}+Alt+3`)
 
-  await page.keyboard.press("Control+Alt+Digit2")
+  await page.keyboard.press("ControlOrMeta+Alt+Digit2")
   await expect(view(page, "Split")).toHaveAttribute("aria-pressed", "true")
   await expect(paragraph(page, "First paragraph")).toBeVisible()
   // The keys still switch while the source editor has the keyboard.
   await sourceText(page).click()
-  await page.keyboard.press("Control+Alt+Digit3")
+  await page.keyboard.press("ControlOrMeta+Alt+Digit3")
   await expect(view(page, "Rendered")).toHaveAttribute("aria-pressed", "true")
   await expect(sourceText(page)).toHaveCount(0)
-  await page.keyboard.press("Control+Alt+Digit1")
+  await page.keyboard.press("ControlOrMeta+Alt+Digit1")
   await expect(view(page, "Source")).toHaveAttribute("aria-pressed", "true")
   await expect(page.locator(FRAME)).toBeHidden()
 })

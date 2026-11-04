@@ -16,9 +16,9 @@ export function UpdateReady() {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
-    // Only once the page has loaded, so the worker's download of the whole
-    // app for offline use does not compete with what the page is loading,
-    // and finds the page's own files in the browser's cache.
+    // Start after load and reuse files already in the browser cache. Async
+    // document reads can still be pending; the progressive-loading browser
+    // check holds optional precache files to verify they do not gate reading.
     immediate: false,
     // The new version has taken over this tab.
     onNeedReload() {

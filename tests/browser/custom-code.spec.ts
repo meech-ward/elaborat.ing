@@ -7,8 +7,8 @@ import { showView } from "./views.ts"
 
 // A note in a project shared with the person that runs custom code
 // (components imported from the project's files, the note's own exports, or
-// an expression in its text that runs code) waits behind a notice: who last
-// changed the files, where the code runs, and Run code or Show as text. The
+// an expression in its text that runs code) keeps independent prose readable
+// while a notice identifies who changed the files and asks Run code or Show as text. The
 // choice holds on this device until someone else changes the code. The
 // person's own projects, built-in components and literal values never ask.
 
@@ -58,7 +58,10 @@ test("a shared note asks before running its components, runs them when asked, an
   await expect(notice(page)).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole("list", { name: "Files with custom code" })).toHaveText("ui/card.mdx, last changed by Ana")
   await expect(page.getByText("It runs in an isolated frame, with no network and no access to your account.", { exact: false })).toBeVisible()
-  await expect(page.locator(PREVIEW)).toHaveCount(0)
+  await expect(page.locator(PREVIEW)).toBeVisible()
+  await expect(page.frameLocator(PREVIEW).getByRole("heading", {name: "Plan"})).toBeVisible()
+  await expect(shownCard(page)).toHaveCount(0)
+  await expect(page.frameLocator(PREVIEW).getByRole("status").filter({hasText: "Loading component"})).toBeVisible()
 
   await page.getByRole("button", { name: "Run code" }).click()
   await expect(shownCard(page).locator("h3")).toHaveText("Launch", { timeout: 15_000 })
@@ -77,7 +80,10 @@ test("a component file changed by someone else asks again, and runs its new vers
 
   await changeElsewhere(fake, id, card("Second version"))
   await expect(notice(page)).toBeVisible({ timeout: 15_000 })
-  await expect(page.locator(PREVIEW)).toHaveCount(0)
+  await expect(page.locator(PREVIEW)).toBeVisible()
+  await expect(page.frameLocator(PREVIEW).getByRole("heading", {name: "Plan"})).toBeVisible()
+  await expect(shownCard(page)).toHaveCount(0)
+  await expect(page.frameLocator(PREVIEW).getByRole("status").filter({hasText: "Loading component"})).toBeVisible()
   await page.getByRole("button", { name: "Run code" }).click()
   await expect(shownCard(page).locator("p")).toHaveText("Second version", { timeout: 15_000 })
 })
@@ -86,7 +92,10 @@ test("an expression in a shared note's text that runs code asks too", async ({ p
   await openProject(page, "notes/expression.mdx", SOMEONE_ELSE, "viewer")
   await expect(notice(page)).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole("list", { name: "Files with custom code" })).toHaveText("notes/expression.mdx (this note), last changed by Ana")
-  await expect(page.locator(PREVIEW)).toHaveCount(0)
+  await expect(page.locator(PREVIEW)).toBeVisible()
+  await expect(page.frameLocator(PREVIEW).getByRole("heading", {name: "Sum"})).toBeVisible()
+  await expect(page.frameLocator(PREVIEW).getByText("expr-ran-42", {exact: true})).toHaveCount(0)
+  await expect(page.frameLocator(PREVIEW).getByRole("status").filter({hasText: "Loading component"})).toBeVisible()
   await page.getByRole("button", { name: "Run code" }).click()
   await expect(page.frameLocator(PREVIEW).getByText("expr-ran-42")).toBeVisible({ timeout: 15_000 })
 })

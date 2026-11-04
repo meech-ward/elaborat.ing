@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { expect, test, type FrameLocator, type Page } from "./fixtures.ts"
 import { FILE_VIEW_HTML } from "../../supabase/functions/mcp-server/tools/fileViewHtml.ts"
+import { recordReadiness } from "./readiness.ts"
 
 // The show_file view (the chat card) in a stand-in MCP Apps host: a page that
 // frames the view the way Claude and ChatGPT do (sandboxed, under the policy
@@ -108,6 +109,7 @@ type Host = {
   manual?: boolean
   dropsCallMeta?: boolean
   silent?: boolean
+  holdTools?: boolean
 }
 
 const MODULES = path.join(import.meta.dirname, "..", "..", "public", "chat-card")
@@ -162,8 +164,10 @@ async function openHost(page: Page, host: Host) {
       state.sizes = sizes
       state.links = links
       state.answers = {}
+      state.heldTools = []
       const frame = document.querySelector("iframe")!
       const reply = (id: unknown, result: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", id, result }, "*")
+      state.reply = reply
       const send = (method: string, params: unknown) => frame.contentWindow!.postMessage({ jsonrpc: "2.0", method, params }, "*")
       state.send = send
       window.addEventListener("message", (event) => {
@@ -190,6 +194,10 @@ async function openHost(page: Page, host: Host) {
         } else if (message.method === "tools/call") {
           calls.push(message.params)
           if (host.silent) return
+          if (host.holdTools) {
+            ;(state.heldTools as unknown[]).push({id: message.id, ...message.params})
+            return
+          }
           const queue = (state.answers as Record<string, Record<string, unknown>[]>)[message.params!.name] ?? []
           const result = queue.shift()
           if (host.dropsCallMeta) delete result?._meta
@@ -550,7 +558,7 @@ test("a diagram shows on the dotted canvas in dark mode, with a banner when its 
 
 // Drawings and diagrams that did not fit in show_file's result, which keeps
 // its _meta small (fileView.ts MAX_META_CHARS), come deferred: the card loads
-// each with card_embed, one at a time, where the host lets it call tools.
+// each with card_embed, sharing two bounded calls with image previews.
 
 const LATER = "art/later.excalidraw"
 const GONE = "art/gone.excalidraw"
@@ -600,7 +608,7 @@ test("a drawing that did not fit in the result is loaded with card_embed and dra
   expect(await calls(page)).toEqual([])
 })
 
-test("drawings that did not fit in the result all keep their links once the host has not answered the card's first call for 20 s", async ({ page }) => {
+test("drawings keep their links after a silent host and queued assets start no further calls", async ({ page }) => {
   await page.clock.install()
   const card = await openHost(page, { tools: true, theme: "light", result: DEFERRED_NOTE, silent: true })
   const [later, gone] = [LATER, GONE].map((path) => card.getByRole("figure").filter({ hasText: path }))
@@ -613,7 +621,43 @@ test("drawings that did not fit in the result all keep their links once the host
   await expect(later).toContainText(NOT_LOADED)
   await expect(gone).toContainText(NOT_LOADED)
   await expect(card.locator('[data-slot="chat-card"]')).not.toHaveAttribute("aria-busy", "true")
-  expect((await calls(page)).map((call) => call.arguments.path)).toEqual([LATER])
+  expect((await calls(page)).map((call) => call.arguments.path)).toEqual([LATER, GONE])
+})
+
+test("a ready chat asset appears while another waits without replacing selected prose", async ({ page }, testInfo) => {
+  const result = structuredClone(DEFERRED_NOTE)
+  result._meta["elaborat.ing/html"] = '<h1>Launch plan</h1><p>Select this independent prose.</p><figure data-embed="0"></figure><figure data-embed="1"></figure><figure data-embed="2"></figure>'
+  const card = await openHost(page, {tools: true, theme: "light", result, holdTools: true})
+  await expect(card.getByText("Select this independent prose.")).toBeVisible()
+  await expect.poll(() => calls(page)).toHaveLength(2)
+  const view = page.frames()[1]
+  await recordReadiness(view, testInfo, "chat-prose-ready")
+  await view.evaluate(() => {
+    const paragraph = document.querySelector(".reading-document p")!
+    ;(window as unknown as {selectedParagraph: Element}).selectedParagraph = paragraph
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+  })
+  const ready = performance.now()
+  await page.evaluate(result => {
+    const state = window as unknown as {heldTools: {id: unknown; arguments: {path: string}}[]; reply: (id:unknown, result:unknown) => void}
+    state.reply(state.heldTools.find(call => call.arguments.path === result.structuredContent.path)!.id, result)
+  }, embedSent(GONE, CIRCLE))
+  await expect(card.getByRole("img", {name: `Drawing ${GONE}`}).locator("circle")).toHaveCount(1)
+  await recordReadiness(view, testInfo, "chat-first-independent-asset")
+  await expect(card.getByRole("figure").filter({hasText: LATER})).toContainText("Loading it")
+  expect(await view.evaluate(() => ({
+    sameParagraph: document.querySelector(".reading-document p") === (window as unknown as {selectedParagraph:Element}).selectedParagraph,
+    selection: window.getSelection()!.toString(),
+  }))).toEqual({sameParagraph: true, selection: "Select this independent prose."})
+  await testInfo.attach("chat-readiness.json", {body: JSON.stringify({readyAssetAfterReleaseMs: performance.now() - ready, proseBeforeAllAssets: true}), contentType: "application/json"})
+  await page.evaluate(result => {
+    const state = window as unknown as {heldTools: {id: unknown; arguments: {path: string}}[]; reply: (id:unknown, result:unknown) => void}
+    state.reply(state.heldTools.find(call => call.arguments.path === result.structuredContent.path)!.id, result)
+  }, embedSent(LATER, SVG))
+  await expect(card.getByRole("img", {name: `Drawing ${LATER}`})).toBeVisible()
 })
 
 // D2 diagrams the app has not drawn from their source yet: a new one, with no
@@ -919,6 +963,29 @@ function withComponents(source: string, modules: Record<string, string>) {
 const preview = (page: Page, title: string) => page.frameLocator("iframe").frameLocator(`iframe[title="Preview of ${title}"]`)
 const cardFrame = (page: Page) => page.frames()[1]
 const previewFrame = (page: Page) => page.frames().find((frame) => frame.parentFrame() === cardFrame(page))!
+
+test("a ready component frame waits for a reader's active prose selection", async ({page}) => {
+  const card = await openHost(page, {tools: true, theme: "light", result: null, manual: true})
+  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as {ready?: boolean}).ready))).toBe(true)
+  let release!: () => void
+  const blocked = new Promise<void>(resolve => {release = resolve})
+  await page.route(/https:\/\/elaborat\.ing\/chat-card\/compile-[\w-]+\.js$/, async route => {
+    await blocked
+    await route.fallback()
+  })
+  await send(page, "ui/notifications/tool-result", withComponents('import {Metric} from "workspace:components/metric.mdx"\n\n# Ready before components\n\n<Metric label="Ready metric" value={7} />', {"components/metric.mdx": METRIC}))
+  const prose = card.getByText("Version 4 as rendered by the server.", {exact: true})
+  await prose.dblclick()
+  const selected = await cardFrame(page).evaluate(() => document.getSelection()?.toString())
+  expect(selected?.length).toBeGreaterThan(0)
+  release()
+  await expect(preview(page, PATH).locator("[data-metric]")).toHaveText("Ready metric 7")
+  await expect(prose).toBeVisible()
+  expect(await cardFrame(page).evaluate(() => document.getSelection()?.toString())).toBe(selected)
+  await card.getByText(PATH, {exact: true}).click()
+  await expect(preview(page, PATH).locator("[data-metric]")).toBeVisible()
+  await expect(prose).toHaveCount(0)
+})
 const contexts = (page: Page) => page.evaluate(() => (window as unknown as { contexts: { content: { text: string }[] }[] }).contexts.map((context) => context.content[0].text))
 
 test('an isolated chat-card Document reference shows a same-project open link without reading another file', async ({page}) => {

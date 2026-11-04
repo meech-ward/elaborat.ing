@@ -40,19 +40,19 @@ and edit the child, or open it separately from the header.
   Supported references participate in existing rename, move and delete
   planning. Computed paths cannot authorize file reads.
 
-## Loading follow-up (pending)
+## Progressive loading
 
-Initially collapsed children already wait until expansion before attaching
-their editor. The app-wide [progressive loading requirement](progressive-loading.md)
-still needs to be applied around that behavior: first project download and
-parent MDX preparation can delay useful content, and an unlisted bundle
-resolves authorized child dependencies before the reader appears, even when
-their child views start collapsed.
+Initially collapsed children wait until expansion before attaching their
+editor. Opened sessions retain drafts and collapse state. Checked parent and
+child prose can display while their own component modules prepare; pending
+component islands are read-only local placeholders. Source remains editable,
+and rendered writes wait for the matching approved source mapping. A failed
+child module does not hide independent parent or child prose.
 
-T55, T56, T58 and T59 in the [task queue](tasks.md) record the pending work,
-waiting for implementation approval. Preserve lazy expansion, retained
-drafts and collapse state, per-file source ownership and undo, custom-code
-consent, authorization, nesting limits and the isolated child protocol.
+Visible previews publish each ready asset, reserving known image dimensions
+and retaining per-file source, undo history, consent and isolated child
+protocols. [Progressive loading](progressive-loading.md) records the contracts
+and verification for T55 through T59.
 
 ## Implementation sequence
 

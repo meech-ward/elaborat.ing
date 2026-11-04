@@ -184,3 +184,25 @@ describe('document embed capabilities', () => {
     expect(f.sent.filter(message => message.kind === 'document-embed-bootstrap')).toHaveLength(0);
   });
 });
+
+
+test('an inactive owner never opens new documents and collapse messages retain the existing child session', () => {
+  const f = fixture();
+  Object.assign(f.context,{active:false});
+  f.open();
+  expect(f.attaches).toHaveLength(0);
+  expect(f.sent).toHaveLength(0);
+  Object.assign(f.context,{active:true});
+  f.open();
+  f.ready();
+  const visible: unknown[] = [];
+  f.context.host.setVisible = (...args) => {visible.push(args);};
+  f.controller.handle({kind:'document-embed-visibility',session:f.context.session,revision:3,id:'first',visible:false});
+  expect(visible).toEqual([['session-1234:first',false]]);
+  expect(f.detached()).toBe(0);
+  f.controller.handle({kind:'document-embed-visibility',session:f.context.session,revision:2,id:'first',visible:true});
+  expect(visible).toHaveLength(1);
+  f.controller.handle({kind:'document-embed-visibility',session:f.context.session,revision:3,id:'first',visible:true});
+  expect(f.attaches).toHaveLength(1);
+  expect(f.detached()).toBe(0);
+});

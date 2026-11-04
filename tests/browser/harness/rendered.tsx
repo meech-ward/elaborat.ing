@@ -12,6 +12,7 @@ import { RenderedEditor } from "../../../src/features/rendered/index.ts"
 import { createDocumentStore } from "../../../src/lib/documentStore.ts"
 import type { DocumentEmbedHost } from '../../../src/features/rendered/documentEmbeds.ts'
 import type { ImagePreview } from "../../../src/features/images/transport.ts"
+import { useComponentEnvironment } from "../../../src/features/document/useComponentEnvironment.ts"
 
 // `?sandbox=<origin>` loads the frame's page from that origin (tests/browser/sandbox-server.ts).
 const sandboxOrigin = new URLSearchParams(location.search).get("sandbox")
@@ -20,9 +21,16 @@ let state = {
   snapshot: store.snapshot(),
   resources: undefined as Record<string, string> | undefined,
   images: undefined as Record<string, ImagePreview> | undefined,
+  componentsEnabled: false,
+  componentGeneration: 0,
+  active: true,
 }
 let pending = false
 let lastError: string | null = null
+let imageOriginals: Record<string,ImagePreview> = {}
+let imageOriginalReads = 0
+let imageOriginalGate: Promise<void> = Promise.resolve()
+const imageOriginalReleases = new Map<string,() => void>()
 let appearance: { setTheme: (theme: ThemeName) => void; setScheme: (scheme: ColorScheme) => void } | null = null
 const listeners = new Set<() => void>()
 const publish = (next: Partial<typeof state>) => {
@@ -36,40 +44,77 @@ const subscribe = (listener: () => void) => {
   }
 }
 
+// Deterministic module latency/failure without a timeout in the browser test.
+let moduleSources: Record<string, string> = {};
+let moduleReads = 0;
+let componentPreparation = {catalog:[] as string[],pending:false,error:null as string | null,hasEnvironment:false,currentEnvironment:false};
+let moduleGate: Promise<void> = Promise.resolve();
+let releaseModules: (() => void) | undefined;
+const loadModule = async (path: string) => {
+  moduleReads++;
+  const gate = moduleGate, sources = moduleSources;
+  await gate;
+  if (!(path in sources)) throw new Error(`Unavailable component ${path}`);
+  return {text: sources[path], revision: sources[path]};
+};
+
 // Exercise the real frame broker on the hosted sandbox origin as well as
 // offline srcdoc. Workbench journeys cover durable sessions and undo.
 const embeddedStores = new Map<string, ReturnType<typeof createDocumentStore>>()
-type EmbeddedView = Parameters<DocumentEmbedHost['attach']>[0]
+type EmbeddedView = Parameters<DocumentEmbedHost['attach']>[0] & {active?:boolean}
 let embeddedViews: readonly EmbeddedView[] = []
 const embeddedListeners = new Set<() => void>()
 const publishEmbeds = () => { embeddedViews = [...embeddedViews]; for (const listener of embeddedListeners) listener() }
+const ownerActivity = new Map<string,boolean>();
 const embedHost: DocumentEmbedHost = {
   attach(request) {
     if (!embeddedStores.has(request.path)) {
       request.onState({error:`Missing document ${request.path}`, pending:false})
       return () => {}
     }
-    embeddedViews = [...embeddedViews, request]
+    const view: EmbeddedView = {...request,active:request.visible !== false && ownerActivity.get(request.ownerSession ?? '') !== false};
+    embeddedViews = [...embeddedViews, view]
     publishEmbeds()
     request.onState({readOnly:false, pending:false})
-    return () => { embeddedViews = embeddedViews.filter(view => view !== request); publishEmbeds() }
+    return () => { embeddedViews = embeddedViews.filter(entry => entry !== view); publishEmbeds() }
   },
   action() {},
+  setActive(session,active) {
+    ownerActivity.set(session,active);
+    let changed = false;
+    for (const view of embeddedViews) if (view.ownerSession === session) {
+      const next = active && view.visible !== false;
+      if (view.active !== next) {view.active=next;changed=true;}
+    }
+    if (changed) publishEmbeds();
+  },
+  setVisible(id,visible) {
+    const view = embeddedViews.find(view => view.id === id);
+    if (!view) return;
+    view.visible = visible;
+    view.active = visible && ownerActivity.get(view.ownerSession ?? '') !== false;
+    publishEmbeds();
+  },
 }
 const subscribeEmbeds = (listener: () => void) => { embeddedListeners.add(listener); return () => { embeddedListeners.delete(listener) } }
 const embedSnapshot = () => embeddedViews
 
 function EmbeddedEditors() {
   const views = useSyncExternalStore(subscribeEmbeds, embedSnapshot)
-  return views.map(view => {
+  return views.map(view => <EmbeddedEditor key={view.id} view={view} />)
+}
+function EmbeddedEditor({view}: {view: EmbeddedView}) {
+    const {componentsEnabled, componentGeneration} = useSyncExternalStore(subscribe, () => state)
     const childStore = embeddedStores.get(view.path)!
-    return <RenderedEditor key={view.id} document={childStore.snapshot()} documentId={childStore.snapshot().docId}
+    const snapshot = childStore.snapshot()
+    const components = useComponentEnvironment(snapshot.text, componentsEnabled && snapshot.format === 'mdx', loadModule, componentGeneration, undefined, snapshot.docId)
+    return <RenderedEditor active={view.active !== false} document={childStore.snapshot()} documentId={childStore.snapshot().docId}
       documentPath={view.path} externalFrame={view.frame} externalFrameScriptUrl={view.frameScriptUrl}
       embeddedAncestors={view.ancestors} documentEmbedHost={embedHost}
+      componentEnvironment={components.environment} componentPending={components.pending} componentError={components.error}
       onContentHeight={height => view.onState({height})}
       onPatch={(revision, patches) => { childStore.applyPatches(revision,patches); publishEmbeds(); return true }}
       onError={error => { lastError = error; view.onState({error}) }} />
-  })
 }
 
 function AppearanceBridge() {
@@ -81,7 +126,12 @@ function AppearanceBridge() {
 }
 
 function App() {
-  const { snapshot, resources, images } = useSyncExternalStore(subscribe, () => state)
+  const { snapshot, resources, images, componentsEnabled, componentGeneration, active } = useSyncExternalStore(subscribe, () => state)
+  const components = useComponentEnvironment(snapshot.text, componentsEnabled && snapshot.format === 'mdx', loadModule, componentGeneration, undefined, snapshot.docId)
+  useEffect(() => {
+    componentPreparation = {catalog:components.catalog?.map(component => component.name) ?? [],pending:Boolean(components.pending),error:components.error ?? null,
+      hasEnvironment:components.environment !== undefined,currentEnvironment:components.environment?.source === snapshot.text};
+  },[components,snapshot.text]);
   const [, setError] = useState<string | null>(null)
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -90,11 +140,23 @@ function App() {
       <RenderedEditor
         key={snapshot.docId}
         document={snapshot}
+        active={active}
         documentId={snapshot.docId}
         documentPath="root.mdx"
         documentEmbedHost={embedHost}
         resources={resources}
         imageResources={images}
+        onReadImage={async key => {
+          imageOriginalReads++;
+          const image = imageOriginals[key];
+          if (!image) throw new Error('The original image is unavailable.');
+          const gate = imageOriginalGate;
+          await gate;
+          return image;
+        }}
+        componentEnvironment={components.environment}
+        componentPending={components.pending}
+        componentError={components.error}
         sandboxOrigin={sandboxOrigin}
         onPatch={(revision, patches) => {
           try {
@@ -120,6 +182,16 @@ function App() {
 }
 
 const harness = {
+  setActive: (active: boolean) => publish({active}),
+  editEmbedded: (path: string, text: string) => {embeddedStores.get(path)!.setText(text);publishEmbeds();},
+  componentPreparation: () => ({...componentPreparation,moduleReads}),
+  prepareModules: (sources: Record<string, string>, blocked = true) => {
+    moduleReads = 0;
+    moduleSources = sources;
+    moduleGate = blocked ? new Promise<void>(resolve => { releaseModules = resolve; }) : Promise.resolve();
+    publish({componentsEnabled: true, componentGeneration: state.componentGeneration + 1});
+  },
+  releaseModules: () => releaseModules?.(),
   /** Open a note in a new editor, with the pixels its images have when it opens, if any. */
   load: (text: string, format: DocumentSnapshot["format"], images?: Record<string, ImagePreview>) => publish({ snapshot: store.replaceDocument(text, format), resources: undefined, images }),
   /** The person's edit in the Source view: the same note, so the same editor and frame. */
@@ -129,6 +201,10 @@ const harness = {
   setResources: (resources: Record<string, string>) => publish({ resources }),
   /** Image pixels by the key a note's image reference resolves to, as the workbench passes them. */
   setImages: (images: Record<string, ImagePreview>) => publish({ images }),
+  setImageOriginals: (images: Record<string,ImagePreview>, resetReads = true) => {imageOriginals=images;if (resetReads) imageOriginalReads=0;},
+  holdImageOriginals: (name: string) => {imageOriginalGate=new Promise<void>(resolve => {imageOriginalReleases.set(name,resolve);});},
+  releaseImageOriginals: (name: string) => {imageOriginalReleases.get(name)?.();imageOriginalReleases.delete(name);},
+  imageOriginalReads: () => imageOriginalReads,
   setEmbeddedDocuments: (documents: Record<string, string>) => {
     embeddedStores.clear()
     for (const [path,text] of Object.entries(documents)) embeddedStores.set(path,createDocumentStore(text,/\.mdx$/i.test(path) ? 'mdx' : 'md'))

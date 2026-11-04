@@ -161,6 +161,8 @@ export const LocalProject = z.strictObject({
   role: z.nullable(Role),
   /** The server revision this device has fully pulled. 0 before the first pull. */
   revision: z.int().check(z.nonnegative()),
+  /** A durable incomplete pull. Absent on legacy records and after complete preparation. */
+  partial: z.optional(z.object({ revision: z.int().check(z.nonnegative()), metadata: z.boolean() })),
   /** True once the server has the project (create_project acknowledged or it came from the server). */
   created: z.boolean(),
   archivedAt: z.nullable(z.string()),

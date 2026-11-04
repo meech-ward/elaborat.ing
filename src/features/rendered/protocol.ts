@@ -481,6 +481,16 @@ export const imagesMessageSchema = z.strictObject({
   }).check(z.refine(image => image.width * image.height <= MAX_IMAGE_PIXELS))).check(z.maxLength(32),z.refine(images => images.reduce((total,image) => total + image.dataURL.length,0) <= 8 * 1024 * 1024)),
 });
 export type ImagesMessage = z.infer<typeof imagesMessageSchema>;
+/** Metadata can reserve a pending image's box before any decoder finishes. */
+export const imageDimensionsMessageSchema = z.strictObject({
+  kind:z.literal('image-dimensions'),session:z.string().check(z.minLength(8)),revision:whole,
+  keys:z.optional(z.array(z.string().check(z.minLength(1),z.maxLength(2048))).check(z.maxLength(1024),z.refine(keys => new Set(keys).size === keys.length))),
+  sizes:z.array(z.strictObject({
+    key:z.string().check(z.minLength(1),z.maxLength(2048)),
+    width:z.int().check(z.positive(),z.maximum(MAX_IMAGE_PIXELS)),
+    height:z.int().check(z.positive(),z.maximum(MAX_IMAGE_PIXELS)),
+  }).check(z.refine(size => size.width * size.height <= MAX_IMAGE_PIXELS))).check(z.maxLength(1024)),
+}).check(z.refine(message => message.keys === undefined || message.sizes.every(size => message.keys!.includes(size.key))));
 export const imageOriginalMessageSchema = z.strictObject({
   kind:z.literal('image-original'),session:z.string().check(z.minLength(8)),revision:whole,
   key:z.string().check(z.minLength(1),z.maxLength(2048)),
@@ -577,6 +587,7 @@ export const parentMessageSchema = z.union([
   }),
   resourcesMessageSchema,
   imagesMessageSchema,
+  imageDimensionsMessageSchema,
   imageOriginalMessageSchema,
   appearanceMessageSchema,
   commentMarksMessageSchema,
@@ -665,6 +676,9 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal('document-embed-open'), session: z.string().check(z.minLength(8)),
     revision: whole, id: embedId, path: z.string().check(z.minLength(1), z.maxLength(512)), from: whole,
+  }),
+  z.strictObject({
+    kind:z.literal('document-embed-visibility'),session:z.string().check(z.minLength(8)),revision:whole,id:embedId,visible:z.boolean(),
   }),
   z.strictObject({
     kind: z.literal('document-embed-release'), session: z.string().check(z.minLength(8)),
@@ -862,6 +876,8 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     kind: z.literal("render-error"),
     session: z.string().check(z.minLength(1)),
     revision: whole,
+    /** Module rebuilds can change the projection without changing source revision. */
+    epoch: z.optional(whole),
     message: z.string(),
   }),
   z.object({
@@ -977,6 +993,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "copy-code":
     case 'document-embed-open':
     case 'document-embed-release':
+    case 'document-embed-visibility':
     case 'document-embed-action':
     case 'document-height':
     case "place":
@@ -1005,6 +1022,8 @@ export function checkChildMessage(args: {
   expectedSource: unknown;
   session: string;
   revision: number;
+  /** Exact current display-only projection: inspection/height, never edits or exports. */
+  presentationRevision?: number;
 }): CheckResult {
   if (args.source !== args.expectedSource || args.expectedSource == null) {
     return {
@@ -1024,10 +1043,12 @@ export function checkChildMessage(args: {
   }
   // A shortcut is a key press, not an edit, a module request asks for the
   // frame's own code, and activity is only input: none has a revision to be stale.
-  if (message.kind !== "ready" && message.kind !== "shortcut" && message.kind !== "load-module" && message.kind !== "activity" && message.revision !== args.revision) {
+  const revision = (message.kind === 'view-image' || message.kind === 'document-height')
+    ? args.presentationRevision ?? args.revision : args.revision;
+  if (message.kind !== "ready" && message.kind !== "shortcut" && message.kind !== "load-module" && message.kind !== "activity" && message.revision !== revision) {
     return {
       ok: false,
-      error: `Rejected stale frame message (revision ${message.revision}, current ${args.revision}).`,
+      error: `Rejected stale frame message (revision ${message.revision}, current ${revision}).`,
     };
   }
   return { ok: true, message };

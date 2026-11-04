@@ -5,6 +5,9 @@ import type { OpenTab, TabFile } from "./tabs";
 export interface EmbeddedDocumentView {
   id: string;
   owner: string;
+  ownerSession?: string;
+  visible?: boolean;
+  active?: boolean;
   path: string;
   ancestors: readonly string[];
   frame: Window;
@@ -37,6 +40,7 @@ export class DocumentEmbedSessions {
   private files = new Map<string, PooledFile>();
   private views = new Map<string, EmbeddedDocumentView>();
   private hosts = new Map<string, DocumentEmbedHost>();
+  private activeRenderers = new Map<string, boolean>();
   private visibleTabs = new Map<string, OpenTab>();
   private states = new Map<string, DocumentEmbedState>();
   private sessions = new Map<string, EmbeddedDocumentSession>();
@@ -106,7 +110,9 @@ export class DocumentEmbedSessions {
     if (host) return host;
     host = {
       attach: request => {
-        const view: EmbeddedDocumentView = { ...request, owner };
+        const visible = request.visible !== false;
+        const ownerActive = request.ownerSession === undefined || this.activeRenderers.get(`${owner}\0${request.ownerSession}`) !== false;
+        const view: EmbeddedDocumentView = { ...request, owner, visible, active: visible && ownerActive };
         if (!isDocumentPath(request.path)
           || request.ancestors.length < 2 || request.ancestors.length > MAX_DOCUMENT_EMBED_DEPTH
           || request.ancestors.at(-2) !== owner || request.ancestors.at(-1) !== request.path
@@ -132,6 +138,27 @@ export class DocumentEmbedSessions {
           this.views.delete(request.id);
           this.changed();
         };
+      },
+      setActive: (session, active) => {
+        const key = `${owner}\0${session}`;
+        if (this.activeRenderers.get(key) === active) return;
+        this.activeRenderers.set(key, active);
+        let changed = false;
+        for (const view of this.views.values()) {
+          if (view.owner !== owner || view.ownerSession !== session) continue;
+          const next = active && view.visible !== false;
+          if (view.active !== next) {view.active = next;changed = true;}
+        }
+        if (changed) this.changed();
+      },
+      setVisible: (id, visible) => {
+        const view = this.views.get(id);
+        if (!view || view.owner !== owner) return;
+        const active = visible && (view.ownerSession === undefined || this.activeRenderers.get(`${owner}\0${view.ownerSession}`) !== false);
+        if (view.visible === visible && view.active === active) return;
+        view.visible = visible;
+        view.active = active;
+        this.changed();
       },
       action: (id, action) => {
         const view = this.views.get(id);

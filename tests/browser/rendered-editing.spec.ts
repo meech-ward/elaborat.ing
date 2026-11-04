@@ -357,9 +357,8 @@ test.describe("lists", () => {
   for (const command of ["Backspace", "Enter"]) {
     test(`${command} in an empty last item leaves the list and typing continues`, async ({ page }) => {
       let mark = await load(page, list, "mdx", /^Before paragraph\.$/)
-      await paragraph(page, /^third$/).click()
-      await press(page, "End")
-      await press(page, "Shift+Home")
+      await clickAt(page, "third", 0)
+      await press(page, "Shift+ArrowRight", "third".length)
       expect((await selection(page)).text).toBe("third")
       await press(page, "Backspace")
       await accepted(page, mark)
@@ -437,9 +436,8 @@ test("a diagram arriving while prose is being edited keeps the edit", async ({ p
   await page.evaluate(() => {
     window.transactionGate.enabled = true
   })
-  await paragraph(page, /^Original editable prose\.$/).click()
-  await press(page, "End")
-  await press(page, "Shift+Home")
+  await clickAt(page, "Original editable prose.", 0)
+  await press(page, "Shift+ArrowRight", "Original editable prose.".length)
   await page.keyboard.type("Draft survives arriving SVG")
   await page.waitForFunction(() => window.transactionGate.held.length > 0)
   await page.evaluate(() =>

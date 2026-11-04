@@ -9,7 +9,7 @@ type LoadedImage = { path: string; id: string; original: Blob; url: string; anim
 export type ImageViewProps = {
   path: string
   asset: ImageAsset
-  readImage: (path: string, preview?: boolean) => Promise<Blob>
+  readImage: (path: string, preview?: boolean, signal?: AbortSignal) => Promise<Blob>
   onError?: (message: string) => void
 }
 
@@ -21,14 +21,15 @@ export function ImageView({ path, asset, readImage, onError }: ImageViewProps) {
   const [enlarged, setEnlarged] = useState(false)
   useEffect(() => {
     let live = true
+    const controller = new AbortController()
     let url: string | null = null
     void (async () => {
-      const original = await readImage(path)
+      const original = await readImage(path, false, controller.signal)
       const { inspectImage } = await import("./format")
       const animated = inspectImage(new Uint8Array(await original.arrayBuffer()), asset.media_type).animated
       let shown = original
       if (animated) {
-        shown = await readImage(path, true)
+        shown = await readImage(path, true, controller.signal)
         const header = inspectImage(new Uint8Array(await shown.arrayBuffer()), shown.type)
         if (header.animated) {
           const { prepareImage } = await import("./prepare")
@@ -45,7 +46,7 @@ export function ImageView({ path, asset, readImage, onError }: ImageViewProps) {
       setFailure({ path, id: asset.id, text })
       onError?.(text)
     })
-    return () => { live = false; if (url) URL.revokeObjectURL(url) }
+    return () => { live = false; controller.abort(); if (url) URL.revokeObjectURL(url) }
   }, [path, asset.id, asset.media_type, asset.object_key, readImage, onError])
   useEffect(() => () => { if (playback) URL.revokeObjectURL(playback.url) }, [playback, loaded])
   useEffect(() => {

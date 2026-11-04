@@ -9,6 +9,7 @@ export function fileShareDependencies(admin: Pick<SupabaseClient, 'rpc' | 'stora
       const { data, error } = await admin.rpc('file_share_dependencies', { token, paths: [path] })
       return { data: Array.isArray(data) ? data[0] ?? null : null, error }
     },
+    readMany: async (token, paths) => await admin.rpc('file_share_dependencies', { token, paths }),
     download: async key => {
       const { data, error } = await admin.storage.from('project-images').download(key)
       if (error || !data || data.size > 5 * 1024 * 1024) return null

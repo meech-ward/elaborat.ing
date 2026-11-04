@@ -42,7 +42,7 @@ import { parseDrawingFile } from "@/features/drawings/parse";
 import { readChosenFile } from "@/lib/fileAdapter";
 import { kindForPath } from "./session";
 import { LazyWorkspaceImageSession } from "./LazyWorkspaceImageSession";
-import { WorkspaceSession } from "./WorkspaceSession";
+import { LazyWorkspaceSession } from "./LazyWorkspaceSession";
 import { DocumentEmbedSessions } from "./documentEmbeds";
 import { TablineProvider } from "./tabline";
 import { EditorHeader, EmptyState, IconButton, PhoneHeader, RoundIconButton, commandShortcut, commentsShortcut, isApplePlatform } from "@/features/design-system";
@@ -275,6 +275,7 @@ export function WorkspaceWorkbench({
   const auth = useAuth();
   const routerNavigate = useNavigate();
   const sequence = useRef(0);
+  const foregroundRead = useRef<AbortController | null>(null);
   const restoreDone = useRef(false);
   const interacted = useRef(false);
   const closedDuringRestore = useRef(new Set<string>());
@@ -435,6 +436,9 @@ export function WorkspaceWorkbench({
     async (path: string, fromLocation = false, arriving = false): Promise<boolean> => {
       setLocationProblem(null);
       if (!fromLocation) interacted.current = true;
+      foregroundRead.current?.abort();
+      const controller = new AbortController();
+      foregroundRead.current = controller;
       const request = ++sequence.current;
       dispatch({ type: "request", sequence: request, fromLocation });
       if (stateRef.current.tabs.some((tab) => tab.path === path)) {
@@ -449,7 +453,7 @@ export function WorkspaceWorkbench({
       }
       setNotice(`Opening ${path}…`);
       try {
-        const read = await client.read(path);
+        const read = await client.read(path, controller.signal);
         if (sequence.current !== request) return false;
         if (fromLocation && read.savedContent === null) throw new Error("This file exists only as an unsaved local draft. Save it before using a file link.");
         unresolvedRestore.current = unresolvedRestore.current.filter(
@@ -486,6 +490,7 @@ export function WorkspaceWorkbench({
   // Consume location changes once. Every new target invalidates outstanding reads,
   // including invalid links and a move back to a workspace with no file target.
   useLayoutEffect(() => {
+    foregroundRead.current?.abort();
     ++sequence.current;
     dispatch({ type: "request", sequence: sequence.current, fromLocation: true });
     if (target.kind === "workspace" && target.projectId === projectId && target.path) {
@@ -496,7 +501,7 @@ export function WorkspaceWorkbench({
   }, [href, target, projectId, openPath, retryLocation]);
   useEffect(() => {
     const requests = sequence;
-    return () => { ++requests.current; };
+    return () => { foregroundRead.current?.abort(); ++requests.current; };
   }, []);
 
   const appliedCommand = useRef(0);
@@ -1365,7 +1370,7 @@ export function WorkspaceWorkbench({
                             readOnly={readOnly} onState={onState} refreshList={refreshFiles}
                             onResolveConflict={onResolveConflict ? (choice) => onResolveConflict(tab.path, choice) : undefined} />
                         ) : (
-                          <WorkspaceSession
+                          <LazyWorkspaceSession
                             navigation={!navigationOutsideSession && state.active === tab.path ? navigation : null}
                             client={client}
                             initial={embedSnapshot.files.find(file => file.path === tab.path) ?? tab}

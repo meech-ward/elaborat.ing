@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react"
-import { readOfflineAccount, useAuth } from "@/features/auth"
+import { useEffect, useSyncExternalStore } from "react"
+import { readOfflineAccount, retryAuth, useAuth } from "@/features/auth"
 import { parseConfig } from "@/lib/config"
 import { clientLoaded, loadedClient } from "@/lib/supabase/client"
 import { deleteAccountProjects, IndexedProjectDatabase } from "@/features/project-storage/database"
@@ -27,6 +27,14 @@ export type AccountResult =
 
 export function useProjectAccount(): AccountResult {
   const auth = useAuth()
+  // An offline restart uses the remembered account and an offline remote.
+  // Revalidate the session when connectivity returns so its partial pull can
+  // resume through the authenticated remote without discarding local drafts.
+  useEffect(() => {
+    if (auth.status !== "error") return
+    window.addEventListener("online", retryAuth)
+    return () => window.removeEventListener("online", retryAuth)
+  }, [auth.status])
   if (auth.status === "unconfigured") return { kind: "unconfigured" }
   if (auth.status === "loading") return { kind: "loading" }
   if (auth.status === "ready") return { kind: "account", account: { userId: auth.user.id, email: auth.email, online: true } }

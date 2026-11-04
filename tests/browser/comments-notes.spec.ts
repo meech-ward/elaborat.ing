@@ -103,8 +103,7 @@ test("commented text is marked in both views and follows edits elsewhere in the 
 
   // Two lines typed at the top of the source move the marks down with their text.
   await sourceLines(page).click()
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+Home")
+  await page.keyboard.press("ControlOrMeta+Home")
   await page.keyboard.type("Read this first.\n\n")
   await expect(marker(page, 5)).toBeVisible()
   await expect(marker(page, 7)).toBeVisible()
@@ -243,8 +242,7 @@ test("a selection in Rendered is commented on, and so is a heading pointed at", 
 test("the comment key comments on a heading's section in Source, and elsewhere shows and hides the comments; the context menu comments too", async ({ page }) => {
   await seeded(page, { threads: false, view: "Source" })
   await sourceLines(page).getByText("## Steps").click()
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+Alt+m")
+  await page.keyboard.press("ControlOrMeta+Alt+m")
   await send(page, "Add a step for inviting a teammate.")
   await expect(thread(page, "section Steps")).toBeVisible()
   await expect(marker(page, 5)).toBeVisible()

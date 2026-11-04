@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { holdsNoCode, reusedEnvironment, watchSavedModules } from './useComponentEnvironment';
+import { holdsNoCode, reusedEnvironment, watchSavedModules, retainSourceCatalog } from './useComponentEnvironment';
 
 /** A device store: `saved` holds each file's saved revision; `notify` is any change on the device. */
 function device(saved: Record<string, string | null>) {
@@ -26,6 +26,9 @@ describe('watchSavedModules', () => {
     const store = device({'card.mdx':'r1','other.mdx':'x1'});
     let changes = 0;
     watchSavedModules(store.subscribe,new Map([['card.mdx','r1']]),store.load,() => changes++);
+    await settle();
+    expect(store.reads).toEqual(['card.mdx']);
+    store.reads.length = 0;
 
     store.saved['other.mdx'] = 'x2';
     store.notify();
@@ -185,4 +188,57 @@ describe('typing prose into a note with no code', () => {
     expect(withCode.code.length).toBeGreaterThan(0);
     expect(reusedEnvironment({ ...state, environment: withCode }, 4, loader, PLAIN[1])).toBeNull();
   });
+});
+
+
+test('late valid Source catalogs stay metadata-only and cannot replace newer document or loader results', async () => {
+  const {prepareComponentEnvironment} = await import('./componentModules');
+  const loader = async () => ({text:'export const Release = () => <p>Release</p>',revision:'module-1'});
+  const environment = await prepareComponentEnvironment('import { Release } from "workspace:release.mdx"\n',loader);
+  const result = {identity:7,loader,sequence:1,catalog:environment.catalog};
+  const scope = {identity:7,loader,live:true};
+  const remembered = retainSourceCatalog(null,result,scope);
+  expect(remembered?.catalog.some(component => component.name === 'Release')).toBe(true);
+  const {completeSource} = await import('../source/completions');
+  expect(completeSource({text:'<Rel',offset:4,language:'mdx',componentCatalog:remembered?.catalog}).map(item => item.label)).toContain('Release');
+  expect(remembered).not.toHaveProperty('environment');
+  expect(remembered).not.toHaveProperty('modules');
+  expect(remembered).not.toHaveProperty('code');
+  const newer = {...result,sequence:3};
+  expect(retainSourceCatalog(newer,result,scope)).toBe(newer);
+  expect(retainSourceCatalog(null,result,{...scope,identity:8})).toBeNull();
+  expect(retainSourceCatalog(null,result,{...scope,loader:async () => ({text:'',revision:'account-2'})})).toBeNull();
+  expect(retainSourceCatalog(null,result,{...scope,live:false})).toBeNull();
+});
+
+
+test('resuming a saved-module watcher detects changes made during the inactive interval exactly once', async () => {
+  const store = device({'card.mdx':'r1','other.mdx':'other-1'});
+  const revisions = new Map([['card.mdx','r1']]);
+  let changes = 0;
+  const stop = watchSavedModules(store.subscribe,revisions,store.load,() => changes++);
+  await settle();
+  expect(changes).toBe(0);
+  stop();
+  store.reads.length = 0;
+  store.saved['card.mdx'] = 'r2';
+  store.notify();
+  await settle();
+  expect(store.reads).toEqual([]);
+  const resumed = watchSavedModules(store.subscribe,revisions,store.load,() => changes++);
+  await settle();
+  expect(changes).toBe(1);
+  expect(store.reads).toEqual(['card.mdx']);
+  store.notify();
+  await settle();
+  expect(changes).toBe(1);
+  expect(store.reads).toEqual(['card.mdx']);
+  resumed();
+  const current = watchSavedModules(store.subscribe,new Map([['card.mdx','r2']]),store.load,() => changes++);
+  await settle();
+  store.saved['other.mdx'] = 'other-2';
+  store.notify();
+  await settle();
+  expect(changes).toBe(1);
+  current();
 });

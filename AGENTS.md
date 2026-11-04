@@ -7,7 +7,7 @@ Instructions for any agent or contributor. Read these first:
 3. [Roadmap](docs/roadmap.md): what is being built now, in order.
 4. [Platform notes](docs/platform-notes.md): Supabase and Cloudflare facts, with sources.
 5. [Task queue](docs/tasks.md): the open work, as self-contained tasks for contributors and agents.
-6. [Progressive loading](docs/progressive-loading.md): the app-wide loading requirement and pending follow-ups.
+6. [Progressive loading](docs/progressive-loading.md): the app-wide loading contracts and verification.
 
 Implemented behavior lives in code and tests. The docs above also describe
 planned work: never describe something as working until it is built and tested.
@@ -59,7 +59,7 @@ build (it records today's sizes and sets each budget 5% above them) and commit
 `scripts/bundle-budget.json` with the reason.
 
 These budgets measure initial download size, not time until a document is
-readable. The pending loading work and its required verification are in
+readable. The loading contracts and their required verification are in
 [Progressive loading](docs/progressive-loading.md). A quick shell alone does
 not satisfy that requirement.
 

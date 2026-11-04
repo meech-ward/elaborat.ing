@@ -6,7 +6,7 @@
 // bundle the whole style guide.
 import "./card.css"
 import { CircleAlert, ExternalLink, Info, Pencil, TriangleAlert, Volume2, VolumeX } from "lucide-react"
-import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ComponentProps, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { DottedPage } from "@/components/panel"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -253,7 +253,7 @@ function CardBody({
   state,
   editor,
   live,
-  preview,
+  preview: preparedPreview,
   highlighter,
 }: {
   state: CardState
@@ -262,6 +262,12 @@ function CardBody({
   preview: CardPreview | null
   highlighter?: () => Promise<Highlighter>
 }) {
+  const selectingProse = useSyncExternalStore(subscribeToSelection, selectingStaticNote, () => false)
+  // A component frame can finish while someone is selecting the readable
+  // fallback. Keep that DOM until their selection ends, then show the frame.
+  const preview = preparedPreview?.status === "shown" && selectingProse
+    ? { ...preparedPreview, status: "loading" as const }
+    : preparedPreview
   if (state.phase === "loading") return <LoadingLines />
   if (state.phase === "live") return live ?? <LoadingLines />
   if (state.phase === "problem") {
@@ -320,6 +326,20 @@ function CardBody({
   return <p className="px-4 py-4 text-[13px] leading-snug text-muted-foreground">{file.kind === "note" ? FILE_NOTES.file : FILE_NOTES[file.kind]}</p>
 }
 
+function subscribeToSelection(changed: () => void) {
+  document.addEventListener("selectionchange", changed)
+  return () => document.removeEventListener("selectionchange", changed)
+}
+
+function selectingStaticNote(): boolean {
+  const selection = document.getSelection()
+  if (!selection || selection.isCollapsed) return false
+  return [selection.anchorNode, selection.focusNode].some(node => {
+    const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement
+    return Boolean(element?.closest("[data-card-static-note]"))
+  })
+}
+
 /** The note editor's frame: the note's page in an accent border, so editing reads as editing. The editor's root has the note's type. */
 export function EditorFrame({ children }: { children: ReactNode }) {
   return (
@@ -329,7 +349,11 @@ export function EditorFrame({ children }: { children: ReactNode }) {
   )
 }
 
-type Slot = { host: HTMLElement; node: ReactNode }
+type Slot = { host: HTMLElement } & (
+  | { kind: "image"; key: string; alt: string }
+  | { kind: "embed"; index: number }
+  | { kind: "callout"; tone: "info" | "warn" | "error"; html: string }
+)
 
 /**
  * The server's sanitized HTML for a note, parsed once, with each embed's
@@ -338,7 +362,7 @@ type Slot = { host: HTMLElement; node: ReactNode }
  * (readingMarkup.ts). Only the server's own markup is read: a figure's
  * data-embed index and a callout's tone.
  */
-function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<string, string>,images:CardFile['images'],imageRefs:CardFile['imageRefs']) {
+function prepareNote(html: string) {
   const holder = document.createElement("div")
   holder.innerHTML = html
   const slots: Slot[] = []
@@ -348,18 +372,13 @@ function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<stri
     host.className = 'not-prose card-image-slot';
     const alt = placeholder.getAttribute('alt') ?? placeholder.textContent ?? '';
     placeholder.replaceWith(host);
-    slots.push({host,node:<CardImage pixels={images?.[key]} alt={alt} loading={imageRefs?.some(reference => reference.key === key && reference.status === 'loading')} />});
+    slots.push({host,kind:"image",key,alt});
   }
   for (const figure of holder.querySelectorAll<HTMLElement>("figure[data-embed]")) {
-    const embed = embeds[Number(figure.dataset.embed)]
-    if (!embed) {
-      figure.remove()
-      continue
-    }
     const host = document.createElement("div")
     host.className = "not-prose min-w-0"
     figure.replaceWith(host)
-    slots.push({ host, node: <EmbedFigure embed={embed} svgs={svgs} /> })
+    slots.push({ host, kind: "embed", index: Number(figure.dataset.embed) })
   }
   for (const aside of holder.querySelectorAll<HTMLElement>("aside.callout")) {
     const host = document.createElement("div")
@@ -367,7 +386,7 @@ function prepareNote(html: string, embeds: CardFile["embeds"], svgs: Record<stri
     const tone = aside.dataset.tone === "warn" || aside.dataset.tone === "error" ? aside.dataset.tone : "info"
     const content = aside.innerHTML
     aside.replaceWith(host)
-    slots.push({ host, node: <NoteCallout tone={tone} html={content} /> })
+    slots.push({ host, kind: "callout", tone, html: content })
   }
   readingMarkup(holder)
   return { nodes: [...holder.childNodes], slots }
@@ -394,7 +413,9 @@ export function NoteHtml({
   highlighter?: () => Promise<Highlighter>
 }) {
   const container = useRef<HTMLDivElement>(null)
-  const prepared = useMemo(() => prepareNote(html, embeds, svgs,images,imageRefs), [html, embeds, svgs,images,imageRefs])
+  // Resource arrivals update their portals, never the prose DOM. Replacing
+  // every paragraph here would discard a reader's selection and scroll.
+  const prepared = useMemo(() => prepareNote(html), [html])
   useLayoutEffect(() => {
     container.current?.replaceChildren(...prepared.nodes)
   }, [prepared])
@@ -414,8 +435,16 @@ export function NoteHtml({
   }, [prepared, highlighter])
   return (
     <CardNote>
-      <div ref={container} className={READING_CLASS} />
-      {prepared.slots.map((slot, index) => createPortal(slot.node, slot.host, String(index)))}
+      <div ref={container} data-card-static-note className={READING_CLASS} />
+      {prepared.slots.map((slot, index) => {
+        const embed = slot.kind === "embed" ? embeds[slot.index] : null
+        const node = slot.kind === "image"
+          ? <CardImage pixels={images?.[slot.key]} alt={slot.alt} loading={imageRefs?.some(reference => reference.key === slot.key && reference.status === "loading")} />
+          : slot.kind === "callout"
+            ? <NoteCallout tone={slot.tone} html={slot.html} />
+            : embed ? <EmbedFigure embed={embed} svgs={svgs} /> : null
+        return createPortal(node, slot.host, String(index))
+      })}
     </CardNote>
   )
 }

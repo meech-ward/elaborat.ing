@@ -92,21 +92,25 @@ insertion and reuse need no server; downloaded images and unsaved drafts
 survive reload. Sync does not advance its complete offline revision before
 current image bytes have been downloaded and checked.
 
-## Loading follow-up (pending)
+## Progressive loading
 
-The image features above are implemented. The app-wide
-[progressive loading requirement](progressive-loading.md) remains pending:
-first project open waits for all image originals and previews, active
-Source-only notes can prepare image/drawing previews, and ready inline images
-wait for the rest of their preparation batch before being published.
+The selected file opens before unrelated image originals and previews finish
+downloading. A durable partial marker and progress count distinguish readable
+files from a complete offline revision. Interrupted or failed preparation
+resumes from the previous checkpoint. See [project loading](project-loading.md).
 
-T56, T57 and T59 in the [task queue](tasks.md) track separating visible content
-from offline completion, preparing resources only for the view that needs
-them, and publishing each ready asset independently. These tasks wait for
-implementation approval. Preserve original resolution, immutable asset
-identity, decoded-pixel and payload limits, source-owned references and
-network isolation. Any future partial loading must keep offline readiness
-truthful rather than advancing the existing complete revision prematurely.
+Source-only notes do no image decoding or drawing preview work. Rendered,
+Split and active, expanded embedded views use separate image and drawing
+queues of up to three workers each and publish each ready result. Known image
+dimensions reserve their space before pixels arrive, using bounded data-only
+resource messages.
+Arrivals update image slots without compiling or replacing the document.
+Saved immutable identities determine reuse and replacement; source changes
+and canceled views cannot publish late pixels. Full-resolution display,
+aggregate payload limits, complete exports and document isolation remain.
+
+[Progressive loading](progressive-loading.md) records the browser regressions
+and measurement limits for T56, T57 and T59.
 
 ## Asset storage and saves
 

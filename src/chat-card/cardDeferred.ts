@@ -2,14 +2,14 @@
  * The drawings and diagrams that did not fit in show_file's result
  * (`deferred`, fileView.ts MAX_META_CHARS). Where the host lets the card
  * call tools, it loads each with card_embed, the view's own tool, for its
- * path in the same project, one at a time in the note's order, and shows it
+ * path in the same project, at most two at a time in the note's order, and shows it
  * where its link was, as that result has it: its SVG, or what the card
  * draws a diagram from (cardDiagrams.ts). Both come in the result's
  * structuredContent, since a host may leave `_meta` out of the result of a
  * call the card makes. Until then its embed says it is loading. A call that
  * fails, or that the host has not answered in 20 s, and a host that does not
  * let the card call tools, leave its link. Once the host has not answered
- * one, the rest leave theirs at once, with no more calls. A newer file for
+ * one, queued embeds leave theirs at once, with no more calls. A newer file for
  * the card stops the calls.
  */
 import { useEffect, useMemo, useState } from "react"
@@ -62,73 +62,65 @@ function withLoaded(file: CardFile, loaded: Loaded, loading: boolean): CardFile 
   return { ...file, embeds, svgs, diagrams }
 }
 
-/** `file` with its deferred drawings and diagrams loaded through `host`: null where the card cannot call tools. */
-function useLoadedEmbeds(file: CardFile | null, host: HostBridge | null): CardFile | null {
-  const [loaded, setLoaded] = useState<{ file: CardFile; got: Loaded } | null>(null)
-  useEffect(() => {
-    if (!file || !host) return
-    let stopped = false
-    void (async () => {
-      const paths = deferredPaths(file)
-      for (const [index, path] of paths.entries()) {
-        let answer: unknown = null
-        try {
-          answer = await within(host.callTool("card_embed", { project_id: file.projectId, path }), LOAD_TIMEOUT_MS)
-        } catch {
-          // Refused or failed: the link stays.
-        }
-        if (stopped) return
-        // Not answered in time: the host stopped answering, so this link and the rest stay at once, with no more calls.
-        const silent = answer === NO_ANSWER
-        const got = silent ? null : parseEmbedResult(answer, path)
-        setLoaded((current) => {
-          const next = new Map(current?.file === file ? current.got : NONE)
-          for (const each of silent ? paths.slice(index) : [path]) next.set(each, got)
-          return { file, got: next }
-        })
-        if (silent) return
-      }
-    })()
-    return () => {
-      stopped = true
-    }
-  }, [file, host])
-  return useMemo(() => file && withLoaded(file, loaded?.file === file ? loaded.got : NONE, host !== null), [file, loaded, host])
-}
-
-/** Image previews load sequentially, with the same stop-on-silent-host behavior as drawing embeds. */
+/** Independent assets share two host calls; each ready result publishes immediately. */
 export function useLoadedFile(file:CardFile|null,host:HostBridge|null):CardFile|null {
-  const embeds = useLoadedEmbeds(file,host);
-  const [loaded,setLoaded] = useState<{file:CardFile;images:ReadonlyMap<string,CardImagePixels|null>}|null>(null);
+  const [loaded,setLoaded] = useState<{file:CardFile;embeds:Loaded;images:ReadonlyMap<string,CardImagePixels|null>}|null>(null);
   useEffect(() => {
     if (!file || !host) return;
     let stopped = false;
     void (async () => {
-      const jobs = [...new Map((file.imageRefs ?? []).filter(reference => !file.images?.[reference.key] && reference.status !== 'missing').map(reference => [imageIdentity(reference),{path:reference.path,revision:reference.revision}])).values()];
+      const imageJobs = [...new Map((file.imageRefs ?? []).filter(reference => !file.images?.[reference.key] && reference.status !== 'missing').map(reference => [imageIdentity(reference),{path:reference.path,revision:reference.revision}])).values()];
+      if (file.kind === 'image' && !file.images?.[file.path] && !imageJobs.some(job => job.path === file.path)) imageJobs.push({path:file.path,revision:file.version ?? undefined});
+      const paths = deferredPaths(file);
+      const jobs = [...paths.map(path => ({kind:'embed' as const,path})),...imageJobs.map(job => ({kind:'image' as const,...job}))];
       let bytes = Object.values(file.images ?? {}).reduce((total,pixels) => total + cardImageBytes(pixels),0);
-      if (file.kind === 'image' && !file.images?.[file.path] && !jobs.some(job => job.path === file.path)) jobs.push({path:file.path,revision:file.version ?? undefined});
-      for (const [index,job] of jobs.entries()) {
-        const {path,revision} = job;
-        let answer:unknown = null;
-        try { answer = await within(host.callTool('get_image_preview',{project_id:file.projectId,path,...(revision === undefined ? {} : {revision})}),LOAD_TIMEOUT_MS); } catch { /* keep the explicit app fallback */ }
-        if (stopped) return;
-        const silent = answer === NO_ANSWER;
-        const pixels = silent ? null : parseImagePreviewResult(answer,path);
-        const cost = pixels ? cardImageBytes(pixels) * Math.max(1,(file.imageRefs ?? []).filter(reference => imageIdentity(reference) === imageIdentity(job) && !file.images?.[reference.key]).length) : 0;
-        const full = bytes + cost > 2 * 1024 * 1024;
-        setLoaded(current => {
-          const images = new Map(current?.file === file ? current.images : []);
-          for (const each of silent || full ? jobs.slice(index) : [job]) images.set(imageIdentity(each),full ? null : pixels);
-          return {file,images};
-        });
-        if (silent || full) return;
-        bytes += cost;
-      }
+      let cursor = 0;
+      let silent = false;
+      let full = false;
+      const worker = async () => {
+        while (!stopped && !silent && cursor < jobs.length) {
+          const job = jobs[cursor++];
+          if (job.kind === 'image' && full) continue;
+          const {path} = job;
+          let answer:unknown = null;
+          try { answer = await within(host.callTool(job.kind === 'embed' ? 'card_embed' : 'get_image_preview',{
+            project_id:file.projectId,path,...(job.kind === 'image' && job.revision !== undefined ? {revision:job.revision} : {}),
+          }),LOAD_TIMEOUT_MS); } catch { /* keep the explicit app fallback */ }
+          if (stopped || silent) return;
+          if (answer === NO_ANSWER) {
+            silent = true;
+            setLoaded(current => {
+              const embeds = new Map(current?.file === file ? current.embeds : NONE);
+              const images = new Map(current?.file === file ? current.images : []);
+              for (const path of paths) if (!embeds.has(path)) embeds.set(path,null);
+              for (const image of imageJobs) if (!images.has(imageIdentity(image))) images.set(imageIdentity(image),null);
+              return {file,embeds,images};
+            });
+            return;
+          }
+          const pixels = job.kind === 'image' ? parseImagePreviewResult(answer,path) : null;
+          const embed = job.kind === 'embed' ? parseEmbedResult(answer,path) : null;
+          const cost = pixels ? cardImageBytes(pixels) * Math.max(1,(file.imageRefs ?? []).filter(reference => imageIdentity(reference) === imageIdentity(job) && !file.images?.[reference.key]).length) : 0;
+          const fits = bytes + cost <= 2 * 1024 * 1024;
+          if (!fits) full = true;
+          else bytes += cost;
+          setLoaded(current => {
+            const embeds = new Map(current?.file === file ? current.embeds : NONE);
+            const images = new Map(current?.file === file ? current.images : []);
+            if (job.kind === 'embed') embeds.set(path,embed);
+            else images.set(imageIdentity(job),fits ? pixels : null);
+            if (full) for (const image of imageJobs) if (!images.has(imageIdentity(image))) images.set(imageIdentity(image),null);
+            return {file,embeds,images};
+          });
+        }
+      };
+      await Promise.all([worker(),worker()]);
     })();
     return () => { stopped = true; };
   }, [file,host]);
   return useMemo(() => {
-    if (!file || !embeds) return null;
+    if (!file) return null;
+    const embeds = withLoaded(file,loaded?.file === file ? loaded.embeds : NONE,host !== null);
     const got = loaded?.file === file ? loaded.images : new Map<string,CardImagePixels|null>();
     if (!(file.imageRefs?.length || file.kind === 'image')) return embeds;
     const images = {...file.images};
@@ -141,5 +133,5 @@ export function useLoadedFile(file:CardFile|null,host:HostBridge|null):CardFile|
     const standalone = got.get(imageIdentity({path:file.path,revision:file.version ?? undefined}));
     if (file.kind === 'image' && standalone) images[file.path] = standalone;
     return {...embeds,images,imageRefs};
-  }, [file,embeds,loaded,host]);
+  }, [file,loaded,host]);
 }

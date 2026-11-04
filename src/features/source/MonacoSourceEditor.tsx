@@ -650,6 +650,16 @@ export function MonacoSourceEditor(props: MonacoSourceEditorProps) {
   }, []);
 
   useEffect(() => {
+    const editor = editorRef.current, model = modelRef.current;
+    if (!props.componentCatalog || !visible || readOnly || !editor?.hasTextFocus() || !model || model.getLanguageId() !== 'mdx') return;
+    const position = editor.getPosition();
+    if (!position || !/<[A-Z][\w.]*$/.test(model.getLineContent(position.lineNumber).slice(0,position.column - 1))) return;
+    // Imported metadata can arrive after the person starts an incomplete
+    // tag. Refresh that focused completion request without changing source.
+    editor.trigger('component-catalog','editor.action.triggerSuggest',{});
+  },[props.componentCatalog,visible,readOnly]);
+
+  useEffect(() => {
     const tokens = getAppearanceTokens(appearance);
     applyMonacoTheme(appearance);
     editorRef.current?.updateOptions({ fontFamily: tokens.codeFont });

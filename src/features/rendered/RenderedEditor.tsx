@@ -112,6 +112,7 @@ import { appendedFrom, type WriteIn } from '../document/writeIn';
 import { REFUSAL, refusalNotice } from './refusal';
 import { DocumentEmbedController } from './documentEmbedController';
 import type { DocumentEmbedHost } from './documentEmbeds';
+import { canRetainSavedBuiltinPresentation } from './retainedPresentation';
 
 export type RenderedEditorProps = {
   document: DocumentSnapshot;
@@ -162,6 +163,8 @@ export type RenderedEditorProps = {
   resources?: Record<string, string>;
   /** Validated local raster pixels, keyed by the parser's image-reference key. */
   imageResources?: Record<string, ImagePreview>;
+  /** Validated metadata reserves pending image boxes before pixels are ready. */
+  imageDimensions?: Record<string, {width:number;height:number}>;
   /** Read an original only after the parent has matched its key to the current parsed source. */
   onReadImage?: (key: string) => Promise<ImagePreview>;
   onInsertImage?: (request: {
@@ -312,8 +315,20 @@ function newSessionToken(): string {
  * this object, so a newer document can never be patched with an older
  * frame's ranges.
  */
+type ComponentRuntimeFailure = {
+  identity?: number;
+  path: string;
+  text: string;
+  revision: number;
+  environmentKey: string;
+  message: string;
+};
+
 type Exposed = FluidProjection & {
   identity?: number;
+  path: string;
+  /** Validated prose with static islands; never grants editing or export authority. */
+  provisional?: boolean;
   revision: number;
   epoch: number;
   operation: number;
@@ -351,6 +366,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     typing = false,
     resources,
     imageResources,
+    imageDimensions,
     onReadImage,
     onInsertImage,
     allowedResourcePaths,
@@ -372,6 +388,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const availablePathsKey = availableResourcePathsProp ? JSON.stringify(availableResourcePathsProp.filter(path => path !== documentPath)) : null;
   const availableResourcePaths = useMemo(() => availablePathsKey === null ? undefined : JSON.parse(availablePathsKey) as string[], [availablePathsKey]);
   const pendingOwners = useRef({ fluid: false, draft: false });
+  const pendingChangeListener = useRef(onPendingChangeProp);
+  useLayoutEffect(() => {pendingChangeListener.current = onPendingChangeProp;});
   const onPendingChange = useCallback((pending: boolean) => {
     pendingOwners.current.fluid = pending;
     onPendingChangeProp?.(pending || pendingOwners.current.draft);
@@ -458,6 +476,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const [exposed, setExposed] = useState<Exposed | null>(null);
   // The error the note's text gave, with the text it was found in.
   const [compileError, setCompileError] = useState<{ text: string; message: string } | null>(null);
+  const [runtimeFailure, setRuntimeFailure] = useState<ComponentRuntimeFailure | null>(null);
+  // A failed module cannot poison another source, document or approved code
+  // version. A changed environment retries its full projection normally.
+  const componentRuntimeFailure = runtimeFailure && document.format === 'mdx' &&
+    runtimeFailure.identity === documentId && runtimeFailure.path === documentPath &&
+    runtimeFailure.text === document.text && runtimeFailure.revision === document.revision &&
+    runtimeFailure.environmentKey === (componentEnvironment?.key ?? runtimeFailure.environmentKey) ? runtimeFailure : null;
+  const componentFailure = componentError ?? componentRuntimeFailure?.message;
+  const retainedSavedBuiltinPresentation = !componentFailure &&
+    canRetainSavedBuiltinPresentation(exposed,document,documentId,documentPath,writeIn);
   const [editNotice, setEditNotice] = useState<string | null>(null);
   // An edit was lost to a change of the note whose projection is still on its
   // way: when that lands, the notice saying so stays.
@@ -470,6 +498,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const authority = useRef<Exposed | null>(null);
   const snapshotAlive = useRef(true);
   const snapshotPreparing = useRef(false);
+  const [snapshotRequested,setSnapshotRequested] = useState(false);
+  const renderingNeeded = active || snapshotRequested;
   const snapshotProblem = useRef<string | null>(null);
   const snapshotPending = useRef<{
     request: string; projection: Exposed;
@@ -480,18 +510,22 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     return () => {snapshotAlive.current = false; snapshotPending.current = null;};
   }, []);
   useLayoutEffect(() => {
-    snapshotProblem.current = componentError ?? (compileError?.text === document.text ? compileError.message : null);
-  }, [componentError, compileError, document.text]);
+    snapshotProblem.current = componentFailure ?? (componentPending ? 'Component preparation must finish before exporting.' : null) ?? (compileError?.text === document.text ? compileError.message : null);
+  }, [componentFailure, componentPending, compileError, document.text]);
   const latestDocument = useRef(document);
-  const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,
+  const embedContext = useRef({session,revision:document.revision,text:document.text,format:document.format,active:renderingNeeded,
     owner:externalFrame ?? null as Window | null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
     host:documentEmbedHost,frameScriptUrl:externalFrameScriptUrl,referencesKey:undefined as string | undefined});
   useLayoutEffect(() => {
-    embedContext.current = {session,revision:document.revision,text:document.text,format:document.format,
+    embedContext.current = {session,revision:document.revision,text:document.text,format:document.format,active:renderingNeeded,
       owner:externalFrame ?? frameRef.current?.contentWindow ?? null,path:documentPath,ancestors:embeddedAncestors ?? [documentPath],
       host:documentEmbedHost,frameScriptUrl:externalFrame ? externalFrameScriptUrl : frameDoc.hosted && pageUrl ? new URL('frame.js',pageUrl).href : undefined,
       referencesKey:exposed?.text === document.text ? exposed.runtimeKey : undefined};
   });
+  useLayoutEffect(() => {
+    documentEmbedHost?.setActive?.(session,renderingNeeded);
+    return () => documentEmbedHost?.setActive?.(session,false);
+  },[documentEmbedHost,session,renderingNeeded]);
   const embedController = useRef<DocumentEmbedController | null>(null);
   useEffect(() => {
     const controller = new DocumentEmbedController({
@@ -644,7 +678,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const hasExposed = exposed !== null;
   const epoch = useRef(0);
   const imageTarget = useRef({documentId,documentPath,readOnly,active,onPatch});
-  const imageReadInFlight = useRef(false);
+  const imageReadInFlight = useRef<{identity?:number;path:string;text:string;revision:number;format:DocumentSnapshot['format'];port:MessagePort;reader:NonNullable<RenderedEditorProps['onReadImage']>} | null>(null);
   useLayoutEffect(() => {
     imageTarget.current = {documentId,documentPath,readOnly,active,onPatch};
   }, [documentId,documentPath,readOnly,active,onPatch]);
@@ -669,20 +703,28 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     pendingOwners.current.draft = false;
     onPendingChangeProp?.(pendingOwners.current.fluid);
   }, [onPendingChangeProp, session]);
+  // A new callback is not a new document. Canceling here on callback
+  // identity changes would invalidate the layout effect's new projection
+  // after it starts, leaving a pending Source edit permanently undisplayed.
   useEffect(() => () => {
     ++epoch.current;
     authority.current = null;
     pendingOwners.current = { fluid: false, draft: false };
-    onPendingChangeProp?.(false);
-  }, [onPendingChangeProp]);
+    pendingChangeListener.current?.(false);
+  }, []);
+  useLayoutEffect(() => {latestDocument.current = document;});
   useLayoutEffect(() => {
-    latestDocument.current = document;
-    if (componentPending || componentError) {
+    if (componentPending || componentFailure) {
       authority.current = null;
       ++epoch.current;
       return;
     }
     const current = authority.current;
+    if (current && (current.identity !== documentId || current.path !== documentPath || current.format !== document.format)) {
+      authority.current = null;
+      ++epoch.current;
+      return;
+    }
     if (
       current &&
       (current.identity !== documentId ||
@@ -692,26 +734,30 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         current.components.key !== (componentEnvironment?.key ?? ''))
     )
       ++epoch.current;
-  }, [document, documentId, componentEnvironment, componentPending, componentError]);
+  }, [document.text, document.revision, document.format, documentId, documentPath, componentEnvironment, componentPending, componentFailure]);
 
   // Decide whether source needs a new projection in the same commit phase as
   // latestDocument above. A passive effect for revision N can run after the
   // next frame transaction has committed authority N+1, mistake it for an
   // external change, and reset the live caret/queued input to old source N.
   useLayoutEffect(() => {
-    if (componentPending) return;
-    if (componentError) {
-      ++epoch.current;
-      rejectPendingDraft(componentError);
-      onPendingChange?.(false);
-      onError?.(componentError);
-      return;
+    if (!renderingNeeded) return;
+    const provisional = document.format === 'mdx' && Boolean(componentPending || componentFailure);
+    // Preserve an approved healthy tree while the next complete source is
+    // checked: an intermediate static tree would reset unchanged components.
+    // Initial/provisional documents still publish each checked prose revision.
+    const deferredLabel = componentFailure ? 'Component unavailable. Edit Source to review its code.' : 'Loading component. Rendered editing waits for preparation.';
+    if (provisional && retainedSavedBuiltinPresentation) return;
+    if (provisional && exposed && exposed.identity === documentId && exposed.path === documentPath && exposed.format === document.format) {
+      if (!componentFailure && !exposed.provisional && componentEnvironment !== undefined && exposed.components.key === componentEnvironment.key) return;
+      if (exposed.provisional && exposed.text === document.text && exposed.revision === document.revision && exposed.components.key === `deferred:${deferredLabel}`) return;
     }
-    if (componentEnvironment && componentEnvironment.source !== document.text) return;
+    if (!provisional && componentEnvironment && componentEnvironment.source !== document.text) return;
     const own = authority.current;
     if (
       own &&
       own.identity === documentId &&
+      own.path === documentPath &&
       own.text === document.text &&
       own.revision === document.revision &&
       own.format === document.format &&
@@ -720,7 +766,8 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       return;
     let cancelled = false;
     const generation = ++epoch.current;
-    projectFluidSource(document.text, document.format, componentEnvironment).then(
+    projectFluidSource(document.text, document.format, componentEnvironment,
+      provisional ? {label: deferredLabel} : undefined).then(
       (projection) => {
         if (cancelled) return;
         try {
@@ -735,7 +782,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
               : fluidPositionForSourceOffset(projection, focus);
           const next: Exposed = {
             ...projection,
+            provisional,
             identity: documentId,
+            path: documentPath,
             revision: document.revision,
             epoch: generation,
             operation: 0,
@@ -760,11 +809,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           }
           writingIn.current = writeInAt === null ? null : { exposed: next, position: writeInAt };
           pendingLocalEdit.current = null;
-          authority.current = next;
+          authority.current = provisional ? null : next;
           setExposed(next);
           setCompileError(null);
           if (!keepNotice.current) setEditNotice(null);
           keepNotice.current = false;
+          // A module failure is local to static islands, not a fatal
+          // document error that would hide an embedded readable document.
           onError?.(null);
         } catch (error: unknown) {
           if (cancelled) return;
@@ -788,7 +839,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [document.text, document.revision, document.format, documentId, componentEnvironment, componentError, componentPending, onError, onPendingChange, rejectPendingDraft]);
+  }, [document.text, document.revision, document.format, documentId, documentPath, componentEnvironment, componentFailure, componentPending, exposed, renderingNeeded, onError, onPendingChange, rejectPendingDraft, retainedSavedBuiltinPresentation]);
 
   // Presentation updates do not re-evaluate MDX or replace in-progress edits.
   // Each goes to a frame as soon as it has its port, and again only when it
@@ -801,14 +852,16 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // The note's image pixels as of the latest render, whose sizes a whole
   // render carries (below).
   const latestImages = useRef(imageResources);
+  const latestImageDimensions = useRef(imageDimensions);
   useLayoutEffect(() => {
     latestImages.current = imageResources;
+    latestImageDimensions.current = imageDimensions;
   });
 
   // What the frame has of the note: the last whole render posted on its
   // port. While that render's epoch, code and components hold, the answer to
   // an edit goes as a `render-ack`, without what the frame keeps from it.
-  const frameHas = useRef<{ port: MessagePort; readyTick: number; epoch: number; runtimeKey: string; components: Exposed["components"] } | null>(null);
+  const frameHas = useRef<{ port: MessagePort; readyTick: number; epoch: number; runtimeKey: string; components: Exposed["components"]; exposed: Exposed } | null>(null);
   // The frame asked for the whole render again (`render-request`).
   const [renderRequests, setRenderRequests] = useState(0);
   // Post compiled code to the child frame. The render message carries the
@@ -848,7 +901,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     };
     const has = frameHas.current;
     if (
-      !exposed.reset && !exposed.nearest &&
+      (has?.exposed === exposed || (!exposed.reset && !exposed.nearest)) &&
       has?.port === port && has.readyTick === readyTick && has.epoch === exposed.epoch &&
       has.runtimeKey === exposed.runtimeKey && has.components === exposed.components
     ) {
@@ -857,7 +910,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         session,
         revision: exposed.revision,
         slots,
-        readOnly: readOnly || undefined,
+        readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
         fluid: { epoch: exposed.epoch, operation: exposed.operation, runtimeKey: exposed.runtimeKey, islands },
         authoring,
       };
@@ -882,7 +935,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         islands,
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
-      readOnly: readOnly || undefined,
+      readOnly: readOnly || componentPending || Boolean(componentFailure) || exposed.provisional || retainedSavedBuiltinPresentation || undefined,
       slots,
       authoring: {
         ...authoring,
@@ -894,13 +947,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     // first paint keeps each picture's box from these, and nothing below a
     // picture moves when its pixels come. The pixels themselves go only for
     // the images the parser finds in the note (below).
-    const imageSizes = Object.entries(latestImages.current ?? {}).flatMap(([key, image]) =>
+    const imageSizes = Object.entries({...latestImages.current,...latestImageDimensions.current}).flatMap(([key, image]) =>
       key.length > 0 && key.length <= 2048 && Number.isSafeInteger(image.width) && Number.isSafeInteger(image.height) &&
       image.width > 0 && image.height > 0 && image.width <= MAX_IMAGE_PIXELS && image.height <= MAX_IMAGE_PIXELS
         ? [{ key, width: image.width, height: image.height }] : []).slice(0, 1024);
     port.postMessage(imageSizes.length ? { ...message, imageSizes } : message);
-    frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components };
-  }, [exposed, readOnly, readyTick, renderRequests, session]);
+    frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components, exposed };
+  }, [exposed, readOnly, componentPending, componentFailure, readyTick, renderRequests, session, retainedSavedBuiltinPresentation]);
 
   // The paths the note may embed, once the frame has a render (it takes
   // them only after one), and again only when they change.
@@ -918,7 +971,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // stable table identity (state, not a fresh literal per render), so this
   // posts only when the pixels actually change.
   useEffect(() => {
-    if (!hasExposed || !resources || !authority.current) return;
+    if (!renderingNeeded || !hasExposed || !resources || !authority.current) return;
     const port = portRef.current;
     if (!port) return;
     const message: ResourcesMessage = {
@@ -931,7 +984,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       })),
     };
     port.postMessage(message);
-  }, [hasExposed, readyTick, session, resources]);
+  }, [renderingNeeded, hasExposed, readyTick, session, resources]);
 
   // The image keys the note references, as the parser reads them: only these
   // get pixels. They are kept by runtimeKey and path. Every image syntax (an
@@ -942,9 +995,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   const imageKeys = useRef<{ runtimeKey: string; path: string; keys: Promise<ReadonlySet<string>> } | null>(null);
   // The pixels the frame was last sent, and on which port: they go again
   // only when a key or its pixels change.
+  const imageDimensionsSent = useRef<{port:MessagePort;readyTick:number;key:string} | null>(null);
   const imagesSent = useRef<{ port: MessagePort; readyTick: number; images: ReadonlyMap<string, ImagePreview> } | null>(null);
   useEffect(() => {
-    if (!exposed) return;
+    if (!renderingNeeded || !exposed) return;
     let cancelled = false;
     let known = imageKeys.current;
     if (known?.runtimeKey !== exposed.runtimeKey || known.path !== documentPath) {
@@ -961,7 +1015,23 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     const keys = known.keys;
     keys.then(allowed => {
       const port = portRef.current;
-      if (cancelled || authority.current !== exposed || !port) return;
+      const currentDisplay = exposed.identity === documentId && exposed.path === documentPath && exposed.text === document.text && exposed.revision === document.revision;
+      if (cancelled || !port || !currentDisplay || (!exposed.provisional && authority.current !== exposed)) return;
+      const referencedKeys = [...allowed].sort().slice(0,1024);
+      const sizes = referencedKeys.flatMap(key => {
+        const size = imageDimensions?.[key] ?? imageResources?.[key];
+        return size && Number.isSafeInteger(size.width) && Number.isSafeInteger(size.height) &&
+          size.width > 0 && size.height > 0 && size.width * size.height <= MAX_IMAGE_PIXELS
+            ? [{key,width:size.width,height:size.height}] : [];
+      });
+      const dimensionsKey = JSON.stringify([referencedKeys,sizes]);
+      const dimensionsSent = imageDimensionsSent.current;
+      // Source revisions alone do not change metadata. Keep the last known
+      // box for still-referenced images whose pixels are temporarily absent.
+      if ((referencedKeys.length > 0 || dimensionsSent !== null) && (dimensionsSent?.port !== port || dimensionsSent.readyTick !== readyTick || dimensionsSent.key !== dimensionsKey)) {
+        port.postMessage({kind:'image-dimensions',session,revision:exposed.revision,keys:referencedKeys,sizes});
+        imageDimensionsSent.current = {port,readyTick,key:dimensionsKey};
+      }
       const images = new Map(Object.entries(imageResources ?? {}).filter(([key,image]) => allowed.has(key) && image.dataURL.length <= 8 * 1024 * 1024));
       const sent = imagesSent.current;
       if (sent?.port === port && sent.readyTick === readyTick && sent.images.size === images.size &&
@@ -985,7 +1055,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (!cancelled) console.warn('Image references could not be resolved:',error);
     });
     return () => { cancelled = true; };
-  }, [exposed,documentPath,imageResources,readyTick,session]);
+  }, [renderingNeeded,exposed,documentId,documentPath,document.text,document.revision,imageResources,imageDimensions,readyTick,session]);
 
   // The commented text, as ranges of the document on screen. Marks placed in
   // other text wait for the next; meanwhile the frame's marks move with edits.
@@ -1038,6 +1108,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       async exportSnapshot() {
         if (snapshotPreparing.current) throw new Error('Another component export is already running.');
         snapshotPreparing.current = true;
+        setSnapshotRequested(true);
         const frozen = {...latestDocument.current};
         const identity = imageTarget.current.documentId;
         const deadline = performance.now() + 20_000;
@@ -1085,7 +1156,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             throw new Error('The document changed while preparing the export.');
           if (answer.value.error) throw new Error(answer.value.error);
           return matchNotionSnapshotEntries(expected, answer.value.entries ?? []);
-        } finally {snapshotPending.current = null; snapshotPreparing.current = false;}
+        } finally {snapshotPending.current = null; snapshotPreparing.current = false;setSnapshotRequested(false);}
       },
       revealRange(from, to, focus) {
         const frame = frameRef.current;
@@ -1126,9 +1197,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   // message never meets a document from one render and a projection from
   // another, and the handler stays the same across renders.
   const handlerProps = {
-    document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+    document, exposed, componentEnvironment, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
     onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
-    onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+    onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly: readOnly || Boolean(componentPending || componentFailure || exposed?.provisional || retainedSavedBuiltinPresentation), resources,
   };
   const latest = useRef(handlerProps);
   useLayoutEffect(() => {
@@ -1137,9 +1208,9 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const {
-        document, exposed, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
+        document, exposed, componentEnvironment, allowedResourcePaths, availableResourcePaths, documentId, documentPath, externalFrame,
         onActivity, onContentHeight, onEditResource, onError, onHistory, onInsertImage, onPatch, onPendingChange,
-        onPendingChangeProp, onReadImage, onShown, readOnly, resources,
+        onPendingChangeProp, onReadImage, onShown, rejectPendingDraft, readOnly, resources,
       } = latest.current;
       const commitLocalEdit = (revision: number, patches: SourcePatch[], draftId?: number) => {
         // Keep a rebase lease only for the exact source result of this local
@@ -1178,12 +1249,15 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         else if (edit.kind === 'block-edit')
           port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { block: edit.block }, outcome });
       };
+      const presentationRevision = exposed?.provisional && exposed.identity === documentId && exposed.path === documentPath &&
+        exposed.text === document.text && exposed.revision === document.revision ? exposed.revision : undefined;
       const checked = checkChildMessage({
         data: event.data,
         source: event.currentTarget,
         expectedSource: port,
         session,
         revision: authority.current?.revision ?? -1,
+        presentationRevision,
       });
       if (!checked.ok) {
         if ((event.data as {kind?:unknown}|null)?.kind === 'export-snapshot-result') {
@@ -1250,7 +1324,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             : {error:'The document changed while preparing the export.'});
         return;
       }
-      if (message.kind === 'document-embed-open' || message.kind === 'document-embed-release' || message.kind === 'document-embed-action') {
+      if (message.kind === 'document-embed-open' || message.kind === 'document-embed-release' || message.kind === 'document-embed-action' || message.kind === 'document-embed-visibility') {
         const current = authority.current;
         const snapshot = latestDocument.current;
         if (current && current.text === snapshot.text && current.revision === snapshot.revision) embedController.current?.handle(message);
@@ -1443,6 +1517,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
             const next: Exposed = {
               ...result.projection,
               identity: before.identity,
+              path: before.path,
               revision: before.revision + (result.text === before.text ? 0 : 1),
               epoch: before.epoch,
               operation: message.operation,
@@ -1559,18 +1634,35 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       }
       if (message.kind === "edit-rejected") {
         // Refusing a command leaves the current projection and any queued
-        // valid edits intact. Only runtime/compilation errors hide the frame.
+        // valid edits intact. Component failures use a checked static display.
         setEditNotice(message.message);
         return;
       }
       if (message.kind === "render-error") {
-        setEditNotice(null);
         const error = `Preview failed: ${message.message}`;
-        setCompileError({ text: authority.current?.text ?? latestDocument.current.text, message: error });
+        const failed = authority.current;
+        // Same-source module rebuilds keep the note revision, so the failed
+        // render's epoch must also match before it can revoke current authority.
+        if (message.epoch !== undefined && message.epoch !== failed?.epoch) return;
+        if (failed && componentEnvironment && failed.components.key !== componentEnvironment.key) return;
+        setEditNotice(null);
+        const recoverable = document.format === 'mdx' && failed && !failed.provisional &&
+          failed.identity === documentId && failed.path === documentPath && failed.text === document.text && failed.revision === document.revision;
+        if (recoverable) {
+          setRuntimeFailure({identity: documentId, path: documentPath, text: document.text, revision: document.revision,
+            environmentKey: failed.components.key, message: error});
+          setCompileError(null);
+          // Revoke writes immediately. Only the complete-source safe projection
+          // may replace the failed islands; its parser can still reject bad MDX.
+          rejectPendingDraft(error);
+          onError?.(null);
+        } else {
+          setCompileError({ text: failed?.text ?? latestDocument.current.text, message: error });
+          onError?.(error);
+        }
         authority.current = null;
         ++epoch.current;
         onPendingChange?.(false);
-        onError?.(error);
         return;
       }
       // A clicked link comes as a window post (openLink above), never on the port.
@@ -1706,20 +1798,30 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         return;
       }
       if (message.kind === 'view-image') {
-        if (!viewerActive.current || !onReadImage || imageReadInFlight.current) return;
-        imageReadInFlight.current = true;
+        if (!viewerActive.current || !onReadImage) return;
+        const previous = imageReadInFlight.current;
+        if (previous && previous.identity === documentId && previous.path === documentPath && previous.text === document.text &&
+          previous.revision === document.revision && previous.format === document.format && previous.port === port && previous.reader === onReadImage) return;
         const snapshot = document;
+        const identity = documentId, path = documentPath;
+        const reading = {identity,path,text:snapshot.text,revision:snapshot.revision,format:snapshot.format,port,reader:onReadImage};
+        imageReadInFlight.current = reading;
+        const stillCurrent = () => {
+          const target = imageTarget.current, currentDocument = latestDocument.current;
+          return snapshotAlive.current && viewerActive.current && target.active && target.documentId === identity && target.documentPath === path &&
+            currentDocument.revision === snapshot.revision && currentDocument.text === snapshot.text && currentDocument.format === snapshot.format && portRef.current === port &&
+            latest.current.onReadImage === onReadImage;
+        };
         void import('../images/references').then(async ({parseImageReferences}) => {
-          const refs = await parseImageReferences(snapshot.text,snapshot.format,documentPath,
+          const refs = await parseImageReferences(snapshot.text,snapshot.format,path,
             exposed.components.code.flatMap(entry => entry.path === null ? [] : [{path:entry.path,esm:entry.esm}]));
-          if (!refs.some(reference => reference.key === message.key)) return;
+          if (!stillCurrent() || !refs.some(reference => reference.key === message.key)) return;
           const image = await onReadImage(message.key);
-          if (!viewerActive.current || latestDocument.current.revision !== snapshot.revision || latestDocument.current.text !== snapshot.text) return;
-          portRef.current?.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,image});
+          if (!stillCurrent()) return;
+          port.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,image});
         }).catch(error => {
-          if (viewerActive.current && latestDocument.current.revision === snapshot.revision)
-            portRef.current?.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,error:error instanceof Error ? error.message : 'The original image is unavailable.'});
-        }).finally(() => { imageReadInFlight.current = false; });
+          if (stillCurrent()) port.postMessage({kind:'image-original',session,revision:snapshot.revision,key:message.key,error:error instanceof Error ? error.message : 'The original image is unavailable.'});
+        }).finally(() => { if (imageReadInFlight.current === reading) imageReadInFlight.current = null; });
         return;
       }
       if (
@@ -1853,8 +1955,10 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
   }, [session]);
 
   // While the person types in the source, the frame keeps its last good render.
+  const safeComponentDisplay = exposed?.provisional && exposed.identity === documentId && exposed.path === documentPath &&
+    exposed.text === document.text && exposed.revision === document.revision;
   const displayedError = useSettledError(
-    componentError ?? compileError?.message ?? null,
+    compileError?.message ?? (hasExposed ? null : componentError) ?? null,
     typing,
     componentError != null || compileError?.text === document.text,
   );
@@ -1866,6 +1970,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     <div ref={rootRef} data-rendered-editor={document.format} style={externalFrame ? {display:'contents'} : { position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       {editNotice && externalFrame ? <Banner tone="warn" className="shrink-0 rounded-none">Edit not applied: {editNotice}</Banner> : null}
       {componentPending && externalFrame ? <LoadingLine label="Loading components" className="shrink-0" /> : null}
+      {componentFailure && safeComponentDisplay && !externalFrame ? <Banner tone="danger" className="shrink-0 rounded-none">{componentFailure} Independent prose remains readable. Edit Source to review the component.</Banner> : null}
       {displayedError && errorBanner ? (
         <Banner tone="danger" id={errorId} className="shrink-0 rounded-none">
           {displayedError} Source is unchanged and remains editable.
@@ -1885,7 +1990,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       {/* A note on screen stays while its components are made again (another
       version of it came, or a module it imports changed); its next render
       takes its place. */}
-      <div style={{ display: externalFrame || (componentPending && !hasExposed) || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
+      <div style={{ display: externalFrame || (exposed !== null && (exposed.identity !== documentId || exposed.path !== documentPath) && !retainedSavedBuiltinPresentation) || displayedError ? "none" : "flex", flex: "1 1 auto", width: "100%" }}>
         {!externalFrame && !frameDoc.stopped && (frameDoc.hosted || srcdoc) ? <iframe
           key={frameDoc.key}
           ref={frameRef}

@@ -25,9 +25,9 @@ Developer first, friendly for everyone.
 - **Load what is needed and show it as soon as it is ready.** The shell paints
   first, then requested content and each ready asset should appear without
   waiting for unrelated files or offline preparation. Heavy editors and
-  engines load for the view or action that needs them. The current app has
-  lazy modules and cached project opening, but first project open, unlisted
-  links and preview preparation still need updates. These are pending in
+  engines load for the view or action that needs them. Requested project files
+  open ahead of offline preparation, and visible previews publish each ready
+  asset. The contracts and measured limits are in
   [Progressive loading](progressive-loading.md). There is no server-side
   rendering; `bun run check:bundle` checks initial download size, not useful
   content readiness.

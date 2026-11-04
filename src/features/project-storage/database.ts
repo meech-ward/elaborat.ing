@@ -8,7 +8,9 @@ import { matchesDiagnostic, projectDiagnostic, ProjectDiagnosticStorage, type Sy
  * boundary: it either commits completely or leaves nothing behind. Inside
  * `work`, await only the transaction's own methods. IndexedDB commits a
  * transaction as soon as it has no pending requests, so awaiting anything
- * else (a hash, a network call) would end it early.
+ * else (a hash, a network call) would end it early. Before the first write,
+ * keep other work pure: a native premature completion can retry that read
+ * phase once. Never send network requests or publish state inside `work`.
  */
 export interface StorageTransaction {
   getProject(id: string): Promise<LocalProject | null>
@@ -142,11 +144,12 @@ function memoryTransaction(partition: string, state: MemoryState): StorageTransa
 }
 
 const DATABASE_NAME = "elaborating"
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 
 /** IndexedDB storage. One transaction spans metadata and binary assets. */
 export class IndexedProjectDatabase implements ProjectDatabase {
   private connection: Promise<IDBDatabase> | null = null
+  private upgraded = false
   private readonly diagnostics: ProjectDiagnosticStorage
 
   constructor(private readonly factory: IDBFactory = indexedDB, private readonly name = DATABASE_NAME, diagnosticStorage?: SyncDiagnosticStorage | null) {
@@ -154,10 +157,13 @@ export class IndexedProjectDatabase implements ProjectDatabase {
   }
 
   private open(): Promise<IDBDatabase> {
+    if (this.upgraded) return Promise.reject(new Error("A newer elaborat.ing tab upgraded local storage. Reload this tab before saving again. Your stored drafts are kept."))
     if (!this.connection) {
       this.connection = new Promise((resolve, reject) => {
         const request = this.factory.open(this.name, DATABASE_VERSION)
-        request.onupgradeneeded = () => {
+        let abandoned = false
+        request.onupgradeneeded = (event) => {
+          if (abandoned) { request.transaction?.abort(); return }
           const db = request.result
           if (!db.objectStoreNames.contains("projects")) {
             const projects = db.createObjectStore("projects", { keyPath: ["partition", "id"] })
@@ -172,18 +178,35 @@ export class IndexedProjectDatabase implements ProjectDatabase {
             const assets = db.createObjectStore("assets", { keyPath: ["partition", "projectId", "id"] })
             assets.createIndex("project", ["partition", "projectId"])
           }
+          if (event.oldVersion > 0 && event.oldVersion < 3) {
+            // An old download may have created its project row and stopped
+            // before taking in metadata. Revision zero proves no completeness.
+            const cursor = request.transaction!.objectStore("projects").openCursor()
+            cursor.onsuccess = () => {
+              const row = cursor.result
+              if (!row) return
+              const project = row.value
+              if (project.created === true && project.revision === 0 && project.partial === undefined) {
+                row.update({ ...project, partial: { revision: 0, metadata: false } })
+              }
+              row.continue()
+            }
+          }
         }
         request.onblocked = () => {
+          abandoned = true
           this.connection = null
           reject(new Error("Close other elaborat.ing tabs so local storage can upgrade."))
         }
         request.onerror = () => {
           this.connection = null
-          reject(request.error ?? new Error("Local storage could not open."))
+          reject(request.error?.name === "VersionError" ? new Error("A newer elaborat.ing tab upgraded local storage. Reload this tab before saving again. Your stored drafts are kept.") : request.error ?? new Error("Local storage could not open."))
         }
         request.onsuccess = () => {
           const db = request.result
+          if (abandoned) { db.close(); return }
           db.onversionchange = () => {
+            this.upgraded = true
             db.close()
             this.connection = null
           }
@@ -200,29 +223,37 @@ export class IndexedProjectDatabase implements ProjectDatabase {
 
   async transaction<T>(partition: string, mode: "readonly" | "readwrite", work: (tx: StorageTransaction) => Promise<T>): Promise<T> {
     const db = await this.open()
-    const idb = db.transaction(["projects", "files", "folders", "assets"], mode, { durability: "strict" })
-    const done = new Promise<void>((resolve, reject) => {
-      idb.oncomplete = () => resolve()
-      idb.onabort = () => reject(idb.error ?? new Error("Local save did not complete; nothing was changed."))
-      idb.onerror = () => reject(idb.error ?? new Error("Local storage failed."))
-    })
-    done.catch(() => {})
-    const transaction = new IndexedTransaction(partition, idb, this.diagnostics)
-    let result: T
-    try {
-      result = await work(transaction)
-    } catch (error) {
+    for (let attempt = 0; ; attempt++) {
+      const idb = db.transaction(["projects", "files", "folders", "assets"], mode, { durability: "strict" })
+      let completed = false
+      const done = new Promise<void>((resolve, reject) => {
+        idb.oncomplete = () => { completed = true; resolve() }
+        idb.onabort = () => reject(idb.error ?? new Error("Local save did not complete; nothing was changed."))
+        idb.onerror = () => reject(idb.error ?? new Error("Local storage failed."))
+      })
+      done.catch(() => {})
+      const transaction = new IndexedTransaction(partition, idb, this.diagnostics)
+      let result: T
       try {
-        idb.abort()
-      } catch {
-        // Already finished; the original error is what matters.
+        result = await work(transaction)
+      } catch (error) {
+        try {
+          idb.abort()
+        } catch {
+          // Already finished; the original error is what matters.
+        }
+        await done.catch(() => {})
+        // Firefox can complete an otherwise valid read phase before its success
+        // continuation runs. Only replay proven native inactivity after a clean
+        // completion, with no accepted mutation. Aborts and failed writes keep
+        // their original error and are never replayed.
+        if (attempt === 0 && completed && transaction.canRetry(error)) continue
+        throw error
       }
-      await done.catch(() => {})
-      throw error
+      await done
+      transaction.commitDiagnostics()
+      return result
     }
-    await done
-    transaction.commitDiagnostics()
-    return result
   }
 }
 
@@ -235,6 +266,8 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 
 class IndexedTransaction implements StorageTransaction {
   private readonly diagnosticChanges = new Map<string, SyncDiagnostic | null>()
+  private mutationAccepted = false
+  private readonly inactiveErrors = new Set<unknown>()
 
   constructor(private readonly partition: string, private readonly idb: IDBTransaction, private readonly diagnostics: ProjectDiagnosticStorage) {}
 
@@ -257,30 +290,47 @@ class IndexedTransaction implements StorageTransaction {
     return this.idb.objectStore(name)
   }
 
+  canRetry(error: unknown): boolean {
+    return !this.mutationAccepted && this.inactiveErrors.has(error)
+  }
+
+  /** Classify only errors thrown by native request creation, before it accepts a write. */
+  private enqueue<T>(start: () => IDBRequest<T>, mutation = false): Promise<T> {
+    let pending: IDBRequest<T>
+    try {
+      pending = start()
+      if (mutation) this.mutationAccepted = true
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === "InvalidStateError" || error.name === "TransactionInactiveError")) this.inactiveErrors.add(error)
+      throw error
+    }
+    return request(pending)
+  }
+
   async getAsset(projectId: string, id: string): Promise<LocalImageAsset | null> {
-    return (await request(this.store("assets").get([this.partition, projectId, id]))) ?? null
+    return (await this.enqueue(() => this.store("assets").get([this.partition, projectId, id]))) ?? null
   }
 
   async listAssets(projectId: string): Promise<LocalImageAsset[]> {
-    return request(this.store("assets").index("project").getAll([this.partition, projectId]))
+    return this.enqueue(() => this.store("assets").index("project").getAll([this.partition, projectId]))
   }
 
   async putAsset(asset: LocalImageAsset) {
     checkPartition(this.partition, asset)
-    await request(this.store("assets").put(asset))
+    await this.enqueue(() => this.store("assets").put(asset), true)
   }
 
   async deleteAsset(projectId: string, id: string) {
-    await request(this.store("assets").delete([this.partition, projectId, id]))
+    await this.enqueue(() => this.store("assets").delete([this.partition, projectId, id]), true)
   }
 
   async allProjects(): Promise<LocalProject[]> {
-    const rows = await request(this.store("projects").index("partition").getAll(this.partition))
+    const rows = await this.enqueue(() => this.store("projects").index("partition").getAll(this.partition))
     return rows.map((row) => this.project(row))
   }
 
   async getProject(id: string) {
-    const row = await request(this.store("projects").get([this.partition, id]))
+    const row = await this.enqueue(() => this.store("projects").get([this.partition, id]))
     if (row) return this.project(row)
     this.diagnosticChanges.set(id, null)
     return null
@@ -289,58 +339,60 @@ class IndexedTransaction implements StorageTransaction {
   async putProject(project: LocalProject) {
     checkPartition(this.partition, project)
     const parsed = LocalProject.parse(project)
-    // Keep the stored v2 contract readable by already-open older app tabs.
+    // Diagnostics remain optional sidecar data; readiness is durable in v3 rows.
     const legacy = { ...parsed }
     delete legacy.syncErrorDetail
-    await request(this.store("projects").put(legacy))
+    await this.enqueue(() => this.store("projects").put(legacy), true)
     this.diagnosticChanges.set(project.id, projectDiagnostic(parsed))
   }
 
   async deleteProject(id: string) {
-    await request(this.store("projects").delete([this.partition, id]))
+    await this.enqueue(() => this.store("projects").delete([this.partition, id]), true)
     this.diagnosticChanges.set(id, null)
     for (const name of ["files", "folders", "assets"] as const) {
-      const keys = await request(this.store(name).index("project").getAllKeys([this.partition, id]))
-      for (const key of keys) await request(this.store(name).delete(key))
+      const keys = await this.enqueue(() => this.store(name).index("project").getAllKeys([this.partition, id]))
+      for (const key of keys) await this.enqueue(() => this.store(name).delete(key), true)
     }
   }
 
   async getFile(projectId: string, path: string) {
-    const row = await request(this.store("files").get([this.partition, projectId, path]))
+    const row = await this.enqueue(() => this.store("files").get([this.partition, projectId, path]))
     return row ? LocalFile.parse(row) : null
   }
 
   async listFiles(projectId: string) {
-    const rows = await request(this.store("files").index("project").getAll([this.partition, projectId]))
+    const rows = await this.enqueue(() => this.store("files").index("project").getAll([this.partition, projectId]))
     return rows.map((row) => LocalFile.parse(row))
   }
 
   async findFileByBaseId(projectId: string, baseId: string) {
-    const row = await request(this.store("files").index("baseId").get([this.partition, projectId, baseId]))
+    const row = await this.enqueue(() => this.store("files").index("baseId").get([this.partition, projectId, baseId]))
     return row ? LocalFile.parse(row) : null
   }
 
   async putFile(file: LocalFile) {
     checkPartition(this.partition, file)
-    await request(this.store("files").put(LocalFile.parse(file)))
+    const parsed = LocalFile.parse(file)
+    await this.enqueue(() => this.store("files").put(parsed), true)
   }
 
   async deleteFile(projectId: string, path: string) {
-    await request(this.store("files").delete([this.partition, projectId, path]))
+    await this.enqueue(() => this.store("files").delete([this.partition, projectId, path]), true)
   }
 
   async listFolders(projectId: string) {
-    const rows = await request(this.store("folders").index("project").getAll([this.partition, projectId]))
+    const rows = await this.enqueue(() => this.store("folders").index("project").getAll([this.partition, projectId]))
     return rows.map((row) => LocalFolder.parse(row))
   }
 
   async putFolder(folder: LocalFolder) {
     checkPartition(this.partition, folder)
-    await request(this.store("folders").put(LocalFolder.parse(folder)))
+    const parsed = LocalFolder.parse(folder)
+    await this.enqueue(() => this.store("folders").put(parsed), true)
   }
 
   async deleteFolder(projectId: string, path: string) {
-    await request(this.store("folders").delete([this.partition, projectId, path]))
+    await this.enqueue(() => this.store("folders").delete([this.partition, projectId, path]), true)
   }
 }
 

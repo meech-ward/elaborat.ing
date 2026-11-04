@@ -30,14 +30,14 @@ maintainer turns the ones to fix into tasks here.
 ## Open
 
 The [app-wide progressive loading requirement](progressive-loading.md) applies
-to every surface, including existing features. Its implementation follow-ups
-are [T55](#t55-show-unlisted-content-before-independent-assets),
+to every surface, including existing features. Its completed implementation
+tasks are [T55](#t55-show-unlisted-content-before-independent-assets),
 [T56](#t56-open-the-requested-project-file-before-offline-preparation),
 [T57](#t57-prepare-only-visible-assets-and-publish-each-ready-result),
 [T58](#t58-show-safe-document-content-while-mdx-components-prepare), and
 [T59](#t59-check-time-until-useful-content-across-the-app).
-These are documented requirements, not implemented improvements. They remain
-**Waiting** until the maintainer authorizes implementation.
+Implementation was authorized on 2026-11-04. Each task below records the
+corresponding implementation and verification status.
 
 ## T34: check live drawing and writing in Claude and ChatGPT, and answer three host questions
 
@@ -417,141 +417,115 @@ browsers.
 
 ## T55: show unlisted content before independent assets
 
-**Status:** Waiting (maintainer authorization to implement progressive loading)
+**Status:** Done (2026-11-04)
 
-Apply the [progressive loading requirement](progressive-loading.md) to
-`supabase/functions/file-share/handler.ts`, `dependencies.ts`,
-`src/features/file-sharing/PublicFilePage.tsx`, `publicRemote.ts`, and
-`SharedFileRenderer.tsx`. Today the browser waits for the complete bundle,
-then starts downloading the viewer. Dependency reads and image original and
-preview reads run in sequence; visible-page refresh reconstructs the bundle
-before checking whether its revision changed.
+Implemented root-first, no-store NDJSON reading. Complete validated requested
+source appears before child files and image bytes. Four dependency workers and
+three image workers share the bounded, server-parsed graph. The 128-identity
+limit includes missing and optional paths before requests are queued. Every
+published result rechecks capability and revision; malformed streams and
+access/revision changes invalidate the partial view. Individual descendant
+failures remain local.
 
-Start the needed viewer code alongside the data request. Batch or use bounded
-concurrency for authorized independent reads, and let readable note content
-appear while unrelated assets prepare. Settle and document the response and
-revision contracts before changing them. Revalidate the active link before
-an unchanged-revision response, so refresh can avoid rebuilding and downloading
-an identical bundle while revocation still takes effect.
+The viewer loads alongside data. Cheap unchanged checks leave incomplete
+streams and healthy content intact. The client validates declaration order,
+UTF-8 framing, completion and aggregate bounds. Export preparation completes
+and verifies the frozen graph and original bytes before offering a package.
+There are no client-authorized paths, Storage URLs, account credentials or
+public offline response caches.
 
-Keep server-parsed dependency authorization, revision consistency, size and
-depth limits, full-resolution images, isolated components and private
-discussion boundaries. Do not introduce arbitrary client-selected file reads,
-reusable Storage links, document network access or offline caching of public
-document responses.
-
-Done when Chromium and Firefox tests delay individual authorized assets and
-prove that ready text and assets appear independently; failed or slow embeds
-stay local to their placeholders. Cover revocation and changes during loading,
-unchanged refresh, cancellation and navigation, and retain the existing
-dependency-access tests. Repeat the anonymous hosted script reference: the
-first recorded check returned 35 files and 18 images in 12.8 seconds. Later
-request timings and their limits are in [the loading audit](progressive-loading.md).
+Evidence: file-share Deno authorization, queue, cancellation and limit tests;
+sharing boundary/export unit tests; `progressive-public.spec.ts` and
+`file-sharing-public.spec.ts` in Chromium and Firefox. The repeated hosted
+reference is a baseline of the old deployment, recorded with measurement
+limits in [progressive loading](progressive-loading.md).
 
 ## T56: open the requested project file before offline preparation
 
-**Status:** Waiting (maintainer authorization to implement progressive loading)
+**Status:** Done (2026-11-04)
 
-Update `src/features/projects/ProjectPage.tsx`,
-`src/features/project-storage/library.ts`, `sync.ts`, `remote.ts`, and
-`fileStore.ts` so a first project open prioritizes the requested file and its
-needed metadata. Today `library.open` waits for a whole-project pull, including
-serial caching of every image original and preview, before mounting the
-workbench. A cached project already opens locally and syncs in the background;
-preserve that behavior.
+Implemented targeted authenticated file reads before full metadata and image
+preparation, including another requested path during an incomplete pull. A
+selected image can join a healthy immutable transfer or start ahead of queued
+background images. Catalog lookup does not wait for other projects' pulls.
+Ready assets publish after their durable transactions commit.
 
-Separate file availability from the checkpoint that means a remote revision
-is complete offline. Document the partial-availability, image-readiness,
-revision and recovery contracts before implementation. Continue unrelated
-project download and offline preparation in the background with meaningful
-progress. A catalog refresh or another project's sync must not unnecessarily
-hold the requested file behind unrelated work.
+IndexedDB v3 stores a partial-readiness marker separately from the complete
+revision. Upgrades preserve committed drafts; older tabs must reload before
+writing. Interrupted pulls, quota errors and lost access keep the previous
+checkpoint. Recovery preserves drafts, versions and pending mutation identity.
+Metadata/Storage reads are cancellable; an already-sent authoritative save can
+settle before optional pull cancellation. ZIP snapshots refuse incomplete data.
+See [project loading](project-loading.md) for the full contract.
 
-Done when cold-open tests with many unrelated files and delayed images show
-the selected available note first. Cover fresh and cached opens, offline
-restart during a partial download, interrupted downloads, quota failures,
-sign-out/account changes and lost access. Preserve immutable asset identity,
-complete-offline guarantees, drafts, Undo/Redo, version checks, conflict
-recovery and authoritative save/sync ordering. Do not mark unavailable bytes
-as ready offline to make the screen appear sooner.
+Evidence: `progressiveLoading.test.ts`, existing storage/sync/image suites,
+SDK cancellation tests, and `progressive-project.spec.ts` in both browsers.
+Journeys cover blocked bulk metadata, same-project navigation, partial offline
+restart/reconnect, queued image priority, the chat panel and optional precache.
 
 ## T57: prepare only visible assets and publish each ready result
 
-**Status:** Waiting (maintainer authorization to implement progressive loading)
+**Status:** Done (2026-11-04)
 
-Update the image and drawing resource effects in
-`src/features/workbench/WorkspaceSession.tsx` and
-`src/features/file-sharing/SharedFileRenderer.tsx`, then audit equivalent
-preview paths in embedded documents and chat cards. Active Source-only notes
-currently prepare preview assets, and serial image/drawing loops publish one
-resource map only after the whole batch finishes. Ordinary note text already
-does not wait for those resource loops.
+Implemented separate bounded image/drawing queues with per-result publication.
+Source-only, hidden and initially collapsed previews do no unseen pixel or
+drawing-engine work. Opened child sessions retain their drafts, undo and component
+state while hidden/collapsed work is suspended. Explicit export and image
+inspection request the resources they need.
 
-Gate interactive preview preparation on the surface that actually needs it.
-Keep inactive or initially collapsed content deferred. Publish each bounded,
-validated asset as it becomes ready, preserving other ready assets while an
-individual asset loads or fails. Keep useful placeholders, stable layout and
-scroll/selection positions. Export, insertion and explicit image inspection
-can request the assets their own operation needs.
+Exact asset/source/companion identities retain ready pixels as siblings arrive,
+invalidate replacements independently and refuse late results. Known image
+dimensions reserve layout through bounded data-only messages. Chat cards share
+two deferred host calls; portals preserve prose DOM/selection, and their first
+component-frame transition waits for an active text selection to finish.
 
-Done when Chromium and Firefox checks prove that a Source-only note starts no
-unrequested preview decoding or drawing engine, and that one slow asset does
-not hold back other completed assets. Cover switching views/tabs, collapse
-and re-expansion, source changes, replacements, cancellation and stale
-responses. Keep full-resolution image display, per-file and aggregate
-budgets, bounded concurrency, native drawing fidelity, offline behavior and
-document isolation. Add matching card checks if that audit changes the card.
+Evidence: asset concurrency, image-dimension, activity/protocol and shared
+resource-cache unit tests; `progressive-preview.spec.ts`, `chat-card.spec.ts`,
+embedded-document and image regressions in Chromium and Firefox. Existing
+resolution, payload, isolation and offline guarantees remain.
 
 ## T58: show safe document content while MDX components prepare
 
-**Status:** Waiting (maintainer authorization to implement progressive loading)
+**Status:** Done (2026-11-04)
 
-Review `src/features/document/useComponentEnvironment.ts`,
-`src/features/rendered/RenderedEditor.tsx`, and the preview projection and
-component-island protocol. Initial MDX display currently waits for component
-preparation and whole-document projection before showing the frame. Record
-which dependencies truly determine ordinary document content and which can
-remain local placeholders while safe content becomes readable.
+Implemented a complete-source, display-only MDX projection with exact source
+mapping, no executable document ESM/expressions and static protected islands.
+Independent prose remains readable while modules or consent wait and after a
+component fails. Source stays editable; rendered writes and export snapshots
+wait for matching approved authority. Invalid MDX remains a parser error.
 
-Settle a safe preparation and editing contract before implementation. Never
-execute incomplete source, show content from the wrong document or revision,
-or make a pending component editable without authoritative source mapping.
-Preserve protected islands, render/session identity, exact Markdown writes,
-Undo/Redo, consent where required and the opaque frame's existing privileges.
-No account tokens, generic project reads or new network access enter a frame.
+Source completion retains valid metadata while a later incomplete edit is
+being checked; that catalog grants no execution authority. Runtime errors are
+scoped to the current document, source, environment and render epoch. Newer
+source/modules can recover without stale errors replacing the current view.
+Frames, prose selection and healthy component state survive resource arrivals.
+See [component preparation](progressive-components.md).
 
-Done when delayed or failed component modules leave independent safe content
-readable, with local pending/error states. Browser and protocol checks cover
-editing while preparation is pending, late results, navigation, nested
-documents, retry, invalid MDX and account/document changes. Show clearly when
-content truly cannot be interpreted without its pending dependency.
+Evidence: projection/protocol tests plus delayed/failed module, runtime recovery,
+consent, inline Source, navigation, nested-document and selection browser checks.
 
 ## T59: check time until useful content across the app
 
-**Status:** Waiting (maintainer authorization to implement progressive loading)
+**Status:** Done (2026-11-04)
 
-Extend performance verification beyond the initial JS/CSS budgets in
-`scripts/bundle-report.ts`. Those budgets must remain, but a fast shell or
-loading indicator does not prove that a requested note is readable. Add the
-corresponding readiness checks alongside T55 through T58. Define
-and measure useful milestones for project home, first and cached project
-open, Source, Rendered, unlisted reading, expanded embedded documents and
-chat-card views.
+Implemented production-browser readiness ordering with independently blocked
+metadata, images, drawing/decoding and component work. Tests measure project
+home, first/cached Source/Rendered, expanded documents, public readers, cards,
+chat panels and offline completion separately. Sanitized JSON attachments
+contain timings and counts, never document contents, tokens or credentials.
+Navigation-relative milestones include prior actions; aggregate request totals
+are not isolated render/expansion durations.
 
-Use deterministic browser fixtures with independently delayed data, images,
-drawings and component code. Assert readiness ordering and visible usable
-content, rather than fragile wall-clock sleeps. Add measured hosted baselines
-with request/transfer/render stages and justified budgets; distinguish cold
-and warm caches, online and offline starts, and device/network conditions.
-Do not treat a direct endpoint timing as a complete browser-load measurement.
+The requested-Source test has a 20-second CI guard, while controlled gates
+prove unrelated work cannot block ready content without relying on wall-clock
+sleeps. Existing first-paint byte budgets remain unchanged. Optional precache
+can be held while text is usable and then completed without changing inventory.
 
-Done when Chromium and Firefox regressions fail for the former blocking
-patterns, and browser traces or reports explain what still holds each
-milestone. Include quota/error handling, cancellation, stale responses,
-revocation, permission changes, draft/selection preservation and isolation in
-the affected journeys. Record results without document contents, account
-credentials or unlisted tokens. Keep implementation status and observed
-limits true in the architecture, roadmap and feature docs.
+[Progressive loading](progressive-loading.md) records the anonymous hosted
+baseline, local check evidence and limits. These observations are not a
+production SLA; real-device/network targets and new hosted timings require
+post-deployment samples of this branch. Existing editing, accessibility,
+consent, revision, cancellation and offline regressions accompany the new checks.
 
 ## T60: prove custom component capture inside the existing sandbox
 
@@ -618,6 +592,30 @@ decisions; source and sharing remain unchanged by exporting.
 
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
+
+- Pin private-note original-image inspection to one immutable asset identity.
+  `WorkspaceSession.readImageOriginal` reads file metadata and then reads bytes
+  by path in a separate transaction. Replacing an image at that path between
+  those reads can combine old dimensions/media type with newer bytes, or let
+  an older original arrive after the inline preview updates. Use the captured
+  immutable asset id and recheck its current binding before publishing. Cover
+  a same-path asset replacement while original loading is delayed. This
+  predates progressive loading; public share readers now bind their reader
+  identity to the share revision.
+
+- Investigate multiline composition insertion in Firefox's Source editor.
+  Playwright's `keyboard.insertText` can insert the same text twice after
+  returning from Rendered: one caret, a composition end followed by an
+  `insertCompositionText` input event, and two copies in the durable draft.
+  The loading journey uses ordinary key typing and checks the exact source.
+  Reproduce with native IME input before assigning the cause to Monaco, the
+  application or automation.
+
+- Attribute global preview errors from asynchronous custom code to their
+  originating render. Preparation and render failures carry their exact epoch,
+  but a timer from a superseded component can throw after a newer tree is
+  shown; the global error event currently reports that shown tree's epoch.
+  Keep late background errors from revoking a newer healthy projection.
 
 - Google Docs conversion of nested `sup` and `sub` elements can retain both
   vertical-alignment flags on one text run. Clear the inherited opposing flag
@@ -695,16 +693,12 @@ matters.
   stopped state before a new tab observes it, leaving the optional prior
   explanation until the next new-version retry. A future storage revision
   can add a stop generation; diagnostics must stay separate from sync control.
-- Align browser-test platform signals on macOS: the Desktop Chrome and Firefox
-  fixtures use a Windows user agent while `navigator.platform` is `MacIntel`.
-  Monaco binds Source shortcuts to Ctrl, while the app and Playwright's
-  `ControlOrMeta` use Cmd, so shortcut checks can miss their intended action.
-  Home, End and Shift+Home also scroll the rendered frame there instead of
-  moving the caret, and Monaco's Ctrl+End is Cmd+Down, so many rendered,
-  workbench, conflict and canvas tests fail on a Mac before any change and
-  pass on Linux. Replace Home and End with clicks and arrow keys, as
-  `tests/browser/rendered-lists-keys.spec.ts` does, so the suite can run on a
-  Mac.
+- Finish making browser-test caret navigation portable on macOS. The fixtures
+  now keep native user agents, save shortcuts use `ControlOrMeta`, and the
+  shared rendered helper maps line-boundary motion to the native keys.
+  Remaining direct Home/End presses outside those journeys can still scroll
+  instead of moving the caret. Replace them with explicit caret positions and
+  arrow keys, as `tests/browser/rendered-lists-keys.spec.ts` does.
 - In `update_and_show`, an old label written before its short-form shape
   (against the taught order) shows in the live view until the saved card
   replaces it.

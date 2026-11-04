@@ -110,6 +110,10 @@ export class FakeProjectServer {
       }),
       saveFiles: (projectId, mutationId, changes) =>
         call("saveFiles", [projectId, mutationId, changes], () => SaveResult.parse(this.save(user, projectId, mutationId, changes))),
+      requestedFile: (projectId, path, until) => call("requestedFile", [projectId, path, until], () => {
+        const file = this.readable(user, projectId).files.get(path)
+        return file && file.version <= until ? file : null
+      }),
       changedFiles: (projectId, since, until) =>
         call("changedFiles", [projectId, since, until], () =>
           [...this.readable(user, projectId).files.values()]

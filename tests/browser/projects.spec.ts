@@ -198,8 +198,7 @@ test("leaving a shared project with an edit that has not synced is refused, nami
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and me")
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+s")
+  await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("button", { name: /, project menu$/ }).click()
   await page.getByRole("menuitem", { name: "All projects" }).click()
@@ -275,8 +274,7 @@ test("an archived project moves to its own section and refuses edits until it is
   await page.getByRole("link", { name: "Notes" }).click()
   await expect(page.getByRole("tab", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
   await typeAtEnd(" edited")
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+s")
+  await page.keyboard.press("ControlOrMeta+s")
   await expect.poll(() => server.content(id, "a.md")).toBe("# Notes edited")
 })
 
@@ -292,8 +290,7 @@ test("deleting a project permanently needs its title typed, and removes it from 
   await page.locator(".monaco-editor:visible .view-lines").first().click()
   await page.keyboard.press("ControlOrMeta+End")
   await page.keyboard.type(" and more")
-  // Monaco follows these fixtures' Windows user agent, even on a macOS host.
-  await page.keyboard.press("Control+s")
+  await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("tab", { name: "a.md, unsaved changes" })).toHaveCount(0)
   await page.getByRole("button", { name: /, project menu$/ }).click()
   await page.getByRole("menuitem", { name: "All projects" }).click()
