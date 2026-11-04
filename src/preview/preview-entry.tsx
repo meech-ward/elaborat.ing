@@ -996,6 +996,11 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       const writtenIn = whole?.writeIn !== undefined && shownEpoch !== -1 && projection.epoch !== shownEpoch ? whole.writeIn : undefined;
       const writing = writtenIn === undefined ? null : (typing?.position ?? null);
       const follow = writtenIn !== undefined && ((writing !== null && followed !== null) || followingEnd(editor));
+      // The document on screen stays (the answer to the frame's own edit, in
+      // its epoch), and with it the comment marks the editor maps through
+      // that edit: the marks for the revision before are this one's too. The
+      // parent sends marks again only when they change.
+      const marksKept = !(whole && (whole.reset || whole.epoch !== shownEpoch)) && commentMarks !== null && commentMarks.revision === editor.shownRevision;
       shownEpoch = projection.epoch;
       flushSync(() => {
       captureDraftsBeforeRender();
@@ -1008,7 +1013,8 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       setAuthoringContext(pending.session, pending.revision, pending.authoring);
       editor.receive({ session: pending.session, revision: pending.revision, fluid: projection });
       if (replaced) keepSelection(editor, replaced);
-      applyCommentMarks();
+      if (marksKept) commentMarks = { ...commentMarks!, revision: pending.revision };
+      else applyCommentMarks();
       root.render(
         <StrictMode>
           <DocumentBody key={`${bodyScope}:${bodyGeneration}`} content={Content} />

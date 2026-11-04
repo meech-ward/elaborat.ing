@@ -1297,12 +1297,13 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         }
         if (message.kind === "comment-markers") {
           const known = new Set(commenting?.marks.map((mark) => mark.id));
-          setCommentMarkers(
-            message.markers.flatMap((marker) => {
-              const ids = marker.ids.filter((id) => known.has(id));
-              return ids.length > 0 ? [{ ...marker, ids }] : [];
-            }),
-          );
+          const markers = message.markers.flatMap((marker) => {
+            const ids = marker.ids.filter((id) => known.has(id));
+            return ids.length > 0 ? [{ ...marker, ids }] : [];
+          });
+          // The frame says where the markers are for each revision of the
+          // note: while typing moves none of them, nothing here renders again.
+          setCommentMarkers((shown) => (JSON.stringify(shown) === JSON.stringify(markers) ? shown : markers));
           return;
         }
         if (message.kind === "comment-shortcut") {

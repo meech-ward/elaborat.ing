@@ -746,4 +746,40 @@ test.describe("in the app", () => {
     await expect(frame(page).getByText(/^Today, How a customer moves/)).toBeVisible()
     await expect(marked).toHaveText(["where agents help"])
   })
+
+  test("a commented phrase's marker stays beside its line when typing elsewhere leaves the marks as they were and the note scrolls", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 })
+    const lead = Array.from({ length: 4 }, (_, index) => `Opening paragraph ${index + 1} of the note.`).join("\n\n")
+    const tail = Array.from({ length: 30 }, (_, index) => `Later paragraph ${index + 1} of the note.`).join("\n\n")
+    const note = `# Customer model\n\n${lead}\n\nHow a customer moves from sign-up to their first project, and where agents help.\n\n${tail}\n`
+    const server = new FakeProjectServer()
+    const id = crypto.randomUUID()
+    await server.remote(person.id).createProject(id, "Notes")
+    await server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "a.md", content: note }])
+    const fake = await fakeSupabase(page, { server })
+    const fileId = [...fake.server.projects.get(id)!.files.values()].find((file) => file.path === "a.md")!.id
+    const quote = note.indexOf("where agents help")
+    fake.comments.call(person.id, "add_comment", { project_id: id, thread_id: crypto.randomUUID(), file_id: fileId, file_version: 1, anchor: textAnchor(note, quote, quote + "where agents help".length), body: "Which agents?" })
+    await signedIn(page)
+    await page.goto(new URL(`projects/${id}/a.md`, APP_URL).href)
+    await expect(page.getByRole("tabpanel", { name: "a.md" })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Rendered", exact: true }).click()
+    await expect(frame(page).locator(".comment-highlight")).toHaveText(["where agents help"])
+    // How far the marker's middle is from the marked words' middle, in the page.
+    const marker = page.getByRole("button", { name: "1 thread on this line", exact: true })
+    const apart = async () => {
+      const box = (await page.locator(FRAME).boundingBox())!
+      const words = await frame(page).locator(".comment-highlight").evaluate((span) => span.getClientRects()[0].toJSON() as DOMRect)
+      const beside = (await marker.boundingBox())!
+      return Math.abs(beside.y + beside.height / 2 - (box.y + words.y + words.height / 2))
+    }
+    await expect.poll(apart).toBeLessThan(3)
+    // Typed after the phrase, which keeps every mark where it was.
+    await frame(page).getByText("Later paragraph 2 of the note.", { exact: true }).click()
+    await page.keyboard.type("x")
+    await expect.poll(async () => (await frame(page).locator("p").filter({ hasText: /^Later paragraph 2 of the note/ }).textContent())?.includes("x")).toBe(true)
+    await page.waitForTimeout(300)
+    await frame(page).locator("body").evaluate(() => document.scrollingElement!.scrollBy(0, 120))
+    await expect.poll(apart).toBeLessThan(3)
+  })
 })
