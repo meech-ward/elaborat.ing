@@ -567,6 +567,32 @@ After paragraph.
     await expect(page.getByText(/^Edit not applied:/)).toHaveCount(0)
   })
 
+  test("equal islands start again when another like them comes before them, and none takes the count of another", async ({ page }) => {
+    await openHarness(page)
+    const note = (top: string) => `${top}Intro.\n\n<Counter initial={1} />\n\nText.\n\n<Counter initial={1} />\n`
+    await load(page, note(""), "mdx", "Intro.")
+    const frame = frameOf(page)
+    const counts = frame.locator('[data-component="Counter"] output')
+    await expect(counts).toHaveCount(2)
+    const increment = frame.getByRole("button", { name: "Increment" })
+    await increment.nth(0).click()
+    await increment.nth(1).click()
+    await increment.nth(1).click()
+    await expect(counts).toHaveText(["2", "3"])
+    // Typing between them keeps both.
+    await clickAt(page, "Text.", 4)
+    await page.keyboard.type(" more")
+    await expect.poll(() => source(page)).toBe(note("").replace("Text.", "Text more."))
+    await settled(page)
+    await expect(counts).toHaveText(["2", "3"])
+    // A third like them, first in the note (as Source or another device
+    // writes it): an equal island's id is its place among them, so they
+    // all start again rather than each showing the count of the one before.
+    await page.evaluate((text) => window.renderedHarness.edit(text), note("<Counter initial={1} />\n\n").replace("Text.", "Text more."))
+    await expect(counts).toHaveCount(3)
+    await expect(counts).toHaveText(["1", "1", "1"])
+  })
+
   test("a frame that says it is ready in the middle of showing a new revision still has its palette before the note", async ({ page }) => {
     // The note frame's own ready is held back, and the page is given it in
     // the middle of the commit that shows the note's next revision (now and

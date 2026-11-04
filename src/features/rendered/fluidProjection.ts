@@ -681,26 +681,35 @@ export async function projectFluidSource(
       (tree as Ast).children = [
         ...retained,
         ...islandAsts.map(
-          (ast, index) =>
-            ({
+          (ast, index) => {
+            const { id } = islands[index];
+            // How many islands hold the same source: their ids number them
+            // in order, so one more or one fewer of them before an island
+            // gives it another's id.
+            const equal = occurrences.get(id.slice("island:".length, id.lastIndexOf(":"))) ?? 1;
+            return {
               type: "mdxJsxFlowElement",
               name: "FluidIsland",
               attributes: [
                 {
                   type: "mdxJsxAttribute",
                   name: "id",
-                  value: islands[index].id,
+                  value: id,
                 },
                 // The compiler makes this React's key: an island keeps its
-                // state while islands before it come and go.
+                // state while islands before it come and go. Equal islands
+                // also say how many there are, so when their number changes
+                // they all start again, rather than each taking the state of
+                // the one before it.
                 {
                   type: "mdxJsxAttribute",
                   name: "key",
-                  value: islands[index].id,
+                  value: equal > 1 ? `${id}/${equal}` : id,
                 },
               ],
               children: [ast],
-            }) as Ast,
+            } as Ast;
+          },
         ),
       ];
     },

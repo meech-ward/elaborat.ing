@@ -50,6 +50,27 @@ describe('island keys', () => {
     }
   });
 
+  test('equal islands say how many there are, so one more or one fewer of them starts them all again', async () => {
+    const equal = (top: string, between = 'Text.') => `${top}Intro.\n\n<Counter initial={1} />\n\n${between}\n\n<Counter initial={1} />\n\n| a |\n| - |\n| b |\n`;
+    const base = await islandKeys(equal(''), 'mdx');
+    const counters = base.projection.islands.filter((island) => base.projection.text.slice(island.from, island.to).startsWith('<Counter'));
+    expect(counters.map((island) => island.id)).toEqual([counters[0].id, counters[0].id.replace(/:0$/, ':1')]);
+    // Their ids number them in order; the keys add how many there are. A
+    // lone island's key is its id.
+    expect(base.keys).toEqual(base.projection.islands.map((island) => counters.includes(island) ? `${island.id}/2` : island.id));
+    // Typing between them keeps every key.
+    expect((await islandKeys(equal('', 'Text, a little longer.'), 'mdx')).keys).toEqual(base.keys);
+    // One more like them first: the first new one has the old first's id,
+    // but none has an old one's key, so none keeps an old one's state.
+    const more = await islandKeys(equal('<Counter initial={1} />\n\n'), 'mdx');
+    expect(more.projection.islands.map((island) => island.id)).toContain(counters[0].id);
+    const kept = more.keys.filter((key) => base.keys.includes(key));
+    expect(kept).toEqual(base.keys.filter((key) => !key?.includes('/')));
+    // And the ids, which the projection's checks use, are as before.
+    expect(more.projection.islands.filter((island) => island.id.startsWith(counters[0].id.slice(0, -1))).map((island) => island.id))
+      .toEqual([0, 1, 2].map((count) => counters[0].id.replace(/:0$/, `:${count}`)));
+  });
+
   test('an edit inside one island changes only that island and the code, not the scope', async () => {
     const before = await islandKeys(note(), 'mdx');
     const after = await islandKeys(note({ code: 'const a = 1 // x' }), 'mdx');
