@@ -339,10 +339,11 @@ export class FluidEditor {
     // do nothing: the keyboard stays in the text, where taking it away would
     // lose what is typed next. Escape, then Tab or Shift+Tab, takes it out as
     // the browser would (CodeMirror's convention), so it is never trapped.
+    // From a control inside the note (a table's scroll region), Tab moves on.
     const indenting =
       (command: Command): Command =>
       (state, dispatch, view) => {
-        if (performance.now() < this.tabLeaves) return false;
+        if (performance.now() < this.tabLeaves || !view?.hasFocus()) return false;
         command(state, dispatch, view);
         return true;
       };
@@ -497,6 +498,8 @@ export class FluidEditor {
           // pointers, then let the trusted pointer default place/extend
           // the actual selection. Code has its own native selection inside
           // an object island; focusing prose would restore its old caret.
+          // A click after Escape puts Tab back to moving items.
+          this.tabLeaves = 0;
           if (event.pointerType === "touch") return false;
           if (
             !(event.target instanceof Element) ||

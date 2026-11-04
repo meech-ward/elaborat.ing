@@ -162,6 +162,31 @@ test.describe("in the harness", () => {
     }
   })
 
+  test("Tab from a control inside the note, such as a table's scroll region, moves on as the browser would", async ({ page }) => {
+    const note = "Opening line\n\n| a | b |\n| - | - |\n| 1 | 2 |\n"
+    await load(page, note, "md", /^Opening line$/)
+    const table = frameOf(page).getByRole("region", { name: "Document table" })
+    await table.focus()
+    await expect(table).toBeFocused()
+    await press(page, "Tab")
+    await expect(table).not.toBeFocused()
+    await table.focus()
+    await press(page, "Shift+Tab")
+    await expect(table).not.toBeFocused()
+    expect(await source(page)).toBe(note)
+  })
+
+  test("a click between Escape and Tab puts Tab back to moving items", async ({ page }) => {
+    const mark = await load(page, "Opening line\n\n- apple\n- banana\n", "md", /^Opening line$/)
+    await atEnd(page, "Opening line")
+    await press(page, "Escape")
+    await clickAt(page, "banana", 3)
+    await press(page, "Tab")
+    expect(await inText(page)).toBe(true)
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("Opening line\n\n- apple\n  - banana\n")
+  })
+
   test("Shift+Enter makes a line break, at the end of a line once text follows it", async ({ page }) => {
     // In the middle of a line, at once; the break takes the space after it.
     let mark = await load(page, "alpha bravo\n\n- item one\n- item two\n", "md", /^alpha bravo$/)
