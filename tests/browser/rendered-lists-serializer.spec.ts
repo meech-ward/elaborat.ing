@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "./fixtures.ts"
-import { accepted, clickAt, expectNoErrors, frameOf, load, openHarness, press, revision, source } from "./rendered-support.ts"
+import { accepted, clickAt, expectNoErrors, frameOf, load, openHarness, press, revision, selection, source } from "./rendered-support.ts"
 
 // List edits in the rendered view that Markdown writes in a form of its own:
 // a new item that holds the nested list after it, a nested list whose first
@@ -52,6 +52,19 @@ for (const format of ["md", "mdx"] as const) {
     await expect(frameOf(page).locator("li li")).toHaveText("beta")
     await typed(page, "new", "- alpha\n- new\n  - beta\n- gamma")
     await expect(frameOf(page).locator("li")).toHaveCount(4)
+  })
+
+  test(`${format}: Backspace right after that Enter puts the nested list or code block back in the item`, async ({ page }) => {
+    for (const note of ["- alpha\n  - beta\n- gamma", "1. alpha\n   1. beta\n2. gamma", "- alpha\n  ```js\n  x()\n  ```\n- gamma"]) {
+      await load(page, note, format, /^alpha$/)
+      await atEnd(page, "alpha")
+      await key(page, "Enter")
+      expect(await source(page)).not.toBe(note)
+      await key(page, "Backspace")
+      expect(await source(page)).toBe(note)
+      expect((await selection(page)).focus).toEqual({ paragraph: "alpha", offset: 5 })
+      await expect(page.getByText(NOTICE)).toHaveCount(0)
+    }
   })
 
   test(`${format}: Enter, Tab and typing make a nested item, in a bullet list and a numbered one`, async ({ page }) => {

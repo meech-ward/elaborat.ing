@@ -151,6 +151,28 @@ for (const format of ["md", "mdx"] as const) {
     expect((await type(caret(await note("-\n  - b", format), "", 0), "x")).text).toBe("- x\n  - b");
     // In a quote.
     expect((await press(caret(await note("> - a\n>   - b\n> - c", format), "a"), enter)).text).toBe("> - a\n> - \n>   - b\n> - c");
+    // Backspace on the new empty line takes the Enter back: the item above
+    // has its nested list or code block again, and the caret is at its end.
+    for (const list of [
+      "- a\n  - b\n- c",
+      "- a\n  - b\n  - bb\n- c",
+      "1. a\n   1. b\n   2. bb\n2. c",
+      "1. a\n   - b\n2. c\n3. d",
+      "- [ ] a\n  - [ ] b\n- [ ] c",
+      "> - a\n>   - b\n> - c",
+      "- top\n  - a\n    - b\n  - c\n- d",
+      "- a\n  * b",
+      "- a\n  ```js\n  x\n  ```\n- c",
+      "1. a\n   ```js\n   x\n   ```\n2. c",
+    ]) {
+      const back = await press(await press(caret(await note(list, format), "a"), enter), backspace);
+      expect(back.text, list).toBe(list);
+      expect(back.selection.$head.parent.textContent).toBe("a");
+      expect(back.selection.$head.parentOffset).toBe(1);
+    }
+    // Under an item that ends in a nested list it leaves the list, as before:
+    // joined there, the blocks would go a level deeper.
+    expect((await press(caret(await note("- a\n  - x\n- \n  - b\n- c", format), "", 0), backspace)).text).toBe("- a\n  - x\n\n\n\n* b\n* c");
   });
 
   test(`${format}: a nested list whose first item is empty is set off by a blank line until the item has text`, async () => {

@@ -25,8 +25,10 @@ export function codeFenceOpener(
 
 /** Backspace removes an empty middle item, returning to the previous textblock.
  * Lifting it would split its list around an empty paragraph, which Markdown
- * cannot hold. At the list's edges, keep the usual lift out of the list.
- * Other selections stay on the native Backspace chain. */
+ * cannot hold. An empty first line with blocks after it, as Enter at the end
+ * of an item with a nested list or a code block leaves, joins the item above,
+ * which takes those blocks back. At the list's edges, keep the usual lift out
+ * of the list. Other selections stay on the native Backspace chain. */
 export const emptyListBackspace: Command = (state, dispatch, view) => {
   const { $from, empty } = state.selection;
   if (!empty) return false;
@@ -59,6 +61,16 @@ export const emptyListBackspace: Command = (state, dispatch, view) => {
     }
     return true;
   }
+  // Only into the paragraph that ends the item above, as Enter left it: the
+  // last line of a nested list there would take the blocks a level deeper.
+  if (
+    item.childCount > 1 &&
+    index > 0 &&
+    $from.index(itemDepth) === 0 &&
+    $from.node(listDepth).child(index - 1).lastChild?.type === fluidSchema.nodes.paragraph &&
+    joinTextblockBackward(state, dispatch, view)
+  )
+    return true;
   return liftItem(state, dispatch, view);
 };
 
