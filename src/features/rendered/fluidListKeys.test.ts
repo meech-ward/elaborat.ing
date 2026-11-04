@@ -55,9 +55,10 @@ const shiftTab = liftItem;
 for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
   test(`${format}: Shift+Tab on an item with a nested list and items after it makes one list of them`, async () => {
     const options = { format };
-    // The plain lift leaves the nested list and the items after it side by side, which the parent refuses.
-    const plain = await run("- alpha\n  - beta\n- gamma", "alpha", liftListItem(fluidSchema.nodes.list_item), options);
-    await expect(plain!.write()).rejects.toThrow("Source projection differs");
+    // The plain lift leaves the nested list and the items after it side by
+    // side: two lists, which Markdown keeps apart only with another bullet.
+    const plain = await written("- alpha\n  - beta\n- gamma", "alpha", liftListItem(fluidSchema.nodes.list_item), options);
+    expect(plain.text).toBe("alpha\n\n- beta\n\n* gamma");
     for (const [text, expected] of [
       ["- alpha\n  - beta\n- gamma", "alpha\n\n- beta\n- gamma"],
       ["- zero\n- alpha\n  - b\n- c", "- zero\n\nalpha\n\n- b\n- c"],
@@ -150,7 +151,8 @@ for (const format of ["md", "mdx"] satisfies DocumentFormat[]) {
     expect((await standard!.write()).text).toBe("- alpha\n\n  bravo\n- charlie");
     for (const [text, word, expected] of [
       ["- alpha\n- bravo\n- charlie", "alpha", "- alphabravo\n- charlie"],
-      ["1. alpha\n2. bravo\n3. charlie", "alpha", "1. alphabravo\n3. charlie"],
+      // A list numbered 1, 2, 3 keeps counting.
+      ["1. alpha\n2. bravo\n3. charlie", "alpha", "1. alphabravo\n2. charlie"],
       ["- [ ] alpha\n- [x] bravo", "alpha", "- [ ] alphabravo"],
       ["- a\n  - child\n- b", "a", "- achild\n- b"],
       ["- a\n  - child\n- b", "child", "- a\n  - childb"],
