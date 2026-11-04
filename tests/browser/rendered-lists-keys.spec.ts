@@ -330,6 +330,26 @@ test.describe("in the harness", () => {
     await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
   })
 
+  test("ArrowLeft or ArrowUp from a held line break puts the caret at the end of its line, and Delete brings the next item's text up after it", async ({ page }) => {
+    await load(page, "alpha\n\n- one\n- two\n", "md", /^alpha$/)
+    for (const key of ["ArrowLeft", "ArrowUp"]) {
+      await atEnd(page, "alpha")
+      await press(page, "Shift+Enter")
+      await expect(lineBreaks(page)).toHaveCount(1)
+      await press(page, key)
+      await expect(lineBreaks(page)).toHaveCount(0)
+      expect((await selection(page)).focus, key).toEqual({ paragraph: "alpha", offset: 5 })
+    }
+    const mark = await revision(page)
+    await atEnd(page, "one")
+    await press(page, "Shift+Enter")
+    await press(page, "Delete")
+    await accepted(page, mark)
+    await expect.poll(() => source(page)).toBe("alpha\n\n- one\\\ntwo\n")
+    await expect(lineBreaks(page)).toHaveCount(1)
+    await expect(page.getByText(NOT_APPLIED)).toHaveCount(0)
+  })
+
   test("Enter after a line break at the end of an item makes a new item, as Enter alone does", async ({ page }) => {
     const mark = await load(page, "- first\n- second\n", "md", /^first$/)
     await atEnd(page, "first")

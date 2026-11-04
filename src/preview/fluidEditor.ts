@@ -69,10 +69,14 @@ const selectionOf = (state: EditorState): Selection => ({
  * takes it out again, and the parent never hears of it.
  */
 type HeldBreak = { step: ReplaceStep; base: PMNode; doc: PMNode; before: Selection };
-/** Keys that move the caret or split or join text: they take a held break out first. */
-const LEAVING_KEYS = new Set(["Enter", "Delete", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** Keys that move the caret or split text: they take a held break out first. */
+const LEAVING_KEYS = new Set(["Enter", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** Keys whose move, from the line a held break made, ends where taking the break out leaves the caret. */
+const BACK_KEYS = new Set(["ArrowLeft", "ArrowUp"]);
 /** The caret where a held break (the step that puts it in) goes. */
 const atBreak = (step: ReplaceStep): Selection => ({ anchor: step.from, head: step.from });
+/** Where the caret is just after a held break. */
+const afterBreak = (step: ReplaceStep) => step.from + step.slice.size;
 const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
 const shapes = new WeakMap<PMNode, string>();
 /** `blockShape`, once per document. */
@@ -471,14 +475,22 @@ export class FluidEditor {
         adoptDOMCaret(view);
         if (event.key === "Escape") this.tabLeaves = performance.now() + 2000;
         else if (event.key !== "Tab" && !MODIFIER_KEYS.has(event.key)) this.tabLeaves = 0;
-        if (this.heldBreak()) {
+        const held = this.heldBreak();
+        if (held) {
+          const { selection } = view.state;
+          const after = selection.empty && selection.head === afterBreak(held.step);
           // Backspace takes a held break out, as it would a sent one. Keys
-          // that move the caret, split or join take it out, then act as usual.
+          // that move the caret or split text take it out, then act as
+          // usual, except a move back: taking the break out has already put
+          // the caret at the end of the line above.
           if (event.key === "Backspace") {
             this.dropBreak();
             return true;
           }
-          if (LEAVING_KEYS.has(event.key) && !(event.key === "Enter" && event.shiftKey)) this.dropBreak();
+          if (LEAVING_KEYS.has(event.key) && !(event.key === "Enter" && event.shiftKey)) {
+            this.dropBreak();
+            return after && BACK_KEYS.has(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey;
+          }
         }
         return false;
       },
@@ -692,7 +704,7 @@ export class FluidEditor {
       // A caret moved away from a held break takes the break out.
       const held = this.heldBreak();
       const { selection } = this.view.state;
-      if (held && tr.selectionSet && !(selection.empty && selection.head === held.step.from + held.step.slice.size))
+      if (held && tr.selectionSet && !(selection.empty && selection.head === afterBreak(held.step)))
         this.dropBreak();
       return;
     }
@@ -739,10 +751,18 @@ export class FluidEditor {
         this.held = { ...held, step: next, doc: this.view.state.doc };
         return;
       }
+      // Where the held break is once the edit is made.
+      const $break = tr.doc.resolve(tr.mapping.map(afterBreak(held.step), -1));
       if (next) {
         // The break and the text typed after it, as one step.
         this.held = null;
         steps = [next];
+        before = held.before;
+      } else if ($break.nodeBefore?.type === fluidSchema.nodes.hard_break && $break.parentOffset < $break.parent.content.size) {
+        // Text the edit brought after the break (Delete joins the next
+        // line's): the break can be written with it, as one step.
+        this.held = null;
+        steps = changeTo(held.base, tr.doc).steps;
         before = held.before;
       } else {
         // Any other edit takes the break out first, and is made without it.
