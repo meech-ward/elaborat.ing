@@ -94,6 +94,7 @@ import {
   setAuthoringContext,
   setAuthoringPaths,
   setCodeBlockHooks,
+  settleDirectEdit,
 } from "./authoring";
 
 type PendingRender = {
@@ -1271,6 +1272,10 @@ function onParentMessage(event: MessageEvent): void {
     if (message.revision !== activeRevision) return;
     originalImages = {[message.key]:{image:message.image,error:message.error}};
     for (const listener of imageListeners) listener();
+    return;
+  }
+  if (message.kind === "edit-settled") {
+    settleDirectEdit(message);
     return;
   }
   if (message.kind === "render-ack") {

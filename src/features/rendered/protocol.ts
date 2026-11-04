@@ -550,6 +550,21 @@ export const parentMessageSchema = z.union([
   }),
   renderMessageSchema,
   renderAckMessageSchema,
+  // An edit a text in the note sent itself (not through the draft store)
+  // changed nothing or was refused. The text, named as the edit named it (a
+  // leaf's source range, or a block), can send again; refused, it shows the
+  // note's own text again. An accepted edit is answered by the next render.
+  z.strictObject({
+    kind: z.literal("edit-settled"),
+    session: z.string().check(z.minLength(8)),
+    /** The revision the edit was made in. */
+    revision: whole,
+    target: z.union([
+      z.strictObject({ from: whole, to: whole }),
+      z.strictObject({ block: z.string().check(z.maxLength(100)) }),
+    ]),
+    outcome: z.enum(["noop", "rejected"]),
+  }),
   resourcesMessageSchema,
   imagesMessageSchema,
   imageOriginalMessageSchema,

@@ -84,6 +84,7 @@ import {
   MAX_NOTION_SNAPSHOT_ENTRIES,
   matchNotionSnapshotEntries,
   staleChildMessage,
+  type ChildMessage,
   type CommentMarksMessage,
   type ConnectMessage,
   type FrameRect,
@@ -1127,9 +1128,19 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if ((event.data as { kind?: unknown } | null)?.kind === 'copy-code') return;
       if ((event.data as {kind?:unknown}|null)?.kind === 'document-embed-action') return;
       if ((event.data as {kind?:unknown;key?:unknown}|null)?.kind === 'shortcut' && (event.data as {key?:unknown}).key === 's') return;
-      const settle = (draftId: number | undefined, outcome: 'noop' | 'rejected', reason?: string) => {
-        if (draftId === undefined) return;
-        port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId, outcome, reason });
+      // The answer to an edit that changed nothing or was refused: a draft
+      // hears of it by its id, and a text that sent its edit itself (a leaf
+      // or a block of the note) by the range or block the edit named, so it
+      // can send again. An accepted edit is answered by the next render.
+      const settle = (edit: ChildMessage, outcome: 'noop' | 'rejected', reason?: string) => {
+        if ('draftId' in edit && edit.draftId !== undefined) {
+          port.postMessage({ kind: 'source-draft-settled', session, revision: document.revision, draftId: edit.draftId, outcome, reason });
+          return;
+        }
+        if (edit.kind === 'prose-edit' || edit.kind === 'prose-enter')
+          port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { from: edit.from, to: edit.to }, outcome });
+        else if (edit.kind === 'block-edit')
+          port.postMessage({ kind: 'edit-settled', session, revision: edit.revision, target: { block: edit.block }, outcome });
       };
       const checked = checkChildMessage({
         data: event.data,
@@ -1164,7 +1175,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         }
         if (parsed.success && parsed.data.session === session && 'draftId' in parsed.data) {
           const notice = notApplied(checked.error);
-          settle(parsed.data.draftId, 'rejected', notice);
+          settle(parsed.data, 'rejected', notice);
           setEditNotice(notice);
           return;
         }
@@ -1180,6 +1191,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           if (outcome === "lost-edit") {
             setEditNotice(REFUSAL.stale);
             if (message.kind === "fluid-transaction") resetFrame();
+            else settle(message, "rejected", REFUSAL.stale);
           }
           return;
         }
@@ -1571,7 +1583,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       const refuse = (reason: string) => {
         const notice = notApplied(reason);
         setEditNotice(notice);
-        settle("draftId" in message ? message.draftId : undefined, "rejected", notice);
+        settle(message, "rejected", notice);
       };
       if (!exposed) {
         refuse("Rejected frame edit with no rendered document.");
@@ -1702,7 +1714,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
                     availableResourcePaths ?? [],
                     exposed.components.catalog,
                   );
-          if (result.patch.insert === result.patch.expected) return;
+          if (result.patch.insert === result.patch.expected) { settle(message, 'noop'); return; }
           pendingFocus.current =
             message.kind === "block-edit" && message.action === "commit"
               ? null
@@ -1726,11 +1738,11 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
           const patch = componentValuePatch(document.text, exposed.slots, message);
           setEditNotice(null);
           if (patch) commitLocalEdit(message.revision, [patch], message.draftId);
-          else settle(message.draftId, 'noop');
+          else settle(message, 'noop');
         } catch (error) {
           const notice = notApplied(error instanceof Error ? error.message : String(error));
           setEditNotice(notice);
-          settle(message.draftId, 'rejected', notice);
+          settle(message, 'rejected', notice);
         }
         return;
       }
@@ -1750,7 +1762,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         const insert = message.shortcut && !leaf.code
           ? encodeInlineInput(message.value, document.format)
           : encodeTextLeaf(leaf, message.value, document.format);
-        if (insert === leaf.expected) { settle(message.draftId, 'noop'); return; }
+        if (insert === leaf.expected) { settle(message, 'noop'); return; }
         if (message.shortcut)
           pendingFocus.current = {
             revision: document.revision + 1,
@@ -1768,7 +1780,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         } catch (error) {
           const notice = notApplied(error instanceof Error ? error.message : String(error));
           setEditNotice(notice);
-          settle(message.draftId, 'rejected', notice);
+          settle(message, 'rejected', notice);
         }
         return;
       }
@@ -1776,7 +1788,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       if (!checkPropEdit(exposed.slots, message)) {
         throw new Error("Rejected prop edit outside the exposed literal ranges.");
       }
-      if (message.literal === message.expected) { settle(message.draftId, 'noop'); return; }
+      if (message.literal === message.expected) { settle(message, 'noop'); return; }
       commitLocalEdit(message.revision, [
         {
           from: message.from,
@@ -1789,7 +1801,7 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
       } catch (error) {
         const notice = notApplied(error instanceof Error ? error.message : String(error));
         setEditNotice(notice);
-        settle(message.draftId, 'rejected', notice);
+        settle(message, 'rejected', notice);
       }
     };
     onPortMessage.current = onMessage;

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { COMPONENT_CATALOG } from "../features/document/componentCatalog";
 import { isDocumentPath } from '../features/document/documentPaths';
-import type { RenderMessage } from "../features/rendered/protocol";
+import type { ParentMessage, RenderMessage } from "../features/rendered/protocol";
 import { EditableCodeFence } from '../features/rendered/codeFence';
 import { captureSourceDraft, getSourceDraft, queueRangeEdit, restoreSourceDraft, startSourceDraft } from './sourceDrafts';
 import { useReadOnly } from './readOnly';
@@ -44,6 +44,16 @@ let codeBlockHooks = { typed: () => "", undo: () => {} };
 export function setCodeBlockHooks(hooks: typeof codeBlockHooks) {
   codeBlockHooks = hooks;
 }
+/** The page's answer to an edit a text sent itself (not through the draft store) that changed nothing or was refused. */
+type DirectEditSettled = Extract<ParentMessage, { kind: "edit-settled" }>;
+type DirectEditTarget = DirectEditSettled["target"];
+const settledListeners = new Set<(settled: DirectEditSettled) => void>();
+/** An edit a text in the note sent changed nothing or was refused: that text may send again. */
+export function settleDirectEdit(settled: DirectEditSettled) {
+  for (const listener of settledListeners) listener(settled);
+}
+const sameTarget = (a: DirectEditTarget, b: DirectEditTarget) =>
+  "block" in a ? "block" in b && a.block === b.block : "from" in b && a.from === b.from && a.to === b.to;
 export function setAuthoringPaths(paths: readonly string[]) {
   resourcePaths = paths;
   for (const listener of listeners) listener();
@@ -182,11 +192,32 @@ function EditableText(props: {
 }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null);
   const composing = useRef(false);
-  const sent = useRef(false);
+  // While an edit this text sent waits for the page's answer, it sends no
+  // other. The answer is a new revision, or (for an edit that changed
+  // nothing or was refused) a message naming the edit.
+  const waiting = useRef(false);
+  // The edit this text sent last. Its refusal can come after a new revision
+  // (another change of the note made it stale), and still finds it.
+  const sent = useRef<{ revision: number; target: DirectEditTarget; value: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { session, revision } = useSyncExternalStore(subscribe, getAuthoringContext);
   const readOnly = useReadOnly();
-  useEffect(() => { sent.current = false; }, [revision, props.from, props.leaf?.expected]);
+  useEffect(() => { waiting.current = false; }, [revision, props.from, props.leaf?.expected]);
+  useEffect(() => {
+    const settled = (answer: DirectEditSettled) => {
+      const edit = sent.current, element = ref.current;
+      if (!edit || !element || answer.revision !== edit.revision || !sameTarget(answer.target, edit.target)) return;
+      sent.current = null;
+      waiting.current = false;
+      // A refused edit is not in the note, as the page's notice says: the
+      // text shows the note's own again, unless the person has typed on.
+      if (answer.outcome === "rejected" && (element.textContent ?? "") === edit.value) element.textContent = props.value;
+    };
+    settledListeners.add(settled);
+    return () => {
+      settledListeners.delete(settled);
+    };
+  }, [props.value]);
   useLayoutEffect(() => {
     if (props.literal && ref.current) restoreSourceDraft(ref.current);
   }, [revision, props.from, props.leaf?.expected, props.literal]);
@@ -203,11 +234,12 @@ function EditableText(props: {
   const submit = (action: "commit" | "enter" | "shortcut") => {
     clear();
     const element = ref.current;
-    if (!element || composing.current || sent.current) return;
+    if (!element || composing.current || waiting.current) return;
     const value = element.textContent ?? "";
     if (action === "commit" && value === props.value) return;
     const caret = caretOffset(element);
-    sent.current = true;
+    waiting.current = true;
+    sent.current = { revision, target: props.block ? { block: props.block } : { from: props.from, to: props.leaf?.to ?? props.from }, value };
     pendingDraft = { element, value, revision };
     if (props.block)
       post({
@@ -231,7 +263,7 @@ function EditableText(props: {
         caret,
       };
       if (props.literal && action === 'commit') queueRangeEdit({ kind: 'prose-edit', ...message });
-      else post({ kind: action === 'enter' ? 'prose-enter' : 'prose-edit', ...message });
+      else post({ kind: 'prose-edit', ...message });
     }
   };
   if (readOnly)
@@ -300,7 +332,11 @@ function EditableText(props: {
               selection.addRange(range);
               captureSourceDraft(event.currentTarget);
             }
-          } else submit("enter");
+          } else if (props.block) submit("enter");
+          // A leaf of an island, such as a table's cell, is one line of the
+          // note with no line of its own to make: Enter leaves it, and so
+          // sends what was typed in it.
+          else ref.current?.blur();
         }
         if (event.key === "Escape") {
           event.preventDefault();

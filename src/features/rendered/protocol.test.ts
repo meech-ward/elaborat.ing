@@ -421,6 +421,24 @@ describe('checkParentMessage', () => {
     ]) expect(check(invalid).ok).toBe(false);
   });
 
+  test('the answer to a text edit that changed nothing or was refused names the text as the edit named it', () => {
+    const settled = { kind: 'edit-settled', session: 'session-1a', revision: 7, target: { from: 40, to: 41 }, outcome: 'rejected' };
+    const check = (data: unknown, activeSession: string | null = 'session-1a') => checkParentMessage({ data, source: {}, activeSession });
+    expect(check(settled).ok).toBe(true);
+    expect(check({ ...settled, outcome: 'noop' }).ok).toBe(true);
+    expect(check({ ...settled, target: { block: 'block-3' } }).ok).toBe(true);
+    expect(check(settled, null).ok).toBe(false);
+    expect(check(settled, 'session-other').ok).toBe(false);
+    for (const invalid of [
+      { ...settled, outcome: 'accepted' },
+      { ...settled, target: { from: 40 } },
+      { ...settled, target: { from: 40, to: 41, block: 'b' } },
+      { ...settled, target: { block: 'b'.repeat(101) } },
+      { ...settled, value: 'x' },
+      { ...settled, revision: -1 },
+    ]) expect(check(invalid).ok).toBe(false);
+  });
+
   test('the frame asks for the whole render for its session, and an old request is dropped', () => {
     const request = { kind: 'render-request', session: 'session-1a', revision: 4 };
     const check = (data: unknown, revision = 4) => checkChildMessage({ data, source: FRAME, expectedSource: FRAME, session: 'session-1a', revision });
