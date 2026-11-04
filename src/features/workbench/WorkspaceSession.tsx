@@ -857,14 +857,23 @@ export function WorkspaceSession({
     });
   }, [documentEmbeds, initial.path, ownDirty, pendingShown, openFile, readOnly, blocked, asking, shownRenderError, patchError, notice]);
 
+  // An action chosen while a rendered edit is on its way waits for the edit,
+  // as Save does, then runs with it: the menu offers the action in an edit's
+  // first moments. False when another document was opened meanwhile.
+  const editLanded = useCallback(async (identity: number): Promise<boolean> => {
+    if (renderedPendingRef.current) {
+      setNotice("Finishing edit…");
+      while (renderedPendingRef.current) await new Promise<void>((resolve) => editWaiters.current.push(resolve));
+      setNotice((current) => (current === "Finishing edit…" ? null : current));
+    }
+    return store.snapshot().docId === identity;
+  }, [store]);
+
   const doReload = useCallback(
     async (file: OpenFile) => {
       const identity = store.snapshot().docId;
       if (frozen.current) return;
-      if (renderedPendingRef.current) {
-        setNotice("Finishing edit…");
-        return;
-      }
+      if (!(await editLanded(identity)) || frozen.current) return;
       if (!file.path) return;
       if (
         store.snapshot().dirty &&
@@ -913,7 +922,7 @@ export function WorkspaceSession({
         pendingOperation.current--;
       }
     },
-    [client, resetEditorMessages, store],
+    [client, editLanded, resetEditorMessages, store],
   );
 
   const adoptServerText = useCallback(
@@ -1016,10 +1025,7 @@ export function WorkspaceSession({
 
   const handleExport = useCallback(async () => {
     settle();
-    if (renderedPendingRef.current) {
-      setNotice("Finishing edit…");
-      return;
-    }
+    if (!(await editLanded(store.snapshot().docId))) return;
     const text = store.snapshot().text;
     setNotice(null);
     try {
@@ -1036,7 +1042,7 @@ export function WorkspaceSession({
         `Export failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-  }, [displayName, settle, store]);
+  }, [displayName, editLanded, settle, store]);
 
   const captureNotionSources = useCallback(async () => {
     settle();
@@ -1060,10 +1066,7 @@ export function WorkspaceSession({
     settle();
     if (frozen.current) return;
     // Formatting rewrites the source, which an edit still on its way would not fit.
-    if (renderedPendingRef.current) {
-      setNotice("Finishing edit…");
-      return;
-    }
+    if (!(await editLanded(store.snapshot().docId)) || frozen.current) return;
     pendingOperation.current++;
     setNotice(null);
     try {
@@ -1074,7 +1077,7 @@ export function WorkspaceSession({
     } finally {
       pendingOperation.current--;
     }
-  }, [settle]);
+  }, [editLanded, settle, store]);
 
   useEffect(() => {
     if (!active) return;
@@ -1102,14 +1105,10 @@ export function WorkspaceSession({
     }
     void saveDocument();
   }, [readOnly, saveDocument]);
-  const openNotionExport = () => {
+  const openNotionExport = async () => {
     settle();
-    // Its capture refuses an edit still on its way: say so before it opens.
-    if (renderedPendingRef.current) {
-      setNotice("Finishing edit…");
-      return;
-    }
-    setNotionExportOpen(true);
+    // Its capture refuses an edit still on its way: it opens once that has landed.
+    if (await editLanded(store.snapshot().docId)) setNotionExportOpen(true);
   };
   const saveDisabled = pendingShown || !hasFile || openFile.save.stage === "saving";
   // The header's Save stays on while a rendered edit finishes, so it doesn't
@@ -1117,8 +1116,8 @@ export function WorkspaceSession({
   const headerSaveDisabled = !hasFile || openFile.save.stage === "saving";
   const duplicateKey = commandShortcut("D", apple);
   // The file's actions: its tab's menu on a desktop, "..." on a phone.
-  // Each action checks again when chosen: a menu opened in the first moments
-  // of an edit still shows them on.
+  // A menu opened in an edit's first moments shows them on: each action that
+  // needs the edit waits for it when chosen (editLanded, doWrite).
   const fileActions: MenuEntry[] = [
     ...(readOnly ? [] : [{ label: "Save", disabled: saveDisabled, onSelect: save }]),
     // Off while a rendered edit is finishing, as Save is, so the copy has it.
@@ -1126,7 +1125,7 @@ export function WorkspaceSession({
     // Read-only, the file follows its saved copy by itself.
     ...(readOnly ? [] : [{ label: "Reload", disabled: pendingShown || !openFile.path, onSelect: () => void doReload(openFile) }]),
     { label: "Export", disabled: pendingShown, onSelect: () => void handleExport() },
-    ...(isNote ? [{ label: "Export to Notion", disabled: pendingShown, onSelect: openNotionExport }] : []),
+    ...(isNote ? [{ label: "Export to Notion", disabled: pendingShown, onSelect: () => void openNotionExport() }] : []),
     ...(isNote && !readOnly ? [{ label: "Format", disabled: pendingShown, onSelect: () => void handleFormat() }] : []),
     ...visibleRefs.map((ref) => ({ label: `${ref.label} → ${ref.path}`, onSelect: () => openPath(ref.path) })),
   ];

@@ -213,6 +213,44 @@ test("an edit that keeps waiting shows as finishing in the status and the file's
   expect((await page.evaluate(() => window.typing.status)).filter((text) => text === "Finishing edit…")).toHaveLength(1)
 })
 
+/** Hold the edit of the next key, and choose `item` from the file's menu before that edit shows as finishing. */
+async function chooseAsEditStarts(page: Page, key: string, item: string) {
+  await page.evaluate(() => { window.transactionGate.enabled = true })
+  await page.keyboard.type(key)
+  await page.waitForFunction(() => window.transactionGate.held.length > 0)
+  await page.getByRole("button", { name: "File actions" }).click()
+  // The menu offers it in the edit's first moments: chosen now, it has to wait.
+  const offered = await page.getByRole("menuitem", { name: item, exact: true }).evaluate((element) => {
+    const on = element.getAttribute("aria-disabled") !== "true"
+    ;(element as HTMLElement).click()
+    return on
+  })
+  expect(offered).toBe(true)
+  expect(await page.evaluate(() => window.transactionGate.held.length)).toBeGreaterThan(0)
+  await releaseTransactions(page)
+}
+
+test("Format and Export to Notion chosen in an edit's first moments wait for the edit, then run with it", async ({ page }) => {
+  const { fake, id } = await openProject(page, { "a.md": "# Title\n\nFirst paragraph.\n\n* one\n* two\n" }, "a.md")
+  await expect(frameOf(page).getByText("First paragraph.", { exact: true })).toBeVisible()
+  const [status, notice] = [page.locator(".wb-session > [aria-live]").first(), page.locator(".wb-session > [aria-live]").nth(1)]
+  await caretAfter(page, "First paragraph.")
+  await chooseAsEditStarts(page, "X", "Format")
+  // Prettier's bullets, and the edit in the formatted text.
+  await expect(notice).toHaveText("Formatted with Prettier.")
+  await expect(status).toHaveText("Unsaved changes")
+  await page.getByRole("button", { name: "File actions" }).click()
+  await page.getByRole("menuitem", { name: "Save", exact: true }).click()
+  await expect.poll(() => fake.server.content(id, "a.md")).toBe("# Title\n\nFirst paragraph.X\n\n- one\n- two\n")
+  await expect(status).toHaveText("Saved")
+
+  await caretAfter(page, "First paragraph.X")
+  await chooseAsEditStarts(page, "Y", "Export to Notion")
+  await expect(page.getByRole("dialog", { name: "Export to Notion", exact: true })).toBeVisible()
+  await expect(notice).not.toHaveText("Finishing edit…")
+  await expect(status).toHaveText("Unsaved changes")
+})
+
 test("typing beside an image reads it once, and gives the note frame the same pixels", async ({ page }) => {
   // A new project, a note and an upload before the typing.
   test.slow()
