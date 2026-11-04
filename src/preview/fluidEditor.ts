@@ -41,6 +41,7 @@ import {
 } from "../features/rendered/fluidCommands";
 import { changeTo, rebaseSteps } from "../features/rendered/nearestForm";
 import type {
+  RenderAckMessage,
   RenderMessage,
   FluidSyntaxHint,
 } from "../features/rendered/protocol";
@@ -983,10 +984,15 @@ export class FluidEditor {
     }
   }
 
-  receive(message: RenderMessage) {
+  /**
+   * A render from the parent: a whole one (with its document), or the ack of
+   * an edit (`render-ack`), which has none and is never a reset: it answers
+   * an edit made in the document on screen.
+   */
+  receive(message: RenderMessage | { session: string; revision: number; fluid: RenderMessage["fluid"] | RenderAckMessage["fluid"] }) {
     const fluid = message.fluid;
     if (!fluid) return;
-    const reset = fluid.reset || fluid.epoch !== this.epoch;
+    const reset = "doc" in fluid && (fluid.reset || fluid.epoch !== this.epoch);
     this.session = message.session;
     this.revision = message.revision;
     // The new document has the code block, if the parent made one.
@@ -1016,11 +1022,11 @@ export class FluidEditor {
       }
       this.view.updateState(state);
       if (fluid.selection) this.view.focus();
-    } else if (fluid.operation === this.operation) {
+    } else if (fluid.operation === this.operation && fluid.epoch === this.epoch) {
       // The optimistic document and selection are already ahead during a
       // burst. An ack only advances authority; it never overwrites that view,
       // except with the nearest form Markdown can store of the edit in flight.
-      if (fluid.nearest && this.inFlight && this.sent)
+      if ("doc" in fluid && fluid.nearest && this.inFlight && this.sent)
         this.takeNearest(fluidSchema.nodeFromJSON(fluid.doc), this.sent);
       this.inFlight = false;
       this.sent = null;

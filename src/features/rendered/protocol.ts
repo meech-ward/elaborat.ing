@@ -355,6 +355,31 @@ export function blockBoundariesFor(
   });
 }
 
+/** What a render tells the frame's authoring controls about the source, except the component catalog. */
+const authoringFields = {
+  format: z.enum(["md", "mdx"]),
+  boundaries: z.array(
+    z.object({ id: z.string(), offset: whole }),
+  ),
+  /** Each rendered top-level root's start and its next safe insertion boundary. */
+  blockBoundaries: z.optional(z.array(z.object({
+    position: whole,
+    boundary: z.string().check(z.maxLength(128)),
+  }))),
+  availableResourcePaths: z.array(z.string().check(z.maxLength(512))),
+  focus: z.optional(whole),
+  /** Rebase permission for this exact accepted local rendered edit only. */
+  editAck: z.optional(z.strictObject({
+    fromRevision: whole,
+    draftId: z.optional(whole),
+    patches: z.array(z.strictObject({
+      from: whole,
+      to: whole,
+      insertLength: whole,
+    })).check(z.maxLength(256)),
+  })),
+};
+
 /** Parent -> child: render this compiled document. */
 export const renderMessageSchema = z.object({
   kind: z.literal("render"),
@@ -369,33 +394,42 @@ export const renderMessageSchema = z.object({
   readOnly: z.optional(z.boolean()),
   authoring: z.optional(
     z.object({
-      format: z.enum(["md", "mdx"]),
-      boundaries: z.array(
-        z.object({ id: z.string(), offset: whole }),
-      ),
-      /** Each rendered top-level root's start and its next safe insertion boundary. */
-      blockBoundaries: z.optional(z.array(z.object({
-        position: whole,
-        boundary: z.string().check(z.maxLength(128)),
-      }))),
-      availableResourcePaths: z.array(z.string().check(z.maxLength(512))),
+      ...authoringFields,
       components: z.optional(z.array(z.object({ name: z.string().check(z.maxLength(128), z.regex(/^[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)?$/)), description: z.string().check(z.maxLength(1024)) })).check(z.maxLength(128))),
-      focus: z.optional(whole),
-      /** Rebase permission for this exact accepted local rendered edit only. */
-      editAck: z.optional(z.strictObject({
-        fromRevision: whole,
-        draftId: z.optional(whole),
-        patches: z.array(z.strictObject({
-          from: whole,
-          to: whole,
-          insertLength: whole,
-        })).check(z.maxLength(256)),
-      })),
     }),
   ),
 });
 
 export type RenderMessage = z.infer<typeof renderMessageSchema>;
+
+/**
+ * Parent -> child: the answer to the frame's edit when the frame already has
+ * the rest of its render. It follows a `render` on the same port with the
+ * same session, epoch and runtimeKey, and is that render moved on by the
+ * edit: the revision, and what each keystroke moves (island offsets, slots,
+ * boundaries). It has no document (the frame's own is ahead of it), no code,
+ * modules or component catalog (the frame keeps those from the render), and
+ * is never a reset or a nearest form, which go as a whole `render`. A frame
+ * that has no such render asks for one (`render-request`).
+ */
+export const renderAckMessageSchema = z.strictObject({
+  kind: z.literal("render-ack"),
+  session: z.string().check(z.minLength(8)),
+  revision: whole,
+  slots: z.array(slotSchema),
+  fluid: z.strictObject({
+    epoch: whole,
+    operation: whole,
+    runtimeKey: z.string(),
+    islands: z.array(
+      z.object({ id: z.string(), from: whole }),
+    ),
+  }),
+  readOnly: z.optional(z.boolean()),
+  authoring: z.optional(z.strictObject(authoringFields)),
+});
+
+export type RenderAckMessage = z.infer<typeof renderAckMessageSchema>;
 
 /**
  * Parent -> child: generated pixels for `<Drawing>`/`<Diagram>` embeds.
@@ -515,6 +549,7 @@ export const parentMessageSchema = z.union([
     path: z.string().check(z.minLength(1), z.maxLength(512)),
   }),
   renderMessageSchema,
+  renderAckMessageSchema,
   resourcesMessageSchema,
   imagesMessageSchema,
   imageOriginalMessageSchema,
@@ -721,6 +756,13 @@ export const childMessageSchema = z.discriminatedUnion("kind", [
     /** The projection actually mounted by the fluid preview, including module reloads at one revision. */
     epoch: z.optional(whole),
   }),
+  // A `render-ack` came that does not follow the render the frame has: send
+  // the whole render.
+  z.strictObject({
+    kind: z.literal("render-request"),
+    session: z.string().check(z.minLength(8)),
+    revision: whole,
+  }),
   // The person used the frame (a key, a press, the wheel): the page around
   // it cannot see input there. In a chat's panel the workbench then leaves
   // the files on screen as they are for a few seconds.
@@ -894,6 +936,7 @@ export function staleChildMessage(kind: ChildMessage["kind"]): "status" | "drop"
     case "ready":
     case "load-module":
     case "rendered":
+    case "render-request":
     case "activity":
     case "render-error":
     case "edit-resource":

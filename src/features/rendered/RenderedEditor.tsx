@@ -87,6 +87,7 @@ import {
   type CommentMarksMessage,
   type ConnectMessage,
   type FrameRect,
+  type RenderAckMessage,
   type RenderMessage,
   type ResourcesMessage,
   type ImagesMessage,
@@ -773,6 +774,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     portRef.current?.postMessage({ kind: "reading-preferences", session, preferences: reading, bottomInset });
   }, [reading, bottomInset, readyTick, session]);
 
+  // What the frame has of the note: the last whole render posted on its
+  // port. While that render's epoch, code and components hold, the answer to
+  // an edit goes as a `render-ack`, without what the frame keeps from it.
+  const frameHas = useRef<{ port: MessagePort; readyTick: number; epoch: number; runtimeKey: string; components: Exposed["components"] } | null>(null);
+  // The frame asked for the whole render again (`render-request`).
+  const [renderRequests, setRenderRequests] = useState(0);
   // Post compiled code to the child frame. The render message carries the
   // revision it was built from; the child echoes it back so stale output
   // can never overwrite a newer document. Reposted whenever the frame
@@ -781,6 +788,51 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
     if (!exposed) return;
     const port = portRef.current;
     if (!port) return;
+    const slots: RenderMessage["slots"] = exposed.slots.map((slot) => ({
+      index: slot.index,
+      element: slot.element,
+      supported: slot.supported,
+      reason: slot.reason,
+      titleInsertion: slot.supported && ['Note', 'Warning', 'Important', 'ExampleCard'].includes(slot.element) && !slot.props.some(prop => prop.name === 'title')
+        ? { from: slot.from + slot.element.length + 1, to: slot.from + slot.element.length + 1, expected: '' as const } : undefined,
+      props: slot.props.map((prop) => ({
+        name: prop.name,
+        kind: prop.kind,
+        syntax: prop.syntax,
+        from: prop.from,
+        to: prop.to,
+        expected: prop.expected,
+        value: prop.value,
+        choices: exposed.components.catalog.find(c => c.name === slot.element)?.props.find(p => p.name === prop.name)?.choices?.slice(),
+      })),
+    }));
+    const islands = exposed.islands.map(({ id, from }) => ({ id, from }));
+    const authoring = {
+      format: exposed.format,
+      boundaries: exposed.instrumentation.boundaries,
+      blockBoundaries: blockBoundariesFor(exposed.mapping.roots, exposed.instrumentation.boundaries),
+      availableResourcePaths: [],
+      focus: exposed.focus,
+      editAck: exposed.editAck,
+    };
+    const has = frameHas.current;
+    if (
+      !exposed.reset && !exposed.nearest &&
+      has?.port === port && has.readyTick === readyTick && has.epoch === exposed.epoch &&
+      has.runtimeKey === exposed.runtimeKey && has.components === exposed.components
+    ) {
+      const ack: RenderAckMessage = {
+        kind: "render-ack",
+        session,
+        revision: exposed.revision,
+        slots,
+        readOnly: readOnly || undefined,
+        fluid: { epoch: exposed.epoch, operation: exposed.operation, runtimeKey: exposed.runtimeKey, islands },
+        authoring,
+      };
+      port.postMessage(ack);
+      return;
+    }
     const message: RenderMessage = {
       kind: "render",
       session,
@@ -796,40 +848,19 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         doc: exposed.doc.toJSON(),
         selection: exposed.selection,
         nearest: !exposed.reset && exposed.nearest ? true : undefined,
-        islands: exposed.islands.map(({ id, from }) => ({ id, from })),
+        islands,
         writeIn: writingIn.current?.exposed === exposed ? writingIn.current.position : undefined,
       },
       readOnly: readOnly || undefined,
-      slots: exposed.slots.map((slot) => ({
-        index: slot.index,
-        element: slot.element,
-        supported: slot.supported,
-        reason: slot.reason,
-        titleInsertion: slot.supported && ['Note', 'Warning', 'Important', 'ExampleCard'].includes(slot.element) && !slot.props.some(prop => prop.name === 'title')
-          ? { from: slot.from + slot.element.length + 1, to: slot.from + slot.element.length + 1, expected: '' as const } : undefined,
-        props: slot.props.map((prop) => ({
-          name: prop.name,
-          kind: prop.kind,
-          syntax: prop.syntax,
-          from: prop.from,
-          to: prop.to,
-          expected: prop.expected,
-          value: prop.value,
-          choices: exposed.components.catalog.find(c => c.name === slot.element)?.props.find(p => p.name === prop.name)?.choices?.slice(),
-        })),
-      })),
+      slots,
       authoring: {
-        format: exposed.format,
-        boundaries: exposed.instrumentation.boundaries,
-        blockBoundaries: blockBoundariesFor(exposed.mapping.roots, exposed.instrumentation.boundaries),
-        availableResourcePaths: [],
+        ...authoring,
         components: exposed.components.catalog.map(({name,description}) => ({name,description})),
-        focus: exposed.focus,
-        editAck: exposed.editAck,
       },
     };
     port.postMessage(message);
-  }, [exposed, readOnly, readyTick, session]);
+    frameHas.current = { port, readyTick, epoch: exposed.epoch, runtimeKey: exposed.runtimeKey, components: exposed.components };
+  }, [exposed, readOnly, readyTick, renderRequests, session]);
 
   useEffect(() => {
     if (exposed)
@@ -1143,6 +1174,12 @@ export function RenderedEditor(props: RenderedEditorProps): React.ReactNode {
         if (current && message.epoch === current.epoch && message.revision === current.revision)
           snapshotAcknowledged.current = {port, projection:current};
         onShown?.();
+        return;
+      }
+      if (message.kind === "render-request") {
+        // The frame could not place an ack: it is sent the whole render again.
+        frameHas.current = null;
+        setRenderRequests((count) => count + 1);
         return;
       }
       if (message.kind === "activity") {

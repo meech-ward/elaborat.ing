@@ -80,6 +80,7 @@ import {
   MAX_NOTION_SNAPSHOT_TOTAL_BYTES,
   type CommentMarksMessage,
   type FrameRect,
+  type RenderAckMessage,
   type RenderMessage,
   type SlotInfo,
 } from "../features/rendered/protocol";
@@ -102,12 +103,22 @@ type PendingRender = {
   slots: SlotInfo[];
   modules?: RenderMessage['modules'];
   authoring?: RenderMessage["authoring"];
-  fluid?: RenderMessage["fluid"];
+  /** A whole render's (with its document), or an ack's (`render-ack`), which has none. */
+  fluid?: RenderMessage["fluid"] | (RenderAckMessage["fluid"] & { scopeKey?: string });
   readOnly?: boolean;
 };
 
 let activeSession: string | null = null;
 let activeRevision = -1;
+/**
+ * The last whole render the page sent: what a `render-ack` leaves out (the
+ * code, modules and component catalog) comes from it, and an ack must name
+ * its session, epoch and runtimeKey.
+ */
+let lastRender: Pick<RenderMessage, "session" | "code" | "modules"> & {
+  components?: NonNullable<RenderMessage["authoring"]>["components"];
+  fluid: Pick<NonNullable<RenderMessage["fluid"]>, "epoch" | "runtimeKey" | "scopeKey">;
+} | null = null;
 const codeClipboard = new CodeClipboard(() => ({ session: activeSession, revision: activeRevision }), postCodeCopyToParent);
 setCodeCopyHandler(text => codeClipboard.copy(text));
 let slotTable: SlotInfo[] = [];
@@ -965,6 +976,8 @@ async function renderDocument(pending: PendingRender): Promise<void> {
         if (seq !== renderSeq) return;
       }
       const projection = pending.fluid;
+      // An ack (no document) moves on the document on screen, in its epoch.
+      const whole = "doc" in projection ? projection : null;
       const editor = fluidEditor;
       const Content = fluidContent;
       const shown = editor.view.state;
@@ -972,14 +985,14 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       // caret (such as a newer saved version an agent saved) keeps the
       // person's caret and selection where they were in it.
       const replaced =
-        shownEpoch !== -1 && (projection.reset || projection.epoch !== shownEpoch) && !projection.selection
+        whole && shownEpoch !== -1 && (whole.reset || whole.epoch !== shownEpoch) && !whole.selection
           ? shown
           : null;
       // What a newer saved version added, the first time this frame shows
       // it, writes in (typeIn.ts), from where the one before is still
       // writing, if it is. It comes into view if the reader is following
       // the note's end, or the writing.
-      const writtenIn = projection.writeIn !== undefined && shownEpoch !== -1 && projection.epoch !== shownEpoch ? projection.writeIn : undefined;
+      const writtenIn = whole?.writeIn !== undefined && shownEpoch !== -1 && projection.epoch !== shownEpoch ? whole.writeIn : undefined;
       const writing = writtenIn === undefined ? null : (typing?.position ?? null);
       const follow = writtenIn !== undefined && ((writing !== null && followed !== null) || followingEnd(editor));
       shownEpoch = projection.epoch;
@@ -992,7 +1005,7 @@ async function renderDocument(pending: PendingRender): Promise<void> {
       for (const listener of islandListeners) listener();
       for (const listener of slotListeners) listener();
       setAuthoringContext(pending.session, pending.revision, pending.authoring);
-      editor.receive({ kind: "render", ...pending });
+      editor.receive({ session: pending.session, revision: pending.revision, fluid: projection });
       if (replaced) keepSelection(editor, replaced);
       applyCommentMarks();
       root.render(
@@ -1260,7 +1273,32 @@ function onParentMessage(event: MessageEvent): void {
     for (const listener of imageListeners) listener();
     return;
   }
+  if (message.kind === "render-ack") {
+    // An ack moves on the render this frame has: from the same session, in
+    // the epoch on screen, with the same code. Anything else (the frame was
+    // never sent that render) is answered with the whole render, on request.
+    const base = lastRender;
+    if (!base || base.session !== message.session || base.fluid.epoch !== message.fluid.epoch || base.fluid.runtimeKey !== message.fluid.runtimeKey || shownEpoch !== message.fluid.epoch) {
+      postToParent({ kind: "render-request", session: message.session, revision: message.revision });
+      return;
+    }
+    void renderDocument({
+      session: message.session,
+      revision: message.revision,
+      code: base.code,
+      modules: base.modules,
+      slots: message.slots,
+      authoring: message.authoring && { ...message.authoring, components: base.components },
+      fluid: { ...message.fluid, scopeKey: base.fluid.scopeKey },
+      readOnly: message.readOnly,
+    });
+    return;
+  }
   const render: RenderMessage = message;
+  lastRender = render.fluid
+    ? { session: render.session, code: render.code, modules: render.modules, components: render.authoring?.components,
+        fluid: { epoch: render.fluid.epoch, runtimeKey: render.fluid.runtimeKey, scopeKey: render.fluid.scopeKey } }
+    : null;
   // A newer render supersedes anything still compiling: only the latest
   // generation is applied, so stale compilation cannot overwrite it.
   void renderDocument({
