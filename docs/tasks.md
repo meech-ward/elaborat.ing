@@ -440,6 +440,12 @@ and existing bundle budgets in Chromium and Firefox.
 
 ## Small things
 
+- Before enabling the local suggesting experiment in production, reduce the
+  project's first-paint JavaScript to its bundle budget. A visualize build with
+  `VITE_LOCAL_SUGGESTIONS=1` currently downloads 358.6 kB gzip against a 356 kB
+  budget; the production flag-off build passes at 355.2 kB. Keep the experiment
+  behind its flag while moving review-only code out of the initial download.
+
 - Extend staging to MCP, chat cards and event delivery. Generalize the
   remaining production origin constants, build chat-card assets against the
   staging origin and configure a separate preview sandbox before enabling the

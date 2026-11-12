@@ -8,12 +8,12 @@ auto_expose_new_tables = false
 [auth]
 enabled = true
 site_url = "__STAGING_APP_ORIGIN__"
-additional_redirect_urls = ["__STAGING_APP_ORIGIN__/**", "http://localhost:5174/**", "http://127.0.0.1:5174/**"]
-enable_signup = true
+additional_redirect_urls = ["__STAGING_APP_ORIGIN__/**", "https://elaborating-staging.sam-da1.workers.dev/**", "http://localhost:5174/**", "http://127.0.0.1:5174/**"]
+enable_signup = false
 minimum_password_length = 10
 
-# Staging accounts can sign up with a password without production SMTP.
-# Email invitations to new accounts still depend on the project's sender limits.
+# Administrators create staging accounts in Supabase. Keep the email provider
+# enabled so those accounts can sign in with a password without production SMTP.
 [auth.email]
 enable_signup = true
 enable_confirmations = false

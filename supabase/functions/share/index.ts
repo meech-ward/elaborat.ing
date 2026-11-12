@@ -3,7 +3,7 @@ import 'jsr:@supabase/functions-js@2.108.2/edge-runtime.d.ts'
 import { withSupabase } from 'npm:@supabase/server@1.6.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 
-import { handleShare } from './handler.ts'
+import { handleShare, newUserInvitationsAllowed } from './handler.ts'
 import { applicationOrigin } from '../_shared/applicationOrigin.ts'
 
 // Called by the app for a signed-in person, so `verify_jwt` stays on. The
@@ -31,6 +31,7 @@ const share = withSupabase({ auth: 'user' }, async (req, ctx) => {
       inviteUserByEmail: async (email, options) => await admin.auth.admin.inviteUserByEmail(email, options),
       record: async (args) => await admin.rpc('record_email_invitation', args),
       redirectTo: `${applicationOrigin(Deno.env.get('ELABORATING_APP_ORIGIN'))}/`,
+      allowNewUserInvitations: newUserInvitationsAllowed(Deno.env.get('ELABORATING_ALLOW_NEW_USER_INVITATIONS')),
     },
   )
 })

@@ -44,9 +44,11 @@
   "env": {
     "staging": {
       "name": "elaborating-staging",
+      // Keep existing browser drafts accessible at the original staging host.
       "workers_dev": true,
-      // Routes inherit across environments unless explicitly cleared.
-      "routes": [],
+      "preview_urls": false,
+      // Set the staging domain explicitly so production routes cannot inherit.
+      "routes": [{ "pattern": "staging.elaborat.ing", "custom_domain": true }],
       "vars": {},
       "assets": {
         "directory": "./dist-staging",

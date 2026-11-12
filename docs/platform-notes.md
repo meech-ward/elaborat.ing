@@ -95,6 +95,22 @@ Checked against the current docs on 2026-10-20 for the
   `config.toml`. The image-storage task includes bucket provisioning and a
   self-host setup check.
 
+## Staging account controls
+
+Checked on 2026-11-12 against Supabase Auth documentation and the Auth server.
+
+- Set global `auth.enable_signup = false` to block self-registration while
+  existing users continue to sign in. Keep `auth.email.enable_signup = true`: it
+  controls the email provider, so disabling it also disables password login.
+  [General configuration](https://supabase.com/docs/guides/auth/general-configuration),
+  [configuration clarification](https://github.com/supabase/supabase/issues/40582)
+- Auth admin creation and email invitations remain available when public
+  registration is closed. An application using admin invitations therefore
+  needs its own restriction if only administrators may provision accounts.
+  Create confirmed password users without requiring an invitation email.
+  [Admin creation](https://supabase.com/docs/reference/javascript/auth-admin-createuser),
+  [Auth invitation implementation](https://github.com/supabase/auth/blob/master/internal/api/invite.go)
+
 ## Supabase: environments and testing
 
 - **Branching** (preview and persistent branches) needs the Pro plan and bills

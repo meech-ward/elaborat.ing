@@ -12,7 +12,7 @@ import {
 } from "./deploy-staging"
 
 const projectId = "abcdefghijklmnopqrst"
-const appOrigin = "https://elaborating-staging.example.workers.dev"
+const appOrigin = "https://staging.elaborat.ing"
 const publicEnvironment = {
   VITE_SUPABASE_URL: `https://${projectId}.supabase.co`,
   VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_staging_fixture",
@@ -20,6 +20,7 @@ const publicEnvironment = {
   VITE_SANDBOX_ORIGIN: "",
   VITE_CHATGPT_PLAN: "",
   VITE_LOCAL_SUGGESTIONS: "1",
+  VITE_SIGNUPS_DISABLED: "1",
 }
 const environment = {
   PATH: process.env.PATH,
@@ -36,7 +37,8 @@ const worker = () => ({
   vars: { MCP_UPSTREAM: "https://production.example/mcp" },
   routes: [{ pattern: "elaborat.ing", custom_domain: true }],
   env: { staging: {
-    name: "elaborating-staging", workers_dev: true, routes: [],
+    name: "elaborating-staging", workers_dev: true, preview_urls: false,
+    routes: [{ pattern: "staging.elaborat.ing", custom_domain: true }],
     assets: { directory: "./dist-staging" }, vars: { MCP_UPSTREAM: "", MCP_PROBE_UPSTREAM: "" },
   } },
 })
@@ -65,14 +67,20 @@ test("deployment requires a nonproduction project and public values that match t
     { STAGING_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_wrong" },
     { STAGING_APP_ORIGIN: "https://elaborat.ing" },
     { STAGING_APP_ORIGIN: `${appOrigin}/path` },
-    { STAGING_APP_ORIGIN: "https://elaborating-staging.example.workers.dev.attacker.test" },
-    { STAGING_APP_ORIGIN: "http://elaborating-staging.example.workers.dev" },
+    { STAGING_APP_ORIGIN: "https://staging.elaborat.ing.attacker.test" },
+    { STAGING_APP_ORIGIN: "http://staging.elaborat.ing" },
     { STAGING_SUPABASE_ACCESS_TOKEN: "" },
     { STAGING_SUPABASE_DB_PASSWORD: "" },
     { STAGING_SUPABASE_SECRET_KEY: "sb_publishable_wrong_role" },
   ]) expect(() => stagingSettings({ ...environment, ...invalid }, publicEnvironment)).toThrow()
-  for (const invalid of [{ VITE_SANDBOX_ORIGIN: "https://production-sandbox.test" }, { VITE_CHATGPT_PLAN: "1" }, { VITE_LOCAL_SUGGESTIONS: "0" }]) {
+  for (const invalid of [{ VITE_SANDBOX_ORIGIN: "https://production-sandbox.test" }, { VITE_CHATGPT_PLAN: "1" }, { VITE_LOCAL_SUGGESTIONS: "0" }, { VITE_SIGNUPS_DISABLED: "0" }, { VITE_SIGNUPS_DISABLED: undefined }]) {
     expect(() => stagingSettings(environment, { ...publicEnvironment, ...invalid })).toThrow()
+  }
+})
+
+test("the committed origin cannot authorize arbitrary domains even when deployment input agrees", () => {
+  for (const origin of ["https://elaborat.ing", "https://another.elaborat.ing", "https://elaborating-staging.example.workers.dev", `${appOrigin}/`, `${appOrigin}:443`]) {
+    expect(() => stagingSettings({ ...environment, STAGING_APP_ORIGIN: origin }, { ...publicEnvironment, STAGING_APP_ORIGIN: origin })).toThrow("exact staging.elaborat.ing origin")
   }
 })
 
@@ -100,8 +108,13 @@ test("the Worker guard refuses production routes, inherited names, wrong output 
   const settings = stagingSettings(environment, publicEnvironment)
   expect(() => validateStagingWorker(JSON.stringify(worker()), settings)).not.toThrow()
   for (const change of [
-    { name: "elaborating" }, { name: "another-worker" }, { workers_dev: false },
-    { routes: [{ pattern: "elaborat.ing" }] }, { routes: undefined },
+    { name: "elaborating" }, { name: "another-worker" }, { name: "staging" },
+    { workers_dev: false }, { workers_dev: undefined }, { preview_urls: true }, { preview_urls: undefined },
+    { route: "elaborat.ing/*" }, { routes: undefined }, { routes: [] },
+    { routes: [{ pattern: "elaborat.ing", custom_domain: true }] },
+    { routes: [{ pattern: "staging.elaborat.ing", custom_domain: false }] },
+    { routes: [{ pattern: "staging.elaborat.ing/*", custom_domain: true }] },
+    { routes: [...worker().env.staging.routes, { pattern: "elaborat.ing", custom_domain: true }] },
     { assets: { directory: "./dist" } },
     { vars: { MCP_UPSTREAM: "https://production.example/mcp" } },
     { vars: { MCP_PROBE_UPSTREAM: "https://production.example/probe" } },
@@ -111,18 +124,28 @@ test("the Worker guard refuses production routes, inherited names, wrong output 
   }
 })
 
-test("the staging Auth template enables password signup and only staging or staging-local redirects", async () => {
+test("the staging Auth template disables public signup and keeps email sign-in with only staging redirects", async () => {
   const template = await readFile(new URL("../supabase/staging/config.toml", import.meta.url), "utf8")
   const rendered = renderStagingConfig(template, stagingSettings(environment, publicEnvironment))
-  const config = Bun.TOML.parse(rendered) as { auth: { site_url: string; additional_redirect_urls: string[]; email: { enable_confirmations: boolean; smtp: { enabled: boolean } }; external: { github: { enabled: boolean }; google: { enabled: boolean } }; oauth_server: { enabled: boolean } } }
+  const config = Bun.TOML.parse(rendered) as { auth: { site_url: string; enable_signup: boolean; additional_redirect_urls: string[]; email: { enable_signup: boolean; enable_confirmations: boolean; smtp: { enabled: boolean } }; external: { github: { enabled: boolean }; google: { enabled: boolean } }; oauth_server: { enabled: boolean } } }
   expect(config.auth.site_url).toBe(appOrigin)
-  expect(config.auth.additional_redirect_urls).toEqual([`${appOrigin}/**`, "http://localhost:5174/**", "http://127.0.0.1:5174/**"])
+  expect(config.auth.enable_signup).toBe(false)
+  expect(config.auth.email.enable_signup).toBe(true)
+  expect(config.auth.additional_redirect_urls).toEqual([`${appOrigin}/**`, "https://elaborating-staging.sam-da1.workers.dev/**", "http://localhost:5174/**", "http://127.0.0.1:5174/**"])
   expect(config.auth.email.enable_confirmations).toBe(false)
   expect(config.auth.email.smtp.enabled).toBe(false)
   expect(config.auth.external.github.enabled).toBe(false)
   expect(config.auth.external.google.enabled).toBe(false)
   expect(config.auth.oauth_server.enabled).toBe(false)
   expect(rendered).not.toContain("https://elaborat.ing")
+  const invalidPolicies = [
+    template.replace("https://elaborating-staging.sam-da1.workers.dev/**", "https://elaborat.ing/**"),
+    template.replace("enable_signup = false", "enable_signup = true"),
+    template.replace("[auth.email]\nenable_signup = true", "[auth.email]\nenable_signup = false"),
+    template.replace("enable_confirmations = false", "enable_confirmations = true"),
+    template.replace("[auth.email.smtp]\nenabled = false", "[auth.email.smtp]\nenabled = true"),
+  ]
+  for (const invalid of invalidPolicies) expect(() => renderStagingConfig(invalid, stagingSettings(environment, publicEnvironment))).toThrow("Staging Auth must")
 })
 
 test("bootstrap runs the browser backend, Vault migrations and private bucket before its isolated frontend", async () => {
@@ -144,7 +167,7 @@ test("bootstrap runs the browser backend, Vault migrations and private bucket be
         }
         if (step.command.includes("secrets")) {
           const file = step.command[step.command.indexOf("--env-file") + 1]
-          expect(await readFile(file, "utf8")).toBe(`ELABORATING_APP_ORIGIN=${appOrigin}\n`)
+          expect(await readFile(file, "utf8")).toBe(`ELABORATING_APP_ORIGIN=${appOrigin}\nELABORATING_ALLOW_NEW_USER_INVITATIONS=false\n`)
         }
         if (step.command.includes("config")) {
           configWorkdir = step.command[step.command.indexOf("--workdir") + 1]
@@ -164,7 +187,7 @@ test("bootstrap runs the browser backend, Vault migrations and private bucket be
     },
   })
   expect(calls).toEqual([
-    "Setting staging invitation origin", "Deploying staging browser functions", "Applying staging migrations and Vault configuration", "bucket",
+    "Setting staging invitation policy", "Deploying staging browser functions", "Applying staging migrations and Vault configuration", "bucket",
     "Checking staging Auth configuration", "Applying staging Auth configuration", "Building the staging app", "Deploying the staging Worker",
   ])
   await expect(access(configWorkdir)).rejects.toThrow()

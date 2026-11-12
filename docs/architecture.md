@@ -205,18 +205,24 @@ that Bun may have loaded from root dotenv files, and pins the committed public
 values above ignored local overrides. It selects a dedicated `envDir` and
 `dist-staging` output. Local staging runs on port 5174, leaving
 port 5173 available for an explicitly configured production connection.
-The Cloudflare `staging` environment explicitly clears inherited custom
-domain routes, uses a different Worker and assets directory, and has no
-production MCP upstream. `scripts/deploy-staging.ts` checks the requested
-backend, origin and Worker settings against committed staging configuration
+The Cloudflare `staging` environment explicitly declares only the
+`staging.elaborat.ing` custom-domain route, uses a different Worker and assets
+directory, and has no production MCP upstream. Its original Workers address
+remains available so users can save browser-local work before moving to the
+new origin; deployment preview URLs are disabled.
+`scripts/deploy-staging.ts` checks the requested backend, origin and Worker
+settings against committed staging configuration
 before making any hosted changes. Distinct `STAGING_*` variables and secrets
 prevent GitHub's repository production values being selected by fallback.
 
-Staging uses password sign-up with confirmation disabled, default email
-templates, no custom SMTP and no social providers. Its minimal Supabase
-config lives separately under `supabase/staging/`; production config stays
-independent. MCP, event webhook delivery and the dedicated component sandbox
-domain are not deployed to staging yet. Notes use the supported inline
+Staging uses administrator-created password accounts, default email templates,
+no custom SMTP and no social providers. Global signup is disabled while the
+email provider stays enabled for existing users. The share function rejects
+invitations that would create an account, and the staging build hides signup
+prompts. Its minimal Supabase config lives separately under
+`supabase/staging/`; production config stays independent. MCP, event webhook
+delivery and the dedicated component sandbox domain are not deployed to staging
+yet. Notes use the supported inline
 component frame. See [staging](staging.md) for commands, credentials and
 current limits.
 

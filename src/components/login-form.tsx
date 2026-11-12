@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { EmailCodeStep, passwordErrorMessage, ProviderButtons, sendSignInEmail } from '@/features/auth'
 import { Banner } from '@/features/design-system'
+import { signUpsEnabled } from '@/features/auth/signupPolicy'
 
 /** A page of the site in a new tab: the app in a chat's panel sends these through the panel (src/features/embed). */
 function SiteLink({ path, className, children }: { path: string; className: string; children: React.ReactNode }) {
@@ -148,16 +149,20 @@ export function LoginForm({ next, embedded = false }: { next: string | null; emb
       </form>
       {embedded ? null : <ProviderButtons next={next} />}
       <p className="border-t border-border pt-4 text-center text-[13px] text-muted-foreground">
-        Don&apos;t have an account?{' '}
-        {embedded ? (
-          <SiteLink path="/sign-up" className={buttonVariants({ variant: 'link', size: 'inline' })}>
-            Sign up
-          </SiteLink>
-        ) : (
-          <Link to="/sign-up" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
-            Sign up
-          </Link>
-        )}
+        {signUpsEnabled ? (
+          <>
+            Don&apos;t have an account?{' '}
+            {embedded ? (
+              <SiteLink path="/sign-up" className={buttonVariants({ variant: 'link', size: 'inline' })}>
+                Sign up
+              </SiteLink>
+            ) : (
+              <Link to="/sign-up" search={next ? { next } : {}} className={buttonVariants({ variant: 'link', size: 'inline' })}>
+                Sign up
+              </Link>
+            )}
+          </>
+        ) : 'Accounts are created by an administrator.'}
       </p>
     </>
   )

@@ -52,7 +52,8 @@ import { useCompactWorkbench } from "./compactWorkbench";
 import { ExplorerTree } from "./ExplorerTree";
 import { FileSearch } from "./FileSearch";
 import { AccountPanel, FilesPanel, NewButtons, ProjectPanel, TreeScroller, type PanelPerson, type PanelSync } from "./SidePanels";
-import { SignUpTo } from "@/features/projects/LocalProject";
+import { AccountRequiredLink } from "@/features/projects/LocalProject";
+import { signUpsEnabled } from "@/features/auth/signupPolicy";
 import type { FileSearchHit } from "./contentSearch";
 import { useConnectedAgentCount } from "@/features/agents/useConnectedAgentCount";
 import { CommentsGuestProvider, CommentsSurface, CommentsToggle, useCommentsUi, useProjectComments } from "@/features/comments";
@@ -1157,7 +1158,7 @@ export function WorkspaceWorkbench({
         <FileSearch
           size={panelSize}
           search={local ? null : searchFiles}
-          unavailable={local ? <SignUpTo>Sign up to search</SignUpTo> : undefined}
+          unavailable={local ? <AccountRequiredLink action="search" /> : undefined}
           onOpen={(path) => void openFromNavigation(path)}
           actions={!readOnly && <NewButtons size={panelSize} newFile={newFileEntries} menuProps={closingMenu} onNewFolder={() => startCreate("folder")} />}
         >
@@ -1198,8 +1199,8 @@ export function WorkspaceWorkbench({
               open: guestComments,
               onOpenChange: setGuestComments,
               signUp: (
-                <Link to="/sign-up" className={buttonVariants({ variant: "secondary", size: narrow ? "touch" : "default" })}>
-                  Sign up to comment
+                <Link to={signUpsEnabled ? "/sign-up" : "/sign-in"} className={buttonVariants({ variant: "secondary", size: narrow ? "touch" : "default" })}>
+                  {signUpsEnabled ? "Sign up to comment" : "Sign in to comment"}
                 </Link>
               ),
             }

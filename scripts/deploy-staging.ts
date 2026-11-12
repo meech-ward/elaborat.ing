@@ -6,6 +6,14 @@ import { parseConfigFileTextToJson } from "typescript"
 import { provisionImageBucket } from "./provision-image-bucket"
 
 const PRODUCTION_PROJECT = "njxjkmtvconypwujbiur"
+const STAGING_APP_ORIGIN = "https://staging.elaborat.ing"
+const STAGING_WORKER_NAME = "elaborating-staging"
+const STAGING_REDIRECT_URLS = [
+  `${STAGING_APP_ORIGIN}/**`,
+  "https://elaborating-staging.sam-da1.workers.dev/**",
+  "http://localhost:5174/**",
+  "http://127.0.0.1:5174/**",
+]
 const CLI_VERSION = "supabase@2.118.0"
 export const STAGING_BROWSER_FUNCTIONS = ["embed", "search", "images", "file-share", "share", "delete-account"] as const
 type Environment = Record<string, string | undefined>
@@ -37,11 +45,11 @@ export function stagingSettings(environment: Environment, publicEnvironment: Env
     throw new Error("Staging publishable key does not match env/staging/.env.staging.")
   }
   const appOrigin = required(environment, "STAGING_APP_ORIGIN")
-  if (!/^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.workers\.dev$/.test(appOrigin) || publicEnvironment.STAGING_APP_ORIGIN !== appOrigin) {
-    throw new Error("Use the exact workers.dev staging origin in env/staging/.env.staging.")
+  if (appOrigin !== STAGING_APP_ORIGIN || publicEnvironment.STAGING_APP_ORIGIN !== appOrigin) {
+    throw new Error("Use the exact staging.elaborat.ing origin in env/staging/.env.staging.")
   }
-  if (publicEnvironment.VITE_SANDBOX_ORIGIN || publicEnvironment.VITE_CHATGPT_PLAN || publicEnvironment.VITE_LOCAL_SUGGESTIONS !== "1") {
-    throw new Error("Staging must use its local suggestion build and srcdoc previews without the hosted assistant.")
+  if (publicEnvironment.VITE_SANDBOX_ORIGIN || publicEnvironment.VITE_CHATGPT_PLAN || publicEnvironment.VITE_LOCAL_SUGGESTIONS !== "1" || publicEnvironment.VITE_SIGNUPS_DISABLED !== "1") {
+    throw new Error("Staging must disable public signup and use its local suggestion build and srcdoc previews without the hosted assistant.")
   }
   const accessToken = required(environment, "STAGING_SUPABASE_ACCESS_TOKEN")
   const databasePassword = required(environment, "STAGING_SUPABASE_DB_PASSWORD")
@@ -72,20 +80,23 @@ export function validateStagingWorker(raw: string, settings: StagingSettings): v
   if (parsed.error) throw new Error("Could not read the staging Worker configuration.")
   const config = parsed.config
   const staging = config?.env?.staging
-  const workerName = new URL(settings.appOrigin).hostname.split(".")[0]
-  if (!staging || staging.name !== workerName || staging.name === config.name || staging.workers_dev !== true ||
-      !Array.isArray(staging.routes) || staging.routes.length !== 0 || staging.assets?.directory !== "./dist-staging" ||
-      staging.vars?.MCP_UPSTREAM || staging.vars?.MCP_PROBE_UPSTREAM) {
-    throw new Error("Staging must deploy only its configured Worker, dist-staging assets and empty custom routes, without MCP upstreams.")
+  const routes = staging?.routes
+  if (settings.appOrigin !== STAGING_APP_ORIGIN || !staging || staging.name !== STAGING_WORKER_NAME || staging.name === config.name ||
+      staging.workers_dev !== true || staging.preview_urls !== false || staging.route !== undefined ||
+      !Array.isArray(routes) || routes.length !== 1 || routes[0]?.pattern !== new URL(STAGING_APP_ORIGIN).hostname || routes[0]?.custom_domain !== true ||
+      staging.assets?.directory !== "./dist-staging" || staging.vars?.MCP_UPSTREAM || staging.vars?.MCP_PROBE_UPSTREAM) {
+    throw new Error("Staging must deploy only elaborating-staging at staging.elaborat.ing, with dist-staging assets, its workers.dev compatibility alias, disabled preview URLs, and no MCP upstreams.")
   }
 }
 
 export function renderStagingConfig(template: string, settings: StagingSettings): string {
   if (!template.includes("__STAGING_APP_ORIGIN__")) throw new Error("The staging Auth template needs its origin placeholder.")
   const rendered = template.replaceAll("__STAGING_APP_ORIGIN__", settings.appOrigin)
-  const config = Bun.TOML.parse(rendered) as { auth?: { site_url?: string; email?: { enable_confirmations?: boolean; smtp?: { enabled?: boolean } } } }
-  if (config.auth?.site_url !== settings.appOrigin || config.auth?.email?.enable_confirmations !== false || config.auth?.email?.smtp?.enabled !== false) {
-    throw new Error("Staging Auth must use its own origin, password signup and no production SMTP.")
+  const config = Bun.TOML.parse(rendered) as { auth?: { site_url?: string; additional_redirect_urls?: string[]; enable_signup?: boolean; email?: { enable_signup?: boolean; enable_confirmations?: boolean; smtp?: { enabled?: boolean } } } }
+  if (config.auth?.site_url !== settings.appOrigin || JSON.stringify(config.auth?.additional_redirect_urls) !== JSON.stringify(STAGING_REDIRECT_URLS) ||
+      config.auth?.enable_signup !== false || config.auth?.email?.enable_signup !== true ||
+      config.auth?.email?.enable_confirmations !== false || config.auth?.email?.smtp?.enabled !== false) {
+    throw new Error("Staging Auth must use its exact canonical, compatibility and local origins, disable public signup, keep email sign-in and avoid production SMTP.")
   }
   return rendered
 }
@@ -143,12 +154,12 @@ export async function deployStaging(options: DeployOptions = {}): Promise<void> 
     await mkdir(path.join(temporary, "supabase"))
     await writeFile(path.join(temporary, "supabase/config.toml"), config, { mode: 0o600 })
     const functionEnvironment = path.join(temporary, "function.env")
-    await writeFile(functionEnvironment, `ELABORATING_APP_ORIGIN=${settings.appOrigin}\n`, { mode: 0o600 })
+    await writeFile(functionEnvironment, `ELABORATING_APP_ORIGIN=${settings.appOrigin}\nELABORATING_ALLOW_NEW_USER_INVITATIONS=false\n`, { mode: 0o600 })
     const cli = async (label: string, args: string[], workdir = root) => {
       log(label)
       await run({ label, command: [bun, "x", CLI_VERSION, ...args, "--project-ref", settings.projectId, "--workdir", workdir, "--yes"], cwd: root, env: supabaseEnv })
     }
-    await cli("Setting staging invitation origin", ["secrets", "set", "--env-file", functionEnvironment])
+    await cli("Setting staging invitation policy", ["secrets", "set", "--env-file", functionEnvironment])
     await cli("Deploying staging browser functions", ["functions", "deploy", ...STAGING_BROWSER_FUNCTIONS, "--use-api"])
     await cli("Applying staging migrations and Vault configuration", ["db", "push"])
     log("Provisioning the private staging image bucket")

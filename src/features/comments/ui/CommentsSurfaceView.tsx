@@ -17,6 +17,7 @@ import { NEEDS_CONNECTION, useCommentsUi, useProjectComments } from "../context"
 import type { CommentRequest } from "../controller"
 import { afterRender, focusThread, GuestContext, SURFACE, TOGGLE, useFileComments } from "./CommentsSurface"
 import { newComments, type ThreadView } from "./threadViews"
+import { signUpsEnabled } from "@/features/auth/signupPolicy"
 
 // The comments panel and sheet (CommentsSurface.tsx), in a chunk of their
 // own that loads once the project has shown.
@@ -278,7 +279,7 @@ export function CommentsSurfaceView({ compact, className }: { compact: boolean; 
   else if (status === "error") panelStatus = "error"
 
   const placeholder = guest ? (
-    <EmptyState icon={<LogIn />} title="Comments need an account" description="Sign up to comment and to read what others say." actions={guest.signUp} className="py-10" />
+    <EmptyState icon={<LogIn />} title="Comments need an account" description={signUpsEnabled ? "Sign up to comment and to read what others say." : "Sign in to comment and to read what others say."} actions={guest.signUp} className="py-10" />
   ) : ui.target && !file ? (
     <EmptyState icon={<CloudUpload />} title="Not synced yet" description={`Comments start once this ${noun} is on the server.`} className="py-10" />
   ) : undefined

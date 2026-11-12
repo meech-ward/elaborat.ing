@@ -5,12 +5,35 @@ Staging has its own backend and public address:
 | Environment | App | Supabase |
 | --- | --- | --- |
 | Production | https://elaborat.ing | `njxjkmtvconypwujbiur` |
-| Staging | https://elaborating-staging.sam-da1.workers.dev | `diehkqivgxcqhhexzcwa` |
+| Staging | https://staging.elaborat.ing | `diehkqivgxcqhhexzcwa` |
 
 `elaborating-staging` is in the Free **DevRel** organization, not DevRel Pro.
-It starts with an empty database, using the repository's migrations and private
-image bucket. Accounts and documents are separate from production. Create a
-staging account with an email and password to test.
+It uses the repository's migrations and private image bucket. Accounts and
+documents are separate from production. Public signup is disabled. An
+administrator creates staging accounts in Supabase with an email and password.
+
+The original https://elaborating-staging.sam-da1.workers.dev address remains
+available for existing browser-local drafts and pending suggestions. The new
+domain has its own browser storage, so sign in there to open saved projects.
+Save or export unsaved work on the original address before switching. Both
+addresses use the same staging backend and account restrictions.
+
+## Accounts
+
+In the [staging Supabase project](https://supabase.com/dashboard/project/diehkqivgxcqhhexzcwa/auth/users),
+open **Authentication > Users > Add user > Create new user**. Set an email and
+password and confirm the email when creating the account. Existing users can
+continue signing in with their password. Account creation through the app,
+including project invitations to people without an account, is disabled.
+Sharing with existing staging accounts still works.
+
+The staging Auth overlay sets global `auth.enable_signup = false` while
+keeping `auth.email.enable_signup = true`, which keeps the email sign-in
+provider available. The share function receives
+`ELABORATING_ALLOW_NEW_USER_INVITATIONS=false`. The public
+`VITE_SIGNUPS_DISABLED=1` build setting removes registration prompts and shows
+an administrator message at `/sign-up`; Supabase enforces the restriction even
+for direct API requests. These settings are reapplied on deployment.
 
 ## Local testing
 
@@ -61,7 +84,10 @@ Its secrets are:
 
 The workflow reuses the repository's Cloudflare account and Workers deployment
 token. `wrangler.jsonc` explicitly selects a separate Worker, output directory
-and empty custom domain routes for `--env staging`.
+and the single `staging.elaborat.ing` custom-domain route for `--env staging`.
+The legacy Workers address is retained; deployment preview URLs are disabled.
+The GitHub `STAGING_APP_ORIGIN` variable must be `https://staging.elaborat.ing`,
+matching the committed public config and Supabase callback URLs.
 
 Create the Supabase access token in
 [account token settings](https://supabase.com/dashboard/account/tokens), limited
@@ -90,10 +116,12 @@ It uses the supported inline component preview frame rather than the production
 sandbox domain. MCP, chat cards, agent callbacks and event webhook delivery are
 not deployed here yet.
 
-Password signup skips email confirmation. Production SMTP, social sign-in and
-passkeys are not configured in staging. Email invitations, magic links and
-password reset depend on Supabase's [default sender restrictions](https://supabase.com/docs/guides/auth/auth-smtp). Use password
-sign-in for this testing environment.
+Production SMTP, social sign-in and passkeys are not configured in staging.
+Create confirmed password accounts manually. Magic links and password reset
+depend on Supabase's [default sender restrictions](https://supabase.com/docs/guides/auth/auth-smtp).
+Use password sign-in for this testing environment. The website remains
+publicly viewable, including its browser-only local workspace; hosted accounts
+are restricted to administrator-created users.
 
 Free projects can [pause when inactive](https://supabase.com/docs/guides/platform/free-project-pausing). Resume the staging project from its
 [Supabase dashboard](https://supabase.com/dashboard/project/diehkqivgxcqhhexzcwa)

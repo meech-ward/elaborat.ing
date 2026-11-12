@@ -4,6 +4,7 @@ import { Callout } from "@/features/design-system"
 import { projectHref } from "@/features/navigation"
 import { LOCAL_PROJECT_ID } from "@/features/project-storage/localProject"
 import { moduleLoader, useModule } from "@/lib/moduleLoader"
+import { signUpsEnabled } from "@/features/auth/signupPolicy"
 
 // The picture of the app is most of the page's code (the library's editor
 // pieces, drawn small), so it loads after the first paint.
@@ -39,11 +40,15 @@ export function Welcome({ configured = true }: { configured?: boolean }) {
               </Link>
             </div>
             <p className="text-[13px] leading-normal text-dim">
-              No account needed: your work is saved in this browser only until you{" "}
-              <Link to="/sign-up" className={buttonVariants({ variant: "link", size: "inline" })}>
-                sign up
-              </Link>
-              .
+              {signUpsEnabled ? (
+                <>
+                  No account needed: your work is saved in this browser only until you{" "}
+                  <Link to="/sign-up" className={buttonVariants({ variant: "link", size: "inline" })}>
+                    sign up
+                  </Link>
+                  .
+                </>
+              ) : "No account needed: your work is saved in this browser only."}
             </p>
           </>
         ) : (

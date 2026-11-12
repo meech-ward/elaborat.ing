@@ -1,5 +1,5 @@
-import { assertEquals } from 'jsr:@std/assert@1.0.19'
-import { handleShare, type Caller, type Prepared, type ShareDeps } from './handler.ts'
+import { assertEquals, assertThrows } from 'jsr:@std/assert@1.0.19'
+import { handleShare, newUserInvitationsAllowed, type Caller, type Prepared, type ShareDeps } from './handler.ts'
 
 const OWNER = '11111111-1111-4111-8111-111111111111'
 const OTHER = '55555555-5555-4555-8555-555555555555'
@@ -93,6 +93,50 @@ Deno.test('an email without an account gets an invitation email naming the owner
     ],
     ['record', { inviter_id: OWNER, project_id: PROJECT, member_id: NEW, member_role: 'editor' }],
   ])
+})
+
+Deno.test('administrator-only accounts refuse unknown email addresses before creating a user or recording an invitation', async () => {
+  const { deps, calls } = fake()
+  deps.allowNewUserInvitations = false
+  const response = await handleShare(owner, body, deps)
+  assertEquals(response.status, 403)
+  assertEquals(await response.json(), { error: 'Ask an administrator to add this person before sharing the project.' })
+  assertEquals(calls, [
+    ['readProject', PROJECT],
+    ['prepare', { inviter_id: OWNER, project_id: PROJECT, email: 'new@example.com' }],
+  ])
+})
+
+Deno.test('administrator-only accounts still share with existing users without sending email', async () => {
+  const { deps, calls } = fake()
+  deps.allowNewUserInvitations = false
+  const response = await handleShare(owner, { ...body, email: 'Bob@Example.com', role: 'commenter' }, deps)
+  assertEquals(response.status, 200)
+  assertEquals(await response.json(), { projectId: PROJECT, email: 'bob@example.com', role: 'commenter' })
+  assertEquals(calls, [
+    ['readProject', PROJECT],
+    ['prepare', { inviter_id: OWNER, project_id: PROJECT, email: 'bob@example.com' }],
+    ['shareProject', { project_id: PROJECT, member_id: BOB, member_role: 'commenter' }],
+  ])
+})
+
+Deno.test('the account-creation policy cannot bypass the owner or agent checks', async () => {
+  for (const caller of [{ id: OWNER, clientId: 'agent-client' }, { id: OTHER, clientId: null }]) {
+    const { deps, calls } = fake()
+    deps.allowNewUserInvitations = false
+    const response = await handleShare(caller, body, deps)
+    assertEquals(response.status, 403)
+    assertEquals(calls.map(([name]) => name), caller.clientId ? [] : ['readProject'])
+  }
+})
+
+Deno.test('new-user invitations stay enabled by default and configured policies accept only explicit booleans', () => {
+  assertEquals(newUserInvitationsAllowed(undefined), true)
+  assertEquals(newUserInvitationsAllowed('true'), true)
+  assertEquals(newUserInvitationsAllowed(' false '), false)
+  for (const invalid of ['', '0', 'off', 'FALSE', 'true\nfalse']) {
+    assertThrows(() => newUserInvitationsAllowed(invalid), Error, 'must be true or false')
+  }
 })
 
 Deno.test('past the daily limit, the owner gets a clear refusal and nobody is invited', async () => {

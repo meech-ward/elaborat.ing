@@ -2,10 +2,10 @@ import { z } from 'npm:zod@4.4.3'
 
 // Share a project by email, for its signed-in owner. An email that already has
 // an account gets the usual invitation (public.share_project, as the caller).
-// An email without one gets an account created through Auth's invite, which
-// sends the invitation email, and the invitation is recorded for it. Either
-// way the invitation grants nothing until the person signs in and accepts it,
-// and the answer is the same.
+// If the deployment allows new accounts, an email without one gets an account
+// created through Auth's invite, which sends the invitation email, and the
+// invitation is recorded for it. Those invitations grant nothing until the
+// person signs in and accepts, and give the same answer as an existing account.
 //
 // Only people share by email: a token issued to an OAuth client (an agent) is
 // refused. Looking up an account by email, counting the owner's daily limit and
@@ -48,9 +48,20 @@ export type ShareDeps = {
   record: (args: { inviter_id: string; project_id: string; member_id: string; member_role: Role }) => Promise<Answer<unknown>>
   /** Where the invitation email's link lands once the person is signed in. */
   redirectTo: string
+  /** False on deployments where administrators create every account. Unset keeps invitations enabled. */
+  allowNewUserInvitations?: boolean
 }
 
 const refuse = (status: number, error: string) => Response.json({ error }, { status })
+
+/** A deployment can restrict sharing to accounts its administrators already created. */
+export function newUserInvitationsAllowed(configured: string | undefined): boolean {
+  if (configured === undefined) return true
+  const value = configured.trim()
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error('ELABORATING_ALLOW_NEW_USER_INVITATIONS must be true or false')
+}
 
 /** A database refusal as the caller should see it; anything unexpected is logged, not shown. */
 function refusal(error: DbError): Response {
@@ -87,6 +98,10 @@ export async function handleShare(caller: Caller, body: unknown, deps: ShareDeps
     const shared = await deps.shareProject({ project_id: projectId, member_id: existing, member_role: role })
     if (shared.error) return refusal(shared.error)
     return Response.json({ projectId, email, role })
+  }
+
+  if (deps.allowNewUserInvitations === false) {
+    return refuse(403, 'Ask an administrator to add this person before sharing the project.')
   }
 
   const invited = await deps.inviteUserByEmail(email, {

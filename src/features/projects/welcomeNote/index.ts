@@ -1,4 +1,5 @@
 import type { StarterFiles } from "@/features/project-storage/localProject"
+import { signUpsEnabled } from "@/features/auth/signupPolicy"
 import flowCanvas from "./flow-canvas.json"
 import flowSidecar from "./flow-sidecar.json"
 import sketch from "./sketch.json"
@@ -48,7 +49,7 @@ A component is a tag, like \`<Callout>\` above.
   </Tab>
 </Tabs>
 
-Your work here is saved in this browser only. Sign up to keep it across devices and to connect agents like Claude or ChatGPT.
+Your work here is saved in this browser only. ${signUpsEnabled ? "Sign up to keep it across devices and to connect agents like Claude or ChatGPT." : "Accounts are created by an administrator."}
 `
 
 // Downwards, with both arrows into the project, so it fits a phone's width.

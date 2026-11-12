@@ -25,6 +25,7 @@ import {
 } from "@/features/design-system";
 import { embedded } from "@/features/embed/mode";
 import { cn } from "@/lib/utils";
+import { signUpsEnabled } from "@/features/auth/signupPolicy";
 
 /**
  * The project's name as a menu (the other projects, the way home and the
@@ -67,8 +68,8 @@ export function ProjectPanel({
         menu={menu}
         menuProps={menuProps}
         onShare={local ? undefined : onShare}
-        shareLink={local ? <Link to="/sign-up" /> : undefined}
-        shareLabel={local ? "Sign up to share" : "Share project"}
+        shareLink={local ? <Link to={signUpsEnabled ? "/sign-up" : "/sign-in"} /> : undefined}
+        shareLabel={local ? signUpsEnabled ? "Sign up to share" : "Sign in to share" : "Share project"}
         actions={actions}
         size={touch ? "touch" : "default"}
         variant={touch ? "flat" : "floating"}
@@ -208,7 +209,7 @@ export function AccountPanel({
       {embedded ? null : (
         <SidebarMenu>
           {local ? (
-            <IconRow size={size} icon={<Lock aria-hidden="true" />} label="Sign up to connect agents" render={<Link to="/sign-up" />} />
+            <IconRow size={size} icon={<Lock aria-hidden="true" />} label={signUpsEnabled ? "Sign up to connect agents" : "Sign in to connect agents"} render={<Link to={signUpsEnabled ? "/sign-up" : "/sign-in"} />} />
           ) : (
             !touch && <IconRow icon={<Bot aria-hidden="true" />} label="Connected agents" count={agentCount || undefined} render={<Link to="/agents" />} />
           )}
@@ -250,8 +251,8 @@ function LocalNote({ size }: { size: PanelRowSize }) {
         </span>{" "}
         It is lost if the browser clears this site's data.
       </PanelMessage>
-      <Link to="/sign-up" className={cn(buttonVariants({ size: touch ? "touch" : "sm" }), !touch && "rounded-tool")}>
-        Sign up to create projects
+      <Link to={signUpsEnabled ? "/sign-up" : "/sign-in"} className={cn(buttonVariants({ size: touch ? "touch" : "sm" }), !touch && "rounded-tool")}>
+        {signUpsEnabled ? "Sign up to create projects" : "Sign in to create projects"}
       </Link>
     </div>
   );
