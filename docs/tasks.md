@@ -1023,6 +1023,8 @@ matters.
   following their files. New files and folders use the selected folder or
   selected file's parent, including current-tab reselection and phone dialogs.
   Clean note, drawing and diagram sessions no longer recreate moved paths.
+  Directory lists retain the parents of empty nested folders, so refreshing
+  keeps those parents expanded, selected and valid as creation/move targets.
   Chromium and Firefox cover move/reload/move-back, collisions, unsaved edits,
   read-only access and all creation kinds.
 - An extra source newline beside a drawing or another protected block

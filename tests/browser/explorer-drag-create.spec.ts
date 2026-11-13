@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "./fixtures.ts"
-import { fakeSupabase, person, quiet, signedIn, type FakeSupabase } from "./fake-supabase.ts"
+import { fakeSupabase, person, quiet, signedIn, SUPABASE, type FakeSupabase } from "./fake-supabase.ts"
 import { APP_URL } from "./urls.ts"
 
 // Explorer moves use the same revision-checked save and reference rewriting
@@ -13,7 +13,7 @@ const file = (page: Page, path: string) => explorer(page).getByRole("button", { 
 const source = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
 const SOMEONE_ELSE = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f"
 
-async function openProject(page: Page, options: { files: Record<string, string>; folders?: string[]; path?: string; viewer?: boolean; phone?: boolean }) {
+async function openProject(page: Page, options: { files: Record<string, string>; folders?: string[]; path?: string; viewer?: boolean; phone?: boolean; delayedDirectories?: boolean }) {
   const fake = await fakeSupabase(page)
   const remote = fake.server.remote(options.viewer ? SOMEONE_ELSE : person.id)
   const id = crypto.randomUUID()
@@ -21,14 +21,33 @@ async function openProject(page: Page, options: { files: Record<string, string>;
   for (const path of options.folders ?? []) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "mkdir", path }])
   for (const [path, content] of Object.entries(options.files)) await remote.saveFiles(id, crypto.randomUUID(), [{ op: "put", path, content }])
   if (options.viewer) fake.server.share(id, person.id, "viewer")
+  let releaseDirectories = () => {}
+  let directoriesRequested: Promise<void> | undefined
+  if (options.delayedDirectories) {
+    let requested = () => {}
+    directoriesRequested = new Promise<void>((resolve) => { requested = resolve })
+    const blocked = new Promise<void>((resolve) => { releaseDirectories = resolve })
+    await page.route(`${SUPABASE}/rest/v1/project_folders?**`, async (route) => {
+      if (route.request().method() === "GET") { requested(); await blocked }
+      await route.fallback()
+    })
+  }
   await signedIn(page)
-  await page.goto(projectUrl(id, options.path))
-  if (options.phone) {
-    await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole("tabpanel", { name: options.path ?? Object.keys(options.files).sort()[0], exact: true })).toBeVisible({ timeout: 15_000 })
-  } else {
-    await expect(explorer(page)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole("tab", { name: options.path ?? Object.keys(options.files).sort()[0], exact: true })).toBeVisible({ timeout: 15_000 })
+  try {
+    await page.goto(projectUrl(id, options.path))
+    if (options.phone) {
+      await expect(page.getByRole("button", { name: "Back to files and projects" })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole("tabpanel", { name: options.path ?? Object.keys(options.files).sort()[0], exact: true })).toBeVisible({ timeout: 15_000 })
+    } else {
+      await expect(explorer(page)).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole("tab", { name: options.path ?? Object.keys(options.files).sort()[0], exact: true })).toBeVisible({ timeout: 15_000 })
+    }
+    if (directoriesRequested) {
+      await directoriesRequested
+      await expect(page.getByText("Loading the remaining files. You can use the files that have loaded.", { exact: true })).toBeVisible()
+    }
+  } finally {
+    releaseDirectories()
   }
   return { fake, id }
 }
@@ -39,6 +58,7 @@ async function expandTo(page: Page, path: string) {
     const folder = file(page, parts.slice(0, index).join("/"))
     await expect(folder).toBeVisible()
     if (await folder.getAttribute("aria-expanded") === "false") await folder.click()
+    await expect(folder).toHaveAttribute("aria-expanded", "true")
   }
 }
 
@@ -48,11 +68,12 @@ test("dragging a file into a nested folder saves its references and open tab, su
   const note = "# Draft\n\nKeep these words.\n"
   const { fake, id } = await openProject(page, {
     files: { "draft.md": note, "index.mdx": "See [the draft](draft.md).\n" },
-    folders: ["archive/2026"], path: "draft.md",
+    folders: ["archive/2026"], path: "draft.md", delayedDirectories: true,
   })
   await expandTo(page, "archive")
   const before = saves(fake).length
   await expect(file(page, "draft.md")).toHaveAttribute("draggable", "true")
+  await expect(file(page, "archive/2026")).toBeVisible()
   await file(page, "draft.md").dragTo(file(page, "archive/2026"))
   await expect(page.getByRole("tab", { name: "archive/2026/draft.md", exact: true })).toHaveAttribute("aria-selected", "true")
   await expect(page.getByRole("tab", { name: "draft.md", exact: true })).toHaveCount(0)
@@ -145,6 +166,36 @@ async function startNew(page: Page, kind: { noun: string; item: string }, direct
   await expect(field).toBeFocused()
   return field
 }
+
+for (const action of ["creating a note", "dropping a file"] as const) test(`an implied parent stays expanded and selected through a sync refresh before ${action}`, async ({ page }) => {
+  const { fake, id } = await openProject(page, {
+    files: { "index.md": "# Index\n", "draft.md": "# Draft\n" }, folders: ["docs/deep"], path: "index.md",
+  })
+  await expect(page.getByRole("status", { name: "Synced", exact: true })).toBeVisible()
+  await expandTo(page, "docs")
+  await expect(file(page, "docs/deep")).toBeVisible()
+  // Only docs/deep is stored. The visible docs row must keep its expansion
+  // and selection when the device refreshes its authoritative listing.
+  expect(await fake.server.remote(person.id).folders(id)).toEqual(["docs/deep"])
+  await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "put", path: "synced.md", content: "# Arrived from another device\n" }])
+  await page.getByRole("button", { name: "Account and settings", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Sync now", exact: true }).click()
+  await expect(file(page, "synced.md")).toBeVisible()
+  await expect(file(page, "docs")).toHaveAttribute("aria-expanded", "true")
+  await expect(file(page, "docs")).toHaveAttribute("data-active", "")
+  await expect(file(page, "docs/deep")).toBeVisible()
+  if (action === "creating a note") {
+    const field = await startNew(page, kinds[0], "docs")
+    await field.fill("parent-note.mdx")
+    await field.press("Enter")
+    await expect.poll(() => fake.server.content(id, "docs/parent-note.mdx")).not.toBeUndefined()
+    expect(fake.server.content(id, "parent-note.mdx")).toBeUndefined()
+  } else {
+    await file(page, "draft.md").dragTo(file(page, "docs"))
+    await expect.poll(() => fake.server.content(id, "docs/draft.md")).toBe("# Draft\n")
+    expect(fake.server.content(id, "draft.md")).toBeUndefined()
+  }
+})
 
 for (const kind of kinds) test(`a new ${kind.noun} is created inside the explicitly selected nested folder`, async ({ page }) => {
   const { fake, id } = await openProject(page, { files: { "index.md": "# Index\n" }, folders: ["docs/deep"], path: "index.md" })

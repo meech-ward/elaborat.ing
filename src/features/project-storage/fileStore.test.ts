@@ -135,7 +135,7 @@ test("several folders are created together, or none is", async () => {
   await expect(store.createDirectories(["fine", "a/inside"])).rejects.toThrow("a is a file, so it cannot contain a/inside.")
   expect((await store.listEntries()).directories).toEqual([])
   await store.createDirectories(["one", "two/three"])
-  expect((await store.listEntries()).directories).toEqual(["one", "two/three"])
+  expect((await store.listEntries()).directories).toEqual(["one", "two", "two/three"])
 })
 
 /** Counts write transactions, to see how many writes a burst of drafts takes. */

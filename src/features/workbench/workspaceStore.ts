@@ -18,7 +18,7 @@ export interface WorkspaceStore {
   saveImages?(paths: string[], writes?: Array<{ path: string; content: string; expectedRevision: string | null }>): Promise<Array<{ path: string; revision: string; size: number }>>
   draftImageAsset?(path: string): Promise<ImageAsset | null>
   cacheImage?(bytes: Blob, asset: ImageAsset, preview?: Blob): Promise<void>
-  /** `directories` holds every folder, explicit or implied by file paths; `folders` only the explicit ones. */
+  /** `directories` holds every folder, including file/folder ancestors; `folders` only the explicit ones. */
   listEntries(): Promise<{ files: WorkspaceFileRef[]; directories: string[]; folders: string[] }>
   read(path: string, signal?: AbortSignal): Promise<WorkspaceFile>
   /** Both versions of a file whose sync conflicts (this device's and the server's), or null when it has none. */

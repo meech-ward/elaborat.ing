@@ -185,7 +185,7 @@ export class ProjectFileStore {
 
   /**
    * The files, and every folder: `directories` holds the explicit folders and
-   * those implied by file paths; `folders` holds only the explicit ones.
+   * those implied by file and folder paths; `folders` holds only the explicit ones.
    */
   async listEntries(): Promise<{ files: FileRef[]; directories: string[]; folders: string[] }> {
     const { files, folders } = await this.db.transaction(this.partition, "readonly", async (tx) => {
@@ -203,6 +203,7 @@ export class ProjectFileStore {
     }
     const explicit = folders.filter((folder) => folder.local).map((folder) => folder.path)
     const directories = new Set(explicit)
+    for (const folder of explicit) for (const ancestor of ancestors(folder)) directories.add(ancestor)
     for (const ref of refs) for (const ancestor of ancestors(ref.path)) directories.add(ancestor)
     return { files: refs, directories: [...directories].sort(), folders: explicit.sort() }
   }
