@@ -123,6 +123,23 @@ export function useFileMoves({ client, tabs, sessions, dispatch, notify, onFolde
   }, [apply, notify]);
   const rename = useCallback((path: string, name: string) => renameWith({ path, name }), [renameWith]);
   const renameFolder = useCallback((folder: string, name: string) => renameWith({ folder, name }), [renameWith]);
+  /** Direct explorer drop: the same freshly planned atomic move and editor guards as the dialog. */
+  const moveFile = useCallback(async (path: string, folder: string): Promise<boolean> => {
+    if (busy.current) {
+      notify("Move refused: Another file operation is in progress. Wait for it to finish.");
+      return false;
+    }
+    busy.current = true;
+    try {
+      notify(summary("Moved", await apply({ path, folder }, null)));
+      return true;
+    } catch (cause) {
+      notify(`Move refused: ${message(cause)}`);
+      return false;
+    } finally {
+      busy.current = false;
+    }
+  }, [apply, notify]);
   const requestFor = (destination: string): MoveRequest | FolderMoveRequest | null =>
     target === null ? null : kind === "folder" ? { folder: target, into: destination } : { path: target, folder: destination };
 
@@ -184,7 +201,7 @@ export function useFileMoves({ client, tabs, sessions, dispatch, notify, onFolde
   };
 
   return {
-    target, kind, folder, plan, pending, error, stale, rename, renameFolder, preview, commit,
+    target, kind, folder, plan, pending, error, stale, rename, renameFolder, moveFile, preview, commit,
     open: (path: string) => openFor(path, "file"),
     openFolder: (path: string) => openFor(path, "folder"),
     changeFolder: (path: string) => {

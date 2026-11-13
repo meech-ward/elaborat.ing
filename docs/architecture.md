@@ -1940,6 +1940,14 @@ is empty is written after a blank line, since Markdown would read a bare
 marker under the parent's text as a heading underline or as more text; the
 blank line goes once the item has text.
 
+**Decision: a blank line beside a block object is visible while editing.**
+Three or more source newlines between a protected block object (including a
+drawing) and its neighbouring block project as an empty paragraph. This
+makes one extra Enter in Source visible in Rendered, where that paragraph
+can be typed into, removed and undone. Ordinary prose keeps its existing
+four-newline convention. Rendered edits keep their existing canonical
+source spacing, and the object's exact source and identity stay unchanged.
+
 **Decision: an island moves with the blocks around it, unchanged.** Enter,
 Tab, Shift+Tab and joins may move islands, and the serializer writes each from
 the app's own copy of its source, relative to its container: its own

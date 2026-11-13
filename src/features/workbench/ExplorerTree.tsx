@@ -10,15 +10,17 @@
  * scrolls into view once each time the active file changes (the workbench
  * expands its folders).
  */
-import { Fragment, useEffect, useRef, type ReactNode } from "react";
-import { SidebarMenu } from "@/components/ui/sidebar";
-import type { PanelRowSize } from "@/features/design-system";
+import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { SidebarMenu, SidebarMenuItem } from "@/components/ui/sidebar";
+import { PanelRow, type PanelRowSize } from "@/features/design-system";
 import { basenameForPath } from "@/features/workspace";
 import { ExplorerFileRow } from "./ExplorerFileRow";
 import { ExplorerFolderRow } from "./ExplorerFolderRow";
 import type { FolderNode, FolderTree, TreeFile } from "./folderTree";
 import { canMove } from "./moveRules";
 import { supportsFileSharing } from "@/features/file-sharing/ownerEligibility";
+import { parentDirOf } from "./folderTree";
+import { isExplorerFileDrag, readExplorerFileDrag, writeExplorerFileDrag } from "./explorerDrag";
 
 export interface ExplorerTreeProps {
   tree: FolderTree;
@@ -40,6 +42,8 @@ export interface ExplorerTreeProps {
   /** Without these a row offers no rename or move. */
   onRenameFile?: (path: string, newName: string) => Promise<void>;
   onMoveFile?: (path: string) => void;
+  /** Drop a saved file into a folder ("" is the project root), using the guarded move operation. */
+  onDropFile?: (path: string, folder: string) => void;
   /** Copy a file next to itself; read-only projects offer no Duplicate. */
   onDuplicateFile?: (path: string) => void;
   /** Owner-only unlisted link controls for files with a rendered view. */
@@ -69,6 +73,7 @@ export function ExplorerTree({
   onFeedback,
   onRenameFile,
   onMoveFile,
+  onDropFile,
   onDuplicateFile,
   onShareFile,
   onRenameFolder,
@@ -78,6 +83,47 @@ export function ExplorerTree({
   newEntry = null,
 }: ExplorerTreeProps) {
   const root = useRef<HTMLUListElement>(null);
+  const [dragSource] = useState(() => crypto.randomUUID());
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropFolder, setDropFolder] = useState<string | null>(null);
+  const paths = new Set<string>();
+  const addPaths = (folders: readonly FolderNode[]) => {
+    for (const folder of folders) {
+      for (const file of folder.files) if (!file.draft) paths.add(file.path);
+      addPaths(folder.folders);
+    }
+  };
+  for (const file of tree.rootFiles) if (!file.draft) paths.add(file.path);
+  addPaths(tree.folders);
+  const endDrag = () => { setDragging(null); setDropFolder(null); };
+  const onDragOver = (event: DragEvent<HTMLButtonElement>) => {
+    const folder = event.currentTarget.dataset.path!;
+    const path = dragging;
+    // Browsers hide drag payload bytes until drop. The source ref and MIME
+    // identify our drag during hover; drop checks the complete payload again.
+    if (!onDropFile || !path || !paths.has(path) || parentDirOf(path) === folder || !isExplorerFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDropFolder(folder);
+  };
+  const onDragLeave = (event: DragEvent<HTMLButtonElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    const folder = event.currentTarget.dataset.path!;
+    setDropFolder((current) => current === folder ? null : current);
+  };
+  const onDrop = (event: DragEvent<HTMLButtonElement>) => {
+    if (!onDropFile || !isExplorerFileDrag(event.dataTransfer)) return;
+    const folder = event.currentTarget.dataset.path!;
+    const path = readExplorerFileDrag(event.dataTransfer, dragSource, paths);
+    if (!path || path !== dragging || parentDirOf(path) === folder) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragging(null);
+    setDropFolder(null);
+    onDropFile(path, folder);
+  };
+  const dropHandlers = onDropFile ? { onDragEnter: onDragOver, onDragOver, onDragLeave, onDrop } : undefined;
   // The file whose row was last scrolled to, so scrolling the tree by hand is left alone.
   const shown = useRef<string | null>(null);
   useEffect(() => {
@@ -109,6 +155,12 @@ export function ExplorerTree({
       onShare={onShareFile && supportsFileSharing(file.path) ? () => onShareFile(file.path) : undefined}
       onMove={onMoveFile && canMove(file.path) ? () => onMoveFile(file.path) : undefined}
       onDelete={onDeleteFile && !file.draft ? () => onDeleteFile(file.path) : undefined}
+      onDragStart={onDropFile && !file.draft && canMove(file.path) ? (event) => {
+        writeExplorerFileDrag(event.dataTransfer, file.path, dragSource);
+        setDragging(file.path);
+        setDropFolder(null);
+      } : undefined}
+      onDragEnd={onDropFile ? endDrag : undefined}
     />
   );
   const renderFolder = (node: FolderNode, depth: number): ReactNode => {
@@ -127,6 +179,7 @@ export function ExplorerTree({
           onRename={onRenameFolder ? (newName) => onRenameFolder(node.path, newName) : undefined}
           onMove={onMoveFolder ? () => onMoveFolder(node.path) : undefined}
           onDelete={onDeleteFolder ? () => onDeleteFolder(node.path) : undefined}
+          dropTarget={dropHandlers ? { ...dropHandlers, active: dropFolder === node.path } : undefined}
         />
         {isOpen && (
           <>
@@ -140,6 +193,22 @@ export function ExplorerTree({
   };
   return (
     <SidebarMenu ref={root}>
+      <SidebarMenuItem>
+        <PanelRow
+          size={size}
+          isActive={selectedFolder === ""}
+          data-explorer-root=""
+          data-path=""
+          data-drop-target={Boolean(onDropFile) && dropFolder === "" || undefined}
+          className="data-[drop-target=true]:bg-accent-soft data-[drop-target=true]:ring-2 data-[drop-target=true]:ring-inset data-[drop-target=true]:ring-ring"
+          title={onDropFile ? "Project root. Drop a file here to move it out of a folder." : "Project root"}
+          onClick={() => onSelectFolder("")}
+          {...dropHandlers}
+        >
+          <span className="min-w-0 flex-1 truncate">Project root</span>
+          {onDropFile && <span aria-hidden="true" className="text-[11px] text-muted-foreground">Drop files here</span>}
+        </PanelRow>
+      </SidebarMenuItem>
       {fieldIn("")}
       {tree.folders.map((folder) => renderFolder(folder, 0))}
       {tree.rootFiles.map((file) => renderFile(file, 0))}

@@ -30,6 +30,7 @@ import { readProjectView, writeProjectView } from "./projectViews";
 import type { TabFile } from "./tabs";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { FileHeader } from "./FileHeader";
+import { isStaleCleanDraft } from "./draftPersistence";
 import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
@@ -233,7 +234,7 @@ export function DiagramView({
 
   // Unsaved edits to any of the three files are kept on the device.
   const persistDraft = useCallback(async () => {
-    if (!booted || !scene || readOnly) return;
+    if (!booted || !scene || readOnly || isStaleCleanDraft(dirty, baseRevision, savedRevision)) return;
     await client.persistDrafts([
       { path, content: source, baseRevision },
       ...(dirty || savedNativeBytes !== null
@@ -243,7 +244,7 @@ export function DiagramView({
         ? []
         : [{ path: sidecarPath, content: (dirty ? sidecarText : savedSidecarBytes)!, baseRevision: sidecarRevision }]),
     ]);
-  }, [booted, scene, readOnly, client, path, source, baseRevision, dirty, savedNativeBytes, nativePath, nativeRevision, sidecarText, savedSidecarBytes, sidecarPath, sidecarRevision]);
+  }, [booted, scene, readOnly, client, path, source, baseRevision, savedRevision, dirty, savedNativeBytes, nativePath, nativeRevision, sidecarText, savedSidecarBytes, sidecarPath, sidecarRevision]);
   useEffect(() => {
     void persistDraft().catch((error: unknown) => setNotice(`Could not keep unsaved edits on this device: ${message(error)}`));
   }, [persistDraft]);

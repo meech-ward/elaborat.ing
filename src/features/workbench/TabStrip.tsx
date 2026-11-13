@@ -55,6 +55,9 @@ export function TabStrip({
         listProps={reorder.handlers}
         tabProps={(item) => ({
           id: tabId(item.value),
+          // Base UI reports value changes only. Clicking the current tab is
+          // still a file selection after choosing a folder in the explorer.
+          onClick: () => { if (item.value === active) onSelect(item.value); },
           title: `${item.value} · Drag to reorder; Alt+Shift+Left/Right moves the focused tab; Delete closes it`,
           "aria-keyshortcuts": "Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight",
         })}

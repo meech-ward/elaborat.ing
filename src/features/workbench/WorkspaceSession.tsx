@@ -3,6 +3,7 @@ import type { OperationSession } from "./operationSession";
 import type { DocumentEmbedSessions, EmbeddedDocumentView } from "./documentEmbeds";
 import { Banner, BannerAction, EDITOR_VIEWS, SplitPanes, commandShortcut, confirmAction, isApplePlatform, type EditorView, type MenuEntry } from "@/features/design-system";
 import { FileHeader } from "./FileHeader";
+import { isStaleCleanDraft } from "./draftPersistence";
 import { useCompactWorkbench } from "./compactWorkbench";
 import { embedded, openInNewTab } from "@/features/embed/mode";
 import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
@@ -399,7 +400,7 @@ export function WorkspaceSession({
   // (below; in a chat's panel, while the note is not on screen). As a draft
   // it would undo that newer copy.
   const notAnEdit = useCallback(
-    (dirty: boolean) => openFile.baseRevision === ARRIVING_REVISION || (!dirty && savedRevision != null && savedRevision !== openFile.baseRevision),
+    (dirty: boolean) => openFile.baseRevision === ARRIVING_REVISION || isStaleCleanDraft(dirty, openFile.baseRevision, savedRevision),
     [openFile.baseRevision, savedRevision],
   );
   useEffect(() => {

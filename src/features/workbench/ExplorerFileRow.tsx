@@ -12,7 +12,7 @@
  * settles, so the renamed session is inert while the request runs and typing
  * cannot create a newly dirty draft under async completion.
  */
-import { useState } from "react";
+import { useState, type DragEventHandler } from "react";
 import { TreeFileRow, TreeRowMenu, type MenuEntry, type PanelRowSize } from "@/features/design-system";
 import { embedded } from "@/features/embed/mode";
 import {
@@ -43,6 +43,8 @@ export function ExplorerFileRow({
   onShare,
   onMove,
   onDelete,
+  onDragStart,
+  onDragEnd,
 }: {
   path: string;
   /**
@@ -80,6 +82,9 @@ export function ExplorerFileRow({
   onMove?: () => void;
   /** Opens the delete confirmation; the workbench deletes and reports the result. */
   onDelete?: () => void;
+  /** Native drag is offered only when the owning explorer can move this saved file. */
+  onDragStart?: DragEventHandler<HTMLButtonElement>;
+  onDragEnd?: DragEventHandler<HTMLButtonElement>;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   // A new dialog for each opening, so it starts from the current name.
@@ -144,6 +149,9 @@ export function ExplorerFileRow({
         aria-label={draft ? `${path}, unsaved draft` : label && label !== path ? path : undefined}
         onClick={onOpen}
         onKeyDown={openRowMenuFromKeyboard}
+        draggable={Boolean(onDragStart)}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         rowMenu={items.length > 0 ? { label: menuLabel, entries: items } : undefined}
         actions={items.length > 0 ? <TreeRowMenu label={menuLabel} entries={items} size={size} /> : undefined}
       />

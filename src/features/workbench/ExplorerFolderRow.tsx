@@ -6,7 +6,7 @@
  * button. Renaming uses the files' rename dialog; the workbench moves or
  * deletes the folder with everything in it and reports the result.
  */
-import { useState } from "react";
+import { useState, type DragEventHandler } from "react";
 import { TreeFolderRow, TreeRowMenu, type MenuEntry, type PanelRowSize } from "@/features/design-system";
 import { openRowMenuFromKeyboard } from "./explorerActions";
 import { folderRenameError } from "./folderTree";
@@ -24,6 +24,7 @@ export function ExplorerFolderRow({
   onRename,
   onMove,
   onDelete,
+  dropTarget,
 }: {
   path: string;
   /** The folder's own name, shown on the row. */
@@ -43,6 +44,13 @@ export function ExplorerFolderRow({
   onMove?: () => void;
   /** Opens the delete confirmation for the folder and everything in it. */
   onDelete?: () => void;
+  dropTarget?: {
+    active: boolean;
+    onDragEnter: DragEventHandler<HTMLButtonElement>;
+    onDragOver: DragEventHandler<HTMLButtonElement>;
+    onDragLeave: DragEventHandler<HTMLButtonElement>;
+    onDrop: DragEventHandler<HTMLButtonElement>;
+  };
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   // A new dialog for each opening, so it starts from the current name.
@@ -70,6 +78,12 @@ export function ExplorerFolderRow({
         selected={selected}
         title={path}
         data-path={path}
+        data-drop-target={dropTarget?.active || undefined}
+        className="data-[drop-target=true]:bg-accent-soft data-[drop-target=true]:ring-2 data-[drop-target=true]:ring-inset data-[drop-target=true]:ring-ring"
+        onDragEnter={dropTarget?.onDragEnter}
+        onDragOver={dropTarget?.onDragOver}
+        onDragLeave={dropTarget?.onDragLeave}
+        onDrop={dropTarget?.onDrop}
         aria-label={name !== path ? path : undefined}
         onClick={() => {
           onSelect();

@@ -145,7 +145,11 @@ this repository once the steps before them have landed.
     deleted, but are not renamed or moved, and a folder holding one does not
     move. New notes, drawings, diagrams and folders ask for their name first,
     in the explorer where they will appear (a dialog on a phone), and are
-    saved at once; a new note that was never saved can be renamed.
+    saved at once; a new note that was never saved can be renamed. Files can
+    be dragged onto a folder or Project root, using the same checked move
+    and reference updates as the move menu. New files and folders use the
+    selected folder, or the selected file's parent; selecting a root file
+    uses the project root. Choosing a file or tab updates that destination.
 13. **Drawings edit, save and export on per-file storage (done).** Excalidraw
     and Obsidian `.excalidraw.md` drawings open on the canvas without being
     rewritten, save on the device, keep unsaved edits across reloads, take a

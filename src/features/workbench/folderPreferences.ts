@@ -23,7 +23,7 @@ const folderPrefsSchema = z.object({
 
 export interface FolderPreferences {
   expanded: string[];
-  /** "" selects the workspace root; null keeps kind-specific defaults. */
+  /** "" selects the workspace root; null uses the current file's parent, or root. */
   selectedFolder: string | null;
 }
 

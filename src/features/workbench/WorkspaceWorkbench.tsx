@@ -71,6 +71,7 @@ import {
   buildFolderTree,
   hideGeneratedFiles,
   joinFolder,
+  parentDirOf,
   revealAncestors,
 } from "./folderTree";
 import {
@@ -388,7 +389,7 @@ export function WorkspaceWorkbench({
         : [...prev.expanded, path].slice(-MAX_EXPANDED_FOLDERS),
     }));
   }, []);
-  // null: new files and folders go at the top of the project.
+  // null: use the selected file's parent, or the project root without a file.
   const selectFolder = useCallback((path: string | null) => {
     setFolderPrefs((prev) =>
       prev.selectedFolder === path ? prev : { ...prev, selectedFolder: path },
@@ -447,6 +448,7 @@ export function WorkspaceWorkbench({
           return false;
         }
         dispatch({ type: "select", path, fromLocation });
+        selectFolder(null);
         if (restoreDone.current && stateRef.current.active !== path)
           setPersistReady(true);
         return true;
@@ -471,6 +473,7 @@ export function WorkspaceWorkbench({
             ...(arriving && read.revision !== null && read.content === read.savedContent ? { arriving } : {}),
           },
         });
+        selectFolder(null);
         if (sequence.current === request) setNotice(null);
         if (restoreDone.current) setPersistReady(true);
         return true;
@@ -484,7 +487,7 @@ export function WorkspaceWorkbench({
         return false;
       }
     },
-    [client],
+    [client, selectFolder],
   );
   useLayoutEffect(() => { documentEmbeds.setOpen(path => { void openPath(path); }); }, [documentEmbeds, openPath]);
   // Consume location changes once. Every new target invalidates outstanding reads,
@@ -569,26 +572,27 @@ export function WorkspaceWorkbench({
     }
   }, [state.tabs, state.active, persistReady, stored, preferenceStorage]);
   const addDraft = useCallback((file: TabFile) => {
+    selectFolder(null);
     interacted.current = true;
     const request = ++sequence.current;
     dispatch({ type: "request", sequence: request });
     dispatch({ type: "opened", sequence: request, file });
     if (narrow) setSidebar(false);
     if (restoreDone.current) setPersistReady(true);
-  }, [narrow]);
+  }, [narrow, selectFolder]);
   /** Names new files and folders must not take: every file, open unsaved tab and folder. */
   const takenNames = useCallback(
     () => ({ files: [...files.map((file) => file.path), ...stateRef.current.tabs.map((tab) => tab.path)], dirs: directories }),
     [directories, files],
   );
   /**
-   * Ask for a new file or folder's name, in the selected folder (or the
-   * root): an inline field in the explorer, which opens if it is hidden, or
-   * a dialog on a phone.
+   * Ask for a new file or folder's name in the selected folder, the selected
+   * file's parent, or the root. Show an inline field in the explorer, opening
+   * it if hidden, or a dialog on a phone.
    */
   const startCreate = useCallback(
     (kind: NewEntryKind) => {
-      const selected = folderPrefs.selectedFolder ?? "";
+      const selected = folderPrefs.selectedFolder ?? parentDirOf(stateRef.current.active ?? "");
       const dir = selected === "" || directories.includes(selected) ? selected : "";
       const taken = takenNames();
       setCreating({ kind, dir, initial: proposedName(kind, dir, [...taken.files, ...taken.dirs]), key: ++creatingKey.current });
@@ -776,6 +780,7 @@ export function WorkspaceWorkbench({
     if (restoreDone.current) setPersistReady(true);
   });
   const selectTab = (path: string) => {
+    selectFolder(null);
     interacted.current = true;
     dispatch({ type: "request", sequence: ++sequence.current });
     dispatch({ type: "select", path });
@@ -1005,14 +1010,21 @@ export function WorkspaceWorkbench({
           onToggleFolder={toggleFolder}
           onSelectFolder={selectFolder}
           onOpenFile={(path) => {
-            // Opening a file puts new files back at the top of the project.
-            selectFolder(null);
             void openFromNavigation(path);
           }}
           onFeedback={setNotice}
           onRenameFile={readOnly ? undefined : (path, name) => (neverSaved(path) ? renameNewFile(path, name) : moves.rename(path, name))}
           isNeverSaved={neverSaved}
           onMoveFile={readOnly ? undefined : moves.open}
+          onDropFile={readOnly ? undefined : (path, folder) => {
+            void moves.moveFile(path, folder).then((moved) => {
+              if (!moved) return;
+              setFolderPrefs((prev) => ({
+                selectedFolder: folder,
+                expanded: revealAncestors(prev.expanded, joinFolder(folder, "untitled")),
+              }));
+            });
+          }}
           onDuplicateFile={readOnly ? undefined : (path) => void duplicateFile(path)}
           onShareFile={onShareFile ? path => void requestShareFile(path) : undefined}
           onRenameFolder={readOnly ? undefined : moves.renameFolder}

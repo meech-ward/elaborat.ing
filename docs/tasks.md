@@ -1000,10 +1000,10 @@ matters.
   when the document has no tab of its own: `ExplorerTree`'s `isDirty` reads
   only the tabs. Let it also read the listed file's draft or the published
   embed state.
-- After sync deletes or moves an open file, its session writes the open text
-  as a new local draft at the old path, since its draft effect runs again
-  when the saved revision leaves the list (`WorkspaceSession.tsx`). Leave such
-  a file to the conflict path, or follow the move.
+- After a remote move or deletion, an open file with unsaved edits still
+  needs explicit moved/deleted conflict recovery rather than appearing as
+  an ordinary file at its old path. Preserve the dirty recovery draft.
+  Clean note, drawing and diagram sessions no longer recreate vanished paths.
 - A Split-view click 2 px inside the source pane's right edge once raised an
   uncaught "Matching panels not found" (`SplitPanes`, next to the resize
   handle), and it did not happen again. Check the handle's hit area.
@@ -1017,6 +1017,19 @@ matters.
   files pass 2 MiB.
 
 ## Done
+
+- Explorer files can be dragged onto a folder or Project root through the
+  checked atomic move operation, with reference updates and open tabs
+  following their files. New files and folders use the selected folder or
+  selected file's parent, including current-tab reselection and phone dialogs.
+  Clean note, drawing and diagram sessions no longer recreate moved paths.
+  Chromium and Firefox cover move/reload/move-back, collisions, unsaved edits,
+  read-only access and all creation kinds.
+- An extra source newline beside a drawing or another protected block
+  becomes a visible editable blank paragraph. Rendered typing, Enter,
+  Backspace, shared Undo/Redo and Save/reload preserve its source and drawing
+  identity. Focused source-mapping units and Chromium/Firefox regressions
+  cover single/multiline JSX, selection, compact gaps and existing editing.
 
 - Selecting rendered code preserves the native selection and reading
   position, including drag, double-click and keyboard copying after a prose

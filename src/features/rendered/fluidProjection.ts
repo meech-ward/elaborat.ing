@@ -638,9 +638,27 @@ export async function projectFluidSource(
       const content: PMNode[] = [];
       let pos = 0;
       const sourceChildren = (tree as Ast).children ?? [];
-      const gapOffsets = captured.blocks
+      const gaps = new Map(captured.blocks
         .filter((entry) => entry.kind === "gap")
-        .map((entry) => entry.from);
+        .map((entry) => [entry.from, entry.from]));
+      const retainedBlock = (ast: Ast) =>
+        ["mdxjsEsm", "yaml", "toml", "definition"].includes(ast.type) ||
+        (ast.type === "mdxFlowExpression" && /^\s*\/\*/.test(ast.value ?? ""));
+      const protectedBlock = (ast: Ast) => !retainedBlock(ast) && !isPlainBlock(ast) && !isContainer(ast);
+      for (let index = 1; index < sourceChildren.length; index++) {
+        const previous = sourceChildren[index - 1], next = sourceChildren[index];
+        if (retainedBlock(previous) || retainedBlock(next)) continue;
+        if (!protectedBlock(previous) && !protectedBlock(next)) continue;
+        const end = range(previous).to, start = range(next).from;
+        const gap = text.slice(end, start);
+        // One extra Source newline beside a block island is a visible blank
+        // line. Own its final newline so deleting it returns to the ordinary
+        // two-newline separator, without touching either neighbouring block.
+        if (/^\s*$/.test(gap) && (gap.match(/\n/g)?.length ?? 0) === 3) {
+          const offset = end + gap.indexOf("\n", gap.indexOf("\n") + 1) + 1;
+          gaps.set(offset, start);
+        }
+      }
       const lastSource = sourceChildren.at(-1);
       if (lastSource) {
         const tailFrom = range(lastSource).to;
@@ -648,26 +666,25 @@ export async function projectFluidSource(
         // A four-newline terminal gap becomes an inter-block blank paragraph
         // plus the typed terminal paragraph. Project both before typing, too.
         if (/^\s*$/.test(tail) && (tail.match(/\n/g)?.length ?? 0) >= 4)
-          gapOffsets.push(tailFrom + 2);
+          gaps.set(tailFrom + 2, tailFrom + 2);
       }
       const entries = [
         ...sourceChildren,
-        ...[...new Set(gapOffsets)].map(
-          (offset) =>
+        ...[...gaps].map(
+          ([offset, end]) =>
             ({
               type: "paragraph",
               children: [],
               position: {
                 start: { offset },
-                end: { offset },
+                end: { offset: end },
               },
             }) as Ast,
         ),
       ].sort((a, b) => range(a).from - range(b).from);
       for (const ast of entries) {
         if (
-          ["mdxjsEsm", "yaml", "toml", "definition"].includes(ast.type) ||
-          (ast.type === "mdxFlowExpression" && /^\s*\/\*/.test(ast.value ?? ""))
+          retainedBlock(ast)
         ) {
           retained.push(ast);
           continue;
@@ -1158,8 +1175,14 @@ function inlinePatch(
     sourceFrom = blank.from;
   }
   const emptyRoot = projection.mapping.roots.find(
-    (root) => root.pos + 1 === from && root.from === root.to,
+    (root) => root.pos + 1 === from && root.node.type === fluidSchema.nodes.paragraph && !root.node.content.size,
   );
+  if (emptyRoot && emptyRoot.to > emptyRoot.from && insert && !split && from === to) {
+    // A three-newline island gap needs the following paragraph's separator
+    // once this empty line has text. Replace only the gap's owned whitespace.
+    sourceTo = emptyRoot.to;
+    insert += "\n\n";
+  }
   // A byte order mark alone is not a block to separate from.
   const before = projection.text.slice(0, start.raw).replace(/^﻿/, "");
   if (
@@ -2210,6 +2233,16 @@ export async function prepareFluidTransaction(
     const attempts: Array<() => SourcePatch | null> = [];
     if (heading) attempts.push(() => heading);
     if (task) attempts.push(() => task);
+    if (step instanceof ReplaceStep && !step.slice.size && result.doc.childCount === candidate.doc.childCount - 1) {
+      const gap = candidate.mapping.roots.find((root) =>
+        root.to > root.from && root.node.type === fluidSchema.nodes.paragraph && !root.node.content.size &&
+        from <= root.pos + 1 && to >= root.pos + 1 &&
+        candidate.doc.content.cut(0, root.pos).append(candidate.doc.content.cut(root.end)).eq(result.doc!.content));
+      // Removing a compact gap takes only its owned newline. A normal inline
+      // join could also remove a separator which its neighbouring island does
+      // not require, needlessly changing the author's existing block spacing.
+      if (gap) attempts.push(() => ({ from: gap.from, to: gap.to, expected: candidate.text.slice(gap.from, gap.to), insert: '' }));
+    }
     if (step instanceof ReplaceStep) {
       const split =
         from === to &&

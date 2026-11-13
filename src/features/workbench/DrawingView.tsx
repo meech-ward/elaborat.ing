@@ -29,6 +29,7 @@ import { readProjectView, writeProjectView } from "./projectViews";
 import { ARRIVAL_WAIT_MS, ARRIVING_REVISION, type TabFile } from "./tabs";
 import { useCanvasPresentation, useCanvasTheme } from "./viewTheme";
 import { FileHeader } from "./FileHeader";
+import { isStaleCleanDraft } from "./draftPersistence";
 import { useCanvasStage } from "./canvasStage";
 import { canvasViewFrom, useCanvasViews, type CanvasView } from "./canvasViews";
 import { useDesktopFrame } from "./tabline";
@@ -175,7 +176,7 @@ export function DrawingView({
   // (below; in a chat's panel, while the drawing is not on screen), which as
   // a draft would undo that newer copy.
   const persistDraft = useCallback(async () => {
-    if (readOnly || baseRevision === ARRIVING_REVISION || (!dirty && savedRevision != null && savedRevision !== baseRevision)) return;
+    if (readOnly || baseRevision === ARRIVING_REVISION || isStaleCleanDraft(dirty, baseRevision, savedRevision)) return;
     await client.persistDrafts([{ path, content: currentText(), baseRevision }]);
   }, [client, path, currentText, baseRevision, readOnly, dirty, savedRevision]);
   useEffect(() => {
