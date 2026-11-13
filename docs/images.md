@@ -53,6 +53,9 @@ Drawing file actions include Insert image. Uploads and project images become
 independent native Excalidraw binary files with new element/file identities.
 The scene keeps its own bytes when the project asset later changes. Native
 Excalidraw image tools and standalone drawing exports continue to work.
+Drawing uploads, drops and clipboard images resize and compress automatically.
+Multiple files keep their order and enter together as one Undo/Redo action.
+The native image tool accepts multiple files, as does the drawing image picker.
 
 Owners and editors can change images. Viewers, commenters and archived
 projects display them without insertion or editing controls.
@@ -200,9 +203,15 @@ cleanup. Database tests cover membership isolation, quota concurrency,
 ownership transfer, staged expiry and retained historical lookup. These are
 local proofs; hosted deployment validation is recorded with the task checks.
 
-A drawing's base64 copy must fit its final 2 MiB serialized scene. Oversized
-copies are refused before mutation; the picker offers explicit resizing.
-Original metadata, including photo metadata, is retained, not stripped.
+A drawing's base64 copies must fit its final 2 MiB serialized scene. New
+copies have at most a 1600-pixel long edge and 256 KiB each, with lower quality
+and smaller dimensions when needed for the whole batch to fit. WebP retains
+transparency, with PNG fallback. Small static images that already fit keep
+their bytes. Drawing-only local uploads accept up to eight files and 20 MiB
+total before compression, while retaining the 8 MP and format-validation
+bounds. Invalid batches and drawings with no remaining room leave the scene
+unchanged. Existing images are never recompressed. Project originals retain
+their metadata, including photo metadata; re-encoded drawing copies do not.
 
 ## Network isolation and URL import
 

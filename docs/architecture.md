@@ -561,6 +561,19 @@ text and an explicit Decorative choice.
 URL import is explicit, pins a public HTTPS connection at each redirect and
 stores a project copy. Document rendering never starts a remote import.
 
+**Decision: drawing image insertion automatically fits the native scene.**
+Uploads, drops, clipboard images and project-image copies use at most a
+1600-pixel long edge and 256 KiB per image, reducing quality and dimensions
+further to share the space left in the 2 MiB serialized drawing. WebP keeps
+transparency, with PNG fallback where encoding is unavailable. Small static
+images that already fit retain their bytes. A batch of up to eight files and
+20 MiB is decoded sequentially and inserted as one undoable action only after
+every image and the final scene pass validation. Drawing-only local inputs
+may exceed 5 MiB before compression; the existing 8 MP, animation and SVG
+validation still applies. Project originals and note uploads retain their
+existing limits and resolution. Navigation or a changed drawing cancels
+pending insertion.
+
 [Image support](images.md) records contracts, limits and runtime evidence.
 [T43 through T50](tasks.md#t43-prove-the-image-asset-contract-and-validation)
 track implementation and verification.

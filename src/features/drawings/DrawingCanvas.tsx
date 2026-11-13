@@ -314,6 +314,7 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   const { scene, onChange, theme, embedded, autoFocus, viewOnly, present, drawIn = null, onScrollChange, onShown, compact = false, onError, comments = null, apiRef: pageApiRef } = props;
   const apiRef = useRef<NativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   // The canvas controls' layer, which covers the part of the canvas a person can see.
   const areaRef = useRef<HTMLDivElement | null>(null);
   const [ui] = useState(createCanvasUiStore);
@@ -723,7 +724,8 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
     pickTool: (tool) => {
       const api = apiRef.current;
       if (!api) return;
-      if (tool === 'image') api.setActiveTool({ type: 'image', insertOnCanvasDirectly: compact });
+      if (tool === 'image' && props.onImageFiles) imageInputRef.current?.click();
+      else if (tool === 'image') api.setActiveTool({ type: 'image', insertOnCanvasDirectly: compact });
       else api.setActiveTool({ type: tool as NativeTool });
       // As Excalidraw's own toolbar does: the canvas takes the keyboard.
       canvasElement()?.focus();
@@ -760,13 +762,13 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
   useEffect(() => {
     if (!pageApiRef) return;
     pageApiRef.current = {
-      insertImages: (images, validate) => {
+      insertImages: (images, validate, at) => {
         const api = apiRef.current;
         const area = visibleArea();
         if (!api || !area || !convertNative || viewOnly || props.active === false || !loadedRef.current) return false;
         if (!images.length) return true;
         const state = api.getAppState();
-        const center = canvasToScene({ x: area.left + area.width / 2, y: area.top + area.height / 2 }, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY });
+        const center = at ?? canvasToScene({ x: area.left + area.width / 2, y: area.top + area.height / 2 }, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY });
         const files: NativeFile[] = [];
         const elements = images.flatMap((image, index) => {
           const fileId = crypto.randomUUID() as NativeFile['id'];
@@ -814,11 +816,54 @@ export function DrawingCanvas(props: DrawingCanvasProps): ReactNode {
       className="relative"
       style={{ width: '100%', height: '100%', minHeight: embedded ? 240 : 0 }}
       onKeyDown={comments ? onCommentKey : undefined}
-      onKeyDownCapture={onUse}
+      onKeyDownCapture={(event) => {
+        onUse(event);
+        if (!props.onImageFiles || viewOnly || props.active === false || event.key !== '9' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+        if (event.target instanceof Element && event.target.closest('textarea, input, [contenteditable="true"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        imageInputRef.current?.click();
+      }}
       onWheelCapture={onUse}
       onPointerDownCapture={onUseDown}
       onPointerUp={pickToComment ? onPickUp : undefined}
+      onDropCapture={props.onImageFiles ? (event) => {
+        const files = Array.from(event.dataTransfer.files);
+        // Leave native scene/library imports to Excalidraw. A mixed image
+        // batch is validated together rather than silently dropping files.
+        if (!files.some((file) => file.type.startsWith('image/') || /\.(?:png|jpe?g|webp|gif|svg)$/i.test(file.name))) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const api = apiRef.current;
+        const wrapper = wrapperRef.current;
+        if (!viewOnly && props.active !== false && api && wrapper) {
+          const state = api.getAppState();
+          const box = wrapper.getBoundingClientRect();
+          props.onImageFiles?.(files, canvasToScene({ x: event.clientX - box.left, y: event.clientY - box.top }, { zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY }));
+        }
+      } : undefined}
+      onPasteCapture={props.onImageFiles ? (event) => {
+        if (event.target instanceof Element && event.target.closest('textarea, input, [contenteditable="true"]')) return;
+        const files = Array.from(event.clipboardData.files);
+        if (!files.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!viewOnly && props.active !== false) props.onImageFiles?.(files);
+      } : undefined}
     >
+      {props.onImageFiles && <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        multiple
+        hidden
+        aria-label="Upload drawing images"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = '';
+          if (files.length && !viewOnly && props.active !== false) props.onImageFiles?.(files);
+        }}
+      />}
       <CanvasErrorBoundary onError={onError}>
         <Suspense fallback={<div aria-label="Loading drawing canvas" className="p-3 text-[13px] text-muted-foreground">Loading drawing canvas…</div>}>
           <NativeCanvas

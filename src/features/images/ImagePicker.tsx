@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { prepareImage, type PreparedImage } from "./prepare"
-import { MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYTES } from "./transport"
+import { MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYTES, decodeImageDataURL } from "./transport"
 import { MAX_IMAGE_BYTES, type ImageAsset } from "./types"
 import { safeImagePath } from "./paths"
 
@@ -82,7 +82,7 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
     if (!files.length) return
     const run = ++generation.current
     let live = true
-    void prepareFiles(files, projectId).then((next) => {
+    void prepareFiles(files, projectId, target, beginOperation()).then((next) => {
       if (!live || run !== generation.current) return
       setQueue(next)
       setPending(false)
@@ -92,7 +92,7 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
       setPending(false)
     })
     return () => { live = false }
-  }, [files, projectId])
+  }, [files, projectId, target, beginOperation])
 
   const chooseFiles = async (chosen: File[]) => {
     if (!chosen.length || busy) return
@@ -101,7 +101,7 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
     setPending(true)
     setError(null)
     try {
-      const next = await prepareFiles(chosen, projectId)
+      const next = await prepareFiles(chosen, projectId, target, beginOperation())
       if (run !== generation.current) return
       setQueue(next)
       setConfirmed([])
@@ -152,7 +152,7 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
       void chooseFiles(pasted)
     }}>
     <DialogTitle>Insert image</DialogTitle>
-    <DialogDescription>Upload, paste or drop an image up to 5 MiB, or choose one from this project.</DialogDescription>
+    <DialogDescription>{target === "drawing" ? "Upload, paste or drop up to eight images (20 MiB total), or choose one from this project. Images are resized and compressed automatically for the drawing." : "Upload, paste or drop an image up to 5 MiB, or choose one from this project."}</DialogDescription>
     <div className="flex flex-wrap gap-2">
       <input ref={field} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif,.png,.jpg,.jpeg,.webp,.svg,.gif" multiple={initialAlt === undefined} className="sr-only" aria-label="Upload images" tabIndex={-1} disabled={busy}
         onChange={(event) => { const chosen = [...(event.currentTarget.files ?? [])]; event.currentTarget.value = ""; void chooseFiles(chosen) }} />
@@ -243,12 +243,19 @@ function PickerContent({ projectId, target = "note", images, files = [], initial
   </DialogContent>
 }
 
-async function prepareFiles(files: File[], projectId: string): Promise<PreparedImage[]> {
+async function prepareFiles(files: File[], projectId: string, target: "note" | "drawing", signal: AbortSignal): Promise<PreparedImage[]> {
   if (files.length > MAX_IMAGE_INTENT_FILES) throw new Error("Choose up to eight images at a time.")
-  if (files.some((file) => file.size > MAX_IMAGE_BYTES)) throw new Error("Choose images no larger than 5 MiB each.")
+  if (target === "note" && files.some((file) => file.size > MAX_IMAGE_BYTES)) throw new Error("Choose images no larger than 5 MiB each.")
   if (files.reduce((sum, file) => sum + file.size, 0) > MAX_IMAGE_INTENT_BYTES) throw new Error("Choose up to 20 MiB of images at a time.")
   const prepared: PreparedImage[] = []
-  for (const file of files) prepared.push(await prepareImage(file, projectId))
+  for (const file of files) {
+    if (target === "drawing") {
+      const { optimizeDrawingImage } = await import("./drawingImage")
+      const optimized = await optimizeDrawingImage(file, 256 * 1024, signal)
+      const { bytes, mediaType } = decodeImageDataURL(optimized.dataURL, optimized.mimeType)
+      prepared.push(await prepareImage(new File([new Uint8Array(bytes)], file.name, { type: mediaType }), projectId, undefined, signal))
+    } else prepared.push(await prepareImage(file, projectId, undefined, signal))
+  }
   return prepared
 }
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)

@@ -590,6 +590,12 @@ decisions; source and sharing remain unchanged by exporting.
 
 ## Small things
 
+- Excalidraw's own context-menu Paste calls its clipboard handler directly,
+  bypassing the drawing wrapper's DOM paste interception. Route image bytes
+  from that action through the automatic drawing-image resize and batch
+  budget, while preserving native shape/text paste. Keyboard image paste,
+  uploads and drops already use the bounded insertion path.
+
 Found while doing other tasks; each is small or rare. Make one a task when it
 matters.
 

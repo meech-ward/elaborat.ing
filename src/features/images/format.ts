@@ -6,9 +6,9 @@ const ascii = (bytes: Uint8Array, from: number, size: number) =>
   String.fromCharCode(...bytes.subarray(from, from + size));
 
 /** Inspect bounded raster headers before a decoder allocates their pixels. */
-export function inspectImage(bytes: Uint8Array, claimedType?: string) {
-  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES)
-    throw new Error("Choose an image no larger than 5 MiB.");
+export function inspectImage(bytes: Uint8Array, claimedType?: string, maxBytes = MAX_IMAGE_BYTES) {
+  if (!bytes.length || bytes.length > maxBytes)
+    throw new Error(`Choose an image no larger than ${maxBytes / (1024 * 1024)} MiB.`);
   let mediaType: ImageMediaType;
   let frames = 0;
   let framePixels = 0;

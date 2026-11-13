@@ -202,7 +202,7 @@ export interface DrawingCanvasApi {
    */
   revealElement: (elementId: string, focus?: boolean) => boolean;
   /** Add independent native image copies as one undoable canvas action. Validated before mutation. */
-  insertImages: (images: Array<{ dataURL: string; mimeType: string; width: number; height: number; alt?: string }>, validate: (next: DrawingScene) => void) => boolean;
+  insertImages: (images: Array<{ dataURL: string; mimeType: string; width: number; height: number; alt?: string }>, validate: (next: DrawingScene) => void, at?: { x: number; y: number }) => boolean;
 }
 
 /** Props for the controlled native canvas. Shell owns scene + saves. */
@@ -244,4 +244,6 @@ export interface DrawingCanvasProps {
   comments?: CanvasComments | null;
   /** Set to the canvas's API while it is mounted. */
   apiRef?: { current: DrawingCanvasApi | null };
+  /** The page prepares dropped, pasted and chosen image files before native insertion. */
+  onImageFiles?: (files: File[], at?: { x: number; y: number }) => void;
 }

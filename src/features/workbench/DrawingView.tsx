@@ -9,6 +9,7 @@ import {
   exportDrawingSvg,
   parseDrawingFile,
   saveDrawingFile,
+  serializeDrawing,
   scenesEqual,
   summarizeDrawing,
   type DrawingCanvasApi,
@@ -444,6 +445,10 @@ export function DrawingView({
   const [imagePicker, setImagePicker] = useState(false);
   const [projectImages, setProjectImages] = useState<WorkspaceFileRef[]>([]);
   const imageTarget = useRef<DrawingScene | null>(null);
+  const imageImport = useRef<AbortController | null>(null);
+  const [preparingImages, setPreparingImages] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  useEffect(() => () => imageImport.current?.abort(), [active, view, locked]);
   const chooseImage = () => {
     if (frozen.current || !active || view === "source" || !scene || !client.projectId) return;
     imageTarget.current = latest.current.scene;
@@ -453,24 +458,54 @@ export function DrawingView({
       setImagePicker(true);
     }).catch((error: unknown) => setNotice(message(error)));
   };
-  const insertImages = async (choices: ImageChoice[]) => {
-    if (frozen.current || !active || view === "source" || latest.current.scene !== imageTarget.current || !client.projectId) throw new Error("The drawing changed while the image picker was open. Choose the image again.");
-    const { prepareImage } = await import("@/features/images/prepare");
-    const { imageDataURL } = await import("@/features/images/types");
-    const images: Array<{ dataURL: string; mimeType: string; width: number; height: number; alt: string }> = [];
-    for (const choice of choices) {
-      let prepared = choice.prepared;
-      if (!prepared && choice.existingPath && client.readImage) prepared = await prepareImage(await client.readImage(choice.existingPath), client.projectId);
-      if (!prepared) throw new Error("Choose an image from this project, or upload one.");
-      if (prepared.asset.width * prepared.asset.height > 8_000_000) throw new Error("Choose an image with at most 8 million pixels for the drawing.");
-      images.push({ dataURL: imageDataURL(new Uint8Array(await prepared.bytes.arrayBuffer()), prepared.asset.media_type), mimeType: prepared.asset.media_type, width: prepared.asset.width, height: prepared.asset.height, alt: choice.alt });
-    }
-    if (frozen.current || !active || latest.current.scene !== imageTarget.current) throw new Error("The drawing changed while the images were prepared. Choose them again.");
-    const applied = canvasApi.current?.insertImages(images, (next) => {
+  const prepareAndInsertImages = async (sources: Array<() => Promise<{ bytes: Blob; alt: string }>>, target: DrawingScene | null, at?: { x: number; y: number }) => {
+    if (frozen.current || !active || view === "source" || !target || latest.current.scene !== target) throw new Error("The drawing changed while the images were chosen. Choose them again.");
+    if (imageImport.current) throw new Error("Wait for the current images to finish preparing.");
+    const controller = new AbortController();
+    imageImport.current = controller;
+    setPreparingImages(true);
+    try {
+      const { optimizeDrawingImage } = await import("@/features/images/drawingImage");
+      const { MAX_IMAGE_INTENT_FILES, MAX_IMAGE_INTENT_BYTES } = await import("@/features/images/transport");
+      if (!sources.length || sources.length > MAX_IMAGE_INTENT_FILES) throw new Error("Choose up to eight images at a time.");
+      // Include base64 expansion and reserve native element/file metadata and
+      // room for later edits. The exact saved format is checked before mutation.
       const original = latest.current.original;
-      if (!original || byteLength(saveDrawingFile(next, original).text) > MAX_FILE_BYTES) throw new Error("These images would make the drawing larger than 2 MiB. Choose smaller images, or add them to a note instead.");
-    });
-    if (!applied) throw new Error("Wait for the drawing canvas, then choose the image again.");
+      if (!original) throw new Error("Wait for the drawing to finish loading.");
+      const currentBytes = Math.max(byteLength(serializeDrawing(target)), byteLength(saveDrawingFile(target, original).text));
+      const maxBytes = Math.min(256 * 1024, Math.floor((MAX_FILE_BYTES - currentBytes - 16 * 1024 - sources.length * 4096) * 3 / 4 / sources.length));
+      if (maxBytes < 1024) throw new Error("This drawing has no room for more images. Add them to another drawing or a note.");
+      const images: Parameters<DrawingCanvasApi['insertImages']>[0] = [];
+      let totalBytes = 0;
+      // Decode one at a time to bound memory, retaining the user's file order.
+      for (const source of sources) {
+        controller.signal.throwIfAborted();
+        const { bytes, alt } = await source();
+        totalBytes += bytes.size;
+        if (totalBytes > MAX_IMAGE_INTENT_BYTES) throw new Error("Choose up to 20 MiB of images at a time.");
+        images.push({ ...await optimizeDrawingImage(bytes, maxBytes, controller.signal), alt });
+      }
+      controller.signal.throwIfAborted();
+      if (frozen.current || latest.current.scene !== target) throw new Error("The drawing changed while the images were prepared. Choose them again.");
+      const applied = canvasApi.current?.insertImages(images, (next) => {
+        const base = latest.current.original;
+        if (!base || byteLength(saveDrawingFile(next, base).text) > MAX_FILE_BYTES) throw new Error("This drawing has no room for more images. Add them to another drawing or a note.");
+      }, at);
+      if (!applied) throw new Error("Wait for the drawing canvas, then choose the images again.");
+    } finally {
+      if (imageImport.current === controller) imageImport.current = null;
+      setPreparingImages(false);
+    }
+  };
+  const insertImages = async (choices: ImageChoice[]) => prepareAndInsertImages(choices.map((choice) => async () => {
+    const bytes = choice.prepared?.bytes ?? (choice.existingPath && client.readImage ? await client.readImage(choice.existingPath) : null);
+    if (!bytes) throw new Error("Choose an image from this project, or upload one.");
+    return { bytes, alt: choice.alt };
+  }), imageTarget.current);
+  const uploadImages = (files: File[], at?: { x: number; y: number }) => {
+    setImageError(null);
+    void prepareAndInsertImages(files.map((bytes) => async () => ({ bytes, alt: '' })), latest.current.scene, at)
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setImageError(message(error)); });
   };
   // From Code, Go to shows the canvas first, then the element on it.
   const revealAfterShow = useRef<string | null>(null);
@@ -532,6 +567,8 @@ export function DrawingView({
           return importProjectImageURL(client.projectId!, url,signal);
         }}
       />}
+      {preparingImages && <p role="status" className="px-3 text-sm text-muted-foreground">Preparing images…</p>}
+      {imageError && <Banner tone="danger" role="alert" className="mt-2" action={<BannerAction onClick={() => setImageError(null)}>Dismiss</BannerAction>}>{imageError}</Banner>}
 
       {/* The saved state, the drawing's counts and the last notice, for
           screen readers: Save and the tab's unsaved dot show it on screen. */}
@@ -630,6 +667,7 @@ export function DrawingView({
             viewOnly={canvasViewOnly}
             comments={canvasComments}
             apiRef={canvasApi}
+            onImageFiles={uploadImages}
           />
         </div>
       )}
