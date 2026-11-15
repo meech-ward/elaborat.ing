@@ -125,6 +125,9 @@ test("dragging refuses a taken destination and unsaved edits without changing fi
     folders: ["later"], path: "draft.md",
   })
   appErrors.expect("Move refused:")
+  // First-open preparation can finish after the tab appears, removing its
+  // sidebar notice and moving the rows during the native drag gesture.
+  await expect(page.getByRole("status", { name: "Synced", exact: true })).toBeVisible()
   const before = saves(fake).length
   await file(page, "draft.md").dragTo(file(page, "archive"))
   await expect(page.getByText("Move refused: archive/draft.md already exists.", { exact: true })).toBeVisible()

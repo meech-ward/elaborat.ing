@@ -22,7 +22,7 @@ for (const [scheme, width] of [["light", 1280], ["dark", 390]] as const) {
     await legal.getByRole("link", { name: "Privacy" }).click()
     await expect(page).toHaveURL(new URL("privacy", APP_URL).href)
     await expect(page.getByRole("heading", { level: 1, name: "Privacy" })).toBeVisible()
-    await expect(page.getByText("Last updated October 6, 2026")).toBeVisible()
+    await expect(page.getByText("Last updated November 15, 2026")).toBeVisible()
     await expect(page.getByText("run by Not Just Software Inc., a company in Canada")).toBeVisible()
     await fitsAndAxeFindsNothing(page)
 
