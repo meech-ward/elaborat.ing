@@ -14,6 +14,7 @@ import { nativeFontAssets } from "./vite-plugins/native-font-assets.ts"
 import { npmSpecifiers } from "./vite-plugins/npm-specifiers.ts"
 import { previewFrame } from "./vite-plugins/preview-frame.ts"
 import { thirdPartyNotices } from "./vite-plugins/third-party-notices.ts"
+import { agentPreview } from "./vite-plugins/agent-preview.ts"
 
 const SRC = normalizePath(path.resolve(import.meta.dirname, "src")) + "/"
 
@@ -115,6 +116,7 @@ function chunkFileName(chunk: Rolldown.PreRenderedChunk): string {
 // in docs/architecture.md).
 export default defineConfig({
   plugins: [
+    agentPreview(),
     // The assistant's live view draws with the MCP server's renderers, which
     // import packages as Deno does (see the plugin).
     npmSpecifiers(import.meta.dirname),
@@ -180,7 +182,7 @@ export default defineConfig({
         // app never sets its language (langCode), so they never load. If it
         // ever does, cache them on first use like the drawing fonts.
         // The chat card's modules (public/chat-card) are for chats, not the app.
-        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/Xiaolai/**", "assets/excalidraw-locales/!(en-*)", "chat-card/**"],
+        globIgnores: ["_headers", "manifest.webmanifest", "excalidraw-assets/fonts/Xiaolai/**", "assets/excalidraw-locales/!(en-*)", "chat-card/**", "agent-preview/**"],
         // Workbox skips files over 2 MiB by default, and the largest chunks
         // are bigger. tests/browser/offline.spec.ts checks nothing is skipped.
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,

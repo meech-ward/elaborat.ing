@@ -239,6 +239,7 @@ Deno.test('the tests cover every tool the server lists', async () => {
       'card_embed',
       'list_comments',
       'get_image_preview',
+      'get_file_preview',
       'import_image',
       'add_comment',
       'reply_comment',

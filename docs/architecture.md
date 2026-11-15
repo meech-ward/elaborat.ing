@@ -170,6 +170,12 @@ run in this order, each once the one before it has passed:
    of its build in `public/chat-card`, which the app's Worker serves, so the
    function goes live only once the site serves them.
 
+Unpromoted Worker versions can be checked at Version URLs before production.
+`wrangler.jsonc` declares `preview_urls = true` while keeping the production
+`workers_dev` route disabled. Enabling these independent subdomain flags through
+the documented Workers API during staging does not promote a version or change
+the custom domain. The normal deploy subsequently keeps the declared settings.
+
 Bucket provisioning uses the official Storage API through
 `scripts/provision-image-bucket.ts`, reading only the `project-images`
 declaration in `config.toml`. It creates or updates that one bucket with the
@@ -1042,6 +1048,24 @@ The production server's tools are unchanged.
     rule and what delivery checks again (`events.test.sql`); Deno tests for
     the sender, the events methods and delivery with a fake receiver that
     checks signatures with the Standard Webhooks library.
+- **Agent visual previews:** an explicit
+  `get_file_preview` returns bounded native-rendered PNG content to the model.
+  Saved inputs are read together under the caller's RLS and pinned by a digest;
+  normalized detail crops require that digest. The app's Cloudflare Worker uses
+  its browser binding with a fresh isolated context, exact asset request rules,
+  a fixed renderer entry and a separate shared service secret. Browser jobs
+  contain saved source, never Supabase credentials. This replaces the research
+  proposal's Quick Actions REST candidate: explicit contexts provide the
+  isolation it could not establish, and a binding avoids a new REST API token.
+  Native SVG is rasterized only after setting its bounded viewport. The
+  pinned native exporter incorrectly namespaces frame/image `clip-path`
+  attributes, so the standalone renderer normalizes those SVG presentation
+  attributes before rasterizing. Browser pixel checks cover the correction.
+  A scoped, MIT-credited bounded adaptation of the pinned lz-string decoder
+  is necessary because its public decompressor has no output/dictionary cap;
+  the existing parser receives only the already bounded JSON afterward. The
+  [scope and verification record](agent-visual-previews.md) define the supported
+  behavior, limits, deployment and remaining client checks.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. The `show_file` tool (`tools/fileView.ts`), the

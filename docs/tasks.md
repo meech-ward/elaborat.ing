@@ -588,6 +588,33 @@ document with a clear notice and do not select a different component.
 Standalone public component routes and persistent source IDs are separate
 decisions; source and sharing remain unchanged by exporting.
 
+## T65: prove native visual previews for agents
+
+**Status:** Done
+
+The standalone native SVG-to-bounded-PNG renderer is verified in Chromium and
+Firefox, including native fonts and the emitted subset worker, frame clipping,
+normalized crops, embedded images, compressed Obsidian files, live D2 and
+explicit invalid/corrupt input failures. The scoped bounded lz-string decoder
+and native SVG namespace correction have dedicated regressions. See the
+[verification record](agent-visual-previews.md) for hosted and client scope.
+
+## T66: add explicit agent file previews
+
+**Status:** Done
+
+`get_file_preview` reads a single RLS-scoped saved input snapshot, returns one
+model-visible PNG and metadata, and binds detail crops to all input identities
+and versions. Native Excalidraw/D2 rendering uses the private Worker browser
+adapter with isolated contexts, service authentication, exact asset rules,
+resource limits, cancellation and fail-closed service limiting. It never saves
+generated files or forwards user credentials to the browser.
+
+The build/deploy flow pairs immutable renderer assets with the MCP manifest,
+retains prior builds and configures a separate service credential. Skills and
+plugin version are updated. Deployment and supported client observations are
+recorded in [the scope](agent-visual-previews.md).
+
 ## Small things
 
 - Excalidraw's own context-menu Paste calls its clipboard handler directly,

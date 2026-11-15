@@ -26,6 +26,8 @@ jobs:
       - run: bun install --frozen-lockfile
       # The build generates src/routeTree.gen.ts, which typecheck and lint need.
       - run: bun run build
+      - name: Check that the agent renderer manifest is up to date
+        run: git diff --exit-code -- supabase/functions/mcp-server/tools/previewManifest.ts
       # The chat card is built from the app's components and committed: the
       # view's script, because the functions deploy without building the app,
       # and the modules it loads from the site, which every app deploy serves.
@@ -43,7 +45,7 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run test
-      - run: bun test scripts/provision-image-bucket.test.ts scripts/build-svg-font.test.ts
+      - run: bun test scripts/provision-image-bucket.test.ts scripts/build-svg-font.test.ts scripts/keep-agent-preview-versions.test.ts
       # The loading rule (docs/architecture.md, Principles): each page's first
       # paint and the chat card's view within its budget in
       # scripts/bundle-budget.json, and no heavy library before a first paint.

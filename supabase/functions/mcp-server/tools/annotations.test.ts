@@ -65,6 +65,9 @@ Deno.test('every tool states whether it reads, destroys and reaches outside the 
   // it stays read-only: a host may ask before running a tool that is not.
   const panel = tools.find((tool) => tool.name === 'open_panel')
   assertEquals(panel?.annotations, { title: 'Projects', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+  const preview = tools.find((tool) => tool.name === 'get_file_preview')
+  assertEquals(preview?.annotations, { title: 'Inspect drawing', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+  assertEquals(preview?._meta, undefined)
   // create_and_show only adds a file: the database refuses it where one exists. Its view is the file view.
   const create = tools.find((tool) => tool.name === 'create_and_show')
   assertEquals(create?.annotations, { title: 'Create and show', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })

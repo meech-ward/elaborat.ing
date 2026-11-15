@@ -4,9 +4,11 @@ Run your own copy of elaborat.ing on a free Supabase project: the app, sync
 between devices, search, sharing, and agents (Claude, ChatGPT or any MCP
 client) working on your projects.
 
-The app is a static site. Everything else is Supabase: Auth, Postgres with
+The app is a static site. The core services are Supabase: Auth, Postgres with
 row-level security, Realtime and Edge Functions (`mcp-server`, `embed`,
-`search`, `share`, `delete-account`, `send-events`, `images`). There is no other server. [Architecture](architecture.md)
+`search`, `share`, `delete-account`, `send-events`, `images`). Optional agent
+visual previews use a Cloudflare Worker browser binding; other operations
+work without it. [Architecture](architecture.md)
 explains the design; this page is the steps.
 
 Placeholders used below:
@@ -28,6 +30,36 @@ Placeholders used below:
 - Optional: an email provider with SMTP and a verified sending domain (see
   [Email](#email-smtp-is-optional)).
 - Docker only if you change the database schema, to generate migrations.
+
+### Optional visual previews for agents
+
+`get_file_preview` needs the Cloudflare Worker in this repository with its
+`BROWSER` and `PREVIEW_RATE_LIMITER` bindings. The core app and source tools
+work without these previews. Cloudflare browser usage has its own quotas and
+charges; see the [preview scope](agent-visual-previews.md).
+
+Generate a separate random base64url credential of at least 43 characters and
+store it as the GitHub repository secret `AGENT_PREVIEW_SECRET`. The deploy
+workflow supplies the same credential to Cloudflare and the MCP function using
+their secret stores. Do not reuse a Supabase service key or embed credential.
+Set repository variables `AGENT_PREVIEW_ENDPOINT` to
+`<site>/_agent-preview` and `AGENT_PREVIEW_ORIGIN` to `<site>`. For manual
+deployment, supply that secret and those public values to
+`scripts/configure-agent-preview.ts` for each target.
+
+Build the app before deploying the MCP function. It generates a separate,
+immutable renderer and the function's matching manifest. The normal workflow
+retains the current and two prior renderer builds before replacing assets, so
+requests from the preceding function version keep working during deployment.
+If your old SPA returns HTML for the first missing renderer versions index,
+verify that no renderer has been published and set `AGENT_PREVIEW_BOOTSTRAP`
+to `true` for the first deployment only. Set it back to `false` afterward.
+Later retention and integrity failures must stop deployment.
+
+Preview jobs send only saved drawing/diagram inputs to an isolated Cloudflare
+browser. They contain no user session or Supabase credentials. The renderer
+does not fetch remote document assets, record sessions, or retain preview
+images. Review the privacy page for your installation's actual providers.
 
 ## 1. Create the Supabase project
 
@@ -67,6 +99,7 @@ A few files hold the hosted instance's values. Change them before you deploy.
 | `wrangler.sandbox.jsonc` | `routes`, `vars.FRAME_ANCESTORS` | Your sandbox domain and `<site>`, if you use one (step 4). |
 | `.github/workflows/deploy.yml` | `VITE_SANDBOX_ORIGIN` | Your sandbox domain's origin, or empty for none. |
 | `supabase/functions/mcp-server/tools/fileView.ts` | `APP_ORIGIN` | `<site>`. The chat card's "Open in elaborat.ing" links go here, and its view's policy lets it load its editor, previews and fonts from here. |
+| `supabase/functions/mcp-server/tools/filePreview.ts` | `urlFor` origin | `<site>`. The model-visible preview's open link points to your frontend, which may be separate from its browser service. |
 | `src/chat-card/toolResult.ts` | `APP_ORIGIN` | `<site>/`, then `bun run build:chat-card`. The chat card follows only links to this origin. |
 | `scripts/build-chat-card.ts` | `MODULES_URL` | `<site>/chat-card/`, then `bun run build:chat-card`. Where the chat card loads its editor, previews and fonts from (`public/chat-card`). |
 | `supabase/functions/share/index.ts` | `redirectTo` | `<site>/`. Where an invitation email's link lands. (Auth sends a link it does not allow to `site_url` instead, so leaving it does no harm once the hosted origin is out of your redirect list.) |

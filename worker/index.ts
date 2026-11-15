@@ -22,8 +22,9 @@
  */
 
 import { frameAncestors } from "./frameAncestors.ts";
+import { AGENT_PREVIEW_PATH, handleAgentPreview, type AgentPreviewEnv, type PreviewExecutionContext } from './agentPreview.ts';
 
-export interface Env {
+export interface Env extends AgentPreviewEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   MCP_UPSTREAM?: string;
   /**
@@ -82,8 +83,9 @@ async function framable(request: Request, env: Env, ancestors: string): Promise<
 // Temporary host capability probe, remove after testing.
 const PROBE_PREFIX = "/mcp-probe";
 
-export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch): Promise<Response> {
+export async function handle(request: Request, env: Env, fetcher: typeof fetch = fetch, background?: PreviewExecutionContext): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === AGENT_PREVIEW_PATH) return handleAgentPreview(request, env, background);
   if (url.pathname === OPENAI_CHALLENGE_PATH) return openAiChallenge(env);
   const read = request.method === "GET" || request.method === "HEAD";
   if (read && url.pathname.startsWith('/s/')) {
@@ -126,4 +128,4 @@ export async function handle(request: Request, env: Env, fetcher: typeof fetch =
   return response;
 }
 
-export default { fetch: (request: Request, env: Env) => handle(request, env) };
+export default { fetch: (request: Request, env: Env, background?: PreviewExecutionContext) => handle(request, env, fetch, background) };

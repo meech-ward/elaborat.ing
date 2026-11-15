@@ -82,6 +82,10 @@ try {
       ]) assert(assets.has(path), `${name} deployment must contain ${path}`)
     } else {
       assert.equal(assets.get(fontPath), font, `${name} deployment must contain the exact generated SVG font module`)
+      if (name === "mcp-server") {
+        for (const path of ["src/agent-preview/protocol.ts", "supabase/functions/mcp-server/tools/filePreview.ts", "supabase/functions/mcp-server/tools/previewManifest.ts"])
+          assert(assets.has(path), `${name} deployment must contain ${path}`)
+      }
     }
     assert(assets.has(`supabase/functions/${name}/index.ts`), `${name} must contain its entry point`)
     console.log(`${name}: verified ${assets.size} source files, including its rendering dependencies`)

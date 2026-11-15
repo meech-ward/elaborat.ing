@@ -64,6 +64,8 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ELABORATING_PROJECT_URL: https://${{ vars.SUPABASE_PROJECT_ID }}.supabase.co
       ELABORATING_EMBED_SECRET_KEY: ${{ secrets.EMBED_SECRET_KEY }}
+      AGENT_PREVIEW_SECRET: ${{ secrets.AGENT_PREVIEW_SECRET }}
+      AGENT_PREVIEW_ENDPOINT: ${{ vars.AGENT_PREVIEW_ENDPOINT }}
     steps:
       # CI runs on main can finish out of order, so the run that triggered
       # this one may be older than the newest green commit. Deploy the newest
@@ -120,6 +122,8 @@ jobs:
           names=$(printf '%s\n' supabase/functions/*/index.ts | cut -d/ -f3 | grep -vx mcp-server)
           mapfile -t functions <<< "$names"
           supabase functions deploy "${functions[@]}" --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Configure the optional agent preview service
+        run: bun scripts/configure-agent-preview.ts supabase
       # No `supabase link`: it needs a token that can read every secret API key.
       # The --project-ref flag makes db push use the IPv4 pooler, since runners
       # have no IPv6. It also writes [db.vault] when it applies a migration.
@@ -142,6 +146,8 @@ jobs:
       VITE_SANDBOX_ORIGIN: https://elaboratingusercontent.com
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AGENT_PREVIEW_SECRET: ${{ secrets.AGENT_PREVIEW_SECRET }}
+      AGENT_PREVIEW_ORIGIN: ${{ vars.AGENT_PREVIEW_ORIGIN || 'https://elaborat.ing' }}
     steps:
       # A fork that hosts the app elsewhere (docs/self-host.md) sets neither
       # Cloudflare secret: this job then deploys nothing and mcp-server still
@@ -177,6 +183,13 @@ jobs:
         run: bun scripts/keep-frame-versions.ts "$VITE_SANDBOX_ORIGIN"
       - if: steps.settings.outputs.deploy == 'true' && env.VITE_SANDBOX_ORIGIN != ''
         run: bunx wrangler deploy --config wrangler.sandbox.jsonc
+      # Only the first release can bypass retention: older SPA deployments
+      # answer a missing versions.json with HTML. Turn this variable off as
+      # soon as the initial renderer is published; later failures stay closed.
+      - if: steps.settings.outputs.deploy == 'true' && vars.AGENT_PREVIEW_BOOTSTRAP != 'true'
+        run: bun scripts/keep-agent-preview-versions.ts "$AGENT_PREVIEW_ORIGIN"
+      - if: steps.settings.outputs.deploy == 'true'
+        run: bun scripts/configure-agent-preview.ts cloudflare
       - if: steps.settings.outputs.deploy == 'true'
         run: bunx wrangler deploy
 

@@ -6,14 +6,23 @@
   // server's paths, which it passes to the Supabase Edge Function, and for
   // /embed, the app in a chat's panel, whose framing policy it sets.
   "name": "elaborating",
+  "workers_dev": false,
+  "preview_urls": true,
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Authenticated native rendering, called only by the MCP server with
+  // AGENT_PREVIEW_SECRET. The browser never receives that secret.
+  "browser": { "binding": "BROWSER" },
+  // A service cap per Cloudflare location; Browser Run's account quotas are
+  // separate. Missing or failed limiting disables the private renderer.
+  "ratelimits": [{ "name": "PREVIEW_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // /mcp-probe: temporary host capability probe, remove after testing.
-    "run_worker_first": ["/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/s/*", "/mcp-probe", "/mcp-probe/*"]
+    "run_worker_first": ["/_agent-preview", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource/mcp", "/.well-known/openai-apps-challenge", "/embed", "/embed/*", "/s/*", "/mcp-probe", "/mcp-probe/*"]
   },
   // The hosted instance's MCP server. Self-hosters: your project's
   // https://<ref>.supabase.co/functions/v1/mcp-server, or remove it.

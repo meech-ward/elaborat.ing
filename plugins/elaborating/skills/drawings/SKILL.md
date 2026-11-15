@@ -60,6 +60,20 @@ The user's instructions win over this skill when they differ.
   show it with `show_file`. Create it before the note that embeds it.
 - To comment on one element, pass its `element_id` to `add_comment`.
 
+## Inspect the rendered drawing
+
+After creating a drawing or making a visual change, call `get_file_preview`
+with its project and path to inspect the saved result. Check spacing, labels,
+arrows, clipping and image placement. The tool returns pixels to you;
+`show_file` presents a card to the person. Do not claim to have inspected a
+drawing just because a card was shown.
+
+For small text or a large canvas, request a detail `region` with coordinates
+between 0 and 1 relative to the complete overview, and pass the returned
+`snapshot` as `expected_snapshot`. On a snapshot conflict, obtain a new
+overview. Previews read saved content and do not save changes. If the renderer
+is unavailable or returns a limit/error, explain what remains unchecked.
+
 ## Images in drawings
 
 Native Excalidraw scenes keep image bytes in their `files` map. Preserve

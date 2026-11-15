@@ -5,6 +5,7 @@ import { registerCommentTools } from './comments.ts'
 import { registerComponentPreview } from './componentPreview.ts'
 import { registerDrawTool } from './draw.ts'
 import { registerFileView } from './fileView.ts'
+import { registerFilePreview } from './filePreview.ts'
 import { registerImageTools } from './imageAssets.ts'
 import { registerPanel } from './panel.ts'
 import { registerProjectTools } from './projects.ts'
@@ -32,6 +33,7 @@ export function registerTools(server: McpServer, context: ToolContext, { embedVi
   registerProjectCategoryTools(server, context)
   registerSearchTool(server, context)
   registerFileView(server, context)
+  registerFilePreview(server, context)
   registerImageTools(server, context)
   registerDrawTool(server, context)
   registerAppendToNote(server, context)

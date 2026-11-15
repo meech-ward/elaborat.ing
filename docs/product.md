@@ -92,6 +92,11 @@ Developer first, friendly for everyone.
   agent can display a read-only rendered document with its drawings, or a
   single drawing, with a link to open it in the app. It can also show a
   rendered preview of a component it is drafting, before saving it.
+- **Agents can inspect drawings.** An explicit visual preview returns saved
+  Excalidraw and D2 pixels to the model, with exact input versions and readable
+  detail crops. It uses an isolated browser when configured; source reads and
+  ordinary saves do not trigger rendering. Full note/MDX page capture is a
+  separate feature.
 - **Users can see and revoke connected agents.**
 
 ## Sharing and comments

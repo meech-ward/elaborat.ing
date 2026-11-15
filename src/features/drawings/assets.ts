@@ -9,12 +9,15 @@ declare global {
   }
 }
 
+let configuredBase: string | undefined
+
 /** The absolute URL of this site's Excalidraw assets, correct under any route. */
 export function excalidrawAssetBase(): string {
-  return new URL(`${import.meta.env?.BASE_URL ?? "/"}excalidraw-assets/`, window.location.origin).href
+  return configuredBase ?? new URL(`${import.meta.env?.BASE_URL ?? "/"}excalidraw-assets/`, window.location.origin).href
 }
 
 /** Point Excalidraw at this site's fonts. Call once at startup, before a drawing opens. */
-export function configureExcalidrawAssets(): void {
+export function configureExcalidrawAssets(base?: string): void {
+  configuredBase = base
   window.EXCALIDRAW_ASSET_PATH = excalidrawAssetBase()
 }
