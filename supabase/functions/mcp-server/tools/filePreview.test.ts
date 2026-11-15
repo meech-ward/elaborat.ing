@@ -279,16 +279,16 @@ Deno.test('caller cancellation interrupts an injected renderer that does not obs
 
 async function withWorker<T>(fetcher: typeof fetch, run: () => Promise<T>, secret?: string) {
   const oldFetch = globalThis.fetch
-  const oldSecret = Deno.env.get('AGENT_PREVIEW_SECRET'), oldEndpoint = Deno.env.get('AGENT_PREVIEW_ENDPOINT')
+  const oldGetEnv = Deno.env.get
   globalThis.fetch = fetcher
-  if (secret) Deno.env.set('AGENT_PREVIEW_SECRET', secret)
-  else Deno.env.delete('AGENT_PREVIEW_SECRET')
-  Deno.env.set('AGENT_PREVIEW_ENDPOINT', 'https://preview.example/_agent-preview')
+  // CI tests have no environment permissions. Stub this external boundary
+  // without reading or changing the host's real service credentials.
+  Deno.env.get = (name: string) => name === 'AGENT_PREVIEW_SECRET' ? secret
+    : name === 'AGENT_PREVIEW_ENDPOINT' ? 'https://preview.example/_agent-preview' : undefined
   try { return await run() }
   finally {
     globalThis.fetch = oldFetch
-    if (oldSecret === undefined) Deno.env.delete('AGENT_PREVIEW_SECRET'); else Deno.env.set('AGENT_PREVIEW_SECRET', oldSecret)
-    if (oldEndpoint === undefined) Deno.env.delete('AGENT_PREVIEW_ENDPOINT'); else Deno.env.set('AGENT_PREVIEW_ENDPOINT', oldEndpoint)
+    Deno.env.get = oldGetEnv
   }
 }
 
