@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-// One independently scoped credential, supplied by CI secret storage. Nothing
+// One independently scoped credential, supplied through the environment. Nothing
 // is written to the checkout or printed into logs/command arguments.
 const secret = process.env.AGENT_PREVIEW_SECRET?.trim()
 if (!secret) {
