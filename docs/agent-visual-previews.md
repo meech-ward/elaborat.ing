@@ -169,8 +169,13 @@ retention stops deployment.
 The core app/source tools work without configured previews. Secret
 provisioning, endpoint/origin settings and first-deploy bootstrap are in the
 [self-host guide](self-host.md#optional-visual-previews-for-agents) and
-`scripts/configure-agent-preview.ts`. Browser usage has separate quotas and
-charges; enabling it requires an operating budget.
+`scripts/configure-agent-preview.ts`. An authorized local Supabase CLI identity
+provisions the MCP runtime secret and endpoint before deployment, and again
+when rotating them. The Supabase CI token deliberately has no
+`edge_functions_secrets_write`; CI does not perform this setup. The app job
+continues to provision Cloudflare from the matching GitHub
+`AGENT_PREVIEW_SECRET`. Browser usage has separate quotas and charges;
+enabling it requires an operating budget.
 
 ## Verification record and remaining release checks
 

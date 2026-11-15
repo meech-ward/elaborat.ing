@@ -39,13 +39,30 @@ work without these previews. Cloudflare browser usage has its own quotas and
 charges; see the [preview scope](agent-visual-previews.md).
 
 Generate a separate random base64url credential of at least 43 characters and
-store it as the GitHub repository secret `AGENT_PREVIEW_SECRET`. The deploy
-workflow supplies the same credential to Cloudflare and the MCP function using
-their secret stores. Do not reuse a Supabase service key or embed credential.
-Set repository variables `AGENT_PREVIEW_ENDPOINT` to
-`<site>/_agent-preview` and `AGENT_PREVIEW_ORIGIN` to `<site>`. For manual
-deployment, supply that secret and those public values to
-`scripts/configure-agent-preview.ts` for each target.
+store it as the GitHub repository secret `AGENT_PREVIEW_SECRET`. The app deploy
+job supplies that credential to Cloudflare's secret store. Do not reuse a
+Supabase service key or embed credential. Set the repository variable
+`AGENT_PREVIEW_ORIGIN` to `<site>` for renderer retention.
+
+Before the first preview deployment, provision the same credential and the
+fixed endpoint in Supabase using a local CLI identity with
+`edge_functions_secrets_write` permission. Repeat this when rotating the
+credential or changing the endpoint. After CLI sign-in, run from the repository
+root, pasting the secret at the hidden prompt:
+
+```sh
+read -rs AGENT_PREVIEW_SECRET
+AGENT_PREVIEW_SECRET="$AGENT_PREVIEW_SECRET" \
+SUPABASE_PROJECT_ID="<ref>" \
+AGENT_PREVIEW_ENDPOINT="<site>/_agent-preview" \
+bun scripts/configure-agent-preview.ts supabase
+unset AGENT_PREVIEW_SECRET
+```
+
+The Supabase deploy token deliberately lacks `edge_functions_secrets_write`.
+CI does not provision these Supabase runtime secrets; do not expand its token
+permissions. A fully manual Cloudflare deployment can use the same script's
+`cloudflare` target with the same service credential.
 
 Build the app before deploying the MCP function. It generates a separate,
 immutable renderer and the function's matching manifest. The normal workflow

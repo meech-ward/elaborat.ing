@@ -64,8 +64,8 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ELABORATING_PROJECT_URL: https://${{ vars.SUPABASE_PROJECT_ID }}.supabase.co
       ELABORATING_EMBED_SECRET_KEY: ${{ secrets.EMBED_SECRET_KEY }}
-      AGENT_PREVIEW_SECRET: ${{ secrets.AGENT_PREVIEW_SECRET }}
-      AGENT_PREVIEW_ENDPOINT: ${{ vars.AGENT_PREVIEW_ENDPOINT }}
+      # MCP preview runtime secrets are provisioned locally before deployment.
+      # This token deliberately lacks edge_functions_secrets_write.
     steps:
       # CI runs on main can finish out of order, so the run that triggered
       # this one may be older than the newest green commit. Deploy the newest
@@ -122,8 +122,6 @@ jobs:
           names=$(printf '%s\n' supabase/functions/*/index.ts | cut -d/ -f3 | grep -vx mcp-server)
           mapfile -t functions <<< "$names"
           supabase functions deploy "${functions[@]}" --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Configure the optional agent preview service
-        run: bun scripts/configure-agent-preview.ts supabase
       # No `supabase link`: it needs a token that can read every secret API key.
       # The --project-ref flag makes db push use the IPv4 pooler, since runners
       # have no IPv6. It also writes [db.vault] when it applies a migration.

@@ -219,6 +219,13 @@ checked against the already issued links.
   Network Restrictions, Data API Config, Realtime Config and Storage Config.
   Project Settings Read-write can also delete or pause the project, so only
   the `config` job has it.
+- **Preview runtime secrets stay outside the Supabase deploy job.** The deploy
+  token deliberately lacks `edge_functions_secrets_write`. Before enabling or
+  rotating visual previews, an authorized local CLI identity provisions
+  `AGENT_PREVIEW_SECRET` and `AGENT_PREVIEW_ENDPOINT` using
+  `scripts/configure-agent-preview.ts supabase`. The same service credential
+  is stored as the GitHub repository secret `AGENT_PREVIEW_SECRET`; the app job
+  supplies it to Cloudflare. This does not broaden either Supabase CI token.
 - **Where the values live.** The config token and the SMTP credentials are
   secrets of a `supabase-config` environment limited to `main`, which only the
   config job uses. The deploy token, database password and embed secret key are
@@ -2482,15 +2489,25 @@ found when a page loads).
 
 ## Manual steps
 
-Settings with no file-based home yet. Each is a one-time step until the
-platform supports it as code; the [self-host guide](self-host.md) walks through
-the ones a new copy needs.
+Steps outside automatic deployment. Some settings have no file-based home;
+runtime secret provisioning also stays manual to preserve the narrow deploy
+token. The [self-host guide](self-host.md) walks through the steps a new copy
+needs. Repeat credential provisioning when rotating a secret.
 (SMTP and SMS providers are not on this list: they go in `config.toml`, with
 secrets supplied through `env()` from GitHub secrets.)
 
 - **Access tokens:** create the two scoped tokens described under Deploys, for
   this project only. Scoped tokens expire after at most a year, so recreate
   them before then.
+- **Optional agent preview runtime secrets:** before enabling the service,
+  supply the separate `AGENT_PREVIEW_SECRET`, `SUPABASE_PROJECT_ID` and fixed
+  HTTPS `AGENT_PREVIEW_ENDPOINT` to
+  `bun scripts/configure-agent-preview.ts supabase` under a local Supabase CLI
+  identity with `edge_functions_secrets_write` permission. Store the same
+  secret in GitHub for the Cloudflare app job. CI does not write Supabase
+  runtime secrets, and its deploy token must not gain that permission. The setup
+  command is in the
+  [self-host guide](self-host.md#optional-visual-previews-for-agents).
 - **Secret API key for the database:** create one (the hosted project names it
   `embed_worker`) for the embed pipeline; event delivery (`send-events`)
   uses the same one. The platform creates keys; the CLI can only list them.
