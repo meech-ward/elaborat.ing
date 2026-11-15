@@ -120,7 +120,10 @@ async function downloadVersion(fetcher: typeof fetch, origin: string, outputDir:
     while (!failure && next < version.files.length) {
       const file = version.files[next++]
       try {
-        const response = await download(fetcher, origin, `${version.folder}${file}`)
+        // Cloudflare Assets redirects index.html to its directory URL. Request
+        // that one canonical alias directly while still refusing all redirects.
+        const resource = file === 'index.html' ? version.folder : `${version.folder}${file}`
+        const response = await download(fetcher, origin, resource)
         const bytes = await boundedResponse(response, file === 'manifest.json' ? MAX_MANIFEST_BYTES : MAX_FILE_BYTES)
         if ((total += bytes.byteLength) > MAX_BUILD_BYTES) throw new Error('A renderer build exceeds its byte budget.')
         files.set(file, bytes)

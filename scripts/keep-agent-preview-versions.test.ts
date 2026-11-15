@@ -52,7 +52,12 @@ function remote(versions: FixtureVersion[], override?: (resource: string) => Res
     if (replaced) return replaced
     for (const item of versions) {
       if (!url.pathname.startsWith(`/${item.folder}`)) continue
-      const bytes = item.bytes.get(url.pathname.slice(item.folder.length + 1))
+      // Match Cloudflare's canonical HTML behavior: index.html itself is never
+      // served directly, and the helper must not rely on following redirects.
+      if (url.pathname === `/${item.folder}index.html`)
+        return new Response(null, { status: 307, headers: { Location: `/${item.folder}` } })
+      const file = url.pathname === `/${item.folder}` ? 'index.html' : url.pathname.slice(item.folder.length + 1)
+      const bytes = item.bytes.get(file)
       if (bytes) return new Response(bytes)
     }
     return new Response('missing', { status: 404 })
@@ -71,6 +76,9 @@ test('retains current plus two published builds, copies binary assets exactly, a
     .toEqual({ kept: [current.folder, old.folder, older.folder] })
   expect(published.maximum()).toBeGreaterThan(1)
   expect(published.maximum()).toBeLessThanOrEqual(4)
+  expect(published.requested).toContain(`/${old.folder}`)
+  expect(published.requested).toContain(`/${older.folder}`)
+  expect(published.requested.some(resource => resource.endsWith('/index.html'))).toBe(false)
   expect(published.requested.some(resource => resource.startsWith(`/${obsolete.folder}`))).toBe(false)
   for (const item of [current, old, older]) for (const [file, bytes] of item.bytes)
     expect(new Uint8Array(await readFile(path.join(directory, item.folder, file)))).toEqual(bytes)
