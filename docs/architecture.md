@@ -229,8 +229,8 @@ checked against the already issued links.
   supplies it to Cloudflare. Only the background `drawing-previews` function
   needs this transport; MCP reads use stored pixels. Database dispatch reuses
   Vault's existing `embed_secret_key`, not the browser transport secret. The
-  stored pipeline is implemented and locally verified. CI gates deployment;
-  this does not broaden either Supabase CI token.
+  stored pipeline is deployed with hosted save-to-preview replacement verified.
+  CI gates deployment; this does not broaden either Supabase CI token.
 - **App code and its preview credential deploy together.** The Cloudflare
   helper uses Wrangler's documented `deploy --secrets-file` with a temporary
   owner-readable JSON file, removed afterward. This publishes one version and
@@ -1067,8 +1067,8 @@ The production server's tools are unchanged.
     rule and what delivery checks again (`events.test.sql`); Deno tests for
     the sender, the events methods and delivery with a fake receiver that
     checks signatures with the Standard Webhooks library.
-- **Agent visual previews, stored background pipeline (implemented and locally
-  verified; CI and production activation pending):** `get_file_preview` reads
+- **Agent visual previews, stored background pipeline (deployed; hosted
+  save-to-preview replacement verified):** `get_file_preview` reads
   a previously prepared native PNG under the caller's existing project access
   and RLS. Reads never launch or enqueue browser work. Every committed change to a drawing or D2
   dependency atomically invalidates its old PNG and advances the latest job
@@ -2554,8 +2554,9 @@ secrets supplied through `env()` from GitHub secrets.)
   runtime secrets, and its deploy token must not gain that permission. The
   background `drawing-previews` function uses these values; MCP reads do not
   contact the renderer. Database dispatch reuses the existing Vault embed key.
-  The stored pipeline is locally verified; hosted rollout and credential
-  provisioning remain pending. The setup command is in the
+  The stored pipeline is deployed and its credential is provisioned. Hosted
+  saves and replacement are verified in the [scope](agent-visual-previews.md).
+  The setup command is in the
   [self-host guide](self-host.md#optional-visual-previews-for-agents).
 - **Secret API key for the database:** create one (the hosted project names it
   `embed_worker`) for the embed pipeline; event delivery (`send-events`)

@@ -1,11 +1,11 @@
 # Agent visual previews
 
-**Status: implemented and locally verified, 2026-11-15. CI, production activation and client vision verification pending.**
+**Status: deployed and hosted save-to-preview replacement verified, 2026-11-15. Host-specific MCP image delivery checks remain separate.**
 The stored background pipeline replaces request-time browser rendering. Its
-schema, processor, stored-image reads and crops are implemented, with local
-database integration and one real staged native-renderer call verified below.
-These checks do not establish hosted Supabase delivery or model vision in a
-particular client.
+schema, processor, stored-image reads and crops are implemented. Local database
+integration, native rendering and the hosted cron-to-function-to-renderer path
+are verified below. The hosted image observation used an owner SQL read of the
+synthetic fixture's stored PNG, not this chat's cached MCP tool inventory.
 
 `get_file_preview` returns a previously prepared PNG for `.excalidraw`,
 `.excalidraw.md` and `.d2` files. `read_file` continues to read source;
@@ -339,23 +339,60 @@ fixtures were removed and the prior global usage ledger was restored exactly.
 This establishes real connection contention separately from the rollback-only
 processor verifier above. Neither verifier changed hosted state.
 
-## Remaining release and client checks
+## Production verification
 
-Release commits must pass CI before production deployment. Production
-activation is pending. Local test results and the staged renderer call do not establish a
-deployed background pipeline.
+Runtime release `87f8eb17625c7ca1c11575ed2573c1fa0e16af84` passed
+[CI](https://github.com/meech-ward/elaborat.ing/actions/runs/43791076171)
+and all four jobs in the
+[production deployment](https://github.com/meech-ward/elaborat.ing/actions/runs/43792599290).
+The approved transport credential is configured in Supabase. MCP is active at
+version 210 and `drawing-previews` at version 1. Downloaded entrypoints and tool
+registration match the release; the CLI's source-path guard prevented checking
+every bundled module by download. Runtime artifacts identify renderer build
+`7048a6cabb090b4b`.
 
-Exercise the hosted cron/function/browser path after approved configuration,
-including cold assets, resource failures and disconnect cancellation. The new
-Cloudflare `enable_request_signal` compatibility flag was not deployed to the
-staged Worker used above; actual disconnect-to-browser-cleanup timing is still
-unverified. The local controlled-renderer cancellation test does not establish
-that timing or eliminate brief browser cleanup overlap.
+Nine public asset requests verified the current build index, manifest,
+canonical renderer HTML, entry script, native font worker and its imports,
+and a valid 20,380-byte WOFF2 font. A direct authenticated renderer smoke
+returned a valid 93,056-byte PNG. The one-time `AGENT_PREVIEW_BOOTSTRAP`
+repository variable was reset to `false` after these checks.
+
+A temporary project and drawing were created through the authenticated MCP
+connection. No browser app session opened that drawing. The database cron,
+Edge Function and Cloudflare renderer prepared its current PNG:
+
+| Saved version / generation | Attempts | Stored PNG | Observed pixels |
+| --- | --- | --- | --- |
+| 1 / 1 | 2 | 4,956 bytes, 500 × 280 | Green rectangle, black dot on the left |
+| 2 / 2 | 1 | 15,267 bytes, 492 × 280 | Orange ellipse, black dot on the right |
+
+The first image's shape, colour and dot position were randomly chosen without
+being shown to the model. Image inspection matched all three before source
+inspection. An owner SQL read fetched only this synthetic project's PNG and
+metadata. Version, generation, metadata input version and renderer build
+matched; both image digest and snapshot changed after the MCP update. During
+replacement, the row was pending for version 2 rather than serving version 1.
+The temporary project was archived after verification, not permanently deleted.
+
+The first attempt received a transient `rate_limit`. Its retry waited behind
+the initial backfill and then succeeded; a diagnostic snapshot showed 98 ready
+artifacts and an eligible rank of 12 for that retry. This verifies retry
+progress, not a fixed completion-time guarantee. Neither MCP save waited for a
+render.
+
+## Remaining client and transport checks
+
+The deployed Worker includes `enable_request_signal`; actual hosted
+disconnect-to-browser-cleanup timing is still unverified. Local controlled
+cancellation tests do not establish that timing or eliminate brief browser
+cleanup overlap.
 
 For each supported host/model, request a stored preview without an MCP App
 card and identify an image-only feature. Record exact combinations and narrow
-support claims if a host cannot consume image content. No such real-client
-vision observation is recorded yet.
+support claims if a host cannot consume image content. This chat's connector
+inventory did not refresh to include `get_file_preview`, so the owner SQL PNG
+observation above does not establish image delivery through that tool in a
+particular MCP host. No such host-specific observation is recorded yet.
 
 Retain normal build, typecheck, lint, Bun, Edge Function, database, migration,
 bundle and browser checks. Full note/MDX capture needs its own saved dependency

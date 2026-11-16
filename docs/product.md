@@ -92,13 +92,13 @@ Developer first, friendly for everyone.
   agent can display a read-only rendered document with its drawings, or a
   single drawing, with a link to open it in the app. It can also show a
   rendered preview of a component it is drafting, before saving it.
-- **Agents can inspect drawings (locally verified; rollout pending).** Committed
+- **Agents can inspect drawings.** Committed
   Excalidraw and D2 snapshots prepare a private PNG in the background.
   An explicit visual read returns that exact current image to the model, or
   says it is preparing, without request-time browser work. Crops use the
   stored image's resolution. Native rendering, background storage and delivery
-  are locally verified; hosted delivery and real-client vision checks remain
-  pending. See the
+  are locally verified, and hosted saves prepare and replace stored PNGs.
+  Host-specific MCP image delivery checks remain separate. See the
   [scope](agent-visual-previews.md). Full note/MDX capture is separate.
 - **Users can see and revoke connected agents.**
 

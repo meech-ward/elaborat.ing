@@ -622,10 +622,11 @@ work on preview reads. T66's earlier checks do not establish that replacement.
 
 ## T67: prepare and store current agent drawing previews
 
-**Status:** Taken
+**Status:** Done
 
-Authorized on 2026-11-15. Implementation and local verification are complete;
-CI, production activation and real-client vision verification remain pending.
+Authorized and deployed on 2026-11-15. Implementation, CI and hosted
+save-to-preview replacement are verified. Host-specific MCP image delivery
+and hosted disconnect timing remain follow-ups below.
 
 Replace request-time rendering with a database-owned background pipeline for
 saved `.excalidraw`, `.excalidraw.md` and `.d2` snapshots. Every relevant commit,
@@ -684,12 +685,26 @@ deletion leases, quota refusal, private reads and RGBA crop alignment. An
 earlier overlapping 38-assertion run also completed one real staged native
 render and read its stored PNG back. All processor fixtures rolled back. A separate five-connection verifier
 passed 26 contention assertions and restored its temporary fixtures and ledger.
-A final declarative sync found no changes. HTTP gateway, hosted scheduling and
-real-client vision claims remain separate from these local verifiers; see the
-scope for exact commands and remaining release checks.
+A final declarative sync found no changes. Release `87f8eb1` passed CI and
+production deployment. Two authenticated MCP saves produced stored PNGs for
+versions/generations 1 and 2 through hosted scheduling, with changed snapshots
+and pixels; the first retry succeeded after initial backfill. PNG inspection
+used an owner SQL read of the synthetic fixture, not MCP image-tool dispatch.
+See the scope for exact evidence and remaining host-specific checks.
 
 ## Small things
 
+- Verify `get_file_preview` image delivery in each supported MCP host/model
+  after fresh tool discovery, identifying an image-only feature without an
+  MCP App card. The deployed pipeline's synthetic PNG was visually checked
+  through an owner SQL read; this chat retained an older connector inventory.
+- Measure hosted supersession/disconnect-to-browser-cleanup timing with
+  `enable_request_signal`. Keep the distinction between two database leases
+  and actual provider browser overlap explicit.
+- Preserve the renderer's `Retry-After` in background failure scheduling and
+  review dispatcher pacing against the 10/minute/location and one/isolate
+  renderer limits. FIFO backfill and retries progress, but transient 429s can
+  consume attempts before the fixed SQL backoff elapses.
 - Add an explicit bounded bulk refresh for stored drawing previews after a
   renderer/profile upgrade, if needed. Current artifacts retain their actual
   build tag and remain valid until relevant saved inputs change; deployment
