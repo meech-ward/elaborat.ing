@@ -1,18 +1,76 @@
 # Agent visual previews
 
-**Status: implemented and verified locally and in a staged browser deployment, 2026-11-15.**
-The MCP tool, standalone renderer, Worker adapter and deployment support are
-implemented. Production release and real client observations are recorded
-separately from the checks below.
+**Status: implemented and locally verified, 2026-11-15. CI, production activation and client vision verification pending.**
+The stored background pipeline replaces request-time browser rendering. Its
+schema, processor, stored-image reads and crops are implemented, with local
+database integration and one real staged native-renderer call verified below.
+These checks do not establish hosted Supabase delivery or model vision in a
+particular client.
 
-`get_file_preview` returns pixels to an agent for `.excalidraw`,
-`.excalidraw.md` and `.d2` files. `read_file` still reads source; `show_file`
-still presents a card. Full Markdown/MDX page capture is outside this scope.
-Rendering starts only on an explicit request, never on ordinary reads/saves.
-The renderer is built separately and excluded from the service-worker
-precache. Ordinary views do not import it. Preserve existing first-paint
-budgets and [progressive loading](progressive-loading.md) boundaries; this
-feature preserves the implemented T55 through T59 loading contracts.
+`get_file_preview` returns a previously prepared PNG for `.excalidraw`,
+`.excalidraw.md` and `.d2` files. `read_file` continues to read source;
+`show_file` continues to present a card to the person. An MCP preview read
+never launches a browser, enqueues a render or waits for one to finish. Full
+Markdown/MDX page capture remains outside this scope.
+
+## Commit, prepare, read
+
+Every committed change to a drawing or a D2 dependency invalidates the old PNG
+and advances its pending generation in the same database transaction as the
+save. This covers app edits, MCP-only writes and D2 companion-only updates.
+Offline drafts participate when synchronization commits them to the server.
+Preparation does not depend on opening the file or having an app session.
+
+The background `drawing-previews` Edge Function claims eligible generations
+and sends frozen saved inputs to the existing native browser renderer. A
+five-second quiet period coalesces successive saves. Starts for one file are
+at least ten seconds apart. Renaming the same file to an unsupported type
+removes its preview but preserves the prior start time and cancellation
+reservation, so renaming it back cannot reset that spacing. Each file has one
+lease, and superseded generations
+do not accumulate as a queue of historical renders.
+
+During rendering, the function checks the job approximately once a second and
+cancels work after a newer generation, deletion or lost lease. Publication is
+a database compare-and-swap against the leased generation and token. Every
+relevant input commit advances that generation. Cancellation reduces wasted
+work; the publish check prevents an older job from replacing current pixels.
+
+Saves do not wait for rendering. The resulting preparation window is explicit:
+a read returns `preparing` while no exact current artifact is ready. It never
+substitutes a previous revision's PNG. Browser failure or an exhausted retry
+budget remains visible as an unavailable/error state. There is no request-time
+browser fallback.
+
+## Stored artifact and access
+
+`public.drawing_previews` holds at most one current PNG per file, plus a small
+bounded metadata record. PNG bytes use PostgreSQL `bytea` with a 96 KiB cap.
+Old preview bytes are invalidated on a relevant commit and replaced atomically
+only after the current generation finishes. No historical preview artifacts
+are retained by this feature; normal source version history is unchanged.
+
+This bounded derived artifact belongs in the same database transaction as its
+identity and readiness state. A separate Storage bucket would add an upload
+followed by a database commit, with orphan cleanup and stale-upload races for
+an image of at most 96 KiB. Atomic row replacement avoids that extra protocol.
+This decision does not move ordinary project image assets out of Storage.
+
+The artifact carries the complete saved-input manifest, snapshot digest,
+renderer build and presentation profile. D2 identity includes its source,
+canonical `.excalidraw` companion and `.d2.json` sidecar, including explicit
+missing companions. Changes to any saved dependency make an earlier artifact
+ineligible. A valid artifact from an older renderer build remains readable,
+with its actual build tag, until the saved inputs change. Automatic bulk
+refresh on renderer upgrades is a separate follow-up.
+
+Every MCP read uses the caller's existing project access and RLS. The public
+table has explicit grants and policies; normal clients cannot publish images
+or manipulate private jobs. A digest is a consistency assertion, not a bearer
+credential. Revoked access, a deleted root or replacement at the same path must
+withhold the previous root's pixels. Archived projects retain their existing
+read permissions. A client-uploaded thumbnail cannot become the
+canonical verification image.
 
 ## Tool and snapshot contract
 
@@ -26,201 +84,274 @@ get_file_preview({
 })
 ```
 
-`expected_version` asserts the current root file version. It does not request
-history or a project-head revision. Omit `region` for an overview. A region is
-normalized to the complete exported picture: finite nonnegative coordinates,
-positive dimensions and a rectangle within `[0, 1]` on each axis. Cropping
-changes the viewport without removing contextual scene elements.
+`expected_version` asserts the current root file version, not a historical
+version or project-head revision. Omit `region` to read the stored overview.
+A region is normalized to that complete image: finite nonnegative coordinates,
+positive dimensions and a rectangle within `[0, 1]` on each axis. It requires
+the `expected_snapshot` returned with the overview. A companion-only D2 save
+invalidates this assertion even when the root version has not changed.
 
-A region requires the `expected_snapshot` returned with its overview. This
-digest covers file identities, paths, versions, content hashes, missing
-companions, renderer build and presentation profile. Mismatches fail before
-browser work, including companion-only D2 saves. The digest is a consistency
-assertion, not an access credential or retained historical image.
+A crop decodes and crops the stored PNG with Photon. It cannot recover detail
+beyond the stored resolution and does not invoke native export or Cloudflare.
+Metadata reports the stored image dimensions and crop dimensions so an agent
+can judge whether text is readable. High-resolution native detail rendering
+is a separate future decision.
 
-Success contains one MCP `image/png` block, concise text and metadata: root
-identity/version, complete input manifest, snapshot/build/profile,
-`saved_scene` or `projected_diagram`, regeneration status, diagnostics, actual
-SVG viewBox, region, pixel dimensions, scale and app link. Pixels are not
-duplicated in JSON or `_meta`; there is no MCP App resource. Standard
+Success contains one standard MCP `image/png` block, concise text and metadata:
+root identity/version, full input manifest, snapshot/build/profile,
+`saved_scene` or `projected_diagram`, regeneration status, diagnostics,
+native SVG viewBox, region, dimensions, scale and app link. Pixels are not
+duplicated in JSON or `_meta`; no MCP App view is required.
 [MCP image content](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#image-content)
 does not establish that every host/model can inspect it.
 
-Errors distinguish missing/inaccessible inputs, unsupported content,
-assertion conflicts, invalid input, limits, unavailable rendering, rate
-limits, cancellation and render/compile failures. Raw provider failures and
-credentials are withheld. Failed D2 compilation or regeneration conflicts
-return diagnostics without labeling an old canvas as successful output.
-
-## Authorized saved inputs
-
-The existing caller-scoped Supabase client and RLS read `project_files`.
-Drawings need one row. D2 source, canonical `.excalidraw` companion and
-`.d2.json` sidecar are read in one select statement, giving a consistent input
-set without loading the project. Missing companions are explicit. No new
-RPC, privileged read or schema change is used.
-
-Exact strings and their manifest are frozen before rendering. Browser drafts,
-remote imports and generated companion saves do not participate. Changes
-during a job do not relabel its pixels: the reply identifies actual input
-versions. Before returning pixels or source-bearing error diagnostics,
-another caller-scoped read verifies the same root file ID is still accessible.
-Deletion, replacement or revoked access withholds output.
+Preparing, assertion conflicts, inaccessible inputs, unsupported content,
+resource limits and failed preparation have distinct results. Provider
+failures are bounded and redacted. Failed D2 compilation or regeneration
+conflicts must not label an old saved canvas as successful current output.
 
 ## Native rendering
 
-The standalone browser entry uses the app's parser, pinned Excalidraw 0.18.1
-SVG exporter, fonts and arrow-label mask repair. D2 shares
+The standalone renderer shares the app's parser, pinned Excalidraw 0.18.1 SVG
+exporter, fonts and arrow-label mask repair. D2 shares
 `projectDiagramArtifact` and its manual-edit merge behavior. Missing or stale
 artifacts compile without being saved; malformed companions and merge
-conflicts remain explicit errors.
+conflicts remain explicit failures.
 
 The `light-v1` profile uses the app's D2 palette. Native content is exported
 in light mode, with scene embedding disabled, then rasterized on a white
-backing. This is saved-content rendering, not a person's current editor,
-theme, zoom, selection or unsaved changes.
+backing. It represents committed saved content, not an editor's theme, zoom,
+selection or unsaved draft.
 
-Native SVG supplies the actual viewBox for crops and avoids native PNG
-export's separate intermediate canvases for labeled arrows. The adapter
-repairs SVG-namespaced presentation attributes emitted by the pinned
-exporter: XML image decoding needs ordinary `clip-path` attributes for
-frame/image clipping. Saved geometry is not rewritten.
+Native SVG provides the actual viewBox and avoids native PNG export's separate
+intermediate canvases for labeled arrows. The adapter repairs incorrectly
+SVG-namespaced `clip-path` attributes from the pinned exporter, preserving
+frame and image clipping during XML image decoding. It does not rewrite saved
+geometry. The background job renders only the bounded overview.
 
-Obsidian compressed payloads use a bounded adaptation of lz-string 1.5.0's
-MIT-licensed decoder. `src/agent-preview/boundedLz.ts` retains attribution and
-license. Output and retained dictionary strings are bounded before
-concatenation; expanded JSON receives structural/scene checks before native
-restoration.
+Compressed Obsidian payloads use the bounded, MIT-credited lz-string 1.5.0
+adaptation in `src/agent-preview/boundedLz.ts`. Expanded strings and retained
+dictionary entries are bounded before concatenation, then JSON and scene
+validation run before native restoration. Referenced image headers are checked
+before decoding; static rasters also receive actual pixel decode and dimension
+checks. Supported vectors and animations become validated static pixels.
+Missing/corrupt image bytes fail. External embedded pages use native
+placeholders with a diagnostic and are never fetched.
 
-All referenced image headers are checked before decoding. Static rasters
-receive actual pixel decode/dimension verification; supported vectors and
-animations become validated static pixels. Missing/corrupt bytes fail.
-External embedded pages use native placeholders with a diagnostic, without
-fetching content. Output resolution can be reduced to fit its budget, with
-a diagnostic and a detail crop still available.
+## Background limits and failures
 
-## Worker boundary and privacy
+Database claims enforce at most two active leased background jobs globally,
+500 render attempts per UTC day globally and 100 per UTC day per project.
+These are attempt budgets, including failures and retries, not a guaranteed
+monetary spend ceiling.
+Provider pricing, other browser use and operations outside this queue remain
+separate. Cancelling a request can finish before Cloudflare closes its browser,
+so brief cleanup overlap is possible; provider account limits govern actual
+browser concurrency. A generation receives at most five attempts with backoff;
+a newer generation supersedes its remaining attempts. Budget exhaustion defers
+eligible work rather than making saves or MCP reads launch a browser.
 
-The MCP function posts the frozen job to a fixed HTTPS
-`AGENT_PREVIEW_ENDPOINT`, normally `/_agent-preview`. It shares a separately
-generated `AGENT_PREVIEW_SECRET` with the Worker through their secret stores.
-This is not a user JWT, Supabase service key or embed credential. The browser
-receives job data and public assets only, with no account session, auth
-headers, signed Storage URLs or service secret.
+The Worker retains its separate per-isolate concurrency and per-location rate
+limits as additional guardrails. They are not substitutes for the shared
+database budgets. Missing service configuration or failed limiting must fail
+closed. Lease expiry permits recovery after a crashed worker without allowing
+an expired job to publish.
 
-The Worker uses its `BROWSER` binding and pinned `@cloudflare/puppeteer` to
-launch a browser and isolated context per job. Recording, cache and service
-workers are disabled. Provider guardrails restrict the hostname; request
-interception allows only exact published renderer/font/worker URLs and GET,
-with no query or credential channel. CSP and image validation add independent
-restrictions. Callers cannot choose URLs, scripts, HTML or browser options.
+If the background function has no render secret or its endpoint is invalid,
+it requests a 300-second database dispatch cooldown before returning
+unavailable. It does not claim a generation or spend a render attempt. Cron
+checks that cooldown before dispatching again, so an unconfigured installation
+does not call the function every five seconds. After configuration, automatic
+preparation can wait for the remaining cooldown to expire.
 
-Evaluation returns bounded JSON, rather than a page screenshot or raw HTML.
-Job identity, input digest, build, region, PNG headers and dimensions are
-checked across browser/Worker/MCP boundaries. MCP also decodes the bounded
-PNG with Photon and frees it before publishing. Browser/context cleanup runs
-on success, failure, cancellation, deadline and late browser acquisition.
-
-The service retains no preview images or project copies. The configured
-Cloudflare browser processes authorized private content, an additional data
-path self-hosters must disclose. See the official
-[Puppeteer guide](https://developers.cloudflare.com/browser-run/puppeteer/),
-[browser binding API](https://developers.cloudflare.com/browser-run/reference/browser-binding-api/)
-and [data-handling FAQ](https://developers.cloudflare.com/browser-run/faq/).
-
-## Current limits
-
-| Boundary | Application limit |
+| Rendering boundary | Limit |
 | --- | --- |
 | Saved source/canvas/layout | 2 MiB UTF-8 each; 7 MiB serialized job |
 | Expanded drawing JSON | 2 MiB, including compressed Obsidian payloads |
 | D2 source | 64 KiB UTF-8 before compilation |
 | Scene | 3,000 elements; 100,000 points; 200,000 rendered text characters |
 | JSON structure | Depth 48; 300,000 visited/pending values; unsafe prototype keys rejected |
-| Geometry | Numeric magnitudes bounded at 10,000,000; stroke/font/roughness and patterned-fill work also checked |
+| Geometry | Numeric magnitudes bounded at 10,000,000; stroke/font/roughness and patterned-fill work checked |
 | Images | 32 distinct; 2 MiB input bytes; 24 million aggregate pixels; 16 MiB validated raster bytes |
 | Native SVG | 8,388,608 characters before rasterization |
-| Output | 1,600-pixel longest edge; 1.6 million pixels |
-| Transport | 96 KiB PNG bytes; 128 KiB base64 characters; 140,000 complete-result characters |
+| Stored overview | At most 1,600-pixel longest edge, 1.6 million pixels and 96 KiB PNG bytes |
+| Browser transport | 128 KiB base64 characters; 140,000 complete-result characters |
 | Diagnostics | Ten bounded code/message entries |
-| Time | 45-second MCP deadline; 42-second Worker rendering deadline, then cleanup |
+| Browser deadline | 42 seconds, followed by cleanup |
 
-Existing per-image validation also applies. Dimensions are bounded before
-raster allocation; cropping does not allocate a full-scene canvas. The
-3,000-element check follows D2 compilation/emission and does not bound its
-intermediate allocations. Source caps, isolation and deadlines limit this
-path; provider memory failures remain explicit failures, not a proved
-compiler memory ceiling.
+Output resolution may be reduced further to fit the PNG byte budget, with a
+diagnostic. A stored-PNG crop has the same available detail. Dimensions are
+checked before raster allocation. The scene-element check follows D2
+compilation/emission and does not prove a bound on compiler intermediate
+allocations; source caps, isolation and deadlines limit that path.
 
-The Worker allows one active job per isolate and requires its limiter.
-`wrangler.jsonc` sets ten jobs/minute per Cloudflare location, separately from
-provider account quotas. Missing/failed limiting disables rendering. These
-are not a global daily spending cap. Rate-limit replies preserve retry timing;
-the MCP tool does not automatically loop through paid retries.
+## Worker boundary and credentials
 
-## Build, setup and deployment
+The database dispatch follows the existing embedding/event pattern: Vault's
+`embed_secret_key` authenticates the request to `drawing-previews` through the
+`apikey` header. The private claim and publication operations are unavailable
+to ordinary project clients. The existing database dispatch credential is
+never passed to Cloudflare or a browser.
 
-`vite-plugins/agent-preview.ts` emits an immutable renderer folder and matching
-MCP manifest. Deployment retains the current and two previous published
-builds, verifies manifests/content hashes, then publishes assets before the
-MCP function. The Worker resolves exact retained builds; missing/corrupt
-retention stops deployment.
+Only the background function posts render jobs to the fixed HTTPS
+`AGENT_PREVIEW_ENDPOINT`, normally `/_agent-preview`. Its separate
+`AGENT_PREVIEW_SECRET` authenticates that transport. It is not a user JWT or
+Supabase database key, and MCP reads do not need it. The browser receives frozen
+source and public renderer assets without account sessions, authorization
+headers, signed Storage URLs or service credentials.
 
-The core app/source tools work without configured previews. Secret
-provisioning, endpoint/origin settings and first-deploy bootstrap are in the
-[self-host guide](self-host.md#optional-visual-previews-for-agents) and
-`scripts/configure-agent-preview.ts`. An authorized local Supabase CLI identity
-provisions the MCP runtime secret and endpoint before deployment, and again
-when rotating them. The Supabase CI token deliberately has no
-`edge_functions_secrets_write`; CI does not perform this setup. The app job
-continues to provision Cloudflare from the matching GitHub
-`AGENT_PREVIEW_SECRET`. Browser usage has separate quotas and charges;
-enabling it requires an operating budget.
+The Worker uses its `BROWSER` binding and pinned `@cloudflare/puppeteer`, with
+a fresh isolated context per job. Recording, cache and service workers are
+disabled. Host guardrails, exact renderer/font/worker asset rules, GET-only
+requests, CSP and image validation restrict network access. Callers cannot
+choose URLs, scripts, HTML or browser options. Bounded replies are validated
+across renderer, Worker and background-function boundaries. Context/browser
+cleanup runs on success, failure, cancellation, deadline and late acquisition.
 
-## Verification record and remaining release checks
+Cloudflare processes private drawing inputs during background preparation.
+Supabase retains the current bounded PNG and metadata. This is an additional
+processing path and a derived-data retention decision to disclose to
+self-hosters. Provider operational retention is separate from application
+storage. See Cloudflare's
+[Puppeteer guide](https://developers.cloudflare.com/browser-run/puppeteer/),
+[browser binding API](https://developers.cloudflare.com/browser-run/reference/browser-binding-api/)
+and [data-handling FAQ](https://developers.cloudflare.com/browser-run/faq/).
 
-Local checks on 2026-11-15 include 200 passing MCP tool tests and the reported
-1,764-test Bun application baseline, plus focused Worker/provider and
-retained-build tests. MCP tests cover real in-memory image transport,
-snapshots/crops, corrupt PNG decoding, cancellation, credential separation
-and revoked-access output withholding. Worker tests use a controlled browser
-stand-in, not a hosted Browser Run session.
+## Build, deployment and app loading
 
-The final production-browser suite passed eight tests in Chromium and Firefox.
-It covers native frames and exact normalized crop alignment, fonts and the
-emitted native subset worker, embedded images, corrupt payloads, compressed
-Obsidian, and fresh/stale/saved D2 projection with manual additions. Native
-syntax and merge conflicts return explicit failures.
+Each job records the exact immutable renderer build it uses. Retained assets
+support in-flight jobs during deployment; a missing exact build fails
+explicitly. Deploying a newer renderer does not invalidate an otherwise current
+stored PNG or silently relabel its build.
+Deployment and credential setup are described in the
+[self-host guide](self-host.md#optional-visual-previews-for-agents).
 
-An unpromoted Cloudflare Worker version returned validated PNGs through the
-real browser binding for the repository's native and compressed fixtures, a
-detail crop and a freshly compiled D2 diagram. Observed warm checks were about
-4.7 seconds for the crop, 5.1 seconds for the compressed drawing and 8.5 seconds
-for fresh D2, including network and browser work. These are synthetic checks,
-not latency guarantees. Cloudflare canonicalizes `index.html` to its directory;
-the provider navigates only the trusted derived directory alias to avoid a
-blocked redirect while keeping other paths forbidden.
+This pipeline adds no app UI or first-paint work. Saving performs bounded
+database invalidation/enqueue work, not browser rendering. The standalone
+renderer remains outside ordinary view imports and service-worker precaching.
+Preserve existing bundle budgets and the
+[progressive loading](progressive-loading.md) contracts. Core source tools and
+the app remain usable when preview preparation is disabled or unavailable.
 
-Typecheck, lint, the focused function checks, retained-build tests, Worker dry
-run, committed chat-card rebuild and the unchanged bundle budgets passed.
+## Earlier native-renderer verification
 
-Additional operational and client checks:
+Before the stored-pipeline decision, the production-browser suite passed eight
+tests across Chromium and Firefox, covering native frames, normalized viewport
+alignment, fonts and the emitted native subset worker, embedded images,
+compressed Obsidian and live D2 projection with manual additions. Corrupt
+images, native syntax errors and merge conflicts had explicit failure checks.
 
-1. Exercise the actual binding with cold fonts, native/Obsidian drawings,
-   frames, pressure strokes, arrows, cropped/flipped images and live D2.
-   Compare overview/detail with the fixed native presentation profile.
-2. Prove exact asset restrictions and isolation with hostile inputs and two
-   consecutive private jobs. Check resource failures, cancellation, late
-   launch cleanup, concurrency, quotas and actual latency.
-3. Exercise hosted MCP owner/member roles, archives, nonmembers, revocation,
-   root replacement and companion-only snapshot races. Confirm the deployed
-   function/build pairing.
-4. For each supported client/model, request a preview without a card and
-   identify an image-only feature absent from text/metadata. Verify readable
-   crops and a host without MCP Apps support. Record exact combinations and
-   narrow support claims when a host fails.
+An unpromoted Cloudflare Worker version also returned validated PNGs through
+the real browser binding for native and compressed fixtures, a native detail
+crop and freshly compiled D2. These were synthetic renderer checks, not a
+release of the stored pipeline. The new MCP crop uses stored PNG pixels instead
+of that earlier native viewport path.
 
-Retain normal build, typecheck, lint, Bun, Edge Function, bundle and browser
-checks. Transport tests alone prove neither model vision nor production
-availability. Full note/MDX capture needs a separate saved dependency snapshot,
-viewport/pagination and existing component-sandbox consent/isolation design.
+## Local verification
+
+The generated migrations `20261116005912_declarative_sync.sql`,
+`20261116010733_declarative_sync.sql` and `20261116011558_declarative_sync.sql` were applied only to the throwaway
+`elaborating-preview-test` database at local port 56322. The second preserves
+the start gap through an unsupported-type rename and back; the third gives
+daily-budget exhaustion a distinct `daily_limit` code from transient provider
+rate limits. A final declarative sync found no schema changes. The final full
+pgTAP rerun passed 22 files and 1,196 assertions; local database security
+advisors reported "No issues found." Hosted Supabase was not migrated or
+configured by these checks.
+
+Other local checks passed:
+
+- The frozen MCP Deno suite: 205 tests, including 16 stored-preview tests.
+- Bun: 1,749 passed, 13 skipped and two TODOs, 1,764 tests in total.
+- Typecheck, lint and the unchanged bundle budgets.
+- The following production-build browser command: 12 checks passed across
+  Chromium and Firefox. This includes the native-preview and legal suites.
+
+```sh
+ELABORATING_BROWSER_TEST_PORT_OFFSET=230 npx playwright test \
+  tests/browser/agent-preview.spec.ts tests/browser/legal.spec.ts
+```
+
+`bun scripts/check-function-assets.ts` exercised the pinned Supabase CLI's
+real `--use-api` source collector against a loopback API that deliberately
+refused deployment. It verified the expected rendering dependencies in
+`images` (10 source files), `mcp-server` (44), `drawing-previews` (10) and
+`file-share` (11). No hosted deployment occurred. Normal Node/Vite builds kept
+the renderer manifest at `7048a6cabb090b4b`.
+
+A temporary verifier at
+`/private/tmp/elaborating-preview-background-integration.ts` used the actual
+`processNextDrawingPreview` and `postgresPreviewStore`, real authenticated
+`save_files` calls and real authenticated RLS SELECTs through an SQL-backed
+MCP adapter. The final local run passed 43 assertions in 1.93 seconds with
+three controlled renderer calls and no staged call. It proved:
+
+- Five quiet seconds, the ten-second start gap and one live lease per file.
+- Source-update bursts cancel an in-flight controlled renderer through the
+  default one-second poll, coalesce to generation four, reject the old publish
+  and store exact saved version four after one current-generation attempt.
+- Preparing/ready reads and snapshot-bound crops do no browser work; the
+  right-half crop of a known RGBA fixture contains only the expected green
+  pixels. Another authenticated user cannot read the private pixels.
+- One current artifact/job per file, both daily attempt budgets, quota
+  deferral without consuming an attempt and the two-active-lease logic.
+- Root deletion removes current derived rows and retains source history,
+  reserves its independent lease until acknowledgement, rejects late publish,
+  withholds MCP pixels and releases the lease on acknowledgement.
+
+An earlier run of the same verifier passed 38 assertions in 7.87 seconds,
+including one real staged Cloudflare render with build `7048a6cabb090b4b`.
+The processor validated and stored that native PNG, and the MCP payload read
+it back. The two assertion counts overlap and must not be added together.
+All fixture changes in both runs were rolled back. The staged transport key
+was read only into memory; no hosted Supabase or secret storage was changed.
+
+The temporary command, run from the isolated checkout, was:
+
+```sh
+deno run --no-lock --config supabase/functions/mcp-server/deno.json \
+  --allow-read --allow-env \
+  --allow-net=127.0.0.1:56322,agent-previews-elaborating.sam-da1.workers.dev:443 \
+  /private/tmp/elaborating-preview-background-integration.ts
+```
+
+Only the earlier run added `--staged`. The script hard-restricts its database
+target to `127.0.0.1:56322/postgres`. It is a temporary verification artifact,
+not a committed test dependency. Its rollback transaction and role mutex prove
+real SQL/processor behavior, not HTTP/PostgREST integration or independent
+connection contention. The staged call proves native rendering, not the
+database cron-to-Edge-Function authentication path or production availability.
+
+## Independent database contention check
+
+A separate temporary verifier at `/private/tmp/elaborating-preview-concurrency.ts`
+used five distinct PostgreSQL connections against the same isolated local
+server. All 26 assertions passed: exactly two simultaneous claims won; releasing
+one lease allowed one replacement; superseding an active job preserved its slot,
+invalidated currentness and refused stale publication; acknowledgement allowed
+one replacement. Four successful claims consumed four attempts. Generated
+fixtures were removed and the prior global usage ledger was restored exactly.
+This establishes real connection contention separately from the rollback-only
+processor verifier above. Neither verifier changed hosted state.
+
+## Remaining release and client checks
+
+Release commits must pass CI before production deployment. Production
+activation is pending. Local test results and the staged renderer call do not establish a
+deployed background pipeline.
+
+Exercise the hosted cron/function/browser path after approved configuration,
+including cold assets, resource failures and disconnect cancellation. The new
+Cloudflare `enable_request_signal` compatibility flag was not deployed to the
+staged Worker used above; actual disconnect-to-browser-cleanup timing is still
+unverified. The local controlled-renderer cancellation test does not establish
+that timing or eliminate brief browser cleanup overlap.
+
+For each supported host/model, request a stored preview without an MCP App
+card and identify an image-only feature. Record exact combinations and narrow
+support claims if a host cannot consume image content. No such real-client
+vision observation is recorded yet.
+
+Retain normal build, typecheck, lint, Bun, Edge Function, database, migration,
+bundle and browser checks. Full note/MDX capture needs its own saved dependency
+snapshot, viewport/pagination and component-sandbox design.

@@ -40,14 +40,16 @@ sketch or diagram something else, make a drawing (the drawings skill).
 ## Inspect the rendered diagram
 
 After a visual change, use `get_file_preview` on the saved `.d2` path to inspect
-its pixels, labels, spacing and connections. It preserves the app's manual
-canvas changes and can project missing or stale generated files without saving
-them. Syntax errors and merge conflicts remain explicit; do not treat an old
+its stored pixels, labels, spacing and connections. Background preparation
+preserves the app's manual canvas changes and can project missing or stale
+generated files without saving them. Syntax errors and merge conflicts remain explicit; do not treat an old
 canvas as a successful preview of new source.
 
 For a readable detail crop, pass a normalized `region` and the overview's
-`snapshot` as `expected_snapshot`. A conflict requires a new overview. Use
-`show_file` to present the diagram to the person. If a preview fails or is
+`snapshot` as `expected_snapshot`. Crops use the stored image resolution. A
+conflict requires a new overview. If the preview is `pending`, wait for
+`retry_after` before reading again. Preview reads never start rendering or
+change files. Use `show_file` to present the diagram to the person. If a preview fails or is
 unavailable, state what you could not visually verify.
 
 ## Writing D2

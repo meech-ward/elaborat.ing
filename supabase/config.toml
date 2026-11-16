@@ -462,6 +462,11 @@ verify_jwt = false
 [functions.embed]
 verify_jwt = false
 
+# Called by private.wake_drawing_previews with the existing Vault secret key
+# on `apikey`, verified by the function's secret:* middleware.
+[functions.drawing-previews]
+verify_jwt = false
+
 # Called by the database (private.wake_event_sender) with a secret key on
 # `apikey`, which the function checks itself.
 [functions.send-events]

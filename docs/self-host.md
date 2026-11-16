@@ -33,8 +33,11 @@ Placeholders used below:
 
 ### Optional visual previews for agents
 
-`get_file_preview` needs the Cloudflare Worker in this repository with its
-`BROWSER` and `PREVIEW_RATE_LIMITER` bindings. The core app and source tools
+Background preview preparation needs the Cloudflare Worker in this repository
+with its `BROWSER` and `PREVIEW_RATE_LIMITER` bindings. The `drawing-previews`
+Edge Function prepares private previews after saved drawings change.
+`get_file_preview` only reads those stored images; a request never starts a
+browser. The core app and source tools
 work without these previews. Cloudflare browser usage has its own quotas and
 charges; see the [preview scope](agent-visual-previews.md).
 
@@ -64,7 +67,12 @@ CI does not provision these Supabase runtime secrets; do not expand its token
 permissions. A fully manual Cloudflare deployment can use the same script's
 `cloudflare` target with the same service credential.
 
-Build the app before deploying the MCP function. It generates a separate,
+Deploy the generated database migration, then the app, then the
+`drawing-previews` and MCP functions. The scheduler uses the existing Vault
+`project_url` and `embed_secret_key` to call `drawing-previews`, as the search
+pipeline calls `embed`. It performs a bounded backfill of existing drawings.
+
+Build the app before deploying those functions. It generates a separate,
 immutable renderer and the function's matching manifest. The normal workflow
 retains the current and two prior renderer builds before replacing assets, so
 requests from the preceding function version keep working during deployment.
@@ -75,8 +83,15 @@ Later retention and integrity failures must stop deployment.
 
 Preview jobs send only saved drawing/diagram inputs to an isolated Cloudflare
 browser. They contain no user session or Supabase credentials. The renderer
-does not fetch remote document assets, record sessions, or retain preview
-images. Review the privacy page for your installation's actual providers.
+does not fetch remote document assets or record sessions. Supabase retains
+one bounded current PNG per drawing, replaced when the saved inputs change.
+Queued changes coalesce after five quiet seconds, with at least ten seconds
+between starts for one drawing. Expired jobs retry with bounded backoff;
+superseded jobs cancel and cannot publish. The database allows two active
+leases, 500 attempts a UTC day globally and 100 per project; these are render
+attempt limits, not a provider billing guarantee. Failed or still-pending
+previews remain explicit. Review the privacy page for your installation's actual
+providers.
 
 ## 1. Create the Supabase project
 

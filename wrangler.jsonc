@@ -10,8 +10,8 @@
   "preview_urls": true,
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
-  "compatibility_flags": ["nodejs_compat"],
-  // Authenticated native rendering, called only by the MCP server with
+  "compatibility_flags": ["nodejs_compat", "enable_request_signal"],
+  // Authenticated native rendering, called by the background preview worker with
   // AGENT_PREVIEW_SECRET. The browser never receives that secret.
   "browser": { "binding": "BROWSER" },
   // A service cap per Cloudflare location; Browser Run's account quotas are

@@ -3,12 +3,12 @@ name: Deploy
 # Deploys supabase/ to the hosted project and the app to Cloudflare Workers.
 # The jobs run in this order, each once the one before it has passed:
 #
-# 1. supabase: every Edge Function but mcp-server, then migrations, Vault
-#    secrets and the private image bucket.
+# 1. supabase: functions that do not depend on app assets, then migrations,
+#    Vault secrets and the private image bucket.
 # 2. app: the sandbox domain, then the app's Worker (wrangler.jsonc). After the
 #    migrations, so new app code never runs before the schema it needs.
-# 3. mcp-server: last, because the chat card it sends names files in
-#    public/chat-card, which the app's Worker serves.
+# 3. mcp-server: the background preview worker and MCP server, after the app
+#    serves their native renderer and chat-card assets.
 #
 # config pushes config.toml (Auth, email, storage and API settings) after the
 # supabase job, beside the app. See docs/architecture.md, Deploys. Forks skip
@@ -114,12 +114,12 @@ jobs:
         with:
           version: 2.118.0
       # Functions first, so embed exists before Vault gives the database its key.
-      # All but mcp-server, which has its own job. The list is every folder with
+      # The asset-dependent functions have their own job. The list is every folder with
       # an index.ts, as the CLI finds functions when given no names, so a new
       # function is never left out.
-      - name: Deploy every Edge Function but mcp-server
+      - name: Deploy Edge Functions that do not depend on renderer assets
         run: |
-          names=$(printf '%s\n' supabase/functions/*/index.ts | cut -d/ -f3 | grep -vx mcp-server)
+          names=$(printf '%s\n' supabase/functions/*/index.ts | cut -d/ -f3 | grep -Evx 'mcp-server|drawing-previews')
           mapfile -t functions <<< "$names"
           supabase functions deploy "${functions[@]}" --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
       # No `supabase link`: it needs a token that can read every secret API key.
@@ -191,8 +191,8 @@ jobs:
       - if: steps.settings.outputs.deploy == 'true'
         run: bunx wrangler deploy
 
-  # The chat card this function sends names the files of its build in
-  # public/chat-card, so it goes live only once the app's Worker serves them.
+  # The native renderer and chat card name their immutable build assets,
+  # so these functions go live only once the app's Worker serves them.
   # The deploy token, as in the supabase job.
   mcp-server:
     needs: [supabase, app]
@@ -206,7 +206,7 @@ jobs:
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.118.0
-      - run: supabase functions deploy mcp-server --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
+      - run: supabase functions deploy drawing-previews mcp-server --use-api --yes --project-ref "$SUPABASE_PROJECT_ID"
 
   # Scoped token: Project Settings and Auth Config Read-write, Add-ons Read, and
   # the config reads. Only this job's environment holds it.

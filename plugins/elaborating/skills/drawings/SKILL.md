@@ -71,8 +71,11 @@ drawing just because a card was shown.
 For small text or a large canvas, request a detail `region` with coordinates
 between 0 and 1 relative to the complete overview, and pass the returned
 `snapshot` as `expected_snapshot`. On a snapshot conflict, obtain a new
-overview. Previews read saved content and do not save changes. If the renderer
-is unavailable or returns a limit/error, explain what remains unchecked.
+overview. Crops use the stored preview resolution. Saves prepare previews in the
+background. If the result is `pending`, wait for `retry_after` before reading
+again; do not rewrite the drawing to request a preview. Reads never start
+rendering. If preparation fails or a preview is unavailable, explain what
+remains unchecked.
 
 ## Images in drawings
 

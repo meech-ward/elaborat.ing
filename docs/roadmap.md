@@ -239,12 +239,15 @@ requires no sign-in, and cancels on a changed bundle or known revocation.
   agent's unsaved draft, with sample props. Both run the components in a
   sandboxed frame inside the card; charts show as a placeholder there. See
   "Agents (MCP)" in `architecture.md`).
-- **Agent visual previews (built):** `get_file_preview` returns native drawing
-  and D2 PNGs to the model with snapshot-bound detail crops. The standalone
-  renderer shares the app's native export and diagram projection, with
-  isolated Cloudflare browser execution. See the
-  [scope and verification](agent-visual-previews.md) for limits, deployment and
-  client checks. Full note/MDX previews remain separate.
+- **Agent visual previews (implemented and locally verified; rollout pending):**
+  private, current-only drawing/D2 PNGs prepare after saved snapshots commit.
+  `get_file_preview` reads ready pixels or returns preparing; snapshot-bound
+  crops use stored resolution without browser work.
+  Coalescing, cancellation, atomic publication and shared attempt budgets keep
+  preparation bounded. See [T67](tasks.md#t67-prepare-and-store-current-agent-drawing-previews)
+  and the [scope](agent-visual-previews.md) for local evidence and the remaining
+  hosted delivery and real-client vision checks. Full note/MDX previews remain
+  separate.
 - **Connected agents page** to see and revoke agent access (done: `/agents`,
   linked from the account header and menu; it lists grants once the OAuth
   server is on).

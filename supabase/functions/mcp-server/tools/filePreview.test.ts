@@ -2,26 +2,39 @@ import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1.0.
 import { Client } from 'npm:@modelcontextprotocol/client@2.0.0'
 import { type CallToolResult, InMemoryTransport, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import {
-  FULL_PREVIEW_REGION,
-  MAX_PREVIEW_BASE64_CHARS,
-  type PreviewRenderer,
-  type PreviewRenderJob,
-  type PreviewRenderReply,
-} from '../../../../src/agent-preview/protocol.ts'
+import { FULL_PREVIEW_REGION, MAX_PREVIEW_PNG_BYTES, PREVIEW_PROFILE } from '../../../../src/agent-preview/protocol.ts'
 import { filePreviewPayload, registerFilePreview } from './filePreview.ts'
 import type { ToolContext } from './types.ts'
 
 const PROJECT = 'aaaaaaaa-0000-4000-8000-000000000001'
 const ROOT = 'bbbbbbbb-0000-4000-8000-000000000001'
-// A real 1x1 RGBA PNG, decoded again by Photon in the payload.
-const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR4AQEFAPr/AP8AAP8FAAH/+lyI0QAAAABJRU5ErkJggg=='
-type Row = { id: string; path: string; kind: 'text' | 'image'; content: string; version: number }
-const drawing = (path = 'art/a.excalidraw', content = '{"elements":[]}'): Row => ({ id: ROOT, path, kind: 'text', content, version: 4 })
-
-function fake(initial = [drawing()]) {
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNBgAAEnICff5q7YNAAAAAElFTkSuQmCC'
+const DIGEST = 'a'.repeat(64)
+const BUILD = '7048a6cabb090b4b'
+const bytes = Uint8Array.from(atob(PNG), character => character.charCodeAt(0))
+const BYTEA = '\\x' + Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')
+function drawing(path = 'art/a.excalidraw') {
+  return {
+    id: ROOT, path, kind: 'text', version: 4,
+    drawing_previews: {
+      file_version: 4, generation: 2, status: 'ready', png: BYTEA, error_code: null, message: null,
+      metadata: {
+        snapshot: DIGEST,
+        inputs: [{ path, id: ROOT, version: 4, sha256: 'b'.repeat(64) }],
+        renderer_build: BUILD, profile: PREVIEW_PROFILE,
+        outcome: {
+          job_id: 'cccccccc-0000-4000-8000-000000000001', input_digest: DIGEST, renderer_build: BUILD,
+          status: 'ready', profile: PREVIEW_PROFILE, rendered_from: path.endsWith('.d2') ? 'projected_diagram' : 'saved_scene',
+          regenerated: path.endsWith('.d2'), view_box: [-10, -20, 100, 50], region: FULL_PREVIEW_REGION,
+          pixel_width: 2, pixel_height: 2, scale: 0.02, diagnostics: [],
+        },
+      },
+    },
+  }
+}
+function fake(initial: unknown = drawing()) {
   const queries: Array<{ table: string; columns?: string; filters: Record<string, unknown> }> = []
-  const state = { rows: initial, readable: true, error: null as unknown }
+  const state = { row: initial as ReturnType<typeof drawing> | null, readable: true, error: null as unknown, afterRead: null as (() => void) | null }
   const supabase = {
     from(table: string) {
       const query = { table, columns: undefined as string | undefined, filters: {} as Record<string, unknown> }
@@ -29,15 +42,14 @@ function fake(initial = [drawing()]) {
       const builder = {
         select: (columns: string) => (query.columns = columns, builder),
         eq: (key: string, value: unknown) => (query.filters[key] = value, builder),
-        in: (key: string, value: unknown) => (query.filters[key] = value, builder),
         abortSignal: (_signal: AbortSignal) => builder,
-        maybeSingle: async () => ({
-          data: state.readable ? state.rows.find(row => row.id === query.filters.id) ?? null : null,
-          error: state.error,
-        }),
-        then(resolve: (value: unknown) => void) {
-          const paths = query.filters.path as string[]
-          resolve({ data: state.readable ? state.rows.filter(row => paths.includes(row.path)).map(row => ({ ...row })) : [], error: state.error })
+        maybeSingle: async () => {
+          const matches = state.readable && state.row &&
+            (query.filters.id === undefined || query.filters.id === state.row.id) &&
+            (query.filters.path === undefined || query.filters.path === state.row.path)
+          const data = matches ? structuredClone(query.columns === 'id' ? { id: state.row!.id } : state.row) : null
+          if (query.columns !== 'id') state.afterRead?.()
+          return { data, error: state.error }
         },
       }
       return builder
@@ -45,34 +57,13 @@ function fake(initial = [drawing()]) {
   } as unknown as SupabaseClient
   return { context: { supabase } as ToolContext, state, queries }
 }
-
-function ready(job: PreviewRenderJob): PreviewRenderReply {
-  return {
-    png: PNG,
-    outcome: {
-      job_id: job.job_id,
-      input_digest: job.input_digest,
-      renderer_build: job.renderer_build,
-      status: 'ready',
-      profile: job.profile,
-      rendered_from: job.kind === 'drawing' ? 'saved_scene' : 'projected_diagram',
-      regenerated: job.kind === 'diagram',
-      view_box: [-10, -20, 100, 50],
-      region: job.region ?? FULL_PREVIEW_REGION,
-      pixel_width: 1,
-      pixel_height: 1,
-      scale: 0.01,
-      diagnostics: [],
-    },
-  }
-}
-const metadata = (result: CallToolResult) => result.structuredContent as Record<string, unknown>
-const errorCode = (result: CallToolResult) => metadata(result).code
-const imageCount = (result: CallToolResult) => result.content.filter(item => item.type === 'image').length
-
-async function withClient<T>(context: ToolContext, renderer: PreviewRenderer, run: (client: Client) => Promise<T>) {
-  const server = new McpServer({ name: 'preview-test', version: '1' })
-  registerFilePreview(server, context, renderer)
+const meta = (result: CallToolResult) => result.structuredContent as Record<string, unknown>
+const code = (result: CallToolResult) => meta(result).code
+const images = (result: CallToolResult) => result.content.filter(item => item.type === 'image')
+const input = { project_id: PROJECT, path: 'art/a.excalidraw' }
+async function withClient<T>(context: ToolContext, run: (client: Client) => Promise<T>) {
+  const server = new McpServer({ name: 'stored-preview-test', version: '1' })
+  registerFilePreview(server, context)
   const client = new Client({ name: 'test', version: '1' })
   const [ct, st] = InMemoryTransport.createLinkedPair()
   await server.connect(st)
@@ -81,268 +72,197 @@ async function withClient<T>(context: ToolContext, renderer: PreviewRenderer, ru
   finally { await client.close(); await server.close() }
 }
 
-Deno.test('a real MCP client receives verified PNG pixels without an app resource or duplicated image data', async () => {
-  const f = fake(), jobs: PreviewRenderJob[] = []
-  await withClient(f.context, async job => (jobs.push(job), ready(job)), async client => {
-    const tool = (await client.listTools()).tools.find(tool => tool.name === 'get_file_preview')!
-    assertEquals(tool.annotations, { title: 'Inspect drawing', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
-    assertEquals(tool._meta, undefined)
-    const result = await client.callTool({ name: 'get_file_preview', arguments: { project_id: PROJECT, path: 'art/a.excalidraw', expected_version: 4 } }) as CallToolResult
-    assertEquals(result.isError, undefined)
-    assertEquals(result.content.filter(item => item.type === 'image'), [{ type: 'image', data: PNG, mimeType: 'image/png' }])
-    assertEquals(result._meta, undefined)
-    assertEquals(JSON.stringify(result.structuredContent).includes(PNG), false)
-    assertEquals(metadata(result).version, 4)
-    assertEquals(jobs.length, 1)
-    assertEquals(jobs[0].canvas, null)
-    assertEquals(Object.keys(jobs[0]).includes('project_id'), false)
-    assertEquals(f.queries.length, 2)
-    assertEquals(f.queries[0], { table: 'project_files', columns: 'id,path,kind,content,version', filters: { project_id: PROJECT, path: ['art/a.excalidraw'] } })
-    assertEquals(f.queries[1].filters, { project_id: PROJECT, id: ROOT })
-  })
-})
-
-Deno.test('D2 source, canvas and sidecar are frozen in one statement with exact identities and explicit missing companions', async () => {
-  const root = drawing('art/a.d2', 'a -> b')
-  const canvas = { ...drawing('art/a.excalidraw', 'saved canvas'), id: 'cccccccc-0000-4000-8000-000000000001', version: 3 }
-  const f = fake([root, canvas]), jobs: PreviewRenderJob[] = []
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: root.path }, async job => (jobs.push(job), ready(job)))
-  assertEquals(result.isError, undefined)
-  assertEquals(f.queries[0].filters.path, ['art/a.d2', 'art/a.excalidraw', 'art/a.d2.json'])
-  assertEquals(jobs[0].source, 'a -> b')
-  assertEquals(jobs[0].canvas, 'saved canvas')
-  assertEquals(jobs[0].layout, null)
-  const inputs = metadata(result).inputs as Array<Record<string, unknown>>
-  assertEquals(inputs.map(input => [input.path, input.id, input.version]), [[root.path, ROOT, 4], [canvas.path, canvas.id, 3], ['art/a.d2.json', null, null]])
-  assertEquals(inputs[2].sha256, null)
-  assertEquals(typeof inputs[0].sha256, 'string')
-})
-
-Deno.test('native and Obsidian drawings use the saved source without generated saves', async () => {
-  for (const path of ['art/a.excalidraw', 'art/a.excalidraw.md']) {
-    const source = path.endsWith('.md') ? '## Drawing\n```compressed-json\nopaque saved bytes\n```' : '{"elements":[],"files":{}}'
-    const f = fake([drawing(path, source)])
-    const result = await filePreviewPayload(f.context, { project_id: PROJECT, path }, async job => {
-      assertEquals(job.source, source)
-      return ready(job)
+Deno.test('MCP returns stored PNG bytes without an app, source read, fetch or queue mutation', async () => {
+  const f = fake(), original = globalThis.fetch
+  globalThis.fetch = () => { throw new Error('A preview read must not fetch or render') }
+  try {
+    await withClient(f.context, async client => {
+      const tool = (await client.listTools()).tools.find(tool => tool.name === 'get_file_preview')!
+      assertEquals(tool.annotations, { title: 'Inspect drawing', readOnlyHint: true, destructiveHint: false, openWorldHint: false })
+      assertEquals(tool._meta, undefined)
+      assertStringIncludes(tool.description!, 'Reading never starts rendering')
+      const result = await client.callTool({ name: 'get_file_preview', arguments: { ...input, expected_version: 4 } }) as CallToolResult
+      assertEquals(result.isError, undefined)
+      assertEquals(images(result), [{ type: 'image', data: PNG, mimeType: 'image/png' }])
+      assertEquals(result._meta, undefined)
+      assertEquals(JSON.stringify(result.structuredContent).includes(PNG), false)
+      assertEquals(meta(result).stored, true)
+      assertEquals(meta(result).snapshot, DIGEST)
+      assertEquals(meta(result).version, 4)
+      assertEquals(f.queries.length, 2)
+      assert(f.queries.every(query => query.table === 'project_files'))
+      assert(!f.queries[0].columns!.includes('content'))
     })
-    assertEquals(result.isError, undefined)
-    assert(f.queries.every(query => query.table === 'project_files'))
+  } finally { globalThis.fetch = original }
+})
+
+Deno.test('repeated pending reads only return preparing and never wake rendering', async () => {
+  for (const stored of [null, { ...drawing().drawing_previews, status: 'pending', png: null, metadata: null }]) {
+    const root = drawing() as Record<string, unknown>
+    root.drawing_previews = stored
+    const f = fake(root)
+    for (let n = 0; n < 3; n++) {
+      const result = await filePreviewPayload(f.context, input)
+      assertEquals(result.isError, undefined)
+      assertEquals(meta(result).status, 'pending')
+      assertEquals(meta(result).retry_after, 5)
+      assertEquals(images(result), [])
+    }
+    assertEquals(f.queries.length, 3)
   }
 })
 
-Deno.test('version, snapshot and unsupported-file failures do not invoke the renderer', async () => {
-  const f = fake()
-  let renders = 0
-  const renderer: PreviewRenderer = async job => (renders++, ready(job))
-  assertEquals(errorCode(await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw', expected_version: 3 }, renderer)), 'conflict')
-  assertEquals(errorCode(await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw', expected_snapshot: 'a'.repeat(64) }, renderer)), 'conflict')
-  assertEquals(errorCode(await filePreviewPayload(f.context, { project_id: PROJECT, path: 'notes/a.mdx' }, renderer)), 'unsupported')
-  assertEquals(renders, 0)
+Deno.test('a stored artifact from an older root version is never presented as current', async () => {
+  const root = drawing()
+  root.version = 5
+  const result = await filePreviewPayload(fake(root).context, input)
+  assertEquals(meta(result).status, 'pending')
+  assertEquals(meta(result).version, 5)
+  assertEquals(images(result), [])
 })
 
-Deno.test('a detail crop is pinned to every companion and missing-input state, not only the root version', async () => {
-  const root = drawing('art/a.d2', 'a -> b')
-  const f = fake([root]), region = { x: 0.2, y: 0.1, width: 0.4, height: 0.5 }
-  let renders = 0
-  const renderer: PreviewRenderer = async job => (renders++, ready(job))
-  const overview = await filePreviewPayload(f.context, { project_id: PROJECT, path: root.path }, renderer)
-  const snapshot = metadata(overview).snapshot as string
-  const crop = await filePreviewPayload(f.context, { project_id: PROJECT, path: root.path, expected_snapshot: snapshot, region }, renderer)
-  assertEquals(crop.isError, undefined)
-  assertEquals(metadata(crop).region, region)
-  assertEquals(metadata(crop).snapshot, snapshot)
-  f.state.rows.push({ ...drawing('art/a.excalidraw', 'new companion'), id: 'cccccccc-0000-4000-8000-000000000001', version: 5 })
-  const conflict = await filePreviewPayload(f.context, { project_id: PROJECT, path: root.path, expected_version: 4, expected_snapshot: snapshot, region }, renderer)
-  assertEquals(errorCode(conflict), 'conflict')
-  assertEquals(renders, 2)
+Deno.test('version and full-input snapshot preconditions are enforced without rendering', async () => {
+  const f = fake()
+  assertEquals(code(await filePreviewPayload(f.context, { ...input, expected_version: 3 })), 'conflict')
+  assertEquals(code(await filePreviewPayload(f.context, { ...input, expected_snapshot: 'f'.repeat(64) })), 'conflict')
+  f.state.row!.drawing_previews.status = 'pending'
+  assertEquals(code(await filePreviewPayload(f.context, { ...input, expected_snapshot: DIGEST })), 'conflict')
 })
 
-Deno.test('invalid and unpinned regions are refused before any database or renderer work', async () => {
+Deno.test('D2 metadata retains exact companion identities and missing-input markers', async () => {
+  const root = drawing('art/a.d2')
+  root.drawing_previews.metadata.inputs.push(
+    { path: 'art/a.excalidraw', id: 'dddddddd-0000-4000-8000-000000000001', version: 3, sha256: 'c'.repeat(64) },
+    { path: 'art/a.d2.json', id: null, version: null, sha256: null } as unknown as typeof root.drawing_previews.metadata.inputs[number],
+  )
+  const result = await filePreviewPayload(fake(root).context, { ...input, path: root.path })
+  assertEquals(result.isError, undefined)
+  assertEquals(meta(result).inputs, root.drawing_previews.metadata.inputs)
+  assertEquals(meta(result).rendered_from, 'projected_diagram')
+})
+
+Deno.test('native and compressed Obsidian drawings read the same stored artifact contract', async () => {
+  const root = drawing('art/a.excalidraw.md')
+  const result = await filePreviewPayload(fake(root).context, { ...input, path: root.path })
+  assertEquals(result.isError, undefined)
+  assertEquals(images(result).length, 1)
+})
+
+Deno.test('crop requests use stored pixels at their available resolution, without a browser', async () => {
   const f = fake()
-  await withClient(f.context, async job => ready(job), async client => {
+  const region = { x: 0.5, y: 0, width: 0.5, height: 0.5 }
+  const result = await filePreviewPayload(f.context, { ...input, expected_snapshot: DIGEST, region })
+  assertEquals(result.isError, undefined)
+  assertEquals(meta(result).pixel_width, 1)
+  assertEquals(meta(result).pixel_height, 1)
+  assertEquals(meta(result).region, region)
+  assertEquals(meta(result).snapshot, DIGEST)
+  assertEquals(images(result).length, 1)
+  assertStringIncludes((result.content[0] as { text: string }).text, 'stored image resolution')
+})
+
+Deno.test('invalid paths and unpinned/invalid regions are refused before database work', async () => {
+  const f = fake()
+  await withClient(f.context, async client => {
     for (const args of [
       { region: { x: 0, y: 0, width: 0.5, height: 0.5 } },
-      { expected_snapshot: 'a'.repeat(64), region: { x: 0.8, y: 0, width: 0.5, height: 0.5 } },
-      { expected_snapshot: 'a'.repeat(64), region: { x: 0, y: 0, width: 0, height: 0.5 } },
+      { expected_snapshot: DIGEST, region: { x: 0.8, y: 0, width: 0.5, height: 1 } },
       { path: '../a.excalidraw' },
     ]) {
-      const result = await client.callTool({ name: 'get_file_preview', arguments: { project_id: PROJECT, path: 'art/a.excalidraw', ...args } })
+      const result = await client.callTool({ name: 'get_file_preview', arguments: { ...input, ...args } })
       assertEquals(result.isError, true)
     }
-    assertEquals(f.queries.length, 0)
   })
+  assertEquals(f.queries.length, 0)
+  assertEquals(code(await filePreviewPayload(f.context, { ...input, path: 'a.mdx' })), 'unsupported')
+  assertEquals(f.queries.length, 0)
 })
 
-Deno.test('missing, inaccessible and image-kind roots do not spend renderer work', async () => {
-  let renders = 0
-  for (const f of [fake([]), fake([{ ...drawing(), kind: 'image' }])]) {
-    const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async job => (renders++, ready(job)))
+Deno.test('missing, inaccessible and nontext files never return pixels', async () => {
+  for (const f of [fake(null), fake({ ...drawing(), kind: 'image' })]) {
+    const result = await filePreviewPayload(f.context, input)
     assertEquals(result.isError, true)
-    assertEquals(imageCount(result), 0)
+    assertEquals(images(result), [])
   }
-  assertEquals(renders, 0)
-})
-
-Deno.test('permission loss or root replacement during rendering withholds the completed image', async () => {
-  for (const mode of ['revoke', 'replace']) {
-    const f = fake()
-    const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async job => {
-      if (mode === 'revoke') f.state.readable = false
-      else f.state.rows[0].id = 'cccccccc-0000-4000-8000-000000000001'
-      return ready(job)
-    })
-    assertEquals(errorCode(result), 'missing')
-    assertEquals(imageCount(result), 0)
-  }
-})
-
-Deno.test('a concurrent save reports the exact frozen version instead of relabeling its old pixels', async () => {
   const f = fake()
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async job => {
-    f.state.rows[0].version = 5
-    f.state.rows[0].content = 'new saved bytes'
-    return ready(job)
-  })
-  assertEquals(result.isError, undefined)
-  assertEquals(metadata(result).version, 4)
-  assertEquals((metadata(result).inputs as Array<{ version: number }>)[0].version, 4)
+  f.state.readable = false
+  assertEquals(code(await filePreviewPayload(f.context, input)), 'missing')
 })
 
-Deno.test('malformed, wrong-job, wrong-region, oversized and corrupt renderer images return no pixels', async () => {
-  const mutations: Array<(reply: PreviewRenderReply) => void> = [
-    reply => { reply.outcome.job_id = 'cccccccc-0000-4000-8000-000000000001' },
-    reply => { if (reply.outcome.status === 'ready') reply.outcome.region = { x: 0, y: 0, width: 0.5, height: 1 } },
-    reply => { if ('png' in reply) reply.png = 'a'.repeat(MAX_PREVIEW_BASE64_CHARS + 1) },
-    reply => { if ('png' in reply) reply.png = btoa('corrupt') },
-    reply => { if (reply.outcome.status === 'ready') reply.outcome.pixel_width = 2 },
+Deno.test('permission loss or root replacement before delivery withholds stored pixels', async () => {
+  for (const change of ['revoke', 'replace']) {
+    const f = fake()
+    f.state.afterRead = () => {
+      if (change === 'revoke') f.state.readable = false
+      else f.state.row!.id = 'eeeeeeee-0000-4000-8000-000000000001'
+    }
+    const result = await filePreviewPayload(f.context, input)
+    assertEquals(code(result), 'missing')
+    assertEquals(images(result), [])
+  }
+})
+
+Deno.test('a subsequent save cannot relabel the frozen stored version', async () => {
+  const f = fake()
+  f.state.afterRead = () => { f.state.row!.version = 5 }
+  const result = await filePreviewPayload(f.context, input)
+  assertEquals(result.isError, undefined)
+  assertEquals(meta(result).version, 4)
+})
+
+Deno.test('background syntax errors remain explicit and require current access', async () => {
+  const root = drawing() as unknown as Record<string, unknown>
+  const row = root.drawing_previews as Record<string, unknown>
+  row.status = 'error'; row.png = null; row.error_code = 'd2_error'; row.message = 'The diagram source has an error.'
+  row.metadata = null
+  const result = await filePreviewPayload(fake(root).context, input)
+  assertEquals(code(result), 'd2_error')
+  assertEquals(images(result), [])
+})
+
+Deno.test('corrupt bytes, dimensions, snapshots, root identities and oversized artifacts fail closed', async () => {
+  const mutations: Array<(root: ReturnType<typeof drawing>) => void> = [
+    root => { root.drawing_previews.png = '\\x00010203' },
+    root => { root.drawing_previews.png = '\\x' + 'ff'.repeat(MAX_PREVIEW_PNG_BYTES + 1) },
+    root => { root.drawing_previews.metadata.outcome.pixel_width = 3 },
+    root => { root.drawing_previews.metadata.outcome.input_digest = 'c'.repeat(64) },
+    root => { root.drawing_previews.metadata.inputs[0].id = 'eeeeeeee-0000-4000-8000-000000000001' },
+    root => { root.drawing_previews.metadata.outcome.region = { x: 0, y: 0, width: 0.5, height: 1 } },
   ]
   for (const mutate of mutations) {
-    const f = fake()
-    const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async job => {
-      const reply = ready(job); mutate(reply); return reply
-    })
+    const root = drawing(); mutate(root)
+    const result = await filePreviewPayload(fake(root).context, input)
     assertEquals(result.isError, true)
-    assertEquals(imageCount(result), 0)
-    assertEquals(f.queries.length, 1)
+    assertEquals(images(result), [])
   }
 })
 
-Deno.test('a PNG with valid headers but corrupt compressed pixels is rejected by the decoder', async () => {
-  const f = fake()
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async job => {
-    const reply = ready(job)
-    const bytes = Uint8Array.from(atob(PNG), char => char.charCodeAt(0))
-    bytes[45] ^= 255
-    if ('png' in reply) reply.png = btoa(String.fromCharCode(...bytes))
-    return reply
-  })
-  assertEquals(errorCode(result), 'render_failed')
-  assertEquals(imageCount(result), 0)
+Deno.test('a background daily limit reports its reset instead of ordinary preparation', async () => {
+  const root = drawing() as unknown as Record<string, unknown>
+  const row = root.drawing_previews as Record<string, unknown>
+  row.status = 'error'; row.png = null; row.metadata = null
+  row.error_code = 'daily_limit'; row.message = 'Preview generation resumes at the next UTC day.'
+  const result = await filePreviewPayload(fake(root).context, input)
+  assertEquals(code(result), 'daily_limit')
+  assert(Number(meta(result).retry_after) >= 1 && Number(meta(result).retry_after) <= 86400)
+  assertEquals(images(result), [])
 })
 
-Deno.test('D2 and native renderer failures carry bounded diagnostics without a success image', async () => {
-  const f = fake([drawing('art/a.d2', 'bad source')])
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.d2' }, async job => ({ outcome: {
-    job_id: job.job_id, input_digest: job.input_digest, renderer_build: job.renderer_build,
-    status: 'error', code: 'd2_error', message: 'The diagram source does not compile.',
-    diagnostics: [{ code: 'source', message: 'art/a.d2:1: invalid statement' }],
-  } }))
-  assertEquals(errorCode(result), 'd2_error')
-  assertEquals(imageCount(result), 0)
-  assertEquals(f.queries.length, 2)
+Deno.test('temporary renderer rate limits are not reported as a daily budget reset', async () => {
+  const root = drawing() as unknown as Record<string, unknown>
+  const row = root.drawing_previews as Record<string, unknown>
+  row.status = 'error'; row.png = null; row.metadata = null
+  row.error_code = 'rate_limit'; row.message = 'The renderer is temporarily busy.'
+  const result = await filePreviewPayload(fake(root).context, input)
+  assertEquals(code(result), 'rate_limit')
+  assertEquals(meta(result).retry_after, undefined)
+  assertEquals(images(result), [])
 })
 
-Deno.test('permission loss also withholds source-bearing render diagnostics', async () => {
-  const f = fake([drawing('art/a.d2', 'private source')])
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.d2' }, async job => {
-    f.state.readable = false
-    return { outcome: {
-      job_id: job.job_id, input_digest: job.input_digest, renderer_build: job.renderer_build,
-      status: 'error', code: 'd2_error', message: 'private source failure',
-      diagnostics: [{ code: 'source', message: 'private source' }],
-    } }
-  })
-  assertEquals(errorCode(result), 'missing')
-  assertEquals(JSON.stringify(result).includes('private source'), false)
-})
-
-Deno.test('caller cancellation interrupts an injected renderer that does not observe its abort signal', async () => {
+Deno.test('an already-cancelled read performs no work', async () => {
   const f = fake(), controller = new AbortController()
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, async () => {
-    controller.abort()
-    return await new Promise<PreviewRenderReply>(() => {})
-  }, controller.signal)
-  assertEquals(errorCode(result), 'cancelled')
-  assertEquals(imageCount(result), 0)
-})
-
-async function withWorker<T>(fetcher: typeof fetch, run: () => Promise<T>, secret?: string) {
-  const oldFetch = globalThis.fetch
-  const oldGetEnv = Deno.env.get
-  globalThis.fetch = fetcher
-  // CI tests have no environment permissions. Stub this external boundary
-  // without reading or changing the host's real service credentials.
-  Deno.env.get = (name: string) => name === 'AGENT_PREVIEW_SECRET' ? secret
-    : name === 'AGENT_PREVIEW_ENDPOINT' ? 'https://preview.example/_agent-preview' : undefined
-  try { return await run() }
-  finally {
-    globalThis.fetch = oldFetch
-    Deno.env.get = oldGetEnv
-  }
-}
-
-Deno.test('the default adapter is safely unavailable until configured and sends no request', async () => {
-  let fetched = false
-  await withWorker((() => { fetched = true; throw new Error('unexpected') }) as typeof fetch, async () => {
-    const f = fake(), result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' })
-    assertEquals(errorCode(result), 'unavailable')
-    assertEquals(fetched, false)
-  })
-})
-
-Deno.test('the default adapter posts only the authorized render job and its separate service secret', async () => {
-  const secret = 'test-only-preview-secret'
-  await withWorker((async (url, init) => {
-    assertEquals(String(url), 'https://preview.example/_agent-preview')
-    assertEquals(init?.redirect, 'error')
-    assertEquals(new Headers(init?.headers).get('authorization'), `Bearer ${secret}`)
-    const job = JSON.parse(String(init?.body)) as PreviewRenderJob
-    assertEquals(Object.keys(job).includes('supabase'), false)
-    assertEquals(Object.keys(job).includes('project_id'), false)
-    assertEquals(String(init?.body).includes(secret), false)
-    return Response.json(ready(job))
-  }) as typeof fetch, async () => {
-    const f = fake(), result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' })
-    assertEquals(result.isError, undefined)
-    assertEquals(JSON.stringify(result).includes(secret), false)
-  }, secret)
-})
-
-Deno.test('rate limits preserve retry timing and raw provider errors never reach the model', async () => {
-  for (const status of [429, 401, 500]) {
-    await withWorker((async () => new Response('sensitive provider debug detail', { status, headers: { 'retry-after': '12' } })) as typeof fetch, async () => {
-      const f = fake(), result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' })
-      assertEquals(errorCode(result), status === 429 ? 'rate_limit' : 'unavailable')
-      if (status === 429) assertEquals(metadata(result).retry_after, 12)
-      assertEquals(JSON.stringify(result).includes('sensitive'), false)
-      assertEquals(imageCount(result), 0)
-    }, 'test-secret')
-  }
-})
-
-Deno.test('oversized provider replies are stopped before parsing or returning image content', async () => {
-  await withWorker((async () => new Response('x'.repeat(MAX_PREVIEW_BASE64_CHARS + 20_000))) as typeof fetch, async () => {
-    const f = fake(), result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' })
-    assertEquals(errorCode(result), 'limit')
-    assertEquals(imageCount(result), 0)
-  }, 'test-secret')
-})
-
-Deno.test('unexpected database and renderer exceptions are replaced with safe actionable errors', async () => {
-  const f = fake()
-  const result = await filePreviewPayload(f.context, { project_id: PROJECT, path: 'art/a.excalidraw' }, () => { throw new Error('bearer secret private-stack') })
-  assertEquals(result.isError, true)
-  assertEquals(JSON.stringify(result).includes('private-stack'), false)
-  assertStringIncludes(JSON.stringify(result), 'https://elaborat.ing/projects/')
+  controller.abort()
+  const result = await filePreviewPayload(f.context, input, controller.signal)
+  assertEquals(code(result), 'cancelled')
+  assertEquals(f.queries.length, 0)
 })

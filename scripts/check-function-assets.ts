@@ -45,7 +45,7 @@ try {
   // functions deploy resolves --profile rather than SUPABASE_API_URL. Keep
   // the complete endpoint set local and override any inherited credentials.
   await Bun.write(profile, `name: source-assets-test\napi_url: http://127.0.0.1:${server.port}\ndashboard_url: http://127.0.0.1:${server.port}\nproject_host: localhost\n`)
-  for (const name of ["images", "mcp-server", "file-share"]) {
+  for (const name of ["images", "mcp-server", "drawing-previews", "file-share"]) {
     const before = uploads.length
     const child = Bun.spawn([...cli, "functions", "deploy", name, "--use-api", "--project-ref", project, "--yes", "--profile", profile, "--workdir", sourceRoot], {
       cwd: sourceRoot,
@@ -80,10 +80,20 @@ try {
         "src/features/images/format.ts",
         "src/features/images/svg.ts",
       ]) assert(assets.has(path), `${name} deployment must contain ${path}`)
+    } else if (name === "drawing-previews") {
+      for (const path of [
+        "supabase/functions/drawing-previews/jobs.ts",
+        "supabase/functions/drawing-previews/store.ts",
+        "supabase/functions/_shared/drawingPreview.ts",
+        "src/agent-preview/protocol.ts",
+        "src/features/images/format.ts",
+        "supabase/functions/mcp-server/tools/previewManifest.ts",
+      ]) assert(assets.has(path), `${name} deployment must contain ${path}`)
+      assert(!assets.has("supabase/functions/mcp-server/index.ts"), "The background worker must not pull in the MCP server")
     } else {
       assert.equal(assets.get(fontPath), font, `${name} deployment must contain the exact generated SVG font module`)
       if (name === "mcp-server") {
-        for (const path of ["src/agent-preview/protocol.ts", "supabase/functions/mcp-server/tools/filePreview.ts", "supabase/functions/mcp-server/tools/previewManifest.ts"])
+        for (const path of ["src/agent-preview/protocol.ts", "supabase/functions/mcp-server/tools/filePreview.ts", "supabase/functions/_shared/drawingPreview.ts"])
           assert(assets.has(path), `${name} deployment must contain ${path}`)
       }
     }

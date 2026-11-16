@@ -2,24 +2,13 @@ import type { CallToolResult, McpServer } from 'npm:@modelcontextprotocol/server
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { z } from 'zod/mini'
 import { z as mcpZod } from 'npm:zod@4.4.3'
-
 import {
-  MAX_PREVIEW_BASE64_CHARS,
-  MAX_PREVIEW_D2_BYTES,
-  MAX_PREVIEW_FILE_BYTES,
-  MAX_PREVIEW_PNG_BYTES,
-  MAX_PREVIEW_RESULT_CHARS,
-  parsePreviewJob,
-  parsePreviewReply,
-  PREVIEW_PROFILE,
-  PREVIEW_TIMEOUT_MS,
-  previewRegionSchema,
-  type PreviewRenderer,
-  type PreviewRenderJob,
-  type PreviewRenderReply,
+  FULL_PREVIEW_REGION, MAX_PREVIEW_BASE64_CHARS, MAX_PREVIEW_PNG_BYTES,
+  MAX_PREVIEW_RESULT_CHARS, PREVIEW_PROFILE, PREVIEW_TIMEOUT_MS,
+  previewReadySchema, previewRegionSchema, previewErrorSchema,
+  type PreviewRegion,
 } from '../../../../src/agent-preview/protocol.ts'
-import { inspectImage } from '../../../../src/features/images/format.ts'
-import { PREVIEW_BUILD } from './previewManifest.ts'
+import { DrawingPreviewFailure, drawingPreviewPaths, verifyPreviewPng } from '../../_shared/drawingPreview.ts'
 import type { ToolContext } from './types.ts'
 
 const encoder = new TextEncoder()
@@ -56,196 +45,98 @@ const mcpInputSchema = mcpZod.strictObject({
 }).refine(input => input.region === undefined || input.expected_snapshot !== undefined,
   'A detail region requires the snapshot returned with its overview.')
 
-const fileRowSchema = z.strictObject({
-  id: z.uuid(),
-  path: projectPath,
-  kind: z.enum(['text', 'image']),
-  content: z.string().check(z.maxLength(MAX_PREVIEW_FILE_BYTES), z.refine(value => encoder.encode(value).length <= MAX_PREVIEW_FILE_BYTES)),
-  version,
+const storedMetadata = z.strictObject({
+  snapshot: digest,
+  inputs: z.array(z.strictObject({
+    path: projectPath, id: z.nullable(z.uuid()), version: z.nullable(version), sha256: z.nullable(digest),
+  }).check(z.refine(input => input.id === null
+    ? input.version === null && input.sha256 === null
+    : input.version !== null && input.sha256 !== null))).check(z.maxLength(3), z.minLength(1)),
+  renderer_build: z.string().check(z.regex(/^[a-f0-9]{16}$/)),
+  profile: z.literal(PREVIEW_PROFILE),
+  outcome: z.union([previewReadySchema, previewErrorSchema]),
 })
-type InputManifest = { path: string; id: string | null; version: number | null; sha256: string | null }
-type FailureCode = 'missing' | 'unsupported' | 'invalid_input' | 'conflict' | 'unavailable' | 'rate_limit' | 'render_failed' | 'limit' | 'cancelled' | 'empty' | 'd2_error'
-
+const storedRow = z.object({
+  file_version: version,
+  generation: z.int().check(z.minimum(1)),
+  status: z.enum(['pending', 'ready', 'error']),
+  metadata: z.nullable(storedMetadata),
+  png: z.nullable(z.string().check(z.maxLength(MAX_PREVIEW_PNG_BYTES * 2 + 2))),
+  error_code: z.nullable(z.string().check(z.maxLength(80))),
+  message: z.nullable(z.string().check(z.maxLength(300))),
+})
+const rootRow = z.object({
+  id: z.uuid(), path: projectPath, kind: z.enum(['text', 'image']), version,
+  drawing_previews: z.union([storedRow, z.array(storedRow).check(z.maxLength(1)), z.null()]),
+})
+type FailureCode = 'missing' | 'unsupported' | 'invalid_input' | 'conflict' | 'unavailable' | 'render_failed' | 'limit' | 'cancelled'
 class PreviewFailure extends Error {
-  constructor(readonly code: FailureCode, message: string, readonly retryAfter?: number) {
-    super(message)
-  }
+  constructor(readonly code: FailureCode, message: string) { super(message) }
 }
-
 const urlFor = (projectId: string, path: string) =>
   `https://elaborat.ing/projects/${projectId}/${path.split('/').map(encodeURIComponent).join('/')}`
-
-function failed(code: FailureCode, message: string, url: string, retryAfter?: number): CallToolResult {
+function failed(code: string, message: string, url: string, diagnostics?: unknown, retryAfter?: number): CallToolResult {
   return {
     isError: true,
     content: [{ type: 'text', text: `${message} Open in elaborat.ing: ${url}` }],
-    structuredContent: { status: 'error', code, message, url, ...(retryAfter !== undefined ? { retry_after: retryAfter } : {}) },
+    structuredContent: { status: 'error', code, message, url, ...(diagnostics ? { diagnostics } : {}),
+      ...(retryAfter !== undefined ? { retry_after: retryAfter } : {}) },
   }
 }
-
-async function sha256(value: string): Promise<string> {
-  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)))
-  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+function base64(bytes: Uint8Array): string {
+  let text = ''
+  for (let offset = 0; offset < bytes.length; offset += 16_384)
+    text += String.fromCharCode(...bytes.subarray(offset, offset + 16_384))
+  return btoa(text)
+}
+function fromBytea(value: string): string {
+  if (!/^\\x(?:[a-fA-F0-9]{2})+$/.test(value)) throw new PreviewFailure('render_failed', 'The stored preview image is invalid.')
+  const bytes = new Uint8Array((value.length - 2) / 2)
+  if (bytes.length > MAX_PREVIEW_PNG_BYTES) throw new PreviewFailure('limit', 'The stored preview exceeds its byte limit.')
+  for (let index = 0; index < bytes.length; index++) bytes[index] = Number.parseInt(value.slice(index * 2 + 2, index * 2 + 4), 16)
+  return base64(bytes)
 }
 
-function previewKind(path: string): 'drawing' | 'diagram' | null {
-  if (/\.d2$/i.test(path)) return 'diagram'
-  return /\.excalidraw(?:\.md)?$/i.test(path) ? 'drawing' : null
-}
-
-/** Freeze the exact root and companions in a single caller-scoped statement. */
-async function readSnapshot(supabase: SupabaseClient, input: FilePreviewInput, signal: AbortSignal) {
-  const kind = previewKind(input.path)
-  if (!kind) throw new PreviewFailure('unsupported', 'Visual previews support Excalidraw drawings and D2 diagrams.')
-  const paths = kind === 'diagram'
-    ? [input.path, input.path.replace(/\.d2$/i, '.excalidraw'), `${input.path}.json`]
-    : [input.path]
-  const { data, error } = await supabase.from('project_files')
-    .select('id,path,kind,content,version')
-    .eq('project_id', input.project_id)
-    .in('path', paths)
-    .abortSignal(signal)
-  if (error) throw new PreviewFailure('unavailable', 'The saved file could not be read. Try again.')
-  const parsed = z.array(fileRowSchema).check(z.maxLength(3)).safeParse(data)
-  if (!parsed.success) throw new PreviewFailure('limit', 'The saved preview inputs are invalid or exceed the supported limits.')
-  const rows = new Map(parsed.data.map(row => [row.path, row]))
-  if (rows.size !== parsed.data.length || parsed.data.some(row => !paths.includes(row.path))) {
-    throw new PreviewFailure('render_failed', 'The saved preview inputs could not be verified.')
-  }
-  const root = rows.get(input.path)
-  if (!root) throw new PreviewFailure('missing', 'That saved file is missing or inaccessible.')
-  if (kind === 'diagram' && encoder.encode(root.content).length > MAX_PREVIEW_D2_BYTES) throw new PreviewFailure('limit', 'Diagram previews support at most 64 KiB of D2 source.')
-  if (parsed.data.some(row => row.kind !== 'text')) throw new PreviewFailure('unsupported', 'A drawing or diagram input is not a text file.')
-  if (input.expected_version !== undefined && root.version !== input.expected_version) {
-    throw new PreviewFailure('conflict', `The saved file is version ${root.version}, which differs from the requested version.`)
-  }
-  const manifest: InputManifest[] = await Promise.all(paths.map(async path => {
-    const row = rows.get(path)
-    return { path, id: row?.id ?? null, version: row?.version ?? null, sha256: row ? await sha256(row.content) : null }
-  }))
-  const snapshot = await sha256(JSON.stringify({ inputs: manifest, renderer_build: PREVIEW_BUILD, profile: PREVIEW_PROFILE }))
-  if (input.expected_snapshot !== undefined && input.expected_snapshot !== snapshot) {
-    throw new PreviewFailure('conflict', 'The saved inputs or renderer changed since that preview. Request a new overview.')
-  }
-  return { kind, root, rows, paths, manifest, snapshot }
-}
-
-/** No caller credentials or provider errors cross this boundary. */
-export async function renderPreviewThroughWorker(job: PreviewRenderJob, signal?: AbortSignal): Promise<PreviewRenderReply> {
-  const secret = Deno.env.get('AGENT_PREVIEW_SECRET')?.trim()
-  const configured = Deno.env.get('AGENT_PREVIEW_ENDPOINT')?.trim() || 'https://elaborat.ing/_agent-preview'
-  if (!secret) throw new PreviewFailure('unavailable', 'Visual previews are not configured for this installation.')
-  let endpoint: URL
-  try { endpoint = new URL(configured) } catch { throw new PreviewFailure('unavailable', 'The visual preview service is unavailable.') }
-  if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
-    throw new PreviewFailure('unavailable', 'The visual preview service is unavailable.')
-  }
-  let response: Response
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(job),
-      redirect: 'error',
-      signal,
-    })
-  } catch {
-    if (signal?.aborted) throw new PreviewFailure('cancelled', 'The visual preview request timed out or was cancelled.')
-    throw new PreviewFailure('unavailable', 'The visual preview service could not be reached. Try again.')
-  }
-  if (response.status === 429) {
-    const raw = response.headers.get('retry-after')
-    const seconds = raw && /^\d{1,6}$/.test(raw) ? Math.max(1, Math.min(86400, Number(raw))) : undefined
-    await response.body?.cancel()
-    throw new PreviewFailure('rate_limit', 'The visual preview service is busy or has reached its usage limit. Try again later.', seconds)
-  }
-  if (!response.ok) {
-    await response.body?.cancel()
-    throw new PreviewFailure('unavailable', 'The visual preview service could not complete this request. Try again.')
-  }
-  // Bound the whole response before JSON parsing; a header is only a hint.
-  const maxBytes = MAX_PREVIEW_BASE64_CHARS + 16_384
-  const declared = response.headers.get('content-length')
-  if (declared && Number(declared) > maxBytes) {
-    await response.body?.cancel()
-    throw new PreviewFailure('limit', 'The visual preview service returned an oversized result.')
-  }
-  const reader = response.body?.getReader()
-  if (!reader) throw new PreviewFailure('render_failed', 'The visual preview service returned no result.')
-  const chunks: Uint8Array[] = []
-  let total = 0
-  try {
-    for (;;) {
-      const { value, done } = await reader.read()
-      if (done) break
-      total += value.byteLength
-      if (total > maxBytes) throw new PreviewFailure('limit', 'The visual preview service returned an oversized result.')
-      chunks.push(value)
-    }
-  } finally {
-    await reader.cancel().catch(() => {})
-    reader.releaseLock()
-  }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
-  try { return parsePreviewReply(JSON.parse(new TextDecoder().decode(bytes)), job) }
-  catch { throw new PreviewFailure('render_failed', 'The visual preview service returned an invalid result.') }
-}
-
-// Photon retains its WASM high-water mark. Validate one bounded raster at a time.
+// One bounded decode/crop at a time keeps Photon's WASM high-water mark small.
 let decoding = Promise.resolve()
-async function verifyPng(encoded: string, width: number, height: number): Promise<void> {
-  if (encoded.length > MAX_PREVIEW_BASE64_CHARS) throw new PreviewFailure('limit', 'The visual preview exceeds its transport limit.')
-  let bytes: Uint8Array
-  try { bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0)) }
-  catch { throw new PreviewFailure('render_failed', 'The visual preview image is invalid.') }
-  if (bytes.byteLength > MAX_PREVIEW_PNG_BYTES) throw new PreviewFailure('limit', 'The visual preview exceeds its image limit.')
-  try {
-    const info = inspectImage(bytes, 'image/png', MAX_PREVIEW_PNG_BYTES)
-    if (info.width !== width || info.height !== height || info.animated) throw new Error('dimensions')
-  } catch { throw new PreviewFailure('render_failed', 'The visual preview image could not be verified.') }
+async function pixels(encoded: string, width: number, height: number, region?: PreviewRegion) {
   const previous = decoding
   let release!: () => void
   decoding = new Promise<void>(resolve => { release = resolve })
   await previous
   try {
-    const { PhotonImage } = await import('npm:@cf-wasm/photon@0.4.0/node')
+    const bytes = await verifyPreviewPng(encoded, width, height)
+    if (!region || JSON.stringify(region) === JSON.stringify(FULL_PREVIEW_REGION))
+      return { png: encoded, width, height }
+    // This is a crop of existing pixels, never a native drawing/layout render.
+    const { PhotonImage, crop } = await import('npm:@cf-wasm/photon@0.4.0/node')
     const image = PhotonImage.new_from_byteslice(bytes)
     try {
-      if (image.get_width() !== width || image.get_height() !== height) throw new Error('dimensions')
+      const left = Math.min(width - 1, Math.floor(region.x * width))
+      const top = Math.min(height - 1, Math.floor(region.y * height))
+      const right = Math.min(width, Math.max(left + 1, Math.ceil((region.x + region.width) * width)))
+      const bottom = Math.min(height, Math.max(top + 1, Math.ceil((region.y + region.height) * height)))
+      const cropped = crop(image, left, top, right, bottom)
+      try {
+        const result = cropped.get_bytes()
+        if (result.length > MAX_PREVIEW_PNG_BYTES) throw new PreviewFailure('limit', 'The stored preview crop exceeds its byte limit.')
+        return { png: base64(result), width: cropped.get_width(), height: cropped.get_height() }
+      } finally { cropped.free() }
     } finally { image.free() }
-  } catch { throw new PreviewFailure('render_failed', 'The visual preview image could not be decoded.') }
-  finally { release() }
+  } finally { release() }
 }
-
-async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  return await new Promise<T>((resolve, reject) => {
-    const abort = () => {
-      signal.removeEventListener('abort', abort)
-      reject(new PreviewFailure('cancelled', 'The visual preview request timed out or was cancelled.'))
-    }
-    // Always observe work, even when it was cancelled synchronously while
-    // starting, so a later renderer rejection cannot become unhandled.
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
-    if (signal.aborted) abort()
-    else signal.addEventListener('abort', abort, { once: true })
-  })
-}
-
 async function requireReadableRoot(supabase: SupabaseClient, projectId: string, fileId: string, signal: AbortSignal) {
   const current = await supabase.from('project_files').select('id')
     .eq('project_id', projectId).eq('id', fileId).abortSignal(signal).maybeSingle()
-  if (current.error || !current.data || current.data.id !== fileId) {
+  if (signal.aborted) throw new PreviewFailure('cancelled', 'The preview read was cancelled.')
+  if (current.error || !current.data || current.data.id !== fileId)
     throw new PreviewFailure('missing', 'That saved file is missing or inaccessible.')
-  }
-  if (signal.aborted) throw new PreviewFailure('cancelled', 'The visual preview request timed out or was cancelled.')
 }
 
+/** Read only: no renderer, queue mutation, network fetch or job wake happens here. */
 export async function filePreviewPayload(
   { supabase }: ToolContext,
   rawInput: FilePreviewInput,
-  renderer: PreviewRenderer = renderPreviewThroughWorker,
   signal?: AbortSignal,
 ): Promise<CallToolResult> {
   const url = urlFor(rawInput.project_id, rawInput.path)
@@ -255,84 +146,91 @@ export async function filePreviewPayload(
   signal?.addEventListener('abort', cancel, { once: true })
   const timeout = setTimeout(cancel, PREVIEW_TIMEOUT_MS)
   try {
-    const validated = filePreviewInputSchema.safeParse(rawInput)
-    if (!validated.success) throw new PreviewFailure('invalid_input', 'The preview arguments are invalid. A detail region requires its overview snapshot.')
-    if (controller.signal.aborted) throw new PreviewFailure('cancelled', 'The visual preview request was cancelled.')
-    const input = validated.data
-    const snapshot = await abortable(readSnapshot(supabase, input, controller.signal), controller.signal)
-    let job: PreviewRenderJob
-    try { job = parsePreviewJob({
-      job_id: crypto.randomUUID(),
-      input_digest: snapshot.snapshot,
-      renderer_build: PREVIEW_BUILD,
-      profile: PREVIEW_PROFILE,
-      kind: snapshot.kind,
-      path: input.path,
-      source: snapshot.root.content,
-      canvas: snapshot.kind === 'diagram' ? snapshot.rows.get(snapshot.paths[1])?.content ?? null : null,
-      layout: snapshot.kind === 'diagram' ? snapshot.rows.get(snapshot.paths[2])?.content ?? null : null,
-      region: input.region ?? null,
-    }) } catch { throw new PreviewFailure('limit', 'The saved inputs exceed the visual preview limits.') }
-    const reply = parsePreviewReply(await abortable(renderer(job, controller.signal), controller.signal), job)
-    if (controller.signal.aborted) throw new PreviewFailure('cancelled', 'The visual preview request timed out or was cancelled.')
-    const outcome = reply.outcome
-    if (outcome.status === 'error') {
-      // Compile diagnostics can quote private source, so they need the same
-      // post-render authorization check as image pixels.
-      await requireReadableRoot(supabase, input.project_id, snapshot.root.id, controller.signal)
+    const parsedInput = filePreviewInputSchema.safeParse(rawInput)
+    if (!parsedInput.success) throw new PreviewFailure('invalid_input', 'The preview arguments are invalid. A crop requires its overview snapshot.')
+    const input = parsedInput.data
+    if (!/\.(?:excalidraw(?:\.md)?|d2)$/i.test(input.path))
+      throw new PreviewFailure('unsupported', 'Stored previews support Excalidraw drawings and D2 diagrams.')
+    if (controller.signal.aborted) throw new PreviewFailure('cancelled', 'The preview read was cancelled.')
+    // A single PostgREST statement freezes the root and its RLS-scoped artifact.
+    const { data, error } = await supabase.from('project_files')
+      .select('id,path,kind,version,drawing_previews(file_version,generation,status,png,metadata,error_code,message)')
+      .eq('project_id', input.project_id).eq('path', input.path)
+      .abortSignal(controller.signal).maybeSingle()
+    if (controller.signal.aborted) throw new PreviewFailure('cancelled', 'The preview read was cancelled.')
+    if (error) throw new PreviewFailure('unavailable', 'The stored preview could not be read. Try again.')
+    if (!data) throw new PreviewFailure('missing', 'That saved file is missing or inaccessible.')
+    const root = rootRow.parse(data)
+    if (root.path !== input.path || root.kind !== 'text') throw new PreviewFailure('unsupported', 'The saved file is not a drawing or diagram source.')
+    if (input.expected_version !== undefined && root.version !== input.expected_version)
+      throw new PreviewFailure('conflict', `The saved file is version ${root.version}, which differs from the requested version.`)
+    const row = Array.isArray(root.drawing_previews) ? root.drawing_previews[0] : root.drawing_previews
+    if (!row || row.status === 'pending' || row.file_version !== root.version) {
+      if (input.expected_snapshot !== undefined) throw new PreviewFailure('conflict', 'The saved inputs changed or their preview is still preparing. Request a new overview.')
       return {
-        ...failed(outcome.code, outcome.message, url),
-        structuredContent: { status: 'error', code: outcome.code, message: outcome.message, diagnostics: outcome.diagnostics, url },
+        content: [{ type: 'text', text: `The preview of ${input.path}, saved version ${root.version}, is preparing in the background. Try again shortly. Open in elaborat.ing: ${url}` }],
+        structuredContent: { status: 'pending', code: 'preparing', project_id: input.project_id, path: input.path, file_id: root.id, version: root.version, retry_after: 5, url },
       }
     }
-    if (!('png' in reply)) throw new PreviewFailure('render_failed', 'The visual preview service returned no image.')
-    await abortable(verifyPng(reply.png, outcome.pixel_width, outcome.pixel_height), controller.signal)
-    if (controller.signal.aborted) throw new PreviewFailure('cancelled', 'The visual preview request timed out or was cancelled.')
-    // Authorization can change during browser work. The same user-scoped read
-    // checks it again; a deleted/replaced root is not an implicit history read.
-    await requireReadableRoot(supabase, input.project_id, snapshot.root.id, controller.signal)
+    const meta = row.metadata
+    if (input.expected_snapshot !== undefined && meta?.snapshot !== input.expected_snapshot)
+      throw new PreviewFailure('conflict', 'The saved inputs or preview changed. Request a new overview.')
+    if (row.status === 'error') {
+      await requireReadableRoot(supabase, input.project_id, root.id, controller.signal)
+      const outcome = meta?.outcome
+      const now = new Date()
+      const retryAfter = row.error_code === 'daily_limit'
+        ? Math.max(1, Math.ceil((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now.getTime()) / 1000))
+        : undefined
+      return failed(row.error_code ?? 'render_failed', row.message ?? 'The saved drawing preview could not be prepared.', url,
+        outcome?.status === 'error' ? outcome.diagnostics : undefined, retryAfter)
+    }
+    if (!meta || !row.png || meta.outcome.status !== 'ready' || meta.outcome.input_digest !== meta.snapshot ||
+      meta.outcome.renderer_build !== meta.renderer_build || meta.outcome.profile !== meta.profile ||
+      JSON.stringify(meta.outcome.region) !== JSON.stringify(FULL_PREVIEW_REGION))
+      throw new PreviewFailure('render_failed', 'The stored preview metadata is invalid.')
+    const rootInput = meta.inputs[0]
+    const expected = drawingPreviewPaths(root.path)
+    if (rootInput.id !== root.id || rootInput.path !== root.path || rootInput.version !== root.version)
+      throw new PreviewFailure('render_failed', 'The stored preview belongs to different saved inputs.')
+    if (JSON.stringify(meta.inputs.map(input => input.path)) !== JSON.stringify(expected.paths) ||
+      meta.outcome.rendered_from !== (expected.kind === 'diagram' ? 'projected_diagram' : 'saved_scene'))
+      throw new PreviewFailure('render_failed', 'The stored preview input manifest is invalid.')
+    const outcome = meta.outcome
+    const image = await pixels(fromBytea(row.png), outcome.pixel_width, outcome.pixel_height, input.region)
+    if (image.png.length > MAX_PREVIEW_BASE64_CHARS) throw new PreviewFailure('limit', 'The preview exceeds its transport limit.')
+    await requireReadableRoot(supabase, input.project_id, root.id, controller.signal)
     const result: CallToolResult = {
       content: [
-        { type: 'text', text: `Visual preview of ${input.path}, saved version ${snapshot.root.version}. Open in elaborat.ing: ${url}` },
-        { type: 'image', data: reply.png, mimeType: 'image/png' },
+        { type: 'text', text: `${input.region ? 'Crop of the stored preview' : 'Stored visual preview'} of ${input.path}, saved version ${root.version}.${input.region ? ' Crops use the stored image resolution.' : ''} Open in elaborat.ing: ${url}` },
+        { type: 'image', data: image.png, mimeType: 'image/png' },
       ],
       structuredContent: {
-        project_id: input.project_id,
-        path: input.path,
-        file_id: snapshot.root.id,
-        version: snapshot.root.version,
-        snapshot: snapshot.snapshot,
-        inputs: snapshot.manifest,
-        renderer_build: PREVIEW_BUILD,
-        profile: PREVIEW_PROFILE,
-        rendered_from: outcome.rendered_from,
-        regenerated: outcome.regenerated,
-        view_box: outcome.view_box,
-        region: outcome.region,
-        pixel_width: outcome.pixel_width,
-        pixel_height: outcome.pixel_height,
-        scale: outcome.scale,
-        diagnostics: outcome.diagnostics,
-        url,
+        status: 'ready', project_id: input.project_id, path: input.path, file_id: root.id, version: root.version,
+        snapshot: meta.snapshot, inputs: meta.inputs, renderer_build: meta.renderer_build, profile: meta.profile,
+        rendered_from: outcome.rendered_from, regenerated: outcome.regenerated, view_box: outcome.view_box,
+        region: input.region ?? FULL_PREVIEW_REGION, pixel_width: image.width, pixel_height: image.height,
+        scale: outcome.scale, diagnostics: outcome.diagnostics, stored: true, url,
       },
     }
     if (JSON.stringify(result).length > MAX_PREVIEW_RESULT_CHARS) throw new PreviewFailure('limit', 'The complete visual preview exceeds its transport limit.')
     return result
   } catch (error) {
-    if (error instanceof PreviewFailure) return failed(error.code, error.message, url, error.retryAfter)
-    if (controller.signal.aborted) return failed('cancelled', 'The visual preview request timed out or was cancelled.', url)
-    return failed('render_failed', 'The visual preview could not be completed safely. Try again.', url)
+    if (error instanceof PreviewFailure || error instanceof DrawingPreviewFailure)
+      return failed(error.code, error.message, url)
+    if (controller.signal.aborted) return failed('cancelled', 'The preview read timed out or was cancelled.', url)
+    return failed('render_failed', 'The stored preview could not be verified. Try again.', url)
   } finally {
     clearTimeout(timeout)
     signal?.removeEventListener('abort', cancel)
   }
 }
 
-export function registerFilePreview(server: McpServer, context: ToolContext, renderer?: PreviewRenderer): void {
+export function registerFilePreview(server: McpServer, context: ToolContext): void {
   server.registerTool('get_file_preview', {
     title: 'Inspect drawing',
-    description: 'Read a rendered PNG of a saved Excalidraw drawing or D2 diagram. Returns pixels, exact input versions and a snapshot identifier. An optional normalized detail region requires its overview snapshot. Rendering never saves files.',
+    description: 'Read the stored PNG preview of a saved Excalidraw drawing or D2 diagram, with exact input versions and snapshot identifier. Saves prepare previews in the background; a pending response indicates when to retry. Reading never starts rendering. An optional crop requires its overview snapshot and uses the stored image resolution.',
     inputSchema: mcpInputSchema,
     annotations: { title: 'Inspect drawing', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, (input, ctx) => filePreviewPayload(context, input, renderer, ctx.mcpReq.signal))
+  }, (input, ctx) => filePreviewPayload(context, input, ctx.mcpReq.signal))
 }

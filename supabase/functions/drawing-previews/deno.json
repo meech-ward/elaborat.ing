@@ -1,0 +1,9 @@
+{
+  "nodeModulesDir": "none",
+  "compilerOptions": { "strict": true },
+  "imports": {
+    "zod/mini": "npm:zod@4.5.4/mini",
+    "image-size": "npm:image-size@2.0.4",
+    "@xmldom/xmldom": "npm:@xmldom/xmldom@0.9.12"
+  }
+}

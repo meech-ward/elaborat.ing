@@ -28,8 +28,8 @@ Developer first, friendly for everyone.
   engines load for the view or action that needs them. Requested project files
   open ahead of offline preparation, and visible previews publish each ready
   asset. The contracts and measured limits are in
-  [Progressive loading](progressive-loading.md). There is no server-side
-  rendering; `bun run check:bundle` checks initial download size, not useful
+  [Progressive loading](progressive-loading.md). App pages render in the browser; stored drawing previews prepare
+  independently in the background. `bun run check:bundle` checks initial download size, not useful
   content readiness.
 
 ## What it does
@@ -92,11 +92,14 @@ Developer first, friendly for everyone.
   agent can display a read-only rendered document with its drawings, or a
   single drawing, with a link to open it in the app. It can also show a
   rendered preview of a component it is drafting, before saving it.
-- **Agents can inspect drawings.** An explicit visual preview returns saved
-  Excalidraw and D2 pixels to the model, with exact input versions and readable
-  detail crops. It uses an isolated browser when configured; source reads and
-  ordinary saves do not trigger rendering. Full note/MDX page capture is a
-  separate feature.
+- **Agents can inspect drawings (locally verified; rollout pending).** Committed
+  Excalidraw and D2 snapshots prepare a private PNG in the background.
+  An explicit visual read returns that exact current image to the model, or
+  says it is preparing, without request-time browser work. Crops use the
+  stored image's resolution. Native rendering, background storage and delivery
+  are locally verified; hosted delivery and real-client vision checks remain
+  pending. See the
+  [scope](agent-visual-previews.md). Full note/MDX capture is separate.
 - **Users can see and revoke connected agents.**
 
 ## Sharing and comments

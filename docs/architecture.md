@@ -221,11 +221,16 @@ checked against the already issued links.
   the `config` job has it.
 - **Preview runtime secrets stay outside the Supabase deploy job.** The deploy
   token deliberately lacks `edge_functions_secrets_write`. Before enabling or
-  rotating visual previews, an authorized local CLI identity provisions
+  rotating background visual preparation, an authorized local CLI identity
+  provisions
   `AGENT_PREVIEW_SECRET` and `AGENT_PREVIEW_ENDPOINT` using
   `scripts/configure-agent-preview.ts supabase`. The same service credential
   is stored as the GitHub repository secret `AGENT_PREVIEW_SECRET`; the app job
-  supplies it to Cloudflare. This does not broaden either Supabase CI token.
+  supplies it to Cloudflare. Only the background `drawing-previews` function
+  needs this transport; MCP reads use stored pixels. Database dispatch reuses
+  Vault's existing `embed_secret_key`, not the browser transport secret. The
+  stored pipeline is implemented and locally verified; CI and hosted activation
+  remain pending. This does not broaden either Supabase CI token.
 - **Where the values live.** The config token and the SMTP credentials are
   secrets of a `supabase-config` environment limited to `main`, which only the
   config job uses. The deploy token, database password and embed secret key are
@@ -1055,24 +1060,58 @@ The production server's tools are unchanged.
     rule and what delivery checks again (`events.test.sql`); Deno tests for
     the sender, the events methods and delivery with a fake receiver that
     checks signatures with the Standard Webhooks library.
-- **Agent visual previews:** an explicit
-  `get_file_preview` returns bounded native-rendered PNG content to the model.
-  Saved inputs are read together under the caller's RLS and pinned by a digest;
-  normalized detail crops require that digest. The app's Cloudflare Worker uses
-  its browser binding with a fresh isolated context, exact asset request rules,
-  a fixed renderer entry and a separate shared service secret. Browser jobs
-  contain saved source, never Supabase credentials. This replaces the research
-  proposal's Quick Actions REST candidate: explicit contexts provide the
-  isolation it could not establish, and a binding avoids a new REST API token.
-  Native SVG is rasterized only after setting its bounded viewport. The
-  pinned native exporter incorrectly namespaces frame/image `clip-path`
-  attributes, so the standalone renderer normalizes those SVG presentation
-  attributes before rasterizing. Browser pixel checks cover the correction.
-  A scoped, MIT-credited bounded adaptation of the pinned lz-string decoder
-  is necessary because its public decompressor has no output/dictionary cap;
-  the existing parser receives only the already bounded JSON afterward. The
-  [scope and verification record](agent-visual-previews.md) define the supported
-  behavior, limits, deployment and remaining client checks.
+- **Agent visual previews, stored background pipeline (implemented and locally
+  verified; CI and production activation pending):** `get_file_preview` reads
+  a previously prepared native PNG under the caller's existing project access
+  and RLS. Reads never launch or enqueue browser work. Every committed change to a drawing or D2
+  dependency atomically invalidates its old PNG and advances the latest job
+  generation. App, MCP-only and synchronized offline saves share this path.
+  An exact current artifact is returned; otherwise the result is preparing
+  or an explicit preparation failure, without stale-image substitution.
+
+  - **Storage:** `public.drawing_previews` retains one current artifact per
+    file, a PNG in `bytea` capped at 96 KiB plus bounded metadata. No historical
+    preview artifacts are retained. A small database artifact permits atomic
+    replacement with its snapshot/readiness state, avoiding a new Storage
+    bucket's upload/commit/orphan protocol. Private jobs and publication are
+    unavailable to normal clients. The contract includes all saved dependency
+    identities, paths, versions, content hashes, missing companions, renderer
+    build and profile. A valid stored PNG keeps its reported build and remains
+    readable until relevant saved inputs change; bulk renderer refresh is a
+    separate follow-up.
+  - **Scheduling:** the background `drawing-previews` Edge Function claims
+    the latest generation after five quiet seconds, with at least ten seconds
+    between starts for a file and one per-file lease. Database claims enforce
+    at most two active leased background jobs globally, 500 attempts per day
+    globally and 100 per day per project. Five attempts with backoff bound
+    retries. A same-ID rename to an unsupported file type removes the artifact
+    but retains start timing and cancellation reservation; renaming back does
+    not reset the ten-second gap. It checks for supersession about once a
+    second and cancels obsolete work; publication
+    compares the lease and generation atomically. Relevant dependency commits
+    advance that generation. These are attempt budgets, not a guaranteed
+    monetary ceiling. Cancelled requests can finish before browser cleanup,
+    allowing brief overlap; provider limits govern actual browser concurrency.
+  - **Rendering and credentials:** database dispatch reuses Vault's existing
+    `embed_secret_key` as `apikey`. Only the background function calls the
+    Cloudflare browser Worker with its separate shared transport secret.
+    Browser jobs contain saved source, never Supabase credentials. Fresh
+    contexts, exact asset request rules, fixed renderer entry and deadlines
+    preserve the native renderer's isolation. The bounded native SVG path,
+    frame/image namespace correction and MIT-credited bounded Obsidian decoder
+    are retained from the previously verified renderer foundation. Missing or
+    invalid background renderer configuration requests a 300-second database
+    dispatch cooldown without claiming or spending a generation attempt.
+  - **Reads and crops:** one standard MCP image block reaches the model
+    without requiring an MCP App card. Normalized crops require the overview's
+    full snapshot digest and use Photon on the stored PNG. They provide only
+    stored resolution; they do not request a high-resolution native rerender.
+    No app UI, first-paint imports or service-worker precache work is added.
+
+  The [scope and verification record](agent-visual-previews.md) defines the
+  implemented design, limits, local integration evidence and remaining hosted
+  and client checks. Local verification does not establish production delivery
+  or model vision in a particular host.
 - **MCP Apps:** views inside the client: a rendered document with its
   drawings, a single drawing, or a draft component preview, each with a link
   into the app. The `show_file` tool (`tools/fileView.ts`), the
@@ -2505,12 +2544,16 @@ secrets supplied through `env()` from GitHub secrets.)
   `bun scripts/configure-agent-preview.ts supabase` under a local Supabase CLI
   identity with `edge_functions_secrets_write` permission. Store the same
   secret in GitHub for the Cloudflare app job. CI does not write Supabase
-  runtime secrets, and its deploy token must not gain that permission. The setup
-  command is in the
+  runtime secrets, and its deploy token must not gain that permission. The
+  background `drawing-previews` function uses these values; MCP reads do not
+  contact the renderer. Database dispatch reuses the existing Vault embed key.
+  The stored pipeline is locally verified; hosted rollout and credential
+  provisioning remain pending. The setup command is in the
   [self-host guide](self-host.md#optional-visual-previews-for-agents).
 - **Secret API key for the database:** create one (the hosted project names it
   `embed_worker`) for the embed pipeline; event delivery (`send-events`)
-  uses the same one. The platform creates keys; the CLI can only list them.
+  uses the same one. The `drawing-previews` dispatcher also reuses it.
+  The platform creates keys; the CLI can only list them.
 - **Email provider:** an account with a verified sending domain and SMTP
   credentials. The hosted instance uses AWS SES, which sends only to verified
   addresses until AWS grants production access.

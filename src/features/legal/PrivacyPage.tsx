@@ -34,8 +34,8 @@ export function PrivacyPage() {
         <li>Supabase, in the United States, holds the database, sign-in and your files.</li>
         <li>
           Cloudflare serves the site, and its Web Analytics counts page views without cookies and without identifying you.
-          When an agent requests a visual preview, Cloudflare also processes the saved drawing or diagram in an isolated browser.
-          The app does not save those preview images or record those browser sessions.
+          When saved drawings or diagrams change, Cloudflare also processes them in an isolated browser to prepare previews.
+          Supabase stores the current preview with the file and replaces it when the drawing changes. The app does not record those browser sessions.
         </li>
         <li>Amazon Web Services (SES) sends the app's emails, such as sign-in links and invitations.</li>
       </ul>

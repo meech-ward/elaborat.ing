@@ -598,24 +598,102 @@ normalized crops, embedded images, compressed Obsidian files, live D2 and
 explicit invalid/corrupt input failures. The scoped bounded lz-string decoder
 and native SVG namespace correction have dedicated regressions. See the
 [verification record](agent-visual-previews.md) for hosted and client scope.
+These renderer checks do not prove the stored background pipeline in T67.
 
 ## T66: add explicit agent file previews
 
 **Status:** Done
 
-`get_file_preview` reads a single RLS-scoped saved input snapshot, returns one
-model-visible PNG and metadata, and binds detail crops to all input identities
-and versions. Native Excalidraw/D2 rendering uses the private Worker browser
-adapter with isolated contexts, service authentication, exact asset rules,
-resource limits, cancellation and fail-closed service limiting. It never saves
-generated files or forwards user credentials to the browser.
+The original `get_file_preview` implementation read a single RLS-scoped saved
+input snapshot, returned one model-visible PNG and metadata, and bound detail
+crops to all input identities and versions. Request-time Excalidraw/D2
+rendering used the private Worker browser adapter with isolated contexts,
+service authentication, exact asset rules, resource limits, cancellation and
+fail-closed service limiting. It did not save generated files or forward user
+credentials to the browser.
 
 The build/deploy flow pairs immutable renderer assets with the MCP manifest,
 retains prior builds and configures a separate service credential. Skills and
 plugin version are updated. Deployment and supported client observations are
 recorded in [the scope](agent-visual-previews.md).
 
+The adopted replacement is T67: stored background preparation with no browser
+work on preview reads. T66's earlier checks do not establish that replacement.
+
+## T67: prepare and store current agent drawing previews
+
+**Status:** Taken
+
+Authorized on 2026-11-15. Implementation and local verification are complete;
+CI, production activation and real-client vision verification remain pending.
+
+Replace request-time rendering with a database-owned background pipeline for
+saved `.excalidraw`, `.excalidraw.md` and `.d2` snapshots. Every relevant commit,
+including D2 companion-only changes and offline synchronization, atomically
+invalidates the old artifact and advances one latest generation. Preparation
+must work for MCP-only files without an app session. Normal saves do not wait
+for a browser, and MCP reads neither render nor enqueue work.
+
+Declare `public.drawing_previews` with RLS, explicit grants and tests. Keep one
+current PNG per file, capped at 96 KiB in `bytea`, plus bounded metadata; retain
+no historical preview artifacts. Atomic database replacement avoids a new
+Storage upload/orphan protocol. Private job and publication operations must be
+unavailable to ordinary clients. Pin all input identities, paths, versions,
+content hashes, missing D2 companions, renderer build and profile.
+
+Use a five-second quiet period, at least ten seconds between starts for a
+file and one per-file lease. Enforce at most two active leased background jobs
+globally, 500 attempts per day globally and 100 per day per project at claim
+time. Preserve start timing through a same-ID rename to an unsupported type
+and back. Missing/invalid renderer configuration requests a 300-second dispatch
+cooldown without claiming or spending a render attempt. Allow five attempts
+with backoff. Poll active jobs about once a second
+to cancel superseded work; compare the lease and generation before atomic
+publication. Relevant input commits must advance that generation. Database
+dispatch reuses Vault's
+`embed_secret_key` as `apikey`; only the background function uses the separate
+Cloudflare transport secret.
+
+Return exact ready pixels, preparing or an explicit failure under caller RLS;
+never substitute a previous snapshot. Crops require the overview digest and
+use Photon on the stored PNG, reporting stored resolution without native
+rerendering. Add no app UI, initial imports or precache work. Update deployment
+and disclosure documents for current PNG retention and background Cloudflare
+processing. Keep core app/source access usable when preparation is unavailable.
+
+Prove atomic invalidation, D2 dependency changes, burst coalescing, stale/lost
+lease publication rejection, revocation and cross-user isolation, budgets,
+retry/crash recovery, cancellation, artifact bounds and stored crop alignment.
+Distinguish the two-job lease cap from actual provider browser concurrency:
+cancelled requests can finish before remote browser cleanup.
+Test reads with the renderer unavailable to prove they cannot invoke or
+enqueue it. Run the native/browser regressions, database and Edge Function
+checks, generated-migration consistency and normal app/bundle checks. Record
+actual hosted and supported client observations in the
+[scope and verification record](agent-visual-previews.md).
+
+Local evidence: generated migrations `20261116005912`, `20261116010733` and `20261116011558`
+applied to the throwaway database; 22 pgTAP files / 1,196 assertions passed and
+local database security advisors reported no issues. Frozen MCP: 205 passed,
+including 16 stored-preview tests. Bun: 1,749 passed / 13 skipped / two TODOs.
+Native-preview/legal browser suites: 12 passed in Chromium and Firefox;
+typecheck, lint, bundle budgets and the real CLI source-collector check passed.
+The real SQL/processor integration passed 43 assertions with controlled
+renderers, including supersession,
+deletion leases, quota refusal, private reads and RGBA crop alignment. An
+earlier overlapping 38-assertion run also completed one real staged native
+render and read its stored PNG back. All processor fixtures rolled back. A separate five-connection verifier
+passed 26 contention assertions and restored its temporary fixtures and ledger.
+A final declarative sync found no changes. HTTP gateway, hosted scheduling and
+real-client vision claims remain separate from these local verifiers; see the
+scope for exact commands and remaining release checks.
+
 ## Small things
+
+- Add an explicit bounded bulk refresh for stored drawing previews after a
+  renderer/profile upgrade, if needed. Current artifacts retain their actual
+  build tag and remain valid until relevant saved inputs change; deployment
+  must not imply they were regenerated with the newest renderer.
 
 - Excalidraw's own context-menu Paste calls its clipboard handler directly,
   bypassing the drawing wrapper's DOM paste interception. Route image bytes
