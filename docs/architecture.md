@@ -229,8 +229,15 @@ checked against the already issued links.
   supplies it to Cloudflare. Only the background `drawing-previews` function
   needs this transport; MCP reads use stored pixels. Database dispatch reuses
   Vault's existing `embed_secret_key`, not the browser transport secret. The
-  stored pipeline is implemented and locally verified; CI and hosted activation
-  remain pending. This does not broaden either Supabase CI token.
+  stored pipeline is implemented and locally verified. CI gates deployment;
+  this does not broaden either Supabase CI token.
+- **App code and its preview credential deploy together.** The Cloudflare
+  helper uses Wrangler's documented `deploy --secrets-file` with a temporary
+  owner-readable JSON file, removed afterward. This publishes one version and
+  preserves omitted secrets. A separate `secret put` refuses to run when a
+  newer staged version is not deployed, so it must not precede app deployment.
+  Without an optional credential, the helper still deploys the app and retains
+  existing secret bindings. See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration/secrets/#upload-secrets-alongside-code).
 - **Where the values live.** The config token and the SMTP credentials are
   secrets of a `supabase-config` environment limited to `main`, which only the
   config job uses. The deploy token, database password and embed secret key are

@@ -226,6 +226,11 @@ stored PNG or silently relabel its build.
 Deployment and credential setup are described in the
 [self-host guide](self-host.md#optional-visual-previews-for-agents).
 
+The app helper deploys code and its optional credential atomically through
+`wrangler deploy --secrets-file`, using a temporary owner-readable file and
+removing it afterward. It also deploys without a credential override. This
+avoids a separate secret update that refuses newer unpromoted test versions.
+
 This pipeline adds no app UI or first-paint work. Saving performs bounded
 database invalidation/enqueue work, not browser rendering. The standalone
 renderer remains outside ordinary view imports and service-worker precaching.

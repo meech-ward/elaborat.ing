@@ -186,10 +186,9 @@ jobs:
       # soon as the initial renderer is published; later failures stay closed.
       - if: steps.settings.outputs.deploy == 'true' && vars.AGENT_PREVIEW_BOOTSTRAP != 'true'
         run: bun scripts/keep-agent-preview-versions.ts "$AGENT_PREVIEW_ORIGIN"
-      - if: steps.settings.outputs.deploy == 'true'
+      - name: Deploy app with optional preview credential
+        if: steps.settings.outputs.deploy == 'true'
         run: bun scripts/configure-agent-preview.ts cloudflare
-      - if: steps.settings.outputs.deploy == 'true'
-        run: bunx wrangler deploy
 
   # The native renderer and chat card name their immutable build assets,
   # so these functions go live only once the app's Worker serves them.

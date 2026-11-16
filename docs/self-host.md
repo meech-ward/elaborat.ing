@@ -65,7 +65,14 @@ unset AGENT_PREVIEW_SECRET
 The Supabase deploy token deliberately lacks `edge_functions_secrets_write`.
 CI does not provision these Supabase runtime secrets; do not expand its token
 permissions. A fully manual Cloudflare deployment can use the same script's
-`cloudflare` target with the same service credential.
+`cloudflare` target with the same service credential after building and
+retaining the required assets. This target deploys the app. It uses
+`wrangler deploy --secrets-file` to publish code and the optional credential in
+one version; a temporary owner-readable file is removed afterward. It also
+deploys when the optional credential is absent, preserving existing secrets.
+The atomic command works with newer unpromoted test versions; a separate
+`wrangler secret put` can refuse that state. Add `--dry-run` to the helper to
+check the build without uploading.
 
 Deploy the generated database migration, then the app, then the
 `drawing-previews` and MCP functions. The scheduler uses the existing Vault

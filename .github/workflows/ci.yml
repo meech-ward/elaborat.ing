@@ -45,7 +45,7 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run test
-      - run: bun test scripts/provision-image-bucket.test.ts scripts/build-svg-font.test.ts scripts/keep-agent-preview-versions.test.ts
+      - run: bun test scripts/provision-image-bucket.test.ts scripts/build-svg-font.test.ts scripts/keep-agent-preview-versions.test.ts scripts/configure-agent-preview.test.ts
       # The loading rule (docs/architecture.md, Principles): each page's first
       # paint and the chat card's view within its budget in
       # scripts/bundle-budget.json, and no heavy library before a first paint.
