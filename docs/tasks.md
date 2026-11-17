@@ -378,34 +378,35 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 
 ## T54: define shared note suggestions and checked acceptance
 
-**Status:** Waiting (feedback on the local suggestions experiment and a
-recorded shared-review contract in `architecture.md`)
+**Status:** In progress (database reviews and checked decisions implemented;
+commenter proposals and account transitions remain)
 
-The branch-local experiment keeps proposals in the current browser/account.
-Portable `.review.json` import/export now transfers exact-base proposals and
-optional source-document provenance manually. It creates no shared proposal
-records, authenticated authors or shared comment threads. Shared suggestions
-need durable proposal records tied to a stable file id and an exact saved
-base, with author, source changes, proposal version and decision history.
+Signed-in projects use database reviews tied to the stable server file ID
+and exact saved version/base, with authenticated creator and decision actors,
+checked source changes, CAS versions and retained decision history. Owners
+and editors write and decide reviews; accepted members read them. Portable
+`.review.json` import/export transfers proposals and source-document
+provenance explicitly; opening the same project in another signed-in browser
+loads its shared review automatically. The accountless project still keeps
+a browser-local review.
 Keep suggestion metadata outside the Markdown or MDX source. Preserve
 imported authors, comments and immutable original anchors separately from
 authenticated app identities and live comment anchors.
 
-Record the roles and review rules before implementation: commenters may
-propose without gaining file-write access; editors and owners may review;
-decide explicitly whether OAuth clients may accept and whether review is an
-optional agent workflow or a server-enforced policy. A local mode switch
-cannot restrict an agent's existing direct-write tools.
+The shared contract is recorded in `architecture.md`. OAuth clients with
+editor rights can use checked decisions, and still cannot permanently delete.
+Review remains an optional workflow; it does not restrict existing direct-write
+tools. The remaining role extension is letting commenters propose without
+granting canonical file-write access.
 
-Build shared storage and an idempotent acceptance function that rechecks
+The database acceptance function rechecks
 access, archive state, file identity, proposal version and exact base text,
-then saves the file and records the decision in one transaction. Preserve
-the original proposal when its target changed or disappeared. Use the
-declarative schema workflow and pgTAP coverage for every role, cross-project
-access, revocation, overlapping decisions and retries. Connect shared reads
-to the existing project revision signals; the signal carries no proposal
-content. The local experiment remains available until shared recovery and
-offline boundaries have equivalent coverage.
+then saves the file and records the decision in one transaction. Stale or
+missing targets retain their proposals for recovery. Declarative migrations
+and pgTAP cover roles, cross-project isolation, revocation, stale decisions,
+retries and retained records. Existing private project revision signals
+trigger fresh reads without carrying proposal content. Further offline
+recovery coverage remains alongside the account-transition work below.
 
 Cover account transitions as well as reloads: signing in moves an accountless
 local project into a new account and project partition. Pending review
@@ -434,10 +435,10 @@ may map to one pending source change; formatting within an insertion is
 accepted or rejected with that insertion. Extend this without claiming one
 independent decision per source record. Keep the immutable import anchors
 distinct from live review positions, and retain source IDs when edits merge
-changes. A general DOCX/Google Docs converter, independent formatting and
-move decisions, and a durable provenance view after leaving local review
-remain outside the current JSON import. The private comparison fixture is
-not committed.
+changes. A general DOCX/Google Docs converter and independent formatting and
+move decisions remain outside the current JSON import. Signed-in completed
+reviews retain original provenance in the database and expose the most recent
+through Previous review. The private comparison fixture is not committed.
 
 An embedded child's review must stay attached to that file and its shared
 session. Show its accepted content when an ordinary parent needs it; saving

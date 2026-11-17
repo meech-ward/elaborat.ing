@@ -1777,13 +1777,43 @@ where a browser groups frames by site they can share a process.
 
 ## Rendered editing
 
-**Experiment: local suggestions keep a separate working source.** On the
+**Decision: signed-in note suggestions are database records.** The local
+prototype below did not meet the requested shared-review behavior. The
+database implementation must bind a review to the project's stable server
+file ID, saved version, path and exact accepted source. Browser-local IDs
+are only cache identities and must never identify a database review.
+
+An accepted project member can read reviews. Owners and editors can create,
+edit and decide them; commenter proposal rights remain a separate extension,
+without granting canonical file writes. OAuth clients retain their existing
+editor permissions, including checked review decisions, and still cannot
+permanently delete. Unlisted file links include only accepted source.
+
+The review payload contains the checked source patches and imported
+provenance outside Markdown or MDX. Updates use a server-issued version for
+compare-and-swap. A conflicting update keeps the unsaved proposal visible
+and requires an explicit reload or export, never an overwrite. Signed-in
+projects must not silently fall back to browser-only persistence when a
+request fails. Accountless projects can still keep a local review.
+
+Acceptance is one database transaction: lock the project, recheck role and
+archive state, review version, file identity, path, saved version and exact
+source; compute the selected patches from stored proposals; then call the
+ordinary `save_files` implementation and record the decision. Source offsets
+use JavaScript UTF-16 units, so the SQL boundary must translate them and
+reject an offset inside an astral character. Mutation IDs make retries
+idempotent. Rejection changes only the review. Completing a review retains
+its original import, comments, pending-state record and decision audit; it
+does not delete them. Existing private project revision signals trigger
+fresh reads and carry no review content.
+
+**Note suggestions keep a separate working source.** On the
 `codex/suggesting-mode` branch, a build with `VITE_LOCAL_SUGGESTIONS=1` lets an
 owner or editor try suggesting on an existing Markdown or MDX note. This is
-a browser-only review experiment labelled "Suggesting locally"; it grants
-no new role, writes no shared
-suggestions and adds no MCP behavior. The ordinary read-only checks still
-apply.
+the legacy feature-flag name. Signed-in projects use Supabase reviews,
+labelled "Suggesting"; accountless projects use browser persistence, labelled
+"Suggesting locally". The ordinary file permissions still apply, and this
+does not add MCP proposal tools.
 
 Run the experiment locally with:
 
@@ -1791,12 +1821,12 @@ Run the experiment locally with:
 VITE_LOCAL_SUGGESTIONS=1 bun run dev
 ```
 
-Open an existing saved note and choose **Suggest changes locally** from
-**File actions**. Ordinary builds leave the flag unset. Suggestions stay in
-this browser and account unless explicitly exported as a review bundle;
-there is no shared review backend or agent review tool.
+Open an existing synced note and choose **Suggest changes** from **File
+actions**. The accountless project uses **Suggest changes locally**.
+Ordinary builds leave the flag unset. Shared reviews load automatically
+from the database on another signed-in browser with project access.
 
-Source and Rendered show the proposed text. A local review panel shows each
+Source and Rendered show the proposed text. The review panel shows each
 change's original and replacement source and offers individual or whole-file
 accept and reject. Inline insertion and deletion decorations are outside the
 experiment. Normal comment marks and selection actions are hidden in the
@@ -1805,26 +1835,28 @@ proposed views because their anchors refer to accepted text.
 The note's canonical source store remains the source for normal saves,
 draft persistence and exports. A separate review source store holds the
 candidate text and its own undo history, shared by Source and Rendered while
-the experiment is active. A bounded, account- and project-scoped browser
-sidecar retains that review across reloads. Saving in this mode keeps only
-the local review. Accepting a checked change saves it to the canonical
-store through the ordinary checked file-write path and syncs normally;
-rejecting it changes only the review. Acceptance stops if the file moved or
+review is active. Signed-in reviews use `note_reviews` and append-only
+`note_review_decisions`; saving a proposal never saves accepted source.
+Acceptance uses the atomic server transaction described above, then refreshes
+the normal file cache. The accountless project uses a bounded browser
+sidecar and accepts through the ordinary checked local file-write path.
+Rejection changes only the review. Acceptance stops if the file moved or
 its accepted base changed. An explicit proposed-source export provides a
 recovery copy independently of ordinary exports.
 
-**Portable local reviews.** **Export suggestions** downloads a
+**Portable reviews.** **Export suggestions** downloads a
 `.review.json` file with format `elaborating-review`, version 1: the note's
 project-relative path, exact accepted base and pending checked source changes.
 It excludes browser/account identity, persistence tokens and saved revision
 identifiers. **Import suggestions** is available on an existing saved Markdown
 or MDX note when there is no ordinary draft or active review. Import requires
 the same path and exact base text, rechecks the current file identity and
-revision, and refuses a review already kept by another tab. It binds the
-bundle to the destination's current revision and browser scope. Importing
-changes only the local review, never the accepted source. A bundle can be
-transferred manually to another browser, account or project with a matching
-note; it is not automatically synchronized or included in ordinary exports.
+revision, and refuses an existing active review. A signed-in import creates
+a database review bound to the real server file ID and saved version; an
+accountless import binds to its browser scope. Importing never changes the
+accepted source. Bundles support explicit copying to another project or
+account with a matching note, and recovery. Normal source and project exports
+continue to contain accepted content only.
 
 The review session and recovery validation load dynamically for a note when
 the experiment is enabled. Portable bundle parsing and serialization load
@@ -1836,7 +1868,7 @@ at most 4 MiB per bundle, 2 MiB per source snapshot, 256 pending changes and
 annotation identities and source links are checked. Unknown fields and
 versions are refused rather than silently discarded. Failure to keep an
 import leaves the complete review available in memory for explicit export
-or another attempt, without overwriting an existing sidecar.
+or another attempt, without overwriting an existing review.
 
 An optional provenance record retains the source label and hash, original
 source snapshots, authors, dates, comment text, revision IDs, source locators,
@@ -1852,22 +1884,27 @@ its immutable anchors. Those anchors describe the imported snapshots, not
 live selections in the edited note; the panel labels them as original
 document details. Editing an imported change retains its linked source IDs
 and marks it as edited after import. Provenance survives reloads and portable
-export while the review remains open, including after all decisions. Export
-the bundle before **Return to editing** to retain that record: leaving review
-removes its local sidecar. This is not a shared decision history.
+export while the review remains open, including after all decisions. In a
+signed-in project, **Return to editing** closes the database record without
+deleting it. **Previous review** and **Export previous review** retain access
+to the most recent completed review's original import and comments. The
+database also retains each decision's authenticated actor and selected
+patches. Accountless reviews still require an export before leaving review,
+which removes their browser sidecar.
 
 The app imports review JSON, not DOCX files directly. The private comparison
 fixture and its one-off document conversion are not committed to the
 repository and are not a general Google Docs import feature.
 
-Review recovery is scoped to the current browser account and project.
+Shared review recovery is scoped to project membership and the server file.
+Accountless review recovery is scoped to the browser's local project.
 Transferring an accountless local project into a signed-in account does not
 yet transfer its review sidecars. Export suggestions to retain proposals and
 provenance, or finish those reviews before signing in; account-transition
 recovery is part of T54. Proposed-source export retains only the candidate
 text.
 
-Keeping the sidecar changes review status, not the source snapshot sent to
+Saving review metadata changes review status, not the source snapshot sent to
 the renderer. Status-only updates retain the exact document object and its
 opaque review identity. Replacing that object while a source projection is
 compiling can invalidate its epoch without starting another compile, leaving
@@ -1891,11 +1928,11 @@ review's typing history so Undo cannot revive an already decided proposal.
 Candidate MDX uses the ordinary isolated renderer and custom-code consent.
 Review mode disables image staging and inline embedded child editing.
 Existing component modules retain their accepted source authority. An
-embedded child's local review belongs to that child file; saving its parent
-keeps the review locally and never accepts it. Unsupported operations stay
+embedded child's review belongs to that child file; saving its parent
+saves only the review and never accepts it. Unsupported operations stay
 unavailable rather than mutating accepted files through the proposed view.
-Shared storage, commenter access, collaborative conflict handling, reviewed
-agent writes and proposals spanning several files remain follow-up work.
+Commenter proposal rights, reviewed agent tools, automatic accountless
+review transfer and proposals spanning several files remain follow-up work.
 The next steps are [T54 and T55](tasks.md#t54-define-shared-note-suggestions-and-checked-acceptance).
 
 Browser coverage in `tests/browser/suggesting.spec.ts` checks both note
@@ -1908,12 +1945,20 @@ output, and that saving a parent cannot accept its child's review.
 Portable review unit coverage checks exact source/metadata round trips,
 strict bounds and immutable anchors, partial decisions, edits merging source
 IDs, import preconditions, reload recovery and failed-persistence recovery.
-On 2026-11-17, the portable, storage and session suites pass 46 tests with
-280 assertions.
+On 2026-11-17, database-backed reviews pass 1,630 app unit tests, typecheck,
+lint and the existing bundle budgets. All eleven existing suggesting
+journeys, three portable-import journeys and four shared-review journeys
+pass in Chromium and Firefox. Shared coverage includes a browser with empty
+storage, retained completed reviews, stale-write refusal and viewer access.
+Account checks pin each request to its intended signed-in user; disposal
+cancels queued saves when a session closes.
 
-The combined staging build also passes typecheck, lint, 1,610 unit tests and
-the existing bundle budgets. All three portable-import journeys and eight
-grouped-history journeys pass in both Chromium and Firefox.
+The database suite passes 1,161 assertions, with 80 focused review assertions,
+clean security advisors and no migration drift. A private import fixture
+passes 22 additional rollback-only database checks, including every
+individual acceptance, exact final content, replay and retained provenance.
+No private document fixture is committed. The grouped-history integration
+also retains its eight journeys in both browsers.
 
 Checked on 2026-11-04 with Bun 1.4.3: production and browser builds,
 typecheck, lint, 1,573 passing unit tests and unchanged bundle budgets. All

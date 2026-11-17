@@ -19,7 +19,7 @@ const NOTE = `export const hidden = { marker: "Keep this JSX and emoji 🙂" }\n
 const STALE_REVIEW = "The accepted file changed or moved. These suggestions need a new review before acceptance."
 const frameOf = (page: Page) => page.frameLocator('iframe[title="Isolated document preview"]:visible')
 const sourceOf = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
-const reviewOf = (page: Page) => page.locator('[aria-label="Local suggestions"]')
+const reviewOf = (page: Page) => page.locator('[aria-label="Suggestions"]')
 
 async function openNote(page: Page, source = NOTE, path = PATH, files: Record<string, string> = {}) {
   const fake = await fakeSupabase(page)
@@ -38,9 +38,9 @@ async function openNote(page: Page, source = NOTE, path = PATH, files: Record<st
 
 async function startSuggesting(page: Page) {
   await page.getByRole("button", { name: "File actions", exact: true }).click()
-  await page.getByRole("menuitem", { name: "Suggest changes locally", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Suggest changes", exact: true }).click()
   await expect(reviewOf(page)).toBeVisible()
-  await expect(reviewOf(page).getByRole("heading", { name: "Suggesting locally", exact: true })).toBeVisible()
+  await expect(reviewOf(page).getByRole("heading", { name: "Suggesting", exact: true })).toBeVisible()
 }
 
 async function replaceSource(page: Page, source: string) {
@@ -132,8 +132,9 @@ test("a reload restores local proposals without syncing them, and Reject all res
   await startSuggesting(page)
   await replaceSource(page, NOTE.replace(FIRST, "A local replacement kept across reload."))
   await page.keyboard.press("ControlOrMeta+s")
+  await expect(reviewOf(page).getByRole("status")).toHaveText("Suggestions saved to the project.")
   await page.reload()
-  await expect(reviewOf(page).getByRole("heading", { name: "Suggesting locally", exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(reviewOf(page).getByRole("heading", { name: "Suggesting", exact: true })).toBeVisible({ timeout: 15_000 })
   await showView(page, "Source")
   await expect(sourceOf(page)).toContainText("A local replacement kept across reload.")
   expect(fake.server.content(id, PATH)).toBe(NOTE)
@@ -154,7 +155,7 @@ test("separate suggestions can be rejected and accepted individually", async ({ 
   const review = reviewOf(page)
   await expect(review.getByRole("button", { name: "Reject suggestion", exact: true })).toHaveCount(2)
   if (browserName === "chromium") {
-    await expect(review.getByRole("status")).toHaveText("Review kept in this browser.")
+    await expect(review.getByRole("status")).toHaveText("Suggestions saved to the project.")
     await expect(review.getByRole("button", { name: "Accept all", exact: true })).toBeEnabled()
     await page.screenshot({ path: "/tmp/elaborating-suggesting-preview.png" })
   }
@@ -196,6 +197,7 @@ test("a changed accepted file blocks acceptance and preserves both the server co
   const { fake, id } = await openNote(page)
   await startSuggesting(page)
   await replaceSource(page, NOTE.replace(FIRST, `${FIRST} Proposed earlier.`))
+  await expect(reviewOf(page).getByRole("status")).toHaveText("Suggestions saved to the project.")
   const remoteText = NOTE.replace(SECOND, "Changed on another device.")
   await changedOnServer(fake, id, remoteText)
   const review = reviewOf(page)
@@ -217,6 +219,7 @@ test("a moved file cannot accept its earlier local proposal, and the proposal ca
   const proposed = NOTE.replace(FIRST, `${FIRST} Kept for recovery.`)
   await replaceSource(page, proposed)
   await page.keyboard.press("ControlOrMeta+s")
+  await expect(reviewOf(page).getByRole("status")).toHaveText("Suggestions saved to the project.")
   const version = fake.server.projects.get(id)!.files.get(PATH)!.version
   const movedPath = "notes/moved.mdx"
   await fake.server.remote(person.id).saveFiles(id, crypto.randomUUID(), [{ op: "move", path: PATH, to: movedPath, base_version: version }])
@@ -245,7 +248,7 @@ test("a commenter remains read-only and is not offered the local experiment", as
   await page.goto(new URL(`projects/${id}/${PATH}`, APP_URL).href)
   await expect(page.getByRole("banner").getByText("You can read and comment on this project.")).toBeVisible({ timeout: 15_000 })
   await page.getByRole("button", { name: "File actions", exact: true }).click()
-  await expect(page.getByRole("menuitem", { name: "Suggest changes locally", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("menuitem", { name: "Suggest changes", exact: true })).toHaveCount(0)
   await page.keyboard.press("Escape")
   await showView(page, "Source")
   await sourceOf(page).click()
@@ -259,7 +262,7 @@ test("the local suggestion controls are accessible", async ({ page }) => {
   await openNote(page)
   await startSuggesting(page)
   await replaceSource(page, NOTE.replace(FIRST, `${FIRST} Accessible proposal.`))
-  const results = await new AxeBuilder({ page }).include('[aria-label="Local suggestions"]').analyze()
+  const results = await new AxeBuilder({ page }).include('[aria-label="Suggestions"]').analyze()
   expect(results.violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => node.target) }))).toEqual([])
 })
 
@@ -298,7 +301,7 @@ test("Notion export uses accepted source and component output while the review r
   expect(html).toContain("Accepted prose.")
   expect(html).not.toContain("Proposed custom component secret.")
   expect(html).not.toContain("Proposed prose secret.")
-  expect(html).not.toContain("Suggesting locally")
+  expect(html).not.toContain("Suggesting")
   expect(fake.server.content(id, PATH)).toBe(source)
 })
 
@@ -315,7 +318,7 @@ test("saving a parent never accepts its embedded child's local proposals", async
   await startSuggesting(page)
   await typeAtParagraphEnd(page, "Accepted child content.", " Proposed child change.")
   await page.keyboard.press("ControlOrMeta+s")
-  await expect(reviewOf(page).getByRole("status")).toHaveText("Review kept in this browser.")
+  await expect(reviewOf(page).getByRole("status")).toHaveText("Suggestions saved to the project.")
   await page.getByRole("tab", { name: PATH, exact: true }).click()
   await page.getByRole("button", { name: "File actions", exact: true }).click()
   await page.getByRole("menuitem", { name: "Save", exact: true }).click()

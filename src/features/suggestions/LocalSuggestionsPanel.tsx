@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import type { LocalReviewSnapshot } from "./session";
-import type { ReviewAnnotation } from "./review";
+import type { ReviewAnnotation, ReviewState } from "./review";
 import "./suggestions.css";
 
 function Annotation({ annotation }: { annotation: ReviewAnnotation }) {
@@ -24,47 +24,55 @@ function Annotation({ annotation }: { annotation: ReviewAnnotation }) {
   </li>;
 }
 
-export function LocalSuggestionsPanel({ snapshot, stale, disabled, onAccept, onReject, onStop, onKeep, onReveal }: {
+export function OriginalReviewDetails({ review, completed = false }: { review: ReviewState; completed?: boolean }) {
+  const annotations = review.provenance?.annotations ?? [];
+  const comments = annotations.filter(annotation => annotation.kind === "comment");
+  const revisionIds = new Set(annotations.filter(annotation => annotation.kind !== "comment").flatMap(annotation => annotation.sourceId ? [annotation.sourceId] : []));
+  return review.provenance ? <details className="local-suggestion-provenance">
+    <summary>{review.provenance.label}: {revisionIds.size} {revisionIds.size === 1 ? "revision" : "revisions"} and {comments.length} {comments.length === 1 ? "comment" : "comments"}</summary>
+    <p>{review.suggestions.length} {completed ? "original" : "pending"} {review.suggestions.length === 1 ? "change" : "changes"}. Original revisions can share a change. Formatting within inserted text is reviewed with that text.</p>
+    <p>Original comments and revision details remain with this review.</p>
+    <ul>{annotations.map(annotation => <Annotation key={annotation.id} annotation={annotation} />)}</ul>
+  </details> : null;
+}
+
+export function LocalSuggestionsPanel({ snapshot, stale, disabled, readOnly = false, onAccept, onReject, onStop, onKeep, onReload, onReveal }: {
   snapshot: LocalReviewSnapshot;
   stale: boolean;
   disabled: boolean;
+  readOnly?: boolean;
   onAccept: (id: string | null) => void;
   onReject: (id: string | null) => void;
   onStop: () => void;
   onKeep: () => void;
+  onReload?: () => void;
   onReveal: (id: string) => void;
 }) {
   const review = snapshot.review;
   if (!review) return null;
   const count = review.suggestions.length;
   const busy = disabled || snapshot.busy;
+  const shared = snapshot.durability === "server";
+  const cannotDecide = busy || readOnly;
   const annotations = review.provenance?.annotations ?? [];
   const importedById = new Map(annotations.map(annotation => [annotation.id, annotation]));
-  const comments = annotations.filter(annotation => annotation.kind === "comment");
-  const revisions = annotations.filter(annotation => annotation.kind !== "comment");
-  const revisionIds = new Set(revisions.flatMap(annotation => annotation.sourceId ? [annotation.sourceId] : []));
-  return <section aria-label="Local suggestions" className="local-suggestions">
+  return <section aria-label={shared ? "Suggestions" : "Local suggestions"} className="local-suggestions">
     <div className="local-suggestions-header">
       <div>
-        <h2>Suggesting locally</h2>
-        <p>Changes stay on this device until accepted. Accept saves the file.</p>
+        <h2>{shared ? "Suggesting" : "Suggesting locally"}</h2>
+        <p>{shared ? "Suggestions are shared with this project. Accept saves the file." : "Changes stay on this device until accepted. Accept saves the file."}</p>
       </div>
       <div className="local-suggestions-actions">
-        <Button size="sm" variant="outline" disabled={busy || stale || !count} onClick={() => onAccept(null)}>Accept all</Button>
-        <Button size="sm" variant="outline" disabled={busy || !count} onClick={() => onReject(null)}>Reject all</Button>
-        <Button size="sm" variant="ghost" disabled={busy || count > 0} onClick={onStop}>Return to editing</Button>
+        <Button size="sm" variant="outline" disabled={cannotDecide || stale || !count} onClick={() => onAccept(null)}>Accept all</Button>
+        <Button size="sm" variant="outline" disabled={cannotDecide || !count} onClick={() => onReject(null)}>Reject all</Button>
+        <Button size="sm" variant="ghost" disabled={cannotDecide || count > 0} onClick={onStop}>Return to editing</Button>
       </div>
     </div>
     {stale && !snapshot.busy && <p role="alert">The accepted file changed or moved. These suggestions need a new review before acceptance. Export the proposed source to keep a separate copy.</p>}
-    {snapshot.error && <p role="alert">{snapshot.error} <Button size="sm" variant="link" onClick={onKeep} disabled={busy}>Try keeping review again</Button></p>}
-    <p role="status" className="local-suggestions-status">{snapshot.busy ? "Finishing decision…" : snapshot.keeping ? "Keeping review…" : snapshot.kept ? "Review kept in this browser." : "Review has not been kept. Export the proposed source before leaving."}</p>
-    {review.provenance && <details className="local-suggestion-provenance">
-      <summary>{review.provenance.label}: {revisionIds.size} {revisionIds.size === 1 ? "revision" : "revisions"} and {comments.length} {comments.length === 1 ? "comment" : "comments"}</summary>
-      <p>{count} pending {count === 1 ? "change" : "changes"}. Original revisions can share a pending change. Formatting within inserted text is reviewed with that text.</p>
-      <p>These imported comments and revision details stay with this local review.</p>
-      <ul>{annotations.map(annotation => <Annotation key={annotation.id} annotation={annotation} />)}</ul>
-    </details>}
-    {count === 0 ? <p>{review.provenance
+    {snapshot.error && <p role="alert">{snapshot.error} <Button size="sm" variant="link" onClick={onKeep} disabled={cannotDecide}>{shared ? "Try saving suggestions again" : "Try keeping review again"}</Button>{shared && onReload && <Button size="sm" variant="link" onClick={onReload} disabled={busy}>Reload shared review</Button>}</p>}
+    <p role="status" className="local-suggestions-status">{snapshot.busy ? "Finishing decision…" : snapshot.keeping ? (shared ? "Saving suggestions…" : "Keeping review…") : snapshot.kept ? (shared ? "Suggestions saved to the project." : "Review kept in this browser.") : (shared ? "Suggestions have not been saved. Keep this tab open and retry or export." : "Review has not been kept. Export the proposed source before leaving.")}</p>
+    <OriginalReviewDetails review={review} />
+    {count === 0 ? <p>{shared ? "Returning to editing keeps the completed review and its original details in this project." : review.provenance
       ? "Returning to editing removes this local review, including imported comments and revision details. Use File actions, then Export suggestions to keep a copy."
       : "Type in Source or Rendered to propose a change."}</p> : <ul className="local-suggestions-list">
       {review.suggestions.map((suggestion, index) => <li key={suggestion.id} className="local-suggestion">
@@ -84,8 +92,8 @@ export function LocalSuggestionsPanel({ snapshot, stale, disabled, onAccept, onR
           {suggestion.insert && <div><span className="sr-only">Add: </span><ins>{suggestion.insert.slice(0, 4000)}</ins>{suggestion.insert.length > 4000 && "…"}</div>}
         </div>
         <div className="local-suggestions-actions">
-          <Button size="sm" variant="outline" disabled={busy || stale} onClick={() => onAccept(suggestion.id)}>Accept suggestion</Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onReject(suggestion.id)}>Reject suggestion</Button>
+          <Button size="sm" variant="outline" disabled={cannotDecide || stale} onClick={() => onAccept(suggestion.id)}>Accept suggestion</Button>
+          <Button size="sm" variant="ghost" disabled={cannotDecide} onClick={() => onReject(suggestion.id)}>Reject suggestion</Button>
         </div>
       </li>)}
     </ul>}

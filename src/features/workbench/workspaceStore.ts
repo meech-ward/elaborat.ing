@@ -12,6 +12,12 @@ export interface WorkspaceStore {
   /** Scopes the workbench's browser preferences (tabs, views, folders) to this project. */
   readonly persistenceKey: string
   readonly projectId?: string
+  /** Signed-in projects keep note reviews in Supabase. Absent for the accountless project. */
+  readonly sharedReviews?: {
+    readonly userId: string
+    /** Pull canonical files after an atomic server-side review decision. */
+    refresh(): Promise<void>
+  }
   stageImage?(path: string, bytes: Blob, asset: ImageAsset, noteDrafts?: Array<{ path: string; content: string; baseRevision: string | null }>, preview?: Blob): Promise<WorkspaceFile>
   readImage?(path: string, preview?: boolean): Promise<Blob>
   readImageAsset?(assetId: string, preview?: boolean): Promise<Blob>

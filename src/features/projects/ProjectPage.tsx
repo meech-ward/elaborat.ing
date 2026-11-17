@@ -187,13 +187,13 @@ function OpenProject({ account, projectId }: { account: ProjectAccount; projectI
   useEffect(() => () => delayedSync.cancel(), [delayedSync])
   const workspace = useMemo(
     () =>
-      projectWorkspace(fileStoreFor(library, projectId), {
+      Object.assign(projectWorkspace(fileStoreFor(library, projectId), {
         afterSave: () => {
           if (account.online) delayedSync.run(() => void syncNow())
         },
         subscribeSync: (listener) => library.subscribe(listener),
-      }),
-    [account.online, delayedSync, library, projectId, syncNow],
+      }), account.local ? {} : { sharedReviews: { userId: account.userId, refresh: async () => { await syncNow() } } }),
+    [account.local, account.online, account.userId, delayedSync, library, projectId, syncNow],
   )
 
   // The files panel's search: the server's search in this project.

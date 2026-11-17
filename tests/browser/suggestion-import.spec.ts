@@ -15,7 +15,7 @@ const SECOND = "Second accepted paragraph."
 const FIRST_PROPOSED = "First proposed paragraph."
 const SECOND_PROPOSED = "Second proposed paragraph."
 const PROPOSED = BASE.replace(FIRST, FIRST_PROPOSED).replace(SECOND, SECOND_PROPOSED)
-const reviewOf = (page: Page) => page.locator('[aria-label="Local suggestions"]')
+const reviewOf = (page: Page) => page.locator('[aria-label="Suggestions"]')
 const sourceOf = (page: Page) => page.locator(".monaco-editor:visible .view-lines").first()
 
 // Generic fixtures only. Imported names are source-document provenance, not
@@ -73,17 +73,17 @@ test("imported suggestions stay pending through Save and reload, and portable ex
   await importBundle(page)
   const review = reviewOf(page)
   await expect(review.getByRole("button", { name: "Accept suggestion", exact: true })).toHaveCount(2)
-  await expect(review.getByRole("status")).toHaveText("Review kept in this browser.")
+  await expect(review.getByRole("status")).toHaveText("Suggestions saved to the project.")
   await expect(sourceOf(page)).toContainText(FIRST_PROPOSED)
   await expect(sourceOf(page)).toContainText(SECOND_PROPOSED)
   await page.getByRole("button", { name: "File actions", exact: true }).click()
-  await page.getByRole("menuitem", { name: "Keep review locally", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Save suggestions", exact: true }).click()
   await quiet(fake, 1_000)
   expect(fake.server.content(id, PATH)).toBe(BASE)
   expect((await exportFromMenu(page, "Export")).text).toBe(BASE)
 
   await page.reload()
-  await expect(review.getByRole("heading", { name: "Suggesting locally", exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(review.getByRole("heading", { name: "Suggesting", exact: true })).toBeVisible({ timeout: 15_000 })
   await showView(page, "Source")
   await expect(sourceOf(page)).toContainText(FIRST_PROPOSED)
   await expect(review.getByRole("button", { name: "Accept suggestion", exact: true })).toHaveCount(2)
@@ -135,7 +135,7 @@ test("explicit partial acceptance saves only the chosen imported change and keep
   await review.getByRole("button", { name: "Reject suggestion", exact: true }).click()
   await expect(sourceOf(page)).toContainText(SECOND)
   await expect(sourceOf(page)).not.toContainText(SECOND_PROPOSED)
-  await expect(review.getByText("Returning to editing removes this local review, including imported comments and revision details. Use File actions, then Export suggestions to keep a copy.", { exact: true })).toBeVisible()
+  await expect(review.getByText("Returning to editing keeps the completed review and its original details in this project.", { exact: true })).toBeVisible()
   await expect(review.getByRole("button", { name: "Return to editing", exact: true })).toBeEnabled()
   await review.getByRole("button", { name: "Return to editing", exact: true }).click()
   await expect(review).toHaveCount(0)

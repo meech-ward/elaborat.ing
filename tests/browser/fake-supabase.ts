@@ -6,6 +6,7 @@ import { RemoteError } from "../../src/features/project-storage/remote.ts"
 import { FakeAgentChanges } from "./fake-agent-changes.ts"
 import { FakeComments } from "./fake-comments.ts"
 import { FakeProjectCategories } from "./fake-project-categories.ts"
+import { FakeNoteReviewError, FakeNoteReviews, noteReviewsFor } from "./fake-note-reviews.ts"
 import { inspectImage } from "../../src/features/images/format.ts"
 import { imageDigest, imageObjectKeys } from "../../src/features/images/types.ts"
 
@@ -80,6 +81,8 @@ export type FakeSupabase = {
   categories: FakeProjectCategories
   /** The agent changes functions; `agentChanges.save(user, project, path, content)` saves as someone's agent. */
   agentChanges: FakeAgentChanges
+  /** Database-backed note reviews shared by every page using this server. */
+  reviews: FakeNoteReviews
   requests: Request[]
   /** Requests refused while offline. */
   refused: Request[]
@@ -117,6 +120,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
     comments: new FakeComments(server),
     categories: new FakeProjectCategories(server),
     agentChanges: new FakeAgentChanges(server),
+    reviews: noteReviewsFor(server),
     requests: [],
     refused: [],
     passkeys: [],
@@ -145,7 +149,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (!(error instanceof RemoteError)) throw error
       if (error.kind === "network") return route.abort("internetdisconnected")
       const message = error.kind === "unavailable" ? "Project unavailable" : error.message
-      return json(route, { code: errorCode[error.kind], message, details: error.detail, hint: null }, errorStatus[error.kind])
+      return json(route, { code: error instanceof FakeNoteReviewError ? error.code : errorCode[error.kind], message, details: error.detail, hint: null }, error instanceof FakeNoteReviewError && error.code === "40001" ? 409 : errorStatus[error.kind])
     }
   }
 
@@ -303,6 +307,7 @@ export async function fakeSupabase(page: Page, options: Options = {}): Promise<F
       if (rpc === "create_project") return answer(route, () => remote.createProject(body.project_id, body.title))
       if (rpc === "rename_project") return answer(route, () => remote.renameProject(body.project_id, body.title))
       if (rpc === "save_files") return answer(route, () => remote.saveFiles(body.project_id, body.mutation_id, body.changes))
+      if (FakeNoteReviews.handles(rpc)) return answer(route, () => fake.reviews.call(person.id, rpc, body))
       if (rpc === "read_image_upload") return answer(route, async () => {
         const status = await remote.imageUploadStatus!(body.project_id, body.asset_id)
         return body.include_status ? status : status.status === "available" ? status.asset : null
