@@ -97,7 +97,7 @@ test("imported suggestions stay pending through Save and reload, and portable ex
   expect(fake.server.content(id, PATH)).toBe(BASE)
 })
 
-test("wrong-path and wrong-baseline bundles are rejected without creating a review or changing saved content", async ({ page, appErrors }) => {
+test("rejected mismatches allow a valid retry with unfamiliar source metadata", async ({ page, appErrors }) => {
   appErrors.expect("This review bundle belongs to a different note.")
   appErrors.expect("The saved note does not match this review bundle's original source.")
   const { fake, id } = await openNote(page)
@@ -108,8 +108,12 @@ test("wrong-path and wrong-baseline bundles are rejected without creating a revi
   await expect(page.getByRole("alert").filter({ hasText: "The saved note does not match this review bundle's original source." })).toBeVisible()
   await expect(reviewOf(page)).toHaveCount(0)
   expect(fake.server.content(id, PATH)).toBe(BASE)
-  await importBundle(page)
+  const retry = bundle()
+  retry.provenance!.annotations[0].kind = "__proto__"
+  await importBundle(page, retry)
   await expect(reviewOf(page).getByRole("button", { name: "Accept suggestion", exact: true })).toHaveCount(2)
+  await reviewOf(page).getByText(/Imported from Google Docs: 2 revisions and 1 comments?$/).click()
+  await expect(reviewOf(page).locator(".local-suggestion-provenance").getByText("Document revision · Original reviewer · 2026-11-17T10:00:00Z", { exact: true })).toBeVisible()
   expect(fake.server.content(id, PATH)).toBe(BASE)
 })
 
@@ -131,6 +135,7 @@ test("explicit partial acceptance saves only the chosen imported change and keep
   await review.getByRole("button", { name: "Reject suggestion", exact: true }).click()
   await expect(sourceOf(page)).toContainText(SECOND)
   await expect(sourceOf(page)).not.toContainText(SECOND_PROPOSED)
+  await expect(review.getByText("Returning to editing removes this local review, including imported comments and revision details. Use File actions, then Export suggestions to keep a copy.", { exact: true })).toBeVisible()
   await expect(review.getByRole("button", { name: "Return to editing", exact: true })).toBeEnabled()
   await review.getByRole("button", { name: "Return to editing", exact: true }).click()
   await expect(review).toHaveCount(0)

@@ -1826,6 +1826,10 @@ changes only the local review, never the accepted source. A bundle can be
 transferred manually to another browser, account or project with a matching
 note; it is not automatically synchronized or included in ordinary exports.
 
+The review session and recovery validation load dynamically for a note when
+the experiment is enabled. Portable bundle parsing and serialization load
+on the import/export action, outside the project's initial view.
+
 The portable boundary and browser recovery use the same strict validation:
 at most 4 MiB per bundle, 2 MiB per source snapshot, 256 pending changes and
 2,048 imported annotations. Source ranges, expected text, Unicode boundaries,
@@ -1906,6 +1910,10 @@ strict bounds and immutable anchors, partial decisions, edits merging source
 IDs, import preconditions, reload recovery and failed-persistence recovery.
 On 2026-11-17, the portable, storage and session suites pass 46 tests with
 280 assertions.
+
+The combined staging build also passes typecheck, lint, 1,610 unit tests and
+the existing bundle budgets. All three portable-import journeys and eight
+grouped-history journeys pass in both Chromium and Firefox.
 
 Checked on 2026-11-04 with Bun 1.4.3: production and browser builds,
 typecheck, lint, 1,573 passing unit tests and unchanged bundle budgets. All

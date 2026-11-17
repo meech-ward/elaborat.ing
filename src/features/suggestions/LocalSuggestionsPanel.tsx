@@ -10,7 +10,7 @@ function Annotation({ annotation }: { annotation: ReviewAnnotation }) {
     formatting: "Formatting", comment: "Comment", moveFrom: "Moved text", moveTo: "Moved text",
   };
   return <li>
-    <p><strong>{labels[annotation.kind] ?? "Document revision"}</strong>
+    <p><strong>{Object.hasOwn(labels, annotation.kind) ? labels[annotation.kind] : "Document revision"}</strong>
       {annotation.author ? ` · ${annotation.author}` : ""}{annotation.date ? ` · ${annotation.date}` : ""}</p>
     {annotation.text && <p className="local-suggestion-record-text">{annotation.text}</p>}
     {annotation.anchor?.quote && <blockquote className="local-suggestion-record-text">{annotation.anchor.quote}</blockquote>}
@@ -64,7 +64,9 @@ export function LocalSuggestionsPanel({ snapshot, stale, disabled, onAccept, onR
       <p>These imported comments and revision details stay with this local review.</p>
       <ul>{annotations.map(annotation => <Annotation key={annotation.id} annotation={annotation} />)}</ul>
     </details>}
-    {count === 0 ? <p>Type in Source or Rendered to propose a change.</p> : <ul className="local-suggestions-list">
+    {count === 0 ? <p>{review.provenance
+      ? "Returning to editing removes this local review, including imported comments and revision details. Use File actions, then Export suggestions to keep a copy."
+      : "Type in Source or Rendered to propose a change."}</p> : <ul className="local-suggestions-list">
       {review.suggestions.map((suggestion, index) => <li key={suggestion.id} className="local-suggestion">
         <div className="local-suggestion-heading">
           <span>Suggestion {index + 1}</span>
