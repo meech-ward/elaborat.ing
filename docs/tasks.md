@@ -457,6 +457,11 @@ and existing bundle budgets in Chromium and Firefox.
 
 ## Small things
 
+- Version history currently opens from an existing synced file. Add a project
+  entry for browsing deleted file identities and restoring one without
+  confusing it with a replacement file at the same path. Keep all existing
+  version rows, ordinary access checks and revision-checked saves.
+
 - Before enabling the local suggesting experiment in production, reduce the
   project's first-paint JavaScript to its bundle budget. A visualize build with
   `VITE_LOCAL_SUGGESTIONS=1` currently downloads 358.6 kB gzip against a 356 kB

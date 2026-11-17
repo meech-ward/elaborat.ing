@@ -155,6 +155,94 @@ test("changes saved together share a batch and fail together", async () => {
   expect(await a.record(id, "z.md")).toBeNull()
 })
 
+test("a clean-only restore refuses a draft arriving between the revision read and write transaction, rolling back the whole batch", async () => {
+  const inner = new MemoryProjectDatabase()
+  let race: (() => Promise<void>) | null = null
+  const db: ProjectDatabase = {
+    listProjects: partition => inner.listProjects(partition),
+    async transaction(partition, mode, work) {
+      if (mode === "readwrite" && race) {
+        const competingWrite = race
+        race = null
+        await competingWrite()
+      }
+      return inner.transaction(partition, mode, work)
+    },
+  }
+  const a = device(new FakeProjectServer(), undefined, db)
+  const { id } = await a.sync.createProject("History")
+  const store = a.files(id)
+  await store.writeBatch([
+    { path: "a.md", content: "current a", expectedRevision: null },
+    { path: "b.md", content: "current b", expectedRevision: null },
+  ])
+  await a.sync.sync(id)
+  const [first, second] = await Promise.all([store.read("a.md"), store.read("b.md")])
+  race = () => inner.transaction(a.partition, "readwrite", async tx => {
+    const file = (await tx.getFile(id, "b.md"))!
+    await tx.putFile({ ...file, draft: { content: "new words in another tab", token: second.revision } })
+  })
+  await expect(store.save([
+    { kind: "write", path: "a.md", content: "old a", expectedRevision: first.revision, requireClean: true },
+    { kind: "write", path: "b.md", content: "old b", expectedRevision: second.revision, requireClean: true },
+  ])).rejects.toThrow("unsynced edits in b.md")
+  expect((await store.read("a.md")).content).toBe("current a")
+  expect(await store.read("b.md")).toMatchObject({ content: "new words in another tab", savedContent: "current b", draft: true })
+})
+
+test.each(["newer revision", "replacement identity"])("a restore refuses a same-content %s arriving after its revision read", async change => {
+  const inner = new MemoryProjectDatabase()
+  let race: (() => Promise<void>) | null = null
+  const db: ProjectDatabase = {
+    listProjects: partition => inner.listProjects(partition),
+    async transaction(partition, mode, work) {
+      if (mode === "readwrite" && race) {
+        const competingWrite = race
+        race = null
+        await competingWrite()
+      }
+      return inner.transaction(partition, mode, work)
+    },
+  }
+  const a = device(new FakeProjectServer(), undefined, db)
+  const { id } = await a.sync.createProject("History")
+  const store = a.files(id)
+  await store.writeBatch([
+    { path: "a.md", content: "current a", expectedRevision: null },
+    { path: "b.md", content: "current b", expectedRevision: null },
+  ])
+  await a.sync.sync(id)
+  const [first, second] = await Promise.all([store.read("a.md"), store.read("b.md")])
+  const nextId = change === "replacement identity" ? crypto.randomUUID() : second.server!.id
+  race = () => inner.transaction(a.partition, "readwrite", async tx => {
+    const file = (await tx.getFile(id, "b.md"))!
+    await tx.putFile({ ...file, base: { ...file.base!, id: nextId, version: file.base!.version + 1 } })
+  })
+  await expect(store.save([
+    { kind: "write", path: "a.md", content: "old a", expectedRevision: first.revision, requireClean: true, expectedServer: first.server },
+    { kind: "write", path: "b.md", content: "old b", expectedRevision: second.revision, requireClean: true, expectedServer: second.server },
+  ])).rejects.toBeInstanceOf(LocalConflictError)
+  expect((await store.read("a.md")).content).toBe("current a")
+  expect(await store.read("b.md")).toMatchObject({
+    content: "current b", revision: second.revision, draft: false, unsynced: false,
+    server: { id: nextId, version: second.server!.version + 1 },
+  })
+})
+
+test("a clean-only restore still requires its expected revision and refuses an existing unsynced save or conflict", async () => {
+  const { a, id, store } = await setup()
+  const saved = await store.write("a.md", "saved locally", null)
+  await expect(store.save([{ kind: "write", path: "a.md", content: "historical", expectedRevision: saved.revision, requireClean: true }])).rejects.toThrow("unsynced edits")
+  await a.sync.sync(id)
+  await expect(store.save([{ kind: "write", path: "a.md", content: "historical", expectedRevision: null, requireClean: true }])).rejects.toBeInstanceOf(LocalConflictError)
+  await a.db.transaction(a.partition, "readwrite", async tx => {
+    const file = (await tx.getFile(id, "a.md"))!
+    await tx.putFile({ ...file, conflict: { current: { id: file.base!.id, version: file.base!.version + 1, content: "from elsewhere" }, pathTaken: false } })
+  })
+  await expect(store.save([{ kind: "write", path: "a.md", content: "historical", expectedRevision: saved.revision, requireClean: true }])).rejects.toThrow("unsynced edits")
+  expect((await store.read("a.md")).content).toBe("saved locally")
+})
+
 test("moves refuse to lose unsaved edits or overwrite a file", async () => {
   const { store } = await setup()
   const a = await store.write("a.md", "a", null)

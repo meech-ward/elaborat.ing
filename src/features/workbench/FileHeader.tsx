@@ -18,6 +18,7 @@ import {
 import { CommentsToggle } from "@/features/comments";
 import { AssistantToggle } from "@/features/assistant";
 import { TablineActions, useDesktopFrame, useFileActions } from "./tabline";
+import { useFileHistory } from "../file-history/context";
 
 export type FileHeaderView = {
   value: EditorView;
@@ -57,7 +58,9 @@ export function FileHeader({
   save: { disabled: boolean; onSave: () => void } | null;
   actions: readonly MenuEntry[];
 }) {
-  useFileActions(path, actions);
+  const showHistory = useFileHistory();
+  const fileActions = showHistory ? [...actions, { label: "Version history", onSelect: () => showHistory(path) }] : actions;
+  useFileActions(path, fileActions);
   const desktop = useDesktopFrame();
   if (desktop)
     return (
@@ -87,7 +90,7 @@ export function FileHeader({
       <CommentsToggle size="touch" />
       {import.meta.env.VITE_CHATGPT_PLAN && <AssistantToggle size="touch" />}
       <ActionMenu
-        entries={actions}
+        entries={fileActions}
         choice={choice}
         contentProps={{ align: "end", "aria-label": "File actions" }}
         trigger={

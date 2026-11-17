@@ -83,7 +83,7 @@ test("a viewer reads a note without changing it, keeps no draft, and is offered 
   await expect(frame.getByRole("checkbox", { name: "Agree the plan" })).toBeDisabled()
 
   // Both exports are available, with no Save or Format action.
-  expect(await menuItems(page, page.getByRole("button", { name: "File actions" }))).toEqual(["Export", "Export to Notion"])
+  expect(await menuItems(page, page.getByRole("button", { name: "File actions" }))).toEqual(["Export", "Export to Notion", "Version history"])
   // Nothing creates or imports files.
   const project = await menuItems(page, page.getByRole("button", { name: /, project menu$/ }))
   for (const item of ["New note", "New drawing", "New diagram", "Import a file", "New folder"]) expect(project).not.toContain(item)

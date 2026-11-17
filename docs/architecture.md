@@ -287,6 +287,45 @@ so a path and version pair identifies one exact write: an edit based on a file
 that was moved away can never land on a different file that later took its
 path.
 
+**Decision: file history groups existing saves by UTC calendar day.** File
+actions opens Version history for a synced file, following its stable file id
+through moves. Grouping is presentation only: every `file_versions` row stays
+intact, including identical saves and deletions. Metadata loads in pages of
+whole days under the existing table grants and RLS, without contents or OAuth
+client ids. Comparisons load only when expanded. A day's combined comparison
+uses the revision immediately before that day's earliest revision and that
+day's final revision; timestamps determine the UTC day, revisions determine
+the before and after states. A chronological keyset keeps days complete even
+when transaction times and revision order differ. Individual saves show the
+author's current member name, else account id, or Deleted account, and a full
+UTC timestamp. History needs a connection and does not enter the offline cache.
+
+Restore copies an individual save's content to the current file path through
+the normal local save and background sync, with both local revision and server
+`base_version` checks. It does not change history rows or undo moves. Drafts,
+unsynced copies, conflicts and changes since opening history block restore;
+the local transaction rechecks that copies are clean before writing. Identical
+content is already current and creates no misleading restore. Images reuse
+their immutable asset after caching verified bytes. A D2 source restore
+regenerates its canvas with the current layout and freehand additions, and
+saves source, canvas and sidecar atomically. Deleted versions remain visible
+in history; restoring content means choosing a non-deleted save of an existing
+file. Browsing deleted files independently of the current file tree is outside
+this surface.
+
+The isolated staging candidate measures 357.5 kB gzip for the project first
+paint. Its JavaScript budget was intentionally refreshed to 376 kB with
+`check:bundle --update`, retaining the standard 5% headroom and every other
+page's existing budget. History views, comparisons and D2 restore preparation
+stay behind dynamic imports; no heavy library enters first paint.
+
+The isolated candidate passes its staging build, typecheck, lint, full Bun
+suite, deployment guards and bundle checks. Chromium and Firefox cover text,
+image and real D2 restores, immutable history, concurrent saves, drafts,
+offline retry, viewer access, focus, accessibility and phone layout. These
+automated browser journeys use a fake backend; authenticated hosted
+verification and production promotion remain separate release checks.
+
 **Decision: project sharing is an invitation.** Sharing a project with someone creates
 an invitation that grants nothing until they accept it, and only a signed-in
 person can accept, never an agent. Members can leave a project (or decline an

@@ -61,10 +61,16 @@ export type ConflictCopies = {
   theirsAsset?: ImageAsset | null
 }
 
-/** One change in a local save. All changes in one save share a batch and sync together. */
+/**
+ * One change in a local save. All changes in one save share a batch and sync
+ * together. `requireClean` additionally refuses drafts, unsynced saves and
+ * conflicts inside the write transaction, for history restores. Those saves
+ * also name `expectedServer`, since identical content can have a newer
+ * server revision or belong to a replacement file.
+ */
 export type LocalChange =
-  | { kind: "write"; path: string; content: string; expectedRevision: string | null; expectedIdentity?: string }
-  | { kind: "asset"; path: string; asset: ImageAsset; expectedRevision: string | null }
+  | { kind: "write"; path: string; content: string; expectedRevision: string | null; expectedIdentity?: string; requireClean?: boolean; expectedServer?: { id: string; version: number } | null }
+  | { kind: "asset"; path: string; asset: ImageAsset; expectedRevision: string | null; requireClean?: boolean; expectedServer?: { id: string; version: number } | null }
   | { kind: "move"; from: string; to: string; expectedRevision: string; content?: string; asset?: ImageAsset }
   | { kind: "delete"; path: string; expectedRevision: string }
   /** Explicit folders, made or removed in the same save as files (a folder move). */
@@ -462,6 +468,18 @@ export class ProjectFileStore {
           throw new LocalConflictError(sourcePaths[index], "", source?.content ?? null)
         }
         if (change.kind === "write" || change.kind === "asset") {
+          if (change.expectedServer !== undefined && ((source?.base?.id ?? null) !== (change.expectedServer?.id ?? null)
+            || (source?.base?.version ?? null) !== (change.expectedServer?.version ?? null))) {
+            throw new LocalConflictError(change.path, "", source?.content ?? null)
+          }
+          // A history restore must not consume a draft or local save that
+          // arrived after its UI checked the file. Check in this same write
+          // transaction, before replacing content or clearing any draft.
+          if (change.requireClean && source && (source.draft || source.conflict || (source.base === null
+            ? source.content !== null
+            : source.content !== source.base.content || source.path !== source.base.path || (source.asset?.id ?? null) !== (source.base.asset?.id ?? null)))) {
+            throw new FileStoreError(`Save or discard unsynced edits in ${change.path} before restoring a version.`)
+          }
           if (change.kind === "write" && source?.kind === "image") throw new FileStoreError(`${change.path} is an image and cannot be overwritten with text.`)
           if (change.kind === "asset" && source && source.kind !== "image") throw new FileStoreError(`${change.path} is a text file and cannot be overwritten with an image.`)
           if (change.kind === "asset" && !(await tx.getAsset(this.projectId, change.asset.id))) throw new FileStoreError("The image bytes must be kept on this device before saving.")
