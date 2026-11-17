@@ -46,7 +46,10 @@ export function TextDiff({ before, after, language, beforeLabel, afterLabel, leg
       fontSize: 13,
       lineHeight: 20,
     })
-    editor.setModel({ original, modified })
+    // Own the view model as well as its text models, so unmounting cancels
+    // an in-flight worker comparison before either text model is disposed.
+    const viewModel = editor.createViewModel({ original, modified })
+    editor.setModel(viewModel)
     // Monaco 0.56 clears `originalAriaLabel` and `modifiedAriaLabel` each time
     // it lays the diff out, which leaves both inputs unnamed. Name the two
     // inner editors directly, and again whenever Monaco resets the name.
@@ -65,6 +68,8 @@ export function TextDiff({ before, after, language, beforeLabel, afterLabel, leg
     return () => {
       observer.disconnect()
       for (const listener of names) listener.dispose()
+      editor.setModel(null)
+      viewModel.dispose()
       editor.dispose()
       original.dispose()
       modified.dispose()

@@ -101,6 +101,7 @@ import {
   type PersistedTabs,
 } from "./tabPersistence";
 import "./workbench.css";
+import { FileHistoryProvider } from "../file-history/context";
 
 /** How long after the person last used a chat's panel (a key, a press, the wheel) it does not follow the agent to another file. */
 const FOLLOW_QUIET_MS = 3_000;
@@ -1192,6 +1193,11 @@ export function WorkspaceWorkbench({
   const focusKey = commandShortcut(".", isApplePlatform());
   const filesScreen = narrow && (sidebar || (!state.tabs.length && !hideSessions));
   return (
+    <FileHistoryProvider workspace={client} enabled={!local} compact={narrow} readOnly={readOnly}
+      isDirty={path => {
+        const session = leaveSessions.current.get(path)?.state();
+        return Boolean(session?.dirty || session?.pending || session?.saving || stateRef.current.tabs.some(tab => tab.path === path && tab.dirty));
+      }}>
     <CommentsGuestProvider
       value={
         local
@@ -1508,6 +1514,7 @@ export function WorkspaceWorkbench({
     </SidebarProvider>
     </AssistantUiProvider>
     </CommentsGuestProvider>
+    </FileHistoryProvider>
   );
 }
 

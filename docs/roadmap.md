@@ -105,7 +105,13 @@ this repository once the steps before them have landed.
     or selection to the other view, in view and with the keyboard (with
     neither, the text at the top). A touch scroll never focuses the rendered
     view while a tap does, one undo history serves both views, and undoing
-    back to the saved text clears "Unsaved changes".
+    back to the saved text clears "Unsaved changes". File actions also opens
+    Version history, grouping the existing saves into complete UTC days with
+    a combined before/after comparison and expandable original saves, authors
+    and timestamps. Restore saves historical content at the current path with
+    normal revision checks, preserving all original records. D2 restores
+    regenerate and save all three diagram files together. History loads only
+    on request and requires a connection.
 11. **Custom MDX components load from project files (done).** A note imports
     named components from other MDX files with `workspace:` specifiers.
     Modules load from their saved copies and run only in the frame, and a
