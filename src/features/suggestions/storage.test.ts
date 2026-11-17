@@ -76,6 +76,21 @@ test("reload recovers the exact review basis and pending edits without touching 
   expect(locks.calls).toEqual([reviewDraftStorageKey(scope, file)])
 })
 
+test("browser persistence retains imported author, original markup and immutable comment anchors", async () => {
+  const value: ReviewDraft = { ...draft(), suggestions: [{ ...draft().suggestions[0], sourceIds: ["revision:1"] }], provenance: {
+    label: "Source document", base: "Hello world.\n", proposed: "Hello team.\n", annotations: [
+      { id: "revision:1", sourceId: "1", kind: "insertion", author: "Original author", date: "2026-11-17", rawXml: "<w:ins/>" },
+      { id: "comment:1", kind: "comment", text: "On inserted text", anchor: { projection: "proposed", from: 6, to: 10, quote: "team" } },
+    ],
+  } }
+  const saved = await saveReviewDraft(scope, file, value, null)
+  expect(loadReviewDraft(scope, file)).toEqual(saved)
+  expect(loadReviewDraft(scope, file)?.provenance).toEqual(value.provenance)
+  const before = storage.getItem(reviewDraftStorageKey(scope, file))
+  await expect(saveReviewDraft(scope, file, { ...value, suggestions: [{ ...value.suggestions[0], sourceIds: ["unknown"] }] }, saved!.token)).rejects.toBeInstanceOf(ReviewDraftStorageError)
+  expect(storage.getItem(reviewDraftStorageKey(scope, file))).toBe(before)
+})
+
 test("saves copy the caller's state before awaiting a lock", async () => {
   const value = draft()
   const saving = saveReviewDraft(scope, file, value, null)

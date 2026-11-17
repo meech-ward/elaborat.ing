@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LocalReviewSession } from "./session";
 import { proposedSource } from "./review";
 import type { ReviewDraft, StoredReviewDraft } from "./storage";
+import { parseReviewBundle, serializeReviewBundle, type PortableReviewBundle } from "./portable";
 
 type Persistence = NonNullable<ConstructorParameters<typeof LocalReviewSession>[4]>;
 type SaveCall = { record: ReviewDraft | null; expectedToken: string | null };
@@ -46,7 +47,99 @@ function source(current: LocalReviewSession): string {
   return document.text;
 }
 
+function bundle(): PortableReviewBundle {
+  return { format: "elaborating-review", version: 1, path: "notes/example.mdx", base: "alpha middle omega", suggestions: [
+    { id: "first", from: 0, to: 5, expected: "alpha", insert: "A", sourceIds: ["imported:1"] },
+    { id: "last", from: 13, to: 18, expected: "omega", insert: "Z", sourceIds: ["imported:2"] },
+  ], provenance: { label: "Original document", base: "alpha middle omega", proposed: "A middle Z", annotations: [
+    { id: "imported:1", sourceId: "1", kind: "replacement", author: "Original reviewer", date: "2026-11-17", rawXml: "<change id=\"1\"/>" },
+    { id: "imported:2", sourceId: "2", kind: "replacement" },
+    { id: "comment:1", kind: "comment", text: "Comment on inserted text", anchor: { projection: "proposed", from: 0, to: 1, quote: "A" } },
+  ] } };
+}
+
 describe("local review session", () => {
+  test("portable import binds current revision, keeps every original record and recovers without accepting source", async () => {
+    const { session: current, storage } = session();
+    const imported = bundle();
+    const canonical = imported.base;
+    await current.importBundle(imported, canonical, "this-device-content-hash");
+    expect(current.snapshot()).toMatchObject({ baseRevision: "this-device-content-hash", kept: true, busy: false });
+    expect(current.snapshot().review?.base).toBe(canonical);
+    expect(source(current)).toBe("A middle Z");
+    expect(storage.calls[0].expectedToken).toBeNull();
+    expect(storage.saved?.provenance).toEqual(imported.provenance);
+    imported.provenance!.annotations[0].author = "Changed after import";
+    expect(storage.saved?.provenance?.annotations[0].author).toBe("Original reviewer");
+    const recovered = session(storage).session;
+    recovered.restore();
+    expect(recovered.snapshot().review).toEqual(current.snapshot().review);
+    expect(parseReviewBundle(serializeReviewBundle(recovered.path, recovered.snapshot().review!)).provenance).toEqual(storage.saved?.provenance);
+    const commits: string[] = [];
+    await recovered.accept("first", async (next, base, revision) => {
+      expect(base).toBe(canonical);
+      expect(revision).toBe("this-device-content-hash");
+      commits.push(next);
+      return "next-device-content-hash";
+    });
+    expect(commits).toEqual(["A middle omega"]);
+    expect(source(recovered)).toBe("A middle Z");
+    expect(recovered.snapshot().review?.suggestions[0]).toMatchObject({ id: "last", from: 9, to: 14, sourceIds: ["imported:2"] });
+    recovered.reject(null);
+    await recovered.keep();
+    expect(source(recovered)).toBe("A middle omega");
+    expect(recovered.snapshot().review?.provenance).toEqual(storage.saved?.provenance);
+    expect(commits).toHaveLength(1);
+  });
+
+  test("portable imports refuse wrong path, changed base, active review and another tab's saved review", async () => {
+    const { session: current, storage } = session();
+    await expect(current.importBundle({ ...bundle(), path: "other.mdx" }, bundle().base, "current")).rejects.toThrow("different note");
+    await expect(current.importBundle(bundle(), "different base", "current")).rejects.toThrow("does not match");
+    await expect(current.importBundle(bundle(), bundle().base, "")).rejects.toThrow("Save the note");
+    expect(current.snapshot().review).toBeNull();
+    expect(storage.calls).toEqual([]);
+    current.start("canonical", "current");
+    await current.keep();
+    await expect(current.importBundle(bundle(), bundle().base, "current")).rejects.toThrow("existing local review");
+    expect(current.snapshot().review?.base).toBe("canonical");
+    const otherTab = session(storage).session;
+    await expect(otherTab.importBundle(bundle(), bundle().base, "current")).rejects.toThrow("already exists");
+    expect(otherTab.snapshot().review).toBeNull();
+    expect(storage.saved?.base).toBe("canonical");
+  });
+
+  test("import storage failure keeps a complete exportable in-memory bundle, and retry recovers it", async () => {
+    const { session: current, storage } = session();
+    storage.failure = new Error("Storage full");
+    await expect(current.importBundle(bundle(), bundle().base, "current")).rejects.toThrow("Storage full");
+    expect(current.snapshot()).toMatchObject({ kept: false, busy: false, error: "Storage full" });
+    expect(storage.saved).toBeNull();
+    expect(parseReviewBundle(serializeReviewBundle(current.path, current.snapshot().review!))).toEqual(bundle());
+    await current.keep();
+    expect(current.snapshot()).toMatchObject({ kept: true, error: null });
+    expect(storage.saved?.provenance).toEqual(bundle().provenance);
+  });
+
+  test("an import racing another tab never overwrites that tab's review", async () => {
+    const { session: current, storage } = session();
+    storage.beforeSave = () => { storage.saved = { token: "other-tab", baseRevision: "other-revision", base: "other", suggestions: [] }; };
+    await expect(current.importBundle(bundle(), bundle().base, "current")).rejects.toThrow("Changed in another tab");
+    expect(storage.saved).toEqual({ token: "other-tab", baseRevision: "other-revision", base: "other", suggestions: [] });
+    expect(current.snapshot().kept).toBe(false);
+    expect(source(current)).toBe("A middle Z");
+    expect(parseReviewBundle(serializeReviewBundle(current.path, current.snapshot().review!)).provenance).toEqual(bundle().provenance);
+  });
+
+  test("accept all retains original imported annotation snapshots after their source becomes canonical", async () => {
+    const { session: current, storage } = session();
+    await current.importBundle(bundle(), bundle().base, "current");
+    await current.accept(null, async () => "accepted");
+    expect(current.snapshot().review).toMatchObject({ base: "A middle Z", suggestions: [], provenance: bundle().provenance });
+    expect(storage.saved?.provenance).toEqual(bundle().provenance);
+    expect(parseReviewBundle(serializeReviewBundle(current.path, current.snapshot().review!)).provenance?.base).toBe("alpha middle omega");
+  });
+
   test("keeping and its finalization retain the document snapshot reference", async () => {
     const { session: current, storage } = session();
     const writing = deferred();

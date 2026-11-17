@@ -49,8 +49,9 @@ import {
 import { linkedFile, resolveNoteLink } from "./noteLinks";
 import { useSettledError, useTyping } from "@/lib/settledError";
 import { LazyNotionExportDialog } from "@/features/exports/LazyNotionExportDialog";
-import { LocalReviewSession, type LocalReviewSnapshot } from "../suggestions/session";
+import type { LocalReviewSession, LocalReviewSnapshot } from "../suggestions/session";
 import { LocalSuggestionsPanel } from "../suggestions/LocalSuggestionsPanel";
+import { downloadText } from "./download";
 
 type Mode = EditorView;
 const NO_REVIEW: LocalReviewSnapshot = { review: null, document: null, baseRevision: null, busy: false, keeping: false, kept: true, error: null };
@@ -142,6 +143,8 @@ export function WorkspaceSession({
   // Review source gets a separate identity and never enters that store on typing.
   const [localReview, setLocalReview] = useState<LocalReviewSession | null>(null);
   const [reviewFileIdentity, setReviewFileIdentity] = useState<string | null>(null);
+  const reviewImportInput = useRef<HTMLInputElement>(null);
+  const [reviewTransferError, setReviewTransferError] = useState<string | null>(null);
   const reviewSnapshot = useSyncExternalStore(localReview?.subscribe ?? noReviewSubscription, localReview?.snapshot ?? noReview);
   const review = reviewSnapshot.review;
   // Review identities are separate from the canonical store's positive IDs.
@@ -157,7 +160,7 @@ export function WorkspaceSession({
   useEffect(() => {
     if (import.meta.env.VITE_LOCAL_SUGGESTIONS !== "1" || !client.fileIdentity || kindForPath(initial.path) !== "note") return;
     let alive = true;
-    void client.fileIdentity(initial.path).then(identity => {
+    void Promise.all([client.fileIdentity(initial.path), import("../suggestions/session")]).then(([identity, { LocalReviewSession }]) => {
       if (!alive) return;
       setReviewFileIdentity(identity);
       setLocalReview(current => {
@@ -459,6 +462,7 @@ export function WorkspaceSession({
     setSourceError(null);
     setPatchError(null);
     setNotice(null);
+    setReviewTransferError(null);
   }, []);
 
   const openPath = useCallback(
@@ -703,6 +707,43 @@ export function WorkspaceSession({
     }
   }, [conflicted, isNote, localReview, openFile, readOnly, resetEditorMessages, store]);
 
+  const importSuggestions = useCallback(async (file: File) => {
+    if (!localReview || !isNote || readOnly || frozen.current) return;
+    if (store.snapshot().dirty || renderedPendingRef.current || pendingOperation.current || savingRef.current ||
+      !openFile.baseRevision || conflicted || openFile.serverChanged || openFile.save.stage === "conflict" || localReview.snapshot().review) {
+      setReviewTransferError("Save your edits and finish the current review before importing suggestions.");
+      return;
+    }
+    setReviewTransferError(null);
+    const captured = store.snapshot();
+    const revision = openFile.baseRevision;
+    pendingOperation.current++;
+    try {
+      const { MAX_REVIEW_BUNDLE_BYTES, parseReviewBundle } = await import("../suggestions/portable");
+      if (file.size > MAX_REVIEW_BUNDLE_BYTES) throw new Error("The review bundle is larger than 4 MiB.");
+      const bundle = parseReviewBundle(await file.text());
+      await client.flushLocalDrafts();
+      const current = await client.read(initial.path);
+      const identity = await client.fileIdentity?.(initial.path);
+      const conflict = await client.readConflict(initial.path);
+      const now = store.snapshot();
+      if (frozen.current || renderedPendingRef.current || savingRef.current || now.docId !== captured.docId || now.dirty ||
+        now.text !== captured.text || current.revision !== revision || current.savedContent !== captured.text ||
+        current.content !== captured.text || current.draft || conflict || identity !== localReview.fileKey ||
+        initial.path !== localReview.path || client.persistenceKey !== localReview.scope) {
+        throw new Error("The saved file changed or moved. Reopen it before importing these suggestions.");
+      }
+      setImageRequest(null);
+      await localReview.importBundle(bundle, current.content, current.revision);
+      resetEditorMessages();
+      setNotice("Suggestions imported and kept in this browser. The saved file has not changed.");
+    } catch (error) {
+      setReviewTransferError(error instanceof Error ? error.message : String(error));
+    } finally {
+      pendingOperation.current--;
+    }
+  }, [client, conflicted, initial.path, isNote, localReview, openFile, readOnly, resetEditorMessages, store]);
+
   const acceptSuggestion = useCallback(async (id: string | null) => {
     if (!localReview || reviewStale || readOnly || frozen.current || renderedPendingRef.current) return;
     settle();
@@ -754,6 +795,17 @@ export function WorkspaceSession({
       const text = localReview.snapshot().document!.text;
       await saveSourceText(displayName.replace(/(\.mdx?)$/i, ".proposed$1"), text);
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  }, [displayName, localReview]);
+
+  const exportSuggestions = useCallback(async () => {
+    const current = localReview?.snapshot().review;
+    if (!localReview || !current || renderedPendingRef.current) return;
+    setReviewTransferError(null);
+    try {
+      const { serializeReviewBundle } = await import("../suggestions/portable");
+      const filename = displayName.split("/").pop()!.replace(/\.mdx?$/i, ".review.json");
+      downloadText(serializeReviewBundle(localReview.path, current), filename, "application/json");
+    } catch (error) { setReviewTransferError(error instanceof Error ? error.message : String(error)); }
   }, [displayName, localReview]);
 
   const revealSuggestion = useCallback((id: string) => {
@@ -1147,7 +1199,9 @@ export function WorkspaceSession({
   const fileActions: MenuEntry[] = [
     ...(readOnly ? [] : [{ label: review ? "Keep review locally" : "Save", disabled: saveDisabled || reviewSnapshot.busy, onSelect: save }]),
     ...(localReview && isNote && !readOnly && !review ? [{ label: "Suggest changes locally", disabled: renderedPending || !hasFile, onSelect: startReview }] : []),
+    ...(localReview && isNote && !readOnly && !review ? [{ label: "Import suggestions", disabled: renderedPending || !hasFile || snapshot.dirty || conflicted || blocked, onSelect: () => reviewImportInput.current?.click() }] : []),
     ...(review ? [{ label: "Export proposed source", disabled: renderedPending, onSelect: () => void exportProposedSource() }] : []),
+    ...(review ? [{ label: "Export suggestions", disabled: renderedPending || reviewSnapshot.busy, onSelect: () => void exportSuggestions() }] : []),
     // Off while a rendered edit is finishing, as Save is, so the copy has it.
     ...(onDuplicate ? [{ label: "Duplicate", shortcut: duplicateKey.label, keyShortcuts: duplicateKey.aria, disabled: renderedPending || Boolean(review), onSelect: onDuplicate }] : []),
     // Read-only, the file follows its saved copy by itself.
@@ -1160,6 +1214,19 @@ export function WorkspaceSession({
 
   return (
     <>
+    {localReview && isNote && <input
+      ref={reviewImportInput}
+      type="file"
+      className="sr-only"
+      tabIndex={-1}
+      accept=".review.json,.json,application/json"
+      aria-label="Import suggestions from a review bundle"
+      onChange={event => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (file) void importSuggestions(file);
+      }}
+    />}
     <div className="wb-session">
       <FileHeader
         path={initial.path}
@@ -1174,6 +1241,10 @@ export function WorkspaceSession({
         onAccept={id => void acceptSuggestion(id)} onReject={rejectSuggestion} onStop={() => void stopReview()}
         onKeep={() => void keepReview()} onReveal={revealSuggestion} />}
       {!review && reviewSnapshot.error && <Banner role="alert">{reviewSnapshot.error}</Banner>}
+      {reviewTransferError && !reviewSnapshot.error && <Banner tone="danger"
+        action={<BannerAction onClick={() => setReviewTransferError(null)}>Dismiss</BannerAction>}>
+        {reviewTransferError}
+      </Banner>}
       {/* The saved state and the last notice, for screen readers: Save and
           the tab's unsaved dot show it on screen. */}
       {active && (

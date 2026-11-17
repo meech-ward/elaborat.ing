@@ -2,6 +2,7 @@ import { createDocumentStore, type StoreState } from "@/lib/documentStore";
 import type { DocumentFormat, SourcePatch } from "../document";
 import { acceptReviewSuggestion, applyReviewPatches, createReview, proposedSource, rejectReviewSuggestion, replaceReviewSource, type ReviewState } from "./review";
 import { loadReviewDraft, saveReviewDraft, type ReviewDraft } from "./storage";
+import type { PortableReviewBundle } from "./portable";
 
 export type LocalReviewSnapshot = {
   review: ReviewState | null;
@@ -77,12 +78,12 @@ export class LocalReviewSession {
     try {
       const saved = this.persistence.load(this.scope, this.fileKey);
       if (!saved) return;
-      const review = { base: saved.base, suggestions: saved.suggestions };
+      const { baseRevision, token, ...review } = saved;
       const source = proposedSource(review);
-      this.token = saved.token;
-      this.baseRevision = saved.baseRevision;
+      this.token = token;
+      this.baseRevision = baseRevision;
       this.review = review;
-      this.desired = { ...review, baseRevision: saved.baseRevision };
+      this.desired = { ...review, baseRevision };
       this.buffer.replaceDocument(source, this.format);
       this.publish();
     } catch (error) {
@@ -99,6 +100,33 @@ export class LocalReviewSession {
     this.review = createReview(base);
     this.buffer.replaceDocument(base, this.format);
     this.queueKeep();
+  }
+
+  /** The caller verifies edit permission, current saved bytes, identity and absence of a canonical draft. */
+  async importBundle(value: PortableReviewBundle, base: string, baseRevision: string): Promise<void> {
+    if (this.review || this.busy) throw new Error("Finish the existing local review before importing another.");
+    const { checkedReviewBundle } = await import("./portable");
+    if (this.review || this.busy) throw new Error("Finish the existing local review before importing another.");
+    const bundle = checkedReviewBundle(value);
+    if (bundle.path !== this.path) throw new Error("This review bundle belongs to a different note.");
+    if (bundle.base !== base) throw new Error("The saved note does not match this review bundle's original source.");
+    if (!baseRevision || baseRevision.length > 1024) throw new Error("Save the note before importing suggestions.");
+    if (this.persistence.load(this.scope, this.fileKey))
+      throw new Error("Another local review already exists for this note. Reload it before importing.");
+    const review: ReviewState = { base: bundle.base, suggestions: bundle.suggestions,
+      ...(bundle.provenance ? { provenance: bundle.provenance } : {}) };
+    this.baseRevision = baseRevision;
+    this.review = review;
+    this.buffer.replaceDocument(proposedSource(review), this.format);
+    this.busy = true;
+    try {
+      this.queueKeep();
+      await this.keep();
+    } finally {
+      // Failed imports remain exportable in memory, with the existing sidecar untouched.
+      this.busy = false;
+      this.publish();
+    }
   }
 
   private editable(): ReviewState {
@@ -127,7 +155,7 @@ export class LocalReviewSession {
 
   reject(id: string | null): void {
     const review = this.editable();
-    this.review = id === null ? createReview(review.base) : rejectReviewSuggestion(review, id);
+    this.review = id === null ? { ...review, suggestions: [] } : rejectReviewSuggestion(review, id);
     // Decisions end the typing history: Undo must not restore a rejected proposal.
     this.buffer.replaceDocument(proposedSource(this.review), this.format);
     this.queueKeep();
@@ -140,7 +168,7 @@ export class LocalReviewSession {
     this.publish();
     try {
       await this.keep();
-      const next = id === null ? createReview(proposedSource(review)) : acceptReviewSuggestion(review, id);
+      const next = id === null ? { ...review, base: proposedSource(review), suggestions: [] } : acceptReviewSuggestion(review, id);
       const revision = await commit(next.base, review.base, this.baseRevision);
       if (revision === null) return;
       this.review = next;

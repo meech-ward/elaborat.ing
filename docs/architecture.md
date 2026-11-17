@@ -1754,7 +1754,8 @@ VITE_LOCAL_SUGGESTIONS=1 bun run dev
 
 Open an existing saved note and choose **Suggest changes locally** from
 **File actions**. Ordinary builds leave the flag unset. Suggestions stay in
-this browser and account; they are not shared with collaborators or agents.
+this browser and account unless explicitly exported as a review bundle;
+there is no shared review backend or agent review tool.
 
 Source and Rendered show the proposed text. A local review panel shows each
 change's original and replacement source and offers individual or whole-file
@@ -1773,10 +1774,55 @@ rejecting it changes only the review. Acceptance stops if the file moved or
 its accepted base changed. An explicit proposed-source export provides a
 recovery copy independently of ordinary exports.
 
+**Portable local reviews.** **Export suggestions** downloads a
+`.review.json` file with format `elaborating-review`, version 1: the note's
+project-relative path, exact accepted base and pending checked source changes.
+It excludes browser/account identity, persistence tokens and saved revision
+identifiers. **Import suggestions** is available on an existing saved Markdown
+or MDX note when there is no ordinary draft or active review. Import requires
+the same path and exact base text, rechecks the current file identity and
+revision, and refuses a review already kept by another tab. It binds the
+bundle to the destination's current revision and browser scope. Importing
+changes only the local review, never the accepted source. A bundle can be
+transferred manually to another browser, account or project with a matching
+note; it is not automatically synchronized or included in ordinary exports.
+
+The portable boundary and browser recovery use the same strict validation:
+at most 4 MiB per bundle, 2 MiB per source snapshot, 256 pending changes and
+2,048 imported annotations. Source ranges, expected text, Unicode boundaries,
+annotation identities and source links are checked. Unknown fields and
+versions are refused rather than silently discarded. Failure to keep an
+import leaves the complete review available in memory for explicit export
+or another attempt, without overwriting an existing sidecar.
+
+An optional provenance record retains the source label and hash, original
+source snapshots, authors, dates, comment text, revision IDs, source locators,
+original XML and anchors supplied by a converter. These describe the source
+document; they do not authenticate an app account or create project comments.
+The panel shows the original records alongside their linked pending changes.
+Several original revisions can belong to one change. Formatting inside an
+insertion is reviewed with that insertion rather than as an independent
+decision, while its original formatting record remains available.
+
+Accept/reject decisions and later typing retain the original provenance and
+its immutable anchors. Those anchors describe the imported snapshots, not
+live selections in the edited note; the panel labels them as original
+document details. Editing an imported change retains its linked source IDs
+and marks it as edited after import. Provenance survives reloads and portable
+export while the review remains open, including after all decisions. Export
+the bundle before **Return to editing** to retain that record: leaving review
+removes its local sidecar. This is not a shared decision history.
+
+The app imports review JSON, not DOCX files directly. The private comparison
+fixture and its one-off document conversion are not committed to the
+repository and are not a general Google Docs import feature.
+
 Review recovery is scoped to the current browser account and project.
 Transferring an accountless local project into a signed-in account does not
-yet transfer its review sidecars. Export proposed source or finish those
-reviews before signing in; account-transition recovery is part of T54.
+yet transfer its review sidecars. Export suggestions to retain proposals and
+provenance, or finish those reviews before signing in; account-transition
+recovery is part of T54. Proposed-source export retains only the candidate
+text.
 
 Keeping the sidecar changes review status, not the source snapshot sent to
 the renderer. Status-only updates retain the exact document object and its
@@ -1815,6 +1861,12 @@ shared undo, reload recovery, stale or moved targets, commenter read-only
 access and accessibility. It also checks that ordinary source, project ZIP
 and Notion exports retain accepted content, including custom component
 output, and that saving a parent cannot accept its child's review.
+
+Portable review unit coverage checks exact source/metadata round trips,
+strict bounds and immutable anchors, partial decisions, edits merging source
+IDs, import preconditions, reload recovery and failed-persistence recovery.
+On 2026-11-17, the portable, storage and session suites pass 46 tests with
+280 assertions.
 
 Checked on 2026-11-04 with Bun 1.4.3: production and browser builds,
 typecheck, lint, 1,573 passing unit tests and unchanged bundle budgets. All

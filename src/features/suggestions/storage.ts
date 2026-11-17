@@ -1,14 +1,10 @@
 import { z } from "zod/mini"
-import { proposedSource, validateReview, type ReviewSuggestion } from "./review"
+import type { ReviewState } from "./review"
+import { checkedReview, MAX_REVIEW_DRAFT_BYTES, ReviewFields } from "./validation"
+export { MAX_REVIEW_SOURCE_BYTES, MAX_REVIEW_DRAFT_BYTES, MAX_REVIEW_SUGGESTIONS } from "./validation"
 
-export const MAX_REVIEW_SOURCE_BYTES = 2 * 1024 * 1024
-export const MAX_REVIEW_DRAFT_BYTES = 4 * 1024 * 1024
-export const MAX_REVIEW_SUGGESTIONS = 256
-
-export type ReviewDraft = {
+export type ReviewDraft = ReviewState & {
   baseRevision: string
-  base: string
-  suggestions: ReviewSuggestion[]
 }
 
 export type StoredReviewDraft = ReviewDraft & { token: string }
@@ -25,18 +21,9 @@ export class ReviewDraftConflictError extends Error {
   }
 }
 
-const Patch = z.strictObject({
-  id: z.string().check(z.minLength(1), z.maxLength(256)),
-  from: z.int().check(z.nonnegative()),
-  to: z.int().check(z.nonnegative()),
-  insert: z.string().check(z.maxLength(MAX_REVIEW_SOURCE_BYTES)),
-  expected: z.string().check(z.maxLength(MAX_REVIEW_SOURCE_BYTES)),
-})
-
 const Draft = z.strictObject({
+  ...ReviewFields,
   baseRevision: z.string().check(z.minLength(1), z.maxLength(1024)),
-  base: z.string().check(z.maxLength(MAX_REVIEW_SOURCE_BYTES)),
-  suggestions: z.array(Patch).check(z.maxLength(MAX_REVIEW_SUGGESTIONS)),
 })
 
 const Stored = z.strictObject({
@@ -78,11 +65,8 @@ function checkedDraft(value: unknown): ReviewDraft {
   const parsed = Draft.safeParse(value)
   if (!parsed.success) throw new ReviewDraftStorageError(invalidMessage)
   try {
-    validateReview(parsed.data)
-    if (encoder.encode(parsed.data.base).byteLength > MAX_REVIEW_SOURCE_BYTES ||
-        encoder.encode(proposedSource(parsed.data)).byteLength > MAX_REVIEW_SOURCE_BYTES) {
-      throw new Error("Review source is too large")
-    }
+    checkedReview({ base: parsed.data.base, suggestions: parsed.data.suggestions,
+      ...(parsed.data.provenance ? { provenance: parsed.data.provenance } : {}) })
   } catch {
     throw new ReviewDraftStorageError(invalidMessage)
   }

@@ -381,10 +381,15 @@ journeys, bundle budgets and the hosted flow, including the supplied script.
 **Status:** Waiting (feedback on the local suggestions experiment and a
 recorded shared-review contract in `architecture.md`)
 
-The branch-local experiment keeps proposals on one device. Shared suggestions
+The branch-local experiment keeps proposals in the current browser/account.
+Portable `.review.json` import/export now transfers exact-base proposals and
+optional source-document provenance manually. It creates no shared proposal
+records, authenticated authors or shared comment threads. Shared suggestions
 need durable proposal records tied to a stable file id and an exact saved
 base, with author, source changes, proposal version and decision history.
-Keep suggestion metadata outside the Markdown or MDX source.
+Keep suggestion metadata outside the Markdown or MDX source. Preserve
+imported authors, comments and immutable original anchors separately from
+authenticated app identities and live comment anchors.
 
 Record the roles and review rules before implementation: commenters may
 propose without gaining file-write access; editors and owners may review;
@@ -407,7 +412,8 @@ local project into a new account and project partition. Pending review
 sidecars must move with it, or the transition must preserve an accessible
 recovery path. Test starter-only projects with pending proposals, multiple
 tabs, interrupted transfers, sign-out and account switching without placing
-proposed content in ordinary file saves or exports.
+proposed content in ordinary file saves or exports. Portable export is an
+explicit recovery path today; it does not replace automatic sidecar transfer.
 
 ## T55: extend suggesting across the note editing surfaces
 
@@ -421,6 +427,17 @@ the rendered editor and their comment/review rail. Cover hidden MDX imports
 and exports, JSX boundaries, code islands, formatting and ambiguous overlaps.
 Keep a source diff fallback where rendered markup cannot represent a change
 faithfully.
+
+Portable review bundles retain original authors, revision details, comments
+and source XML while local review remains open. Several original revisions
+may map to one pending source change; formatting within an insertion is
+accepted or rejected with that insertion. Extend this without claiming one
+independent decision per source record. Keep the immutable import anchors
+distinct from live review positions, and retain source IDs when edits merge
+changes. A general DOCX/Google Docs converter, independent formatting and
+move decisions, and a durable provenance view after leaving local review
+remain outside the current JSON import. The private comparison fixture is
+not committed.
 
 An embedded child's review must stay attached to that file and its shared
 session. Show its accepted content when an ordinary parent needs it; saving

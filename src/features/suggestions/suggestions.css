@@ -37,6 +37,10 @@
 }
 .local-suggestion-text ins { background: color-mix(in srgb, var(--text) 8%, transparent); text-decoration: underline; }
 .local-suggestion-text del { opacity: .75; }
+.local-suggestion-record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.local-suggestion-provenance { margin-top: 6px; }
+.local-suggestion-provenance ul { padding-left: 18px; }
+.local-suggestion-provenance li { margin: 8px 0; }
 @media (max-width: 640px) {
   .local-suggestions-header { align-items: flex-start; flex-direction: column; }
 }

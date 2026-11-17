@@ -1,8 +1,33 @@
 import { applySourcePatches, type SourcePatch } from "../document";
 
-/** Local proposals use offsets in `base`; editor patches use proposed-source offsets. */
-export type ReviewSuggestion = SourcePatch & { id: string };
-export type ReviewState = { base: string; suggestions: ReviewSuggestion[] };
+/** Imported records describe their source document, never an app user's identity. */
+export type ReviewAnnotation = {
+  id: string;
+  kind: string;
+  sourceId?: string;
+  author?: string;
+  date?: string;
+  text?: string;
+  locator?: string;
+  rawXml?: string;
+  anchor?: {
+    projection: "base" | "proposed" | "docx-original" | "docx-accepted" | "docx-review";
+    from: number;
+    to: number;
+    quote?: string;
+  };
+};
+export type ReviewProvenance = {
+  label: string;
+  sourceSha256?: string;
+  /** Immutable import snapshots: source anchors never follow later accept/reject decisions. */
+  base?: string;
+  proposed?: string;
+  annotations: ReviewAnnotation[];
+};
+/** Local proposals use UTF-16 offsets in `base`; editor patches use proposed-source offsets. */
+export type ReviewSuggestion = SourcePatch & { id: string; sourceIds?: string[]; edited?: true };
+export type ReviewState = { base: string; suggestions: ReviewSuggestion[]; provenance?: ReviewProvenance };
 
 type PlacedSuggestion = ReviewSuggestion & { start: number; end: number };
 type IdFactory = () => string;
@@ -24,11 +49,28 @@ export function validateReview(state: ReviewState): void {
   if (!state || typeof state.base !== "string" || !Array.isArray(state.suggestions))
     throw new Error("Invalid review state.");
   const ids = new Set<string>();
+  const annotationIds = new Set<string>();
+  for (const annotation of state.provenance?.annotations ?? []) {
+    if (!annotation.id || annotationIds.has(annotation.id)) throw new Error("Imported annotations need unique IDs.");
+    annotationIds.add(annotation.id);
+    if (annotation.anchor && (annotation.anchor.from < 0 || annotation.anchor.to < annotation.anchor.from))
+      throw new Error("An imported annotation has an invalid source anchor.");
+    if (annotation.anchor?.projection === "base" || annotation.anchor?.projection === "proposed") {
+      const snapshot = state.provenance?.[annotation.anchor.projection];
+      if (snapshot === undefined || annotation.anchor.to > snapshot.length ||
+          (annotation.anchor.quote !== undefined && snapshot.slice(annotation.anchor.from, annotation.anchor.to) !== annotation.anchor.quote))
+        throw new Error("An imported annotation does not match its original source snapshot.");
+      checkBoundaries(snapshot, annotation.anchor.from, annotation.anchor.to);
+    }
+  }
   let previous: ReviewSuggestion | undefined;
   for (const suggestion of state.suggestions) {
     if (!suggestion || typeof suggestion.id !== "string" || suggestion.id.length === 0 || ids.has(suggestion.id))
       throw new Error("Suggestions need unique, nonempty IDs.");
     ids.add(suggestion.id);
+    if (suggestion.sourceIds && (new Set(suggestion.sourceIds).size !== suggestion.sourceIds.length ||
+        suggestion.sourceIds.some(id => !annotationIds.has(id))))
+      throw new Error("A suggestion refers to an unknown or repeated imported annotation.");
     if (previous && suggestion.from <= previous.to)
       throw new Error("Suggestions must be ordered, separate source ranges.");
     if (suggestion.insert === suggestion.expected)
@@ -108,9 +150,11 @@ function applyOne(state: ReviewState, patch: SourcePatch, idFactory: IdFactory):
   const proposal = trimmed(state.base, from, to, insert);
   const touchedIds = new Set(touched.map(suggestion => suggestion.id));
   const suggestions = state.suggestions.filter(suggestion => !touchedIds.has(suggestion.id));
-  if (proposal) suggestions.push({ ...proposal, id: touched[0]?.id ?? idFactory() });
+  const sourceIds = [...new Set(touched.flatMap(suggestion => suggestion.sourceIds ?? []))];
+  if (proposal) suggestions.push({ ...proposal, id: touched[0]?.id ?? idFactory(),
+    ...(sourceIds.length ? { sourceIds, edited: true as const } : {}) });
   suggestions.sort((a, b) => a.from - b.from || a.to - b.to);
-  const next = { base: state.base, suggestions };
+  const next = { ...state, suggestions };
   validateReview(next);
   return next;
 }
@@ -185,7 +229,7 @@ function findSuggestion(state: ReviewState, id: string): ReviewSuggestion {
 
 export function rejectReviewSuggestion(state: ReviewState, id: string): ReviewState {
   findSuggestion(state, id);
-  return { base: state.base, suggestions: state.suggestions.filter(suggestion => suggestion.id !== id) };
+  return { ...state, suggestions: state.suggestions.filter(suggestion => suggestion.id !== id) };
 }
 
 export function acceptReviewSuggestion(state: ReviewState, id: string): ReviewState {
@@ -195,7 +239,7 @@ export function acceptReviewSuggestion(state: ReviewState, id: string): ReviewSt
   const suggestions = state.suggestions.filter(suggestion => suggestion.id !== id).map(suggestion => suggestion.from >= accepted.to
     ? { ...suggestion, from: suggestion.from + shift, to: suggestion.to + shift }
     : suggestion);
-  const next = { base, suggestions };
+  const next = { ...state, base, suggestions };
   validateReview(next);
   return next;
 }
